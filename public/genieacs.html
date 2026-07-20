@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GenieACS - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/accounts.css?v=4.5">
+    <link rel="stylesheet" href="css/genieacs.css?v=1.6">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main>
+                <section class="page-header genieacs-header">
+                    <div class="page-title">
+                        <h1>GenieACS</h1>
+                        <p class="subtitle">Modem / ONU Management</p>
+                    </div>
+                    <div class="genieacs-header-actions">
+                        <div class="genieacs-sync-pill" id="genieacs-last-sync-pill">
+                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                            <span>Last Sync: <strong id="genieacs-last-sync">--</strong></span>
+                            <span class="genieacs-sync-state" id="genieacs-sync-state"><i class="ti ti-circle" aria-hidden="true"></i> Waiting</span>
+                        </div>
+                        <button class="ghost-btn" id="genieacs-summon-all-btn" type="button">
+                            <i class="ti ti-refresh" aria-hidden="true"></i> Summon All
+                        </button>
+                        <button class="primary-btn" id="genieacs-refresh-btn" type="button">
+                            <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
+                        </button>
+                    </div>
+                </section>
+
+                <section class="genieacs-summary-strip" aria-label="GenieACS summary">
+                    <article class="genieacs-summary-card genieacs-summary-card--total">
+                        <span class="genieacs-summary-card__icon"><i class="ti ti-router" aria-hidden="true"></i></span>
+                        <div>
+                            <p class="genieacs-summary-card__label">Total Modems</p>
+                            <p class="genieacs-summary-card__value" id="genieacs-summary-total">0</p>
+                            <p class="genieacs-summary-card__meta">All modems</p>
+                        </div>
+                    </article>
+                    <article class="genieacs-summary-card genieacs-summary-card--online">
+                        <span class="genieacs-summary-card__icon"><i class="ti ti-wifi" aria-hidden="true"></i></span>
+                        <div>
+                            <p class="genieacs-summary-card__label">Online</p>
+                            <p class="genieacs-summary-card__value" id="genieacs-summary-online">0</p>
+                            <p class="genieacs-summary-card__meta" id="genieacs-summary-online-rate">0%</p>
+                        </div>
+                    </article>
+                    <article class="genieacs-summary-card genieacs-summary-card--nocontact">
+                        <span class="genieacs-summary-card__icon"><i class="ti ti-clock" aria-hidden="true"></i></span>
+                        <div>
+                            <p class="genieacs-summary-card__label">No Contact</p>
+                            <p class="genieacs-summary-card__value" id="genieacs-summary-nocontact">0</p>
+                            <p class="genieacs-summary-card__meta" id="genieacs-summary-nocontact-rate">0%</p>
+                        </div>
+                    </article>
+                    <article class="genieacs-summary-card genieacs-summary-card--optical">
+                        <span class="genieacs-summary-card__icon"><i class="ti ti-antenna-bars-5" aria-hidden="true"></i></span>
+                        <div>
+                            <p class="genieacs-summary-card__label">Bad Optical (&lt; -27 dBm)</p>
+                            <p class="genieacs-summary-card__value" id="genieacs-summary-bad-optical">0</p>
+                            <p class="genieacs-summary-card__meta" id="genieacs-summary-bad-optical-rate">0%</p>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="settings-panel genieacs-devices-panel">
+                    <header class="panel-header">
+                        <div>
+                            <p id="genieacs-devices-subtitle">Devices loaded from the GenieACS NBI.</p>
+                        </div>
+                    </header>
+                    <section class="section-toolbar genieacs-devices-toolbar">
+                        <label class="genieacs-filter-field genieacs-search-field">
+                            <span>Search</span>
+                            <div class="search-field">
+                                <i class="ti ti-search" aria-hidden="true"></i>
+                                <input type="search" id="genieacs-devices-search" placeholder="Modem, serial, MAC, IP, OUI, SSID, or customer" aria-label="Search GenieACS modems">
+                            </div>
+                        </label>
+                        <label class="genieacs-filter-field">
+                            <span>Status</span>
+                            <select id="genieacs-status-filter">
+                                <option value="all">All</option>
+                                <option value="online">Online</option>
+                                <option value="nocontact">No Contact</option>
+                            </select>
+                        </label>
+                        <label class="genieacs-filter-field">
+                            <span>Model</span>
+                            <select id="genieacs-model-filter">
+                                <option value="all">All</option>
+                            </select>
+                        </label>
+                        <label class="genieacs-filter-field">
+                            <span>Area / NAP</span>
+                            <select id="genieacs-area-filter">
+                                <option value="all">All</option>
+                            </select>
+                        </label>
+                        <button class="ghost-btn" id="genieacs-clear-filters" type="button">
+                            <i class="ti ti-x" aria-hidden="true"></i> Clear Filters
+                        </button>
+                    </section>
+                    <div class="genieacs-table-header">
+                        <span class="genieacs-devices-count" id="genieacs-devices-count">Showing 0 of 0 modems</span>
+                        <div class="genieacs-table-actions">
+                            <label class="genieacs-page-size">
+                                <span>Show</span>
+                                <select id="genieacs-page-size">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </label>
+                            <button class="ghost-btn" id="genieacs-export-btn" type="button">
+                                <i class="ti ti-download" aria-hidden="true"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-wrapper genieacs-devices-table-wrap">
+                        <table class="settings-table genieacs-devices-table" aria-label="GenieACS modem list">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Status</th>
+                                    <th>Customer</th>
+                                    <th>IP / Model</th>
+                                    <th>MAC / Serial</th>
+                                    <th>SSID 2.4G / 5G</th>
+                                    <th>PPPoE Username</th>
+                                    <th>RX Power (OPM)</th>
+                                    <th>Last Inform</th>
+                                    <th>Connected Devices</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="genieacs-devices-body">
+                                <tr><td colspan="11" class="genieacs-table-empty">No modems loaded.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <footer class="genieacs-pagination">
+                        <span id="genieacs-selection-label">0 selected</span>
+                        <div class="genieacs-page-controls">
+                            <button class="ghost-btn pill-btn" id="genieacs-prev-page" type="button" aria-label="Previous page"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+                            <span class="page-indicator" id="genieacs-page-indicator">Page 1 of 1</span>
+                            <button class="ghost-btn pill-btn" id="genieacs-next-page" type="button" aria-label="Next page"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+                        </div>
+                    </footer>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="genieacs-client-modal" aria-hidden="true">
+        <div class="modal-container genieacs-client-modal">
+            <div class="modal-header">
+                <div>
+                    <h3 id="genieacs-client-modal-title">Device List</h3>
+                    <p id="genieacs-client-modal-subtitle">Detected client devices from WiFi and LAN host reports.</p>
+                </div>
+                <button type="button" class="modal-close" id="genieacs-client-modal-close" aria-label="Close client list">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body genieacs-client-modal__body">
+                <section class="genieacs-client-band genieacs-client-band--wide" id="genieacs-client-all-section">
+                    <header>
+                        <h4>Device List</h4>
+                        <span id="genieacs-client-all-count">0 devices</span>
+                    </header>
+                    <div class="table-wrapper">
+                        <table class="settings-table genieacs-client-table genieacs-client-table--all" aria-label="Detected client devices">
+                            <thead>
+                                <tr id="genieacs-client-all-head">
+                                    <th>Status</th>
+                                    <th>Band</th>
+                                    <th>Host</th>
+                                    <th>MAC</th>
+                                    <th>IP</th>
+                                    <th>Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="genieacs-client-all-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="genieacs-wifi-modal" aria-hidden="true">
+        <div class="modal-container genieacs-wifi-modal">
+            <div class="modal-header">
+                <div>
+                    <h3>Change WiFi</h3>
+                    <p id="genieacs-wifi-modal-subtitle">Update WiFi name and password.</p>
+                </div>
+                <button type="button" class="modal-close" id="genieacs-wifi-modal-close" aria-label="Close WiFi editor">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form class="modal-body genieacs-wifi-form" id="genieacs-wifi-form">
+                <section class="genieacs-wifi-form__band">
+                    <h4>2.4G</h4>
+                    <label>
+                        <span>WiFi Name</span>
+                        <input type="text" id="genieacs-wifi-24-ssid" autocomplete="off">
+                    </label>
+                    <label>
+                        <span>Password</span>
+                        <input type="text" id="genieacs-wifi-24-password" autocomplete="off" minlength="8">
+                    </label>
+                </section>
+                <section class="genieacs-wifi-form__band">
+                    <h4>5G</h4>
+                    <label>
+                        <span>WiFi Name</span>
+                        <input type="text" id="genieacs-wifi-5-ssid" autocomplete="off">
+                    </label>
+                    <label>
+                        <span>Password</span>
+                        <input type="text" id="genieacs-wifi-5-password" autocomplete="off" minlength="8">
+                    </label>
+                </section>
+                <footer class="modal-actions genieacs-wifi-form__actions">
+                    <button type="button" class="ghost-btn" id="genieacs-wifi-cancel">Cancel</button>
+                    <button type="submit" class="primary-btn" id="genieacs-wifi-save">
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save
+                    </button>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="genieacs-bind-modal" aria-hidden="true">
+        <div class="modal-container genieacs-bind-modal">
+            <div class="modal-header">
+                <div>
+                    <h3>Bind Customer</h3>
+                    <p id="genieacs-bind-modal-subtitle">Link this modem to a customer account.</p>
+                </div>
+                <button type="button" class="modal-close" id="genieacs-bind-modal-close" aria-label="Close bind customer modal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body genieacs-bind-form">
+                <label class="genieacs-bind-search">
+                    <span id="genieacs-bind-current">Current: N/A</span>
+                    <input type="search" id="genieacs-bind-customer-search" list="genieacs-customer-options" placeholder="Customer account number or name" autocomplete="off">
+                </label>
+                <footer class="modal-actions genieacs-bind-actions">
+                    <button type="button" class="ghost-btn danger" id="genieacs-bind-unbind">Unbind</button>
+                    <button type="button" class="ghost-btn" id="genieacs-bind-cancel">Cancel</button>
+                    <button type="button" class="primary-btn" id="genieacs-bind-save">
+                        <i class="ti ti-link" aria-hidden="true"></i> Bind
+                    </button>
+                </footer>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/genieacs.js?v=4.2"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

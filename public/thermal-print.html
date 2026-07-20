@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Thermal Receipt</title>
+    <script src="theme-init.js?v=2.6"></script>
+    <style>
+        :root {
+            font-size: 14px;
+        }
+
+        body.thermal-body {
+            background: #f5f5f5;
+            font-family: "Menlo", "Consolas", monospace;
+            color: #111827;
+            margin: 0;
+            padding: 18px 0;
+        }
+
+        .receipt {
+            width: min(320px, calc(100vw - 24px));
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 18px 18px 24px;
+            border-radius: 8px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+        }
+
+        .receipt h1 {
+            margin: 0;
+            font-size: 1.2em;
+            text-align: center;
+            letter-spacing: 0.08em;
+        }
+
+        .receipt p {
+            margin: 2px 0;
+        }
+
+        .divider {
+            border-top: 1px dashed #9ca3af;
+            margin: 14px 0;
+        }
+
+        .flex-between {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .flex-between > span:first-child {
+            white-space: nowrap;
+        }
+
+        .flex-between > span:last-child {
+            margin-left: auto;
+            text-align: right;
+            max-width: 62%;
+            overflow-wrap: anywhere;
+        }
+
+        .important {
+            font-weight: 700;
+        }
+
+        .amount-emphasis {
+            font-size: 1.18em;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .summary-rule {
+            border-top: 1px dashed #9ca3af;
+            margin: 6px 0;
+        }
+
+        .breakdown-title {
+            margin-top: 10px;
+            font-weight: 700;
+        }
+
+        .breakdown-list {
+            margin: 4px 0 8px;
+        }
+
+        .breakdown-empty {
+            color: #6b7280;
+        }
+
+        .summary-gap-balance-after {
+            margin-top: 6px;
+        }
+
+        .summary-gap-before-total {
+            margin-top: 6px;
+        }
+
+        .summary-gap-after-current {
+            margin-bottom: 8px;
+        }
+
+        .print-actions {
+            margin-top: 18px;
+            text-align: center;
+        }
+
+        .print-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #111827;
+            color: #f9fafb;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .footer-note {
+            margin-top: 12px;
+            text-align: center;
+            font-size: 0.85em;
+            color: #6b7280;
+        }
+
+        @media (max-width: 420px) {
+            body.thermal-body {
+                padding: 12px 0;
+            }
+
+            .receipt {
+                width: calc(100vw - 16px);
+                padding: 14px 14px 20px;
+                border-radius: 6px;
+            }
+        }
+
+        @media print {
+            body.thermal-body {
+                background: #ffffff;
+                padding: 0;
+            }
+
+            .receipt {
+                box-shadow: none;
+                width: 58mm;
+                border-radius: 0;
+            }
+
+            .print-actions {
+                display: none;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+<body class="thermal-body">
+    <div class="receipt">
+        <h1 id="thermalBusinessName"></h1>
+        <p style="text-align:center;margin-bottom:10px;" id="thermalBusinessAddress"></p>
+        <p style="text-align:center;font-weight:700;">PAYMENT RECEIPT</p>
+
+        <div class="divider"></div>
+        <p>Official Receipt No: <span class="important" id="thermalOrNumber">--</span></p>
+        <p>Date Today: <span id="thermalDateToday">--</span></p>
+
+        <div class="divider"></div>
+        <p>Account: <span class="important" id="thermalAccount">--</span></p>
+        <p>Subscriber: <span id="thermalName">--</span></p>
+        <p>Plan: <span id="thermalPlan">--</span></p>
+        <p>Plan Amount: <span id="thermalPlanAmount">--</span></p>
+
+        <div class="divider"></div>
+        <p>Payment Summary:</p>
+        <div class="flex-between">
+            <span>Date of Payment:</span>
+            <span id="thermalPaymentDate">--</span>
+        </div>
+        <div class="flex-between">
+            <span>Due Date:</span>
+            <span id="thermalDueDate">--</span>
+        </div>
+        <div class="summary-rule"></div>
+        <p class="breakdown-title">Covered Billing Breakdown</p>
+        <div class="breakdown-list" id="thermalCoveredBillingBreakdown">
+            <div class="flex-between breakdown-empty">
+                <span>--</span>
+                <span>--</span>
+            </div>
+        </div>
+        <p class="breakdown-title">Balance Breakdown</p>
+        <div class="breakdown-list" id="thermalBalanceBreakdown">
+            <div class="flex-between breakdown-empty">
+                <span>--</span>
+                <span>--</span>
+            </div>
+        </div>
+        <div class="summary-rule"></div>
+        <div class="flex-between">
+            <span>Previous Balance:</span>
+            <span id="thermalPreviousBalance">--</span>
+        </div>
+        <div class="flex-between">
+            <span>Payment:</span>
+            <span id="thermalPaymentAmount" class="amount-emphasis">--</span>
+        </div>
+        <div class="flex-between summary-gap-balance-after">
+            <span>Balance After Payment:</span>
+            <span id="thermalBalanceAfterPayment">--</span>
+        </div>
+        <div class="summary-rule"></div>
+        <div class="flex-between summary-gap-before-total">
+            <span>Total Charge:</span>
+            <span id="thermalTotalCharge">--</span>
+        </div>
+        <div class="flex-between summary-gap-after-current">
+            <span>Current Balance:</span>
+            <span class="important amount-emphasis" id="thermalCurrentBalance">--</span>
+        </div>
+
+        <p class="footer-note" id="thermalFooterMessage">
+            Thank you for choosing <span id="thermalFooterBusinessName"></span>!<br>
+            <span id="thermalSupportLine"></span>
+        </p>
+
+        <div class="print-actions">
+            <button class="print-btn" type="button" onclick="window.print()">Print</button>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const BUSINESS_PROFILE_KEY = 'billing-business-profile';
+            const BUSINESS_PROFILE_API = '/api/business-profile';
+            const CUSTOMERS_API = '/api/customers';
+            const PAYMENTS_API_BASE = '/api/payments';
+
+            const DEFAULT_PROFILE = {
+                businessName: '',
+                address: '',
+                contact: ''
+            };
+
+            const DEFAULT_RECORD = {
+                planId: '',
+                planName: '',
+                planAmount: null,
+                balance: 0,
+                billDate: 'N/A',
+                dueDate: 'N/A',
+                status: 'Paid',
+                lastPaymentDate: 'N/A',
+                lastPaymentAmount: 0,
+                subscriberName: '',
+                history: []
+            };
+
+            const params = new URLSearchParams(window.location.search);
+            const accountNumber = String(params.get('account') || '').trim() || '00000000';
+            const targetPaymentId = String(
+                params.get('entry') ||
+                params.get('payment') ||
+                params.get('paymentId') ||
+                ''
+            ).trim();
+            const targetPaymentReference = String(
+                params.get('reference') ||
+                params.get('ref') ||
+                ''
+            ).trim();
+            const MONTHLY_BILL_LABEL_PREFIX = 'Monthly Bill for ';
+            const MONTH_YEAR_PATTERN = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b/i;
+
+            const mockPaymentStore = {
+                '10000001': {
+                    planId: 'home-fiber-100',
+                    planName: 'Home Fiber 100',
+                    planAmount: 1499,
+                    balance: 0,
+                    billDate: '2023-10-01',
+                    dueDate: '2023-10-28',
+                    status: 'Paid',
+                    lastPaymentDate: '2023-10-05',
+                    lastPaymentAmount: 1499,
+                    subscriberName: 'Juan Dela Cruz',
+                    history: [
+                        { id: 'pay-10000001-1772870993487', type: 'payment', date: '2023-10-05', amount: 1499, method: 'Auto-debit', reference: '1772870993487', recordedAt: '2023-10-05T08:05:00Z' }
+                    ]
+                }
+            };
+
+            const getEl = (id) => document.getElementById(id);
+            const setText = (id, value) => {
+                const el = getEl(id);
+                if (!el) return;
+                el.textContent = value == null || value === '' ? '--' : String(value);
+            };
+
+            const clearElement = (el) => {
+                if (!el) return;
+                while (el.firstChild) el.removeChild(el.firstChild);
+            };
+
+            const formatCurrency = (amount) => {
+                const num = Number(amount);
+                const safe = Number.isFinite(num) ? num : 0;
+                return `\u20B1${safe.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            };
+
+            const formatOptionalCurrency = (amount) => {
+                const num = Number(amount);
+                if (!Number.isFinite(num)) return '--';
+                return formatCurrency(num);
+            };
+
+            const formatBreakdownAmount = (amount) => {
+                const num = Number(amount);
+                if (!Number.isFinite(num)) return '--';
+                return num.toLocaleString('en-US', {
+                    minimumFractionDigits: Number.isInteger(num) ? 0 : 2,
+                    maximumFractionDigits: 2
+                });
+            };
+
+            const parseDate = (value) => {
+                if (!value || value === 'N/A') return null;
+                const parsed = new Date(value);
+                return Number.isNaN(parsed.getTime()) ? null : parsed;
+            };
+
+            const formatDate = (value, fallback = '--') => {
+                const parsed = parseDate(value);
+                if (!parsed) return fallback;
+                return parsed.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+            };
+
+            const formatDateToday = () => {
+                return new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+            };
+
+            const normalizeReferenceForDisplay = (value) => {
+                const raw = String(value || '').trim();
+                if (!raw) return '';
+                const prefixed = raw.match(/^(?:pay|cust|acct|inv|gcash|xendit)-.+?-\s*(\d{6,})$/i);
+                if (prefixed && prefixed[1]) return prefixed[1];
+                return raw;
+            };
+
+            const buildOfficialReceiptNumber = (account, lastPayment) => {
+                const candidates = [
+                    lastPayment?.reference,
+                    lastPayment?.id
+                ];
+                for (const candidate of candidates) {
+                    const parsed = normalizeReferenceForDisplay(candidate);
+                    if (parsed) return parsed;
+                }
+                const now = new Date();
+                const yyyy = now.getFullYear();
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                const dd = String(now.getDate()).padStart(2, '0');
+                const accountDigits = String(account || '').replace(/\D/g, '').slice(-6).padStart(6, '0');
+                return `OR-${yyyy}${mm}${dd}-${accountDigits}`;
+            };
+
+            const loadBusinessProfile = () => {
+                try {
+                    const raw = localStorage.getItem(BUSINESS_PROFILE_KEY);
+                    if (!raw) return { ...DEFAULT_PROFILE };
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object') {
+                        return { ...DEFAULT_PROFILE, ...parsed };
+                    }
+                } catch {
+                    // ignore local storage parsing errors
+                }
+                return { ...DEFAULT_PROFILE };
+            };
+
+            const saveBusinessProfile = (profile) => {
+                try {
+                    localStorage.setItem(BUSINESS_PROFILE_KEY, JSON.stringify(profile));
+                } catch {
+                    // ignore local storage write errors
+                }
+            };
+
+            const applyBusinessProfile = (profile) => {
+                const safeProfile = profile && typeof profile === 'object' ? profile : DEFAULT_PROFILE;
+                const businessName = String(safeProfile.businessName || DEFAULT_PROFILE.businessName || '').trim();
+                const address = String(safeProfile.address || '').trim();
+                const contact = String(safeProfile.contact || '').trim();
+
+                document.title = businessName ? `Thermal Receipt - ${businessName}` : 'Thermal Receipt';
+                const nameEl = getEl('thermalBusinessName');
+                const addressEl = getEl('thermalBusinessAddress');
+                const footerNameEl = getEl('thermalFooterBusinessName');
+                const supportEl = getEl('thermalSupportLine');
+                if (nameEl) nameEl.textContent = businessName;
+                if (addressEl) addressEl.textContent = address;
+                if (footerNameEl) footerNameEl.textContent = businessName;
+                if (supportEl) supportEl.textContent = contact ? `For support call: ${contact}` : '';
+            };
+
+            const fetchBusinessProfileFromApi = async () => {
+                try {
+                    const res = await fetch(BUSINESS_PROFILE_API, { credentials: 'include' });
+                    if (!res.ok) throw new Error(`status ${res.status}`);
+                    const data = await res.json();
+                    const merged = { ...DEFAULT_PROFILE, ...(data && typeof data === 'object' ? data : {}) };
+                    saveBusinessProfile(merged);
+                    return merged;
+                } catch {
+                    return null;
+                }
+            };
+
+            const ensureRecord = (account) => {
+                const key = String(account || '').trim();
+                if (!mockPaymentStore[key]) {
+                    mockPaymentStore[key] = { ...DEFAULT_RECORD };
+                }
+                return mockPaymentStore[key];
+            };
+
+            const getEntryTimestamp = (entry) => {
+                const direct = new Date(entry?.recordedAt || entry?.date || '').getTime();
+                if (Number.isFinite(direct) && direct > 0) return direct;
+                const id = String(entry?.id || '').trim();
+                const idSuffix = id.match(/(\d{9,})$/);
+                if (idSuffix && idSuffix[1]) {
+                    const parsed = Number(idSuffix[1]);
+                    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+                }
+                return 0;
+            };
+
+            const resolveEntryDirection = (entry) => {
+                const kind = String(entry?.kind || entry?.type || '').trim().toLowerCase();
+                const direction = String(entry?.direction || '').trim().toLowerCase();
+                if (direction === 'debit' || direction === 'credit') return direction;
+                if (kind === 'charge' || kind === 'debit' || kind === 'bill') return 'debit';
+                if (kind === 'payment' || kind === 'rebate' || kind === 'discount' || kind === 'credit') return 'credit';
+                return '';
+            };
+
+            const getLedgerSortTimestamp = (entry) => {
+                const direction = resolveEntryDirection(entry);
+                const primary = direction === 'debit'
+                    ? (entry?.date || entry?.recordedAt || entry?.createdAt || '')
+                    : (entry?.recordedAt || entry?.date || entry?.createdAt || '');
+                const primaryTime = new Date(primary).getTime();
+                if (Number.isFinite(primaryTime) && primaryTime > 0) return primaryTime;
+                return getEntryTimestamp(entry);
+            };
+
+            const computeRemainingBalanceFromHistory = (history) => {
+                if (!Array.isArray(history) || !history.length) return null;
+                let runningBalance = 0;
+                let hasLedgerEntry = false;
+                history.forEach((entry) => {
+                    const amountRaw = Number(entry?.amount);
+                    const amount = Number.isFinite(amountRaw) ? Math.abs(amountRaw) : NaN;
+                    if (!Number.isFinite(amount) || amount <= 0) return;
+                    const direction = resolveEntryDirection(entry);
+                    if (direction === 'debit') {
+                        runningBalance += amount;
+                        hasLedgerEntry = true;
+                        return;
+                    }
+                    if (direction === 'credit') {
+                        runningBalance -= amount;
+                        hasLedgerEntry = true;
+                    }
+                });
+                if (!hasLedgerEntry) return null;
+                return Number(Math.max(runningBalance, 0).toFixed(2));
+            };
+
+            const resolveLastPayment = (record) => {
+                if (!Array.isArray(record?.history)) return null;
+                const sorted = [...record.history].sort((left, right) => {
+                    const leftTs = getEntryTimestamp(left);
+                    const rightTs = getEntryTimestamp(right);
+                    return rightTs - leftTs;
+                });
+                return sorted.find((entry) => {
+                    const kind = String(entry?.kind || entry?.type || '').toLowerCase();
+                    const direction = String(entry?.direction || '').toLowerCase();
+                    if (kind === 'payment') return true;
+                return direction === 'credit' && kind !== 'charge';
+            }) || null;
+            };
+
+            const formatBillingMonth = (value) => {
+                const parsed = parseDate(value);
+                if (!parsed) return '';
+                return parsed.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            };
+
+            const normalizeBillingMonthLabel = (label) => {
+                const raw = String(label || '').trim();
+                if (!raw) return '';
+                const parsed = new Date(raw);
+                if (!Number.isNaN(parsed.getTime())) return formatBillingMonth(parsed.toISOString());
+                return raw;
+            };
+
+            const stripMonthlyBillPrefix = (label) => {
+                return String(label || '').trim().replace(/^Monthly\s+Bill\s+for\s+/i, '').trim();
+            };
+
+            const buildMonthlyBillLabel = (label) => {
+                const raw = stripMonthlyBillPrefix(label);
+                if (!raw) return '';
+                const monthMatch = raw.match(MONTH_YEAR_PATTERN);
+                const directDate = monthMatch ? null : parseDate(raw);
+                if (!monthMatch && !directDate) return '';
+                const normalized = monthMatch
+                    ? normalizeBillingMonthLabel(`${monthMatch[1]} 1, ${monthMatch[2]}`)
+                    : normalizeBillingMonthLabel(raw);
+                return normalized ? `${MONTHLY_BILL_LABEL_PREFIX}${normalized}` : '';
+            };
+
+            const normalizeBreakdownStorageLabel = (label) => {
+                const raw = String(label || '').trim();
+                if (!raw) return '';
+                return buildMonthlyBillLabel(raw) || raw;
+            };
+
+            const formatBreakdownLabelForPrint = (label) => {
+                const raw = String(label || '').trim();
+                if (!raw) return '--';
+                const stripped = stripMonthlyBillPrefix(raw);
+                const normalized = normalizeBillingMonthLabel(stripped);
+                return normalized || stripped || raw;
+            };
+
+            const resolveChargeMonth = (entry) => {
+                const direct = normalizeBillingMonthLabel(
+                    entry?.coveredMonth ||
+                    entry?.billingMonth ||
+                    entry?.billMonth ||
+                    entry?.month ||
+                    entry?.period ||
+                    entry?.billingPeriod ||
+                    ''
+                );
+                if (direct) return buildMonthlyBillLabel(direct);
+
+                const description = String(entry?.description || entry?.memo || entry?.notes || '').trim();
+                const monthMatch = description.match(MONTH_YEAR_PATTERN);
+                if (monthMatch) return buildMonthlyBillLabel(`${monthMatch[1]} 1, ${monthMatch[2]}`);
+
+                return buildMonthlyBillLabel(entry?.date || entry?.recordedAt || entry?.createdAt || '');
+            };
+
+            const pushBreakdownLine = (items, label, amount, isPartial = false) => {
+                const normalized = normalizeBreakdownStorageLabel(label);
+                if (!normalized) return;
+                const amountValue = Number(amount);
+                if (!Number.isFinite(amountValue) || amountValue <= 0) return;
+                const existing = items.find((item) => item.label === normalized);
+                if (existing) {
+                    existing.partial = existing.partial || Boolean(isPartial);
+                    existing.amount = Number((existing.amount + amountValue).toFixed(2));
+                    return;
+                }
+                items.push({
+                    label: normalized,
+                    amount: Number(amountValue.toFixed(2)),
+                    partial: Boolean(isPartial)
+                });
+            };
+
+            const applyPaymentToOpenCharges = (openCharges, amount, coveredItems = null) => {
+                let remainingPayment = Number(amount);
+                if (!Number.isFinite(remainingPayment) || remainingPayment <= 0) return 0;
+
+                for (const charge of openCharges) {
+                    if (remainingPayment <= 0) break;
+                    const remainingCharge = Number(charge.remaining);
+                    if (!Number.isFinite(remainingCharge) || remainingCharge <= 0) continue;
+                    const applied = Math.min(remainingCharge, remainingPayment);
+                    if (coveredItems && applied > 0) {
+                        const leavesUnpaidPortion = applied + 0.0001 < remainingCharge;
+                        pushBreakdownLine(coveredItems, charge.label, applied, leavesUnpaidPortion);
+                    }
+                    charge.remaining = Number((remainingCharge - applied).toFixed(2));
+                    remainingPayment = Number((remainingPayment - applied).toFixed(2));
+                }
+
+                return remainingPayment;
+            };
+
+            const renderBreakdownList = (id, items) => {
+                const root = getEl(id);
+                if (!root) return;
+                clearElement(root);
+                const list = Array.isArray(items) ? items.filter((item) => Number(item?.amount) > 0) : [];
+                if (!list.length) {
+                    const row = document.createElement('div');
+                    row.className = 'flex-between breakdown-empty';
+                    const label = document.createElement('span');
+                    label.textContent = '--';
+                    const amount = document.createElement('span');
+                    amount.textContent = '--';
+                    row.append(label, amount);
+                    root.appendChild(row);
+                    return;
+                }
+                list.forEach((item) => {
+                    const row = document.createElement('div');
+                    row.className = 'flex-between';
+                    const label = document.createElement('span');
+                    label.textContent = formatBreakdownLabelForPrint(item.label || item.month || item.period);
+                    const amount = document.createElement('span');
+                    amount.textContent = formatBreakdownAmount(item.amount);
+                    row.append(label, amount);
+                    root.appendChild(row);
+                });
+            };
+
+            const resolvePaymentDescriptionMonth = (entry) => {
+                const description = String(entry?.description || entry?.memo || entry?.notes || '').trim();
+                const monthMatch = description.match(MONTH_YEAR_PATTERN);
+                if (monthMatch) return buildMonthlyBillLabel(`${monthMatch[1]} 1, ${monthMatch[2]}`);
+                return '';
+            };
+
+            const resolveRequestedPayment = (record) => {
+                const history = Array.isArray(record?.history) ? record.history : [];
+                if (!history.length) return null;
+                if (targetPaymentId) {
+                    const byId = history.find((entry) => String(entry?.id || '').trim() === targetPaymentId);
+                    if (byId) return byId;
+                }
+                if (targetPaymentReference) {
+                    const byReference = history.find((entry) => {
+                        const reference = String(entry?.reference || '').trim();
+                        const orNumber = String(entry?.orNumber || entry?.or_number || '').trim();
+                        return reference === targetPaymentReference || orNumber === targetPaymentReference;
+                    });
+                    if (byReference) return byReference;
+                }
+                return null;
+            };
+
+            const resolveCoveredMonthFallback = (record, paymentEntry) => {
+                return resolvePaymentDescriptionMonth(paymentEntry)
+                    || buildMonthlyBillLabel(
+                        paymentEntry?.billingMonth ||
+                        paymentEntry?.coveredMonth ||
+                        paymentEntry?.month ||
+                        paymentEntry?.period ||
+                        paymentEntry?.date ||
+                        paymentEntry?.recordedAt ||
+                        record?.billingMonth ||
+                        record?.coveredMonth ||
+                        record?.billDate ||
+                        record?.dueDate ||
+                        record?.lastPaymentDate ||
+                        ''
+                    );
+            };
+
+            const computeReceiptBreakdown = (record, targetPaymentEntry = null) => {
+                const history = Array.isArray(record?.history) ? record.history : [];
+                const rows = history
+                    .map((entry, index) => {
+                        const amountRaw = Number(entry?.amount);
+                        const amount = Number.isFinite(amountRaw) ? Math.abs(amountRaw) : NaN;
+                        const direction = resolveEntryDirection(entry);
+                        return {
+                            entry,
+                            index,
+                            amount,
+                            direction,
+                            timestamp: getEntryTimestamp(entry),
+                            sortTimestamp: getLedgerSortTimestamp(entry)
+                        };
+                    })
+                    .filter((row) => Number.isFinite(row.amount) && row.amount > 0 && (row.direction === 'debit' || row.direction === 'credit'))
+                    .sort((left, right) => {
+                        if (left.sortTimestamp !== right.sortTimestamp) return left.sortTimestamp - right.sortTimestamp;
+                        return left.index - right.index;
+                    });
+
+                const result = {
+                    previousBalance: 0,
+                    paymentAmount: 0,
+                    balanceAfterPayment: 0,
+                    totalCharge: 0,
+                    currentBalance: Number(Math.max(Number(record?.balance) || 0, 0).toFixed(2)),
+                    coveredBreakdown: [],
+                    balanceBreakdown: []
+                };
+                if (!rows.length) return result;
+
+                const latestPaymentEntry = targetPaymentEntry || resolveLastPayment(record);
+                if (!latestPaymentEntry) return result;
+                const latestPaymentTs = getEntryTimestamp(latestPaymentEntry);
+                const latestPaymentAmount = Math.abs(Number(latestPaymentEntry?.amount) || 0);
+                const latestPaymentId = String(latestPaymentEntry?.id || '').trim();
+                const latestPaymentRef = String(latestPaymentEntry?.reference || '').trim();
+
+                let runningBeforePayment = 0;
+                let running = 0;
+                let paymentMatched = false;
+                let chargesAfterPayment = 0;
+                let runningAfterPayment = null;
+                const openCharges = [];
+                rows.forEach((row) => {
+                    const sameTimestamp = row.timestamp === latestPaymentTs && latestPaymentTs > 0;
+                    const sameAmount = Math.abs(row.amount - latestPaymentAmount) < 0.0001;
+                    const isSameDirection = row.direction === 'credit';
+                    const rowId = String(row.entry?.id || '').trim();
+                    const rowRef = String(row.entry?.reference || '').trim();
+                    const idMatch = latestPaymentId && rowId && latestPaymentId === rowId;
+                    const refMatch = latestPaymentRef && rowRef && latestPaymentRef === rowRef;
+                    const fallbackMatch = isSameDirection && sameAmount && sameTimestamp;
+                    const isLatestPaymentRow = !paymentMatched && (idMatch || refMatch || fallbackMatch);
+                    if (isLatestPaymentRow) {
+                        runningBeforePayment = running;
+                        paymentMatched = true;
+                    }
+
+                    if (row.direction === 'debit') {
+                        running += row.amount;
+                        openCharges.push({
+                            label: resolveChargeMonth(row.entry),
+                            remaining: Number(row.amount.toFixed(2))
+                        });
+                    } else {
+                        const coveredItems = isLatestPaymentRow ? result.coveredBreakdown : null;
+                        applyPaymentToOpenCharges(openCharges, row.amount, coveredItems);
+                        running -= row.amount;
+                    }
+
+                    if (isLatestPaymentRow) {
+                        runningAfterPayment = running;
+                    }
+
+                    if (paymentMatched && !isLatestPaymentRow && row.direction === 'debit') {
+                        chargesAfterPayment += row.amount;
+                    }
+                });
+
+                if (!paymentMatched) {
+                    const current = Number.isFinite(result.currentBalance) ? result.currentBalance : 0;
+                    result.paymentAmount = Number(latestPaymentAmount.toFixed(2));
+                    result.balanceAfterPayment = Number(Math.max(current, 0).toFixed(2));
+                    result.totalCharge = 0;
+                    result.previousBalance = Number(Math.max(current + result.paymentAmount, 0).toFixed(2));
+                    result.currentBalance = Number(Math.max(current, 0).toFixed(2));
+                    return result;
+                }
+
+                const ledgerCurrent = Number(Math.max(running, 0).toFixed(2));
+                const fallbackCurrent = Number(Math.max(Number(record?.balance) || 0, 0).toFixed(2));
+                result.previousBalance = Number(Math.max(runningBeforePayment, 0).toFixed(2));
+                result.paymentAmount = Number(latestPaymentAmount.toFixed(2));
+                result.balanceAfterPayment = Number(Math.max(
+                    Number.isFinite(runningAfterPayment) ? runningAfterPayment : (result.previousBalance - result.paymentAmount),
+                    0
+                ).toFixed(2));
+                result.totalCharge = Number(Math.max(chargesAfterPayment, 0).toFixed(2));
+                result.currentBalance = Number(Math.max(Number.isFinite(fallbackCurrent) ? fallbackCurrent : ledgerCurrent, 0).toFixed(2));
+                result.balanceBreakdown = openCharges
+                    .filter((charge) => Number(charge.remaining) > 0)
+                    .map((charge) => ({
+                        label: charge.label,
+                        amount: Number(Number(charge.remaining).toFixed(2)),
+                        partial: true
+                    }));
+                if (!result.coveredBreakdown.length) {
+                    pushBreakdownLine(result.coveredBreakdown, resolveCoveredMonthFallback(record, latestPaymentEntry), result.paymentAmount);
+                }
+                return result;
+            };
+
+            const populate = (record) => {
+                const safe = record && typeof record === 'object' ? record : { ...DEFAULT_RECORD };
+                const lastPayment = resolveRequestedPayment(safe) || resolveLastPayment(safe);
+                const breakdown = computeReceiptBreakdown(safe, lastPayment);
+                const paymentDate = lastPayment?.recordedAt || lastPayment?.date || safe.lastPaymentDate || '';
+
+                setText('thermalAccount', accountNumber);
+                setText('thermalName', safe.subscriberName || 'Subscriber');
+                setText('thermalPlan', safe.planName);
+                setText('thermalPlanAmount', formatOptionalCurrency(safe.planAmount));
+                setText('thermalPaymentDate', formatDate(paymentDate, 'No payment'));
+                setText('thermalDueDate', formatDate(safe.dueDate, 'No due date'));
+                renderBreakdownList('thermalCoveredBillingBreakdown', breakdown.coveredBreakdown);
+                setText('thermalPreviousBalance', formatCurrency(breakdown.previousBalance));
+                setText('thermalPaymentAmount', formatCurrency(breakdown.paymentAmount));
+                setText('thermalBalanceAfterPayment', formatCurrency(breakdown.balanceAfterPayment));
+                setText('thermalTotalCharge', formatCurrency(breakdown.totalCharge));
+                setText('thermalCurrentBalance', formatCurrency(breakdown.currentBalance));
+                renderBreakdownList('thermalBalanceBreakdown', breakdown.balanceBreakdown);
+                setText('thermalDateToday', formatDateToday());
+                setText('thermalOrNumber', buildOfficialReceiptNumber(accountNumber, lastPayment));
+            };
+
+            const hydrateFromCustomers = async (record) => {
+                try {
+                    const response = await fetch(CUSTOMERS_API, { credentials: 'include' });
+                    if (!response.ok) return record;
+                    const data = await response.json();
+                    const customers = Array.isArray(data) ? data : (Array.isArray(data?.customers) ? data.customers : []);
+                    const accountKey = String(accountNumber || '').trim();
+                    const customer = customers.find((item) => String(item?.accountNumber || item?.id || '').trim() === accountKey);
+                    if (!customer) return record;
+
+                    const fullName = String(customer.name || '').trim();
+                    record.subscriberName = fullName || `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || record.subscriberName;
+                    record.planName = customer.planName || record.planName;
+                    const customerPlanAmount = Number(customer.planAmount);
+                    if (Number.isFinite(customerPlanAmount)) {
+                        record.planAmount = customerPlanAmount;
+                    }
+                    record.planId = customer.planId || record.planId;
+                    record.planBilling = customer.planBilling || record.planBilling;
+                    record.billingDays = customer.billingDays || record.billingDays;
+                    record.billingMonths = customer.billingMonths || record.billingMonths;
+                    record.validity = customer.validity || customer.planValidity || record.validity;
+                    record.billDate = customer.billDate || record.billDate;
+                    record.dueDate = customer.dueDate || record.dueDate;
+
+                    const customerLastPaymentDate = customer.lastPaymentDate
+                        || customer.paymentSummary?.lastPaymentDate
+                        || null;
+                    const customerLastPaymentAmount = [
+                        customer.lastPaymentAmount,
+                        customer.paymentSummary?.lastPaymentAmount
+                    ].map((value) => Number(value)).find((value) => Number.isFinite(value));
+                    const customerLastPaymentMethod = customer.lastPaymentMethod
+                        || customer.paymentSummary?.lastPaymentMethod
+                        || customer.paymentMethod
+                        || '';
+                    const customerLastPaymentRef = customer.lastPaymentReference
+                        || customer.paymentSummary?.lastPaymentReference
+                        || '';
+
+                    const balanceCandidates = [
+                        customer.paymentSummary?.balance,
+                        customer.balance,
+                        customer.currentBalance,
+                        customer.outstandingBalance,
+                        customer.balanceAmount
+                    ];
+                    const resolvedBalance = balanceCandidates
+                        .map((value) => Number(value))
+                        .find((value) => Number.isFinite(value));
+                    if (Number.isFinite(resolvedBalance)) {
+                        record.balance = resolvedBalance;
+                    }
+
+                    if (customerLastPaymentDate) {
+                        record.lastPaymentDate = customerLastPaymentDate;
+                    }
+                    if (Number.isFinite(customerLastPaymentAmount)) {
+                        record.lastPaymentAmount = Math.abs(customerLastPaymentAmount);
+                    }
+                    if (customerLastPaymentDate || Number.isFinite(customerLastPaymentAmount) || customerLastPaymentMethod || customerLastPaymentRef) {
+                        const syntheticPayment = {
+                            id: customerLastPaymentRef ? `pay-${accountKey}-${customerLastPaymentRef}` : '',
+                            kind: 'payment',
+                            direction: 'credit',
+                            date: customerLastPaymentDate || undefined,
+                            recordedAt: customerLastPaymentDate || undefined,
+                            amount: Number.isFinite(customerLastPaymentAmount) ? Math.abs(customerLastPaymentAmount) : undefined,
+                            paymentMethod: customerLastPaymentMethod || undefined,
+                            reference: customerLastPaymentRef || undefined
+                        };
+                        const existingHistory = Array.isArray(record.history) ? record.history : [];
+                        const hasMatchingSnapshot = existingHistory.some((entry) => {
+                            const refA = String(entry?.reference || '').trim();
+                            const refB = String(syntheticPayment.reference || '').trim();
+                            if (refA && refB && refA === refB) return true;
+                            const tsA = getEntryTimestamp(entry);
+                            const tsB = getEntryTimestamp(syntheticPayment);
+                            const amountA = Number(entry?.amount);
+                            const amountB = Number(syntheticPayment.amount);
+                            return tsA && tsB && tsA === tsB && Number.isFinite(amountA) && Number.isFinite(amountB) && Math.abs(amountA) === Math.abs(amountB);
+                        });
+                        if (!hasMatchingSnapshot) {
+                            record.history = [syntheticPayment, ...existingHistory];
+                        }
+                    }
+                } catch {
+                    // ignore customer snapshot errors
+                }
+                return record;
+            };
+
+            const hydrateFromPayments = async (record) => {
+                try {
+                    const response = await fetch(`${PAYMENTS_API_BASE}/${encodeURIComponent(accountNumber)}`, { credentials: 'include' });
+                    if (!response.ok) return record;
+                    const payload = await response.json();
+                    const history = Array.isArray(payload?.history)
+                        ? payload.history
+                        : (Array.isArray(payload) ? payload : []);
+                    if (!history.length) return record;
+
+                    record.history = history;
+                    const computedRemaining = computeRemainingBalanceFromHistory(history);
+                    if (Number.isFinite(computedRemaining)) {
+                        record.balance = computedRemaining;
+                    }
+                    const latestPayment = resolveLastPayment(record);
+                    if (!latestPayment) return record;
+
+                    const paymentAmount = Number(latestPayment.amount);
+                    if (Number.isFinite(paymentAmount)) {
+                        record.lastPaymentAmount = Math.abs(paymentAmount);
+                    }
+                    record.lastPaymentDate = latestPayment.recordedAt || latestPayment.date || record.lastPaymentDate;
+                } catch {
+                    // ignore payment history errors
+                }
+                return record;
+            };
+
+            const init = async () => {
+                applyBusinessProfile({ ...DEFAULT_PROFILE });
+                const apiProfile = await fetchBusinessProfileFromApi();
+                if (apiProfile) applyBusinessProfile(apiProfile);
+
+                const record = ensureRecord(accountNumber);
+                await hydrateFromCustomers(record);
+                await hydrateFromPayments(record);
+                populate(record);
+            };
+
+            init();
+        })();
+    </script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

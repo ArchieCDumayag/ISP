@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Settings - Dante Point To Point Pisonet</title>
+    <script src="theme-init.js?v=2.6"></script>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/accounts.css?v=4.5">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main>
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Control Center</p>
+                        <h1>Settings &amp; Integrations</h1>
+                        <p class="subtitle">Keep your billing platform secure, branded, and connected to the services you rely on.</p>
+                    </div>
+                </section>
+
+                <div class="settings-content">
+                        <section id="accounts" class="settings-panel">
+                            <header class="panel-header">
+                                <div>
+                                    <h2>Accounts</h2>
+                                    <p>Manage who can access the system and what they can do.</p>
+                                </div>
+                                <div class="panel-actions">
+                                    <button class="ghost-btn" type="button" id="invite-user-btn">
+                                        <i class="ti ti-user-plus" aria-hidden="true"></i> Add user
+                                    </button>
+                                </div>
+                            </header>
+
+                            <div class="table-wrapper">
+                                <table class="settings-table" aria-label="System accounts">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Account ID</th>
+                                            <th scope="col">Name</th>
+                                            <th scope="col">Role</th>
+                                            <th scope="col">Last Login</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col">Created</th>
+                                            <th scope="col">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="accounts-table-body">
+                                        <!-- Populated by public/accounts.js -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section id="xendit" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--xendit" aria-hidden="true">
+                                        <img class="integration-heading-logo__image" src="/img/integrations/xendit.png" alt="">
+                                    </span>
+                                    <div>
+                                        <h2>Xendit Payment Gateway</h2>
+                                        <p>Configure payment processing and transaction fees.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="xendit-integration-status" hidden aria-hidden="true">🔴 Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="xendit" aria-label="Edit Xendit settings" title="Edit Xendit settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="xendit-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">API Key</p>
+                                            <p class="summary-value" id="xendit-display-api-key">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Transaction Fee</p>
+                                            <p class="summary-value" id="xendit-display-fee">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Webhook Secret</p>
+                                            <p class="summary-value" id="xendit-display-webhook">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="xendit-editor" hidden>
+                                <form class="settings-form" id="xendit-form" autocomplete="off">
+                                    <div class="form-grid">
+                                        <label class="form-field">
+                                            <span>API Key</span>
+                                            <input type="text" name="apiKey" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Transaction Fee</span>
+                                            <div class="input-with-addon">
+                                                <span>&#8369;</span>
+                                                <input type="number" name="transactionFee" min="0" step="0.01">
+                                            </div>
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Webhook Secret</span>
+                                            <input type="password" name="webhookSecret" autocomplete="new-password">
+                                        </label>
+                                    </div>
+                                    <div class="form-footer">
+                                        <div class="form-buttons" style="justify-content: center;">
+                                            <button class="primary-btn save-btn" type="button">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <section id="semaphore" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--semaphore" aria-hidden="true">
+                                        <img class="integration-heading-logo__image" src="/img/integrations/semaphore.png" alt="">
+                                    </span>
+                                    <div>
+                                        <h2>Semaphore SMS</h2>
+                                        <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">Configure SMS alerts for billing reminders, outage notices, and payment confirmations.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="semaphore-integration-status" hidden aria-hidden="true">🔴 Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="semaphore" aria-label="Edit Semaphore settings" title="Edit Semaphore settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="semaphore-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">API Key</p>
+                                            <p class="summary-value" id="semaphore-display-api-key">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Sender Name</p>
+                                            <p class="summary-value" id="semaphore-display-sender">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="semaphore-editor" hidden>
+                                <form class="settings-form" id="semaphore-form">
+                                    <div class="form-grid">
+                                        <label class="form-field">
+                                            <span>API Key</span>
+                                            <input type="text" name="apiKey">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Sender Name</span>
+                                            <div class="input-with-addon">
+                                                <span>SMS</span>
+                                                <input type="text" name="senderName" maxlength="11">
+                                            </div>
+                                        </label>
+                                    </div>
+                                    <div class="form-footer">
+                                        <div class="form-buttons" style="justify-content: center;">
+                                            <button class="primary-btn save-btn" type="button">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <section id="email" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--email" aria-hidden="true">
+                                        <img class="integration-heading-logo__image" src="/img/integrations/email.png" alt="">
+                                    </span>
+                                    <div>
+                                        <h2>Email SMTP</h2>
+                                        <p>Configure SMTP delivery for email notifications and reminders.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="email-integration-status" hidden aria-hidden="true">🔴 Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="email" aria-label="Edit Email SMTP settings" title="Edit Email SMTP settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="email-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">SMTP Host</p>
+                                            <p class="summary-value" id="email-display-host">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Email Address</p>
+                                            <p class="summary-value" id="email-display-username">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Hostname</p>
+                                            <p class="summary-value" id="email-display-from-name">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">App Password</p>
+                                            <p class="summary-value" id="email-display-password">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="email-editor" hidden>
+                                <form class="settings-form" id="email-form" autocomplete="off">
+                                    <div class="form-grid">
+                                        <label class="form-field">
+                                            <span>SMTP Host</span>
+                                            <input type="text" name="host">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Email Address</span>
+                                            <input type="email" name="username" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Hostname</span>
+                                            <input type="text" name="fromName">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Email App Password</span>
+                                            <input type="password" name="password" autocomplete="new-password">
+                                        </label>
+                                    </div>
+                                    <div class="form-footer">
+                                        <div class="form-buttons" style="justify-content: center;">
+                                            <button class="primary-btn save-btn" type="button">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <section id="genieacs" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--genieacs" aria-hidden="true">
+                                        <i class="integration-heading-logo__icon ti ti-server" aria-hidden="true"></i>
+                                    </span>
+                                    <div>
+                                        <h2>GenieACS</h2>
+                                        <p>Set the GenieACS server address used by the network management page.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="genieacs-integration-status" hidden aria-hidden="true">Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="genieacs" aria-label="Edit GenieACS settings" title="Edit GenieACS settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="genieacs-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">IP Address / Host</p>
+                                            <p class="summary-value" id="genieacs-display-host">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">UI URL</p>
+                                            <p class="summary-value" id="genieacs-display-ui-url">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">NBI URL</p>
+                                            <p class="summary-value" id="genieacs-display-nbi-url">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Username</p>
+                                            <p class="summary-value" id="genieacs-display-username">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Password</p>
+                                            <p class="summary-value" id="genieacs-display-password">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="genieacs-editor" hidden>
+                                <form class="settings-form" id="genieacs-form" autocomplete="off">
+                                    <div class="form-grid">
+                                        <label class="form-field form-field--checkbox">
+                                            <span>Enable GenieACS page</span>
+                                            <input type="checkbox" name="enabled">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>IP Address / Host</span>
+                                            <input type="text" name="host" placeholder="192.168.1.10">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Protocol</span>
+                                            <select name="protocol">
+                                                <option value="http">HTTP</option>
+                                                <option value="https">HTTPS</option>
+                                            </select>
+                                        </label>
+                                        <label class="form-field">
+                                            <span>UI Port</span>
+                                            <input type="number" name="uiPort" min="1" max="65535" placeholder="3000">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>NBI Port</span>
+                                            <input type="number" name="nbiPort" min="1" max="65535" placeholder="7557">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Username</span>
+                                            <input type="text" name="username" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Password</span>
+                                            <input type="password" name="password" autocomplete="new-password">
+                                        </label>
+                                    </div>
+                                    <div class="form-footer">
+                                        <div class="form-buttons" style="justify-content: center;">
+                                            <button class="primary-btn save-btn" type="button">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <section id="mikrotik" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--mikrotik" aria-hidden="true">
+                                        <img class="integration-heading-logo__image" src="/img/integrations/mikrotik.png" alt="">
+                                    </span>
+                                    <div>
+                                        <h2>MikroTik</h2>
+                                        <p>Store router access for API-driven tasks.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="mikrotik-integration-status" hidden aria-hidden="true">🔴 Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="mikrotik" aria-label="Edit MikroTik settings" title="Edit MikroTik settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="mikrotik-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Status</p>
+                                            <p class="summary-value" id="mikrotik-display-status">Disabled</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Routers</p>
+                                            <p class="summary-value" id="mikrotik-display-routers">0</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Default Router</p>
+                                            <p class="summary-value" id="mikrotik-display-default">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Primary Address</p>
+                                            <p class="summary-value" id="mikrotik-display-primary-address">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="mikrotik-editor" hidden>
+                                <div class="mikrotik-toggle-row">
+                                    <label class="switch">
+                                        <input type="checkbox" id="mikrotik-enable-toggle" />
+                                        <span class="switch-slider"></span>
+                                    </label>
+                                    <div class="mikrotik-toggle-copy">
+                                        <p>Enable MikroTik integration</p>
+                                        <small>Toggle to show PPPoE sync, router info, and billing automation.</small>
+                                    </div>
+                                </div>
+                                <div id="mikrotik-disabled-message" class="mikrotik-disabled-message" style="display:none;">
+                                    <p>MikroTik integration is disabled. Save valid router credentials and enable the toggle to expose PPPoE features.</p>
+                                </div>
+                                <form class="settings-form" id="mikrotik-form" autocomplete="off">
+                                    <div class="mikrotik-router-controls">
+                                        <div class="form-field">
+                                            <span>Default router</span>
+                                            <div class="select-wrapper">
+                                                <select id="mikrotik-default-select" name="defaultId">
+                                                    <option value="">Loading routers...</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <button class="ghost-btn" type="button" id="mikrotik-add-router">
+                                            <i class="ti ti-plus" aria-hidden="true"></i> Add router
+                                        </button>
+                                    </div>
+                                    <div class="table-wrapper mikrotik-table-wrapper">
+                                        <table class="settings-table mikrotik-table" aria-label="MikroTik routers">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Label</th>
+                                                    <th scope="col">Address</th>
+                                                    <th scope="col">Username</th>
+                                                    <th scope="col">Port</th>
+                                                    <th scope="col">Password</th>
+                                                    <th scope="col">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="mikrotik-router-body">
+                                                <tr class="mikrotik-empty-row">
+                                                    <td colspan="6">Loading routers...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <section id="ip-browser" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--ip-browser" aria-hidden="true">
+                                        <i class="integration-heading-logo__icon ti ti-window" aria-hidden="true"></i>
+                                    </span>
+                                    <div>
+                                        <h2>IP Browser</h2>
+                                        <p>Auto-submit ONU/router login pages opened from assigned IP links.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="ip-browser-integration-status" hidden aria-hidden="true">Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="ipBrowser" aria-label="Edit IP Browser settings" title="Edit IP Browser settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="ip-browser-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Status</p>
+                                            <p class="summary-value" id="ip-browser-display-status">Disabled</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Username</p>
+                                            <p class="summary-value" id="ip-browser-display-username">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Password</p>
+                                            <p class="summary-value" id="ip-browser-display-password">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Submit Delay</p>
+                                            <p class="summary-value" id="ip-browser-display-delay">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="ipBrowser-editor" hidden>
+                                <form class="settings-form" id="ip-browser-form" autocomplete="off">
+                                    <div class="form-grid">
+                                        <label class="form-field form-field--checkbox">
+                                            <span>Enable auto-login</span>
+                                            <input type="checkbox" name="autoLoginEnabled">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Username</span>
+                                            <input type="text" name="username" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Password</span>
+                                            <input type="password" name="password" autocomplete="new-password">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Submit delay (ms)</span>
+                                            <input type="number" name="delayMs" min="0" max="5000" step="100" placeholder="600">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Username selector</span>
+                                            <input type="text" name="usernameSelector" autocomplete="off" spellcheck="false" placeholder="input[name=username]">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Password selector</span>
+                                            <input type="text" name="passwordSelector" autocomplete="off" spellcheck="false" placeholder="input[type=password]">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Submit selector</span>
+                                            <input type="text" name="submitSelector" autocomplete="off" spellcheck="false" placeholder="button[type=submit]">
+                                        </label>
+                                    </div>
+                                    <div class="form-footer">
+                                        <div class="form-buttons" style="justify-content: center;">
+                                            <button class="primary-btn save-btn" type="button">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <section id="gcash" class="settings-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--gcash" aria-hidden="true">
+                                        <img class="integration-heading-logo__image" src="/img/integrations/gcash.png" alt="">
+                                    </span>
+                                    <div>
+                                        <h2>GCASH ACCOUNT</h2>
+                                        <p>Set the GCash account details and QR code used for customer payments.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--not-configured" id="gcash-integration-status" hidden aria-hidden="true">🔴 Not Configured</span>
+                                    <button class="ghost-btn ghost-btn--icon edit-integration-btn" type="button" data-integration-edit="gcash" aria-label="Edit GCash settings" title="Edit GCash settings">
+                                        <i class="ti ti-edit" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </header>
+                            <div class="integration-overview">
+                                <div class="integration-summary" id="gcash-display">
+                                    <div class="integration-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Account Name</p>
+                                            <p class="summary-value" id="gcash-display-name">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Account Number</p>
+                                            <p class="summary-value" id="gcash-display-number">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">QR Code</p>
+                                            <p class="summary-value" id="gcash-display-qr">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="integration-editor" id="gcash-editor" hidden>
+                                <form class="settings-form gcash-settings-form" id="gcash-form">
+                                    <div class="form-grid">
+                                        <label class="form-field">
+                                            <span>Account Name</span>
+                                            <input
+                                                type="text"
+                                                id="gcashAccountName"
+                                                name="accountName"
+                                               
+                                                aria-label="GCash account name">
+                                        </label>
+                                        <label class="form-field">
+                                            <span>Account Number</span>
+                                            <input
+                                                type="text"
+                                                id="gcashAccountNumber"
+                                                name="accountNumber"
+                                                inputmode="numeric"
+                                               
+                                                aria-label="GCash account number">
+                                        </label>
+                                        <div class="form-field form-field--gcash-qr">
+                                            <span>QR Code</span>
+                                            <div class="gcash-qr-upload">
+                                                <input type="file" id="gcashQrCodeFile" accept="image/png,image/jpeg,image/webp">
+                                                <input type="hidden" id="gcashQrCodeImageData" name="qrCodeImageData">
+                                                <div class="gcash-qr-preview-wrap" id="gcashQrPreviewWrap">
+                                                    <img id="gcashQrPreview" class="gcash-qr-preview" alt="GCash QR code preview">
+                                                    <p class="gcash-qr-empty" id="gcashQrEmpty">No QR code uploaded.</p>
+                                                </div>
+                                                <div class="gcash-qr-actions">
+                                                    <button class="ghost-btn" type="button" id="gcashClearQrBtn">
+                                                        <i class="ti ti-trash" aria-hidden="true"></i> Clear QR
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="form-footer">
+                                        <div class="form-buttons" style="justify-content: center;">
+                                            <button class="primary-btn save-btn" type="button">Save</button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+
+                        <!-- Business profile section removed per request -->
+
+                        <!-- System safeguards section removed per request -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- User Modal -->
+    <div id="userModal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 id="modalTitle">Add New User</h3>
+                <button type="button" class="modal-close" id="closeModal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="userForm" class="modal-form">
+                    <div class="form-field">
+                        <label for="modalUsername">Username</label>
+                        <input type="text" id="modalUsername" name="username" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="modalPassword">Password</label>
+                        <div class="secure-input-wrap">
+                            <input type="password" id="modalPassword" name="password" required>
+                            <button type="button" class="ghost-btn ghost-btn--icon secure-input-toggle" id="modalPasswordToggle" aria-label="Show password" title="Show password">
+                                <i class="ti ti-eye" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <p class="field-hint" id="modalPasswordHint">Set a password for this user.</p>
+                    </div>
+                    <div class="form-field">
+                        <label>Roles</label>
+                        <input type="hidden" id="modalRole" name="role" required>
+                        <div class="role-checklist" id="modalRoleGroup" aria-label="Account roles">
+                            <label class="role-check">
+                                <input type="checkbox" name="roles" value="Admin" data-modal-role>
+                                <span>Admin</span>
+                            </label>
+                            <label class="role-check">
+                                <input type="checkbox" name="roles" value="Collector" data-modal-role>
+                                <span>Collector</span>
+                            </label>
+                            <label class="role-check">
+                                <input type="checkbox" name="roles" value="Technician" data-modal-role>
+                                <span>Technician</span>
+                            </label>
+                            <label class="role-check">
+                                <input type="checkbox" name="roles" value="User" data-modal-role>
+                                <span>User</span>
+                            </label>
+                        </div>
+                        <p class="field-hint">Check all roles this account can use.</p>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="ghost-btn" id="cancelModal">Cancel</button>
+                <button type="button" class="primary-btn" id="saveUser">Save User</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MikroTik Modal -->
+    <div id="mikrotikModal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 id="mikrotikModalTitle">Add MikroTik Router</h3>
+                <button type="button" class="modal-close" id="closeMikrotikModal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="mikrotikModalForm" class="modal-form">
+                    <div class="form-field">
+                        <label for="mikrotikLabel">Label</label>
+                        <input type="text" id="mikrotikLabel" name="label">
+                    </div>
+                    <div class="form-field">
+                        <label for="mikrotikAddress">Address</label>
+                        <input type="text" id="mikrotikAddress" name="address" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="mikrotikUsername">Username</label>
+                        <input type="text" id="mikrotikUsername" name="username" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="mikrotikPassword">Password</label>
+                        <input type="password" id="mikrotikPassword" name="password" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="mikrotikPort">Port (optional)</label>
+                        <input type="number" id="mikrotikPort" name="port" min="1">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <p id="mikrotikModalTestResult" class="modal-test-result" aria-live="polite"></p>
+                <div class="modal-footer-actions">
+                    <button type="button" class="ghost-btn" id="testMikrotikRouter">Test Connection</button>
+                    <button type="button" class="ghost-btn" id="cancelMikrotikModal">Cancel</button>
+                    <button type="button" class="primary-btn" id="saveMikrotikRouter">Save Router</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="integrationEditModal" class="modal-overlay">
+        <div class="modal-container modal-container--integration">
+            <div class="modal-header">
+                <h3 id="integrationModalTitle">Edit Integration</h3>
+                <button type="button" class="modal-close" id="closeIntegrationModal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="integrationModalBody"></div>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="accounts.js?v=3.5"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+
+</html>
+
+
+
+
+
+
+
+

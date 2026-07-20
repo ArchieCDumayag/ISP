@@ -1,0 +1,42 @@
+
+body.theme-dark .app-shell {
+    background: linear-gradient(180deg, #050b16 0%, #0b1526 100%);
+}
+
+body.modal-active .app-shell,
+body.modal-active .app-shell * {
+    filter: none !important;
+    backdrop-filter: none !important;
+}
+
+body.modal-active .app-shell {
+    pointer-events: none;
+    user-select: none;
+}
+body.modal-active .app-shell * {
+    pointer-events: none;
+    user-select: none;
+}
+
+body.theme-dark .app-main {
+    background: transparent;
+}
+
+body.theme-dark .app-main main {
+    background: transparent;
+}
+
+body.theme-dark .page {
+    color: #dbe4ff;
+}
+
+body.theme-dark .page-title .subtitle {
+    color: #94a3c7;
+}
+
+/* Sidebar footer spacing */
+.sidebar-footer {
+    padding-top: 20px;
+    padding-bottom: 12px;
+    text-align: center;
+}

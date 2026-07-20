@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Customer Archive - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/customer-archive.css?v=1.1">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page customer-archive-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Customer Management</p>
+                        <h1>Customer Archive</h1>
+                        <p class="subtitle">Deleted customers and deleted drafts stay here for 30 days before permanent cleanup.</p>
+                    </div>
+                </section>
+
+                <section class="section-frame archive-panel">
+                    <div class="archive-notice">
+                        <div class="archive-notice__icon">
+                            <i class="ti ti-archive" aria-hidden="true"></i>
+                        </div>
+                        <div class="archive-notice__content">
+                            <strong>Safety window enabled</strong>
+                            <p>Archived customers and drafts can still be restored here before their 30-day retention window ends.</p>
+                        </div>
+                    </div>
+
+                    <div class="archive-toolbar">
+                        <label class="archive-search-field" for="archiveSearch">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input
+                                type="search"
+                                id="archiveSearch"
+                                placeholder="Search by account, name, plan, or area"
+                                autocomplete="off"
+                                aria-label="Search archived records"
+                            >
+                        </label>
+                        <div class="archive-toolbar__actions">
+                            <div class="page-size-control">
+                                <label for="archivePageSize">Show</label>
+                                <div class="select-wrapper">
+                                    <select id="archivePageSize" name="archivePageSize">
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="button" class="ghost-btn ghost-btn--danger" id="archiveDeleteSelectedBtn" disabled>
+                                <i class="ti ti-trash" aria-hidden="true"></i> Delete selected
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper archive-table-wrap">
+                        <table class="archive-table">
+                            <colgroup>
+                                <col class="col-select">
+                                <col class="col-account">
+                                <col class="col-customer">
+                                <col class="col-plan">
+                                <col class="col-archive">
+                                <col class="col-purge">
+                                <col class="col-actions">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th class="select-col">
+                                        <input type="checkbox" id="archiveSelectAll" aria-label="Select all archived records on this page">
+                                    </th>
+                                    <th class="account-col">Account Number</th>
+                                    <th>Customer</th>
+                                    <th>Plan / Area</th>
+                                    <th>Archived At</th>
+                                    <th>Auto Delete</th>
+                                    <th class="actions-col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="archiveTableBody">
+                                <tr>
+                                    <td colspan="7" class="archive-empty">Loading archived records...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="table-footer" id="archiveFooter">
+                        <div class="footer-summary" id="archiveSummary">Showing 0 of 0 archived records</div>
+                        <div class="footer-controls">
+                            <button type="button" class="footer-btn" id="archivePrev" aria-label="Previous page" disabled>&#8249;</button>
+                            <span class="footer-page-info" id="archivePageInfo">Page 1 of 1</span>
+                            <button type="button" class="footer-btn" id="archiveNext" aria-label="Next page" disabled>&#8250;</button>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/confirm-dialog.js?v=1.0"></script>
+    <script src="js/customer-archive.js?v=1.3"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

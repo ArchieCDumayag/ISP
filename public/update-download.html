@@ -1,0 +1,3444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>System Setup & Update Center - Dante Point To Point Pisonet</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+  <script src="theme-init.js?v=2.6"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f0d;
+      --bg-accent: #0f1b15;
+      --panel: #f6f4ef;
+      --panel-strong: #ffffff;
+      --ink: #1b2520;
+      --muted: #596960;
+      --accent: #0f766e;
+      --accent-strong: #0b5f58;
+      --accent-soft: rgba(15, 118, 110, 0.14);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.12);
+      --line: #dbe3dd;
+      --focus: #2563eb;
+      --danger: #b42318;
+      --ok: #027a48;
+      --shadow: 0 24px 48px rgba(10, 20, 16, 0.24);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+      color: var(--ink);
+      background: linear-gradient(130deg, #0a0f0d 0%, #0f1c15 55%, #0b0f0d 100%);
+      padding: 28px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body.modal-active {
+      overflow: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      width: 420px;
+      height: 420px;
+      border-radius: 50%;
+      filter: blur(0px);
+      opacity: 0.5;
+      z-index: -1;
+    }
+
+    body::before {
+      top: -120px;
+      left: -120px;
+      background: radial-gradient(circle, rgba(15, 118, 110, 0.55), transparent 70%);
+    }
+
+    body::after {
+      bottom: -160px;
+      right: -120px;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.45), transparent 70%);
+    }
+
+    .shell {
+      max-width: 100%;
+      width: 100%;
+      margin: 0 auto;
+      background: rgba(246, 244, 239, 0.98);
+      border-radius: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      box-shadow: var(--shadow);
+      padding: 26px;
+      display: grid;
+      gap: 22px;
+      backdrop-filter: blur(6px);
+    }
+
+    .page-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .head-copy h1,
+    .section-title {
+      font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.9rem, 3vw, 2.6rem);
+      letter-spacing: -0.02em;
+    }
+
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 600px;
+    }
+
+    .head-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.14);
+      color: var(--accent-strong);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    .sidebar {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+      position: sticky;
+      top: 24px;
+      height: fit-content;
+    }
+
+    .content {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .card,
+    .mysql-card {
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 18px;
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .card.hero {
+      position: relative;
+      background: linear-gradient(180deg, rgba(15, 118, 110, 0.08), rgba(255, 255, 255, 1) 45%);
+      border: 1px solid rgba(15, 118, 110, 0.25);
+    }
+
+    .card.hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 18px;
+      border-left: 6px solid var(--accent);
+      pointer-events: none;
+    }
+
+    .card.compact {
+      gap: 10px;
+    }
+
+    .card-divider {
+      height: 1px;
+      width: 100%;
+      background: var(--line);
+      margin: 6px 0;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 1.08rem;
+      color: var(--ink);
+    }
+
+    .section-sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .steps {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }
+
+    .steps li {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .steps span {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--accent-strong);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    .step-copy strong {
+      display: block;
+      color: var(--ink);
+      font-size: 0.92rem;
+      margin-bottom: 2px;
+    }
+
+    .callout {
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #f3f6f2;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+
+    .callout.warn {
+      background: var(--warning-soft);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #8a5700;
+    }
+
+    .update-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      gap: 16px;
+      align-items: end;
+    }
+
+    .update-grid .full-row {
+      grid-column: 1 / -1;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .box {
+      border: 1px solid var(--line);
+      background: #f2f5f2;
+      border-radius: 12px;
+      padding: 14px;
+      line-height: 1.45;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .actions.center {
+      justify-content: center;
+    }
+
+    .actions.stack {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .actions.stack.center {
+      align-items: center;
+    }
+
+    .upload-row {
+      display: grid;
+      gap: 8px;
+    }
+
+    .upload-row label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .upload-row input[type="file"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 12px;
+      padding: 11px 12px;
+      font: inherit;
+      color: var(--ink);
+    }
+    button,
+    .link-btn {
+      border: 0;
+      border-radius: 12px;
+      padding: 11px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.08s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    button:active,
+    .link-btn:active {
+      transform: translateY(1px);
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #fff;
+      min-width: 170px;
+      box-shadow: 0 12px 24px rgba(15, 118, 110, 0.24);
+    }
+
+    .primary:hover {
+      background: var(--accent-strong);
+    }
+
+    .ghost {
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: #fff;
+      min-width: 170px;
+    }
+
+    .link-btn {
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: #fff;
+      min-width: 170px;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .result {
+      min-height: 24px;
+      font-size: 0.94rem;
+      font-weight: 600;
+    }
+
+    .result.center {
+      text-align: center;
+    }
+
+    .result.error {
+      color: var(--danger);
+    }
+
+    .result.ok {
+      color: var(--ok);
+    }
+
+    .log {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--muted);
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+
+    .check-row {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 10px;
+      align-items: start;
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--ink);
+      justify-items: start;
+      text-align: left;
+      width: 100%;
+    }
+
+    .check-row input {
+      accent-color: var(--accent);
+      margin-top: 2px;
+    }
+
+    .check-label {
+      display: block;
+      text-align: left;
+    }
+
+    .mysql-status {
+      border: 1px dashed var(--line);
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .mysql-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .field--wide {
+      grid-column: 1 / -1;
+    }
+
+    .field label {
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .field input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 11px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .field input:focus {
+      border-color: var(--focus);
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+    }
+
+    .owner-modal__dialog--wide {
+      width: min(1080px, 96vw);
+    }
+
+    .app-downloads-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .app-download-slot {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      background: #f8fafc;
+    }
+
+    .app-download-slot__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .app-download-slot__eyebrow {
+      margin: 0 0 4px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .app-download-slot__title {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--ink);
+    }
+
+    .app-download-slot__preview {
+      width: 72px;
+      height: 72px;
+      flex-shrink: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-download-slot__preview-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .app-download-slot__meta {
+      display: grid;
+      gap: 6px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    .app-download-slot__meta-line {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .hint {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .command-block {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #f8faf8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--ink);
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .owner-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(11, 15, 13, 0.58);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 1200;
+    }
+
+    .owner-modal.show {
+      display: flex;
+    }
+
+    .owner-modal__dialog {
+      width: min(760px, 96vw);
+      max-height: 88vh;
+      overflow: hidden;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 32px 54px rgba(10, 20, 16, 0.28);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .owner-modal__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f7faf8;
+    }
+
+    .owner-modal__title {
+      margin: 0;
+      font-size: 1.05rem;
+      font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+      color: var(--ink);
+    }
+
+    .owner-modal__subtitle {
+      margin: 6px 0 0;
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .owner-modal__close {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 10px;
+      min-width: 38px;
+      min-height: 38px;
+      padding: 6px 8px;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .owner-modal__body {
+      padding: 16px 18px;
+      overflow: auto;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .owner-modal__footer {
+      padding: 12px 18px 16px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: #fcfdfc;
+    }
+
+    .scope-grid {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fbfdfb;
+    }
+
+    .scope-option {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 9px;
+      align-items: start;
+      font-size: 0.88rem;
+      color: var(--ink);
+    }
+
+    .scope-option input {
+      margin-top: 2px;
+      accent-color: var(--accent);
+    }
+
+    .scope-option strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+
+    .scope-option small {
+      display: block;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .page-checklist-wrap {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #ffffff;
+      display: grid;
+      gap: 8px;
+      max-height: 260px;
+      overflow: auto;
+    }
+
+    .page-checklist-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    .page-checklist-actions button {
+      min-width: 120px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #f8faf8;
+      color: var(--ink);
+    }
+
+    .page-checklist-row {
+      display: grid;
+      grid-template-columns: 16px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      font-size: 0.86rem;
+      color: var(--ink);
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(89, 105, 96, 0.24);
+    }
+
+    .page-checklist-row:last-child {
+      border-bottom: 0;
+    }
+
+    .page-checklist-row input {
+      accent-color: var(--accent);
+    }
+
+    .page-checklist-pill {
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+
+    .modal-note {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .modal-result {
+      min-height: 20px;
+      margin: 0;
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    .modal-result.ok {
+      color: var(--ok);
+    }
+
+    .modal-result.error {
+      color: var(--danger);
+    }
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .update-grid,
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .page-head {
+        grid-template-columns: 1fr;
+      }
+
+      .head-actions {
+        align-items: flex-start;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      .actions > * {
+        width: 100%;
+      }
+
+      .mysql-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <style>
+    body.owner-update-page {
+      margin: 0;
+      min-height: 100vh;
+      background: #f0f4fb;
+      color: #0f172a;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 24px;
+    }
+
+    body.owner-update-page::before,
+    body.owner-update-page::after {
+      display: none;
+    }
+
+    body.owner-update-page .shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0;
+      gap: 18px;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      backdrop-filter: none;
+    }
+
+    body.owner-update-page .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin: 0;
+      padding: 24px 28px;
+      background: #ffffff;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 0 24px 24px 0;
+      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.08);
+    }
+
+    body.owner-update-page .head-copy h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+      color: #0f172a;
+      font-family: inherit;
+    }
+
+    body.owner-update-page .eyebrow {
+      margin: 0 0 6px;
+      color: #64748b;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    body.owner-update-page .sub {
+      margin: 8px 0 0;
+      color: #475569;
+      max-width: 760px;
+      line-height: 1.45;
+      font-size: 0.92rem;
+    }
+
+    body.owner-update-page .head-actions {
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+
+    body.owner-update-page .owner-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(59, 130, 246, 0.14);
+      color: #1d4ed8;
+    }
+
+    body.owner-update-page .layout {
+      margin: 0;
+      padding: 26px 28px;
+      background: #ffffff;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 0 24px 24px 0;
+      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.08);
+      display: block;
+    }
+
+    body.owner-update-page .content {
+      display: block;
+    }
+
+    body.owner-update-page .table-card {
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: #ffffff;
+      border-radius: 18px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    body.owner-update-page .table-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    body.owner-update-page .section-title {
+      margin: 0;
+      color: #0f172a;
+      font-size: 1.05rem;
+      font-weight: 700;
+      font-family: inherit;
+    }
+
+    body.owner-update-page .section-sub {
+      margin: 0;
+      color: #475569;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    body.owner-update-page .callout {
+      border-radius: 12px;
+      border: 1px dashed rgba(15, 23, 42, 0.2);
+      background: #f8fafc;
+      color: #475569;
+    }
+
+    body.owner-update-page .owner-table-wrap {
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 14px;
+      overflow: auto;
+      background: #ffffff;
+    }
+
+    body.owner-update-page .owner-table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    body.owner-update-page .owner-table thead th {
+      text-align: left;
+      padding: 13px 14px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    body.owner-update-page .owner-table thead th.actions-col {
+      text-align: right;
+    }
+
+    body.owner-update-page .owner-table tbody td {
+      padding: 13px 14px;
+      border-top: 1px solid rgba(15, 23, 42, 0.08);
+      vertical-align: top;
+      color: #0f172a;
+      font-size: 0.88rem;
+    }
+
+    body.owner-update-page .owner-table tbody tr:first-child td {
+      border-top: 0;
+    }
+
+    body.owner-update-page .owner-table tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    body.owner-update-page .owner-table tbody tr:hover {
+      background: #eef4ff;
+    }
+
+    body.owner-update-page .module-name {
+      margin: 0;
+      color: #0f172a;
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    body.owner-update-page .module-desc {
+      margin: 6px 0 0;
+      color: #475569;
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    body.owner-update-page .status-stack {
+      display: grid;
+      gap: 8px;
+      min-width: 280px;
+    }
+
+    body.owner-update-page .status-stack .result {
+      min-height: 18px;
+      font-size: 0.84rem;
+    }
+
+    body.owner-update-page .action-cell {
+      width: 1%;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    body.owner-update-page .row-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    body.owner-update-page .row-actions .ghost,
+    body.owner-update-page .row-actions .primary {
+      min-width: 150px;
+      padding: 9px 12px;
+      font-size: 0.84rem;
+      box-shadow: none;
+    }
+
+    body.owner-update-page button,
+    body.owner-update-page .link-btn {
+      border-radius: 12px;
+      font-size: 0.93rem;
+      font-weight: 600;
+      min-width: 168px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    body.owner-update-page .primary {
+      border: 0;
+      color: #ffffff;
+      background: linear-gradient(135deg, #00a6d6, #007bff);
+      box-shadow: 0 20px 35px rgba(0, 123, 255, 0.28);
+    }
+
+    body.owner-update-page .primary:hover {
+      transform: translateY(-1px);
+    }
+
+    body.owner-update-page .ghost,
+    body.owner-update-page .link-btn {
+      border: 1px solid #dbe2ea;
+      background: #f4f6fb;
+      color: #1a2733;
+    }
+
+    body.owner-update-page .ghost:hover,
+    body.owner-update-page .link-btn:hover {
+      background: #ecf1f8;
+    }
+
+    body.owner-update-page .result {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    body.owner-update-page .mysql-status,
+    body.owner-update-page .box,
+    body.owner-update-page .command-block,
+    body.owner-update-page .scope-grid,
+    body.owner-update-page .page-checklist-wrap,
+    body.owner-update-page .app-download-slot,
+    body.owner-update-page .app-download-slot__preview {
+      border-color: rgba(15, 23, 42, 0.14);
+      background: #f8fafc;
+    }
+
+    body.owner-update-page .field input,
+    body.owner-update-page .upload-row input[type="file"] {
+      border-color: #dbe2ea;
+      background: #ffffff;
+      color: #0f172a;
+    }
+
+    body.owner-update-page .field input:focus,
+    body.owner-update-page .upload-row input[type="file"]:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+      outline: none;
+    }
+
+    body.owner-update-page .owner-modal {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      z-index: 1200;
+    }
+
+    body.owner-update-page .owner-modal__dialog {
+      border-radius: 22px;
+      border-color: rgba(15, 23, 42, 0.1);
+      box-shadow: 0 32px 64px rgba(15, 23, 42, 0.26);
+    }
+
+    body.owner-update-page .owner-modal__header {
+      background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+      border-bottom-color: rgba(15, 23, 42, 0.08);
+    }
+
+    body.owner-update-page .owner-modal__title {
+      color: #0f172a;
+      font-size: 1.12rem;
+      font-weight: 700;
+      font-family: inherit;
+    }
+
+    body.owner-update-page .owner-modal__subtitle {
+      color: #475569;
+    }
+
+    body.owner-update-page .owner-modal__close {
+      border-color: #dbe2ea;
+      background: #f8fafc;
+      color: #475569;
+    }
+
+    body.owner-update-page .owner-modal__close:hover {
+      background: #eef2f7;
+    }
+
+    body.owner-update-page .owner-modal__footer {
+      background: #f8fafc;
+      border-top-color: rgba(15, 23, 42, 0.08);
+    }
+
+    body.owner-update-page.theme-dark {
+      background: #0b1220;
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .page-head,
+    body.owner-update-page.theme-dark .layout,
+    body.owner-update-page.theme-dark .table-card,
+    body.owner-update-page.theme-dark .owner-table-wrap {
+      background: #111827;
+      border-color: rgba(100, 116, 139, 0.34);
+      box-shadow: 0 20px 38px rgba(2, 6, 23, 0.35);
+    }
+
+    body.owner-update-page.theme-dark .head-copy h1,
+    body.owner-update-page.theme-dark .section-title {
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .eyebrow,
+    body.owner-update-page.theme-dark .sub,
+    body.owner-update-page.theme-dark .section-sub,
+    body.owner-update-page.theme-dark .module-desc,
+    body.owner-update-page.theme-dark .hint,
+    body.owner-update-page.theme-dark .mysql-status,
+    body.owner-update-page.theme-dark .box,
+    body.owner-update-page.theme-dark .modal-note {
+      color: #94a3b8;
+    }
+
+    body.owner-update-page.theme-dark .owner-chip,
+    body.owner-update-page.theme-dark .page-checklist-pill {
+      background: rgba(59, 130, 246, 0.2);
+      color: #bfdbfe;
+    }
+
+    body.owner-update-page.theme-dark .ghost,
+    body.owner-update-page.theme-dark .link-btn,
+    body.owner-update-page.theme-dark .owner-modal__close {
+      background: #0f172a;
+      border-color: rgba(100, 116, 139, 0.5);
+      color: #cbd5e1;
+    }
+
+    body.owner-update-page.theme-dark .callout,
+    body.owner-update-page.theme-dark .mysql-status,
+    body.owner-update-page.theme-dark .box,
+    body.owner-update-page.theme-dark .command-block,
+    body.owner-update-page.theme-dark .scope-grid,
+    body.owner-update-page.theme-dark .page-checklist-wrap,
+    body.owner-update-page.theme-dark .app-download-slot,
+    body.owner-update-page.theme-dark .app-download-slot__preview,
+    body.owner-update-page.theme-dark .owner-modal__body,
+    body.owner-update-page.theme-dark .owner-modal__footer {
+      background: #0f172a;
+      border-color: rgba(100, 116, 139, 0.42);
+      color: #cbd5e1;
+    }
+
+    body.owner-update-page.theme-dark .module-name {
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .owner-table thead th {
+      background: #0b1220;
+      border-bottom-color: rgba(100, 116, 139, 0.42);
+      color: #94a3b8;
+    }
+
+    body.owner-update-page.theme-dark .owner-table tbody td {
+      border-top-color: rgba(100, 116, 139, 0.32);
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .owner-table tbody tr:nth-child(even) {
+      background: rgba(15, 23, 42, 0.62);
+    }
+
+    body.owner-update-page.theme-dark .owner-table tbody tr:hover {
+      background: rgba(30, 41, 59, 0.86);
+    }
+
+    body.owner-update-page.theme-dark .field input,
+    body.owner-update-page.theme-dark .upload-row input[type="file"] {
+      background: #0b1220;
+      border-color: rgba(100, 116, 139, 0.45);
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .owner-modal {
+      background: rgba(2, 6, 23, 0.68);
+    }
+
+    body.owner-update-page.theme-dark .owner-modal__dialog {
+      background: #111827;
+      border-color: rgba(100, 116, 139, 0.4);
+    }
+
+    body.owner-update-page.theme-dark .owner-modal__header {
+      background: #0b1220;
+      border-bottom-color: rgba(100, 116, 139, 0.42);
+    }
+
+    body.owner-update-page.theme-dark .owner-modal__title {
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .owner-modal__subtitle {
+      color: #94a3b8;
+    }
+
+    body.owner-update-page.theme-dark .app-download-slot__title {
+      color: #e2e8f0;
+    }
+
+    body.owner-update-page.theme-dark .app-download-slot__eyebrow,
+    body.owner-update-page.theme-dark .app-download-slot__meta-line {
+      color: #94a3b8;
+    }
+
+    body.owner-update-page.theme-dark .app-download-slot__meta {
+      border-top-color: rgba(100, 116, 139, 0.42);
+    }
+
+    @media (max-width: 980px) {
+      body.owner-update-page .app-downloads-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 1080px) {
+      body.owner-update-page .owner-table {
+        min-width: 760px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body.owner-update-page {
+        padding: 16px;
+      }
+
+      body.owner-update-page .page-head,
+      body.owner-update-page .layout {
+        padding: 18px;
+        border-radius: 16px;
+      }
+
+      body.owner-update-page .head-actions {
+        width: 100%;
+      }
+
+      body.owner-update-page .head-actions .link-btn {
+        width: 100%;
+      }
+
+      body.owner-update-page .owner-modal__dialog {
+        border-radius: 16px;
+      }
+
+      body.owner-update-page .owner-modal__dialog--wide {
+        width: min(760px, 96vw);
+      }
+
+      body.owner-update-page .table-card {
+        padding: 14px;
+      }
+
+      body.owner-update-page .owner-table {
+        min-width: 640px;
+      }
+
+      body.owner-update-page .row-actions .ghost,
+      body.owner-update-page .row-actions .primary {
+        min-width: 128px;
+      }
+
+      body.owner-update-page .app-downloads-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body class="owner-update-page">
+  <main class="shell">
+    <header class="page-head">
+      <div class="head-copy">
+        <p class="eyebrow">Owner Console</p>
+        <h1>System Setup &amp; Update Center</h1>
+        <p class="sub">Hidden owner page for updates, MySQL config, master key, and schema updates. Keep this private and use only on the server machine.</p>
+      </div>
+      <div class="head-actions">
+        <span class="owner-chip">Owner only</span>
+        <a class="link-btn" href="/">Return to Dashboard</a>
+      </div>
+    </header>
+
+    <div class="layout">
+      <section class="content">
+        <section class="table-card" aria-labelledby="moduleTableTitle">
+          <div class="table-head">
+            <div>
+              <h2 class="section-title" id="moduleTableTitle">Owner Modules</h2>
+              <p class="section-sub">Structured setup controls with quick action buttons, styled like customer tables.</p>
+            </div>
+          </div>
+          <div class="callout">Update and Download run in focused modals. For updates, you can choose <strong>all files</strong> or <strong>selected pages only</strong>.</div>
+
+          <div class="owner-table-wrap">
+            <table class="owner-table">
+              <thead>
+                <tr>
+                  <th>Module</th>
+                  <th>Status</th>
+                  <th class="actions-col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="module-cell">
+                    <p class="module-name">Structure Updates</p>
+                    <p class="module-desc">Upload latest structure package or download/export backup archives.</p>
+                  </td>
+                  <td class="status-cell">
+                    <div class="status-stack">
+                      <div class="mysql-status" id="metaBox">Latest package: checking...</div>
+                      <div class="result" id="result"></div>
+                    </div>
+                  </td>
+                  <td class="action-cell">
+                    <div class="row-actions">
+                      <button type="button" class="ghost" id="openDownloadModalBtn">Download / Export</button>
+                      <button type="button" class="primary" id="openUpdateModalBtn">Upload + Update</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="module-cell">
+                    <p class="module-name">Cloudflared Tunnel</p>
+                    <p class="module-desc">Configure tunnel settings and command hints for <code>npm start</code> deployment flow.</p>
+                  </td>
+                  <td class="status-cell">
+                    <div class="status-stack">
+                      <div class="mysql-status" id="cloudflaredStatus">Cloudflared status: checking...</div>
+                      <div class="result" id="cloudflaredResult"></div>
+                    </div>
+                  </td>
+                  <td class="action-cell">
+                    <div class="row-actions">
+                      <button type="button" class="ghost" id="openCloudflaredModalBtn">Edit Cloudflared Tunnel</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="module-cell">
+                    <p class="module-name">MySQL Configuration</p>
+                    <p class="module-desc">Save host, credentials, and connection limits for this server instance.</p>
+                  </td>
+                  <td class="status-cell">
+                    <div class="status-stack">
+                      <div class="mysql-status" id="mysqlStatusBox">MySQL status: checking...</div>
+                      <div class="result" id="mysqlResult"></div>
+                    </div>
+                  </td>
+                  <td class="action-cell">
+                    <div class="row-actions">
+                      <button type="button" class="ghost" id="openMysqlModalBtn">Edit MySQL Config</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="module-cell">
+                    <p class="module-name">Account Number Prefix</p>
+                    <p class="module-desc">Manage the 3-digit prefix used to generate 9-digit customer account numbers.</p>
+                  </td>
+                  <td class="status-cell">
+                    <div class="status-stack">
+                      <div class="mysql-status" id="accountPrefixStatus">Prefix status: checking...</div>
+                      <div class="result" id="accountPrefixResult"></div>
+                    </div>
+                  </td>
+                  <td class="action-cell">
+                    <div class="row-actions">
+                      <button type="button" class="ghost" id="openAccountPrefixModalBtn">Edit Prefix ID</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="module-cell">
+                    <p class="module-name">Master Key and Schema</p>
+                    <p class="module-desc">Manage <code>CONFIG_MASTER_KEY</code> and run relational schema updates.</p>
+                  </td>
+                  <td class="status-cell">
+                    <div class="status-stack">
+                      <div class="mysql-status" id="masterKeyStatus">Master key status: checking...</div>
+                      <div class="result" id="masterKeyResult"></div>
+                      <div class="result" id="schemaResult"></div>
+                    </div>
+                  </td>
+                  <td class="action-cell">
+                    <div class="row-actions">
+                      <button type="button" class="ghost" id="openSecurityModalBtn">Manage Master Key &amp; Schema</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="module-cell">
+                    <p class="module-name">Download Apps</p>
+                    <p class="module-desc">Manage 3 public app download slots with a custom name, icon, and app package for each card.</p>
+                  </td>
+                  <td class="status-cell">
+                    <div class="status-stack">
+                      <div class="mysql-status" id="appDownloadsStatus">Download apps status: checking...</div>
+                      <div class="result" id="appDownloadsResult"></div>
+                    </div>
+                  </td>
+                  <td class="action-cell">
+                    <div class="row-actions">
+                      <button type="button" class="ghost" id="openAppDownloadsModalBtn">Manage Download Apps</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <div class="owner-modal" id="updateModal" aria-hidden="true">
+    <div class="owner-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="updateModalTitle">Upload and Apply Structure</h2>
+          <p class="owner-modal__subtitle">Upload a structure ZIP, then choose whether to apply all files or selected pages only.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="updateModalClose" aria-label="Close update modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="upload-row">
+          <label for="packageFile">Structure Package (.zip)</label>
+          <input type="file" id="packageFile" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream">
+        </div>
+
+        <label class="check-row">
+          <input id="applyNow" type="checkbox" checked>
+          <span class="check-label">Apply uploaded package immediately</span>
+        </label>
+
+        <div class="scope-grid">
+          <label class="scope-option">
+            <input type="radio" id="updateScopeAll" name="updateScope" value="all" checked>
+            <span>
+              <strong>Update all files</strong>
+              <small>Applies every eligible file from the package.</small>
+            </span>
+          </label>
+          <label class="scope-option">
+            <input type="radio" id="updateScopePages" name="updateScope" value="pages">
+            <span>
+              <strong>Update selected pages only</strong>
+              <small>Use checklist below to update specific pages from the package.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="ghost" id="packageAnalyzeBtn">Analyze Package Pages</button>
+        </div>
+        <p class="modal-result" id="packageAnalyzeResult"></p>
+
+        <div class="page-checklist-wrap" id="pageChecklistWrap" hidden>
+          <div class="page-checklist-actions">
+            <button type="button" id="pageChecklistSelectAll">Select All</button>
+            <button type="button" id="pageChecklistSelectNone">Clear</button>
+          </div>
+          <div id="pageChecklist"></div>
+        </div>
+        <p class="modal-note" id="pageChecklistHint">Choose a ZIP file, then click Analyze Package Pages to load the checklist.</p>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="updateModalCancel">Cancel</button>
+        <button type="button" class="primary" id="updateBtn">Upload + Update Structure</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="owner-modal" id="downloadModal" aria-hidden="true">
+    <div class="owner-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="downloadModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="downloadModalTitle">Download and Export</h2>
+          <p class="owner-modal__subtitle">Download structure package or generate full project export ZIP.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="downloadModalClose" aria-label="Close download modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="actions">
+          <button type="button" class="ghost" id="downloadBtn">Download Structure</button>
+        </div>
+        <div class="card-divider"></div>
+        <div class="page-checklist-wrap" id="downloadPageChecklistWrap" hidden>
+          <div class="page-checklist-actions">
+            <button type="button" id="downloadPageSelectAll">Select All</button>
+            <button type="button" id="downloadPageSelectNone">Clear</button>
+          </div>
+          <div id="downloadPageChecklist"></div>
+        </div>
+        <p class="modal-note" id="downloadPageHint">Loading available page updates...</p>
+        <div class="actions">
+          <button type="button" class="ghost" id="downloadSelectedPagesBtn">Download Selected Updates</button>
+        </div>
+        <div class="card-divider"></div>
+        <div class="full-row">
+          <label class="check-row">
+            <input id="projectExportIncludeData" type="checkbox">
+            <span class="check-label">Include <code>data/</code> in project export</span>
+          </label>
+          <label class="check-row">
+            <input id="projectExportIncludeNodeModules" type="checkbox">
+            <span class="check-label">Include <code>node_modules/</code> (bigger ZIP)</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="button" class="ghost" id="projectExportBtn">Download Project Export</button>
+        </div>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="downloadModalDone">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="owner-modal" id="mysqlModal" aria-hidden="true">
+    <div class="owner-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="mysqlModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="mysqlModalTitle">Edit MySQL Configuration</h2>
+          <p class="owner-modal__subtitle">Update database host, credentials, and connection settings for this server.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="mysqlModalClose" aria-label="Close MySQL modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="mysql-grid">
+          <div class="field">
+            <label for="mysqlHost">Host</label>
+            <input id="mysqlHost" type="text" placeholder="127.0.0.1 or sg-4.hostddns.us:33335">
+          </div>
+          <div class="field">
+            <label for="mysqlPort">Port</label>
+            <input id="mysqlPort" type="number" min="1" max="65535" placeholder="3306">
+          </div>
+          <div class="field">
+            <label for="mysqlUser">User</label>
+            <input id="mysqlUser" type="text">
+          </div>
+          <div class="field">
+            <label for="mysqlPassword">Password</label>
+            <input id="mysqlPassword" type="password">
+          </div>
+          <div class="field">
+            <label for="mysqlDatabase">Database</label>
+            <input id="mysqlDatabase" type="text">
+          </div>
+          <div class="field">
+            <label for="mysqlConnLimit">Connection Limit</label>
+            <input id="mysqlConnLimit" type="number" min="1" max="100">
+          </div>
+        </div>
+
+        <p class="hint" id="mysqlPasswordHint">Password is optional. Leave blank to keep the current saved password.</p>
+        <p class="hint">You can paste <code>host:port</code> into Host. The port will be split automatically.</p>
+        <div class="result" id="mysqlResultModal"></div>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="mysqlModalCancel">Cancel</button>
+        <button type="button" class="ghost" id="mysqlTestBtn">Test Connection</button>
+        <button type="button" class="primary" id="mysqlSaveBtn">Save MySQL Config</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="owner-modal" id="cloudflaredModal" aria-hidden="true">
+    <div class="owner-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cloudflaredModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="cloudflaredModalTitle">Edit Cloudflared Tunnel</h2>
+          <p class="owner-modal__subtitle">Configure <code>.cloudflared/config.yml</code> and review setup commands.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="cloudflaredModalClose" aria-label="Close cloudflared modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="mysql-status" id="cloudflaredStatusModal">Cloudflared status: checking...</div>
+        <div class="mysql-grid">
+          <div class="field">
+            <label for="cloudflaredTunnelId">Tunnel ID</label>
+            <input id="cloudflaredTunnelId" type="text" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="cloudflaredHostname">Hostname</label>
+            <input id="cloudflaredHostname" type="text" autocomplete="off">
+          </div>
+          <div class="field field--wide">
+            <label for="cloudflaredCredentialsFile">Credentials File</label>
+            <input id="cloudflaredCredentialsFile" type="text" autocomplete="off">
+          </div>
+          <div class="field field--wide">
+            <label for="cloudflaredService">Service URL</label>
+            <input id="cloudflaredService" type="text" autocomplete="off">
+          </div>
+        </div>
+        <label class="check-row">
+          <input id="cloudflaredWarpRouting" type="checkbox">
+          <span class="check-label">Enable Warp Routing</span>
+        </label>
+        <div class="actions">
+          <button type="button" class="ghost" id="cloudflaredReloadBtn">Reload Status</button>
+        </div>
+        <p class="hint">Commands to complete setup:</p>
+        <pre class="command-block" id="cloudflaredCommands"></pre>
+        <div class="result" id="cloudflaredResultModal"></div>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="cloudflaredModalCancel">Cancel</button>
+        <button type="button" class="primary" id="cloudflaredSaveBtn">Save Tunnel Config</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="owner-modal" id="accountPrefixModal" aria-hidden="true">
+    <div class="owner-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="accountPrefixModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="accountPrefixModalTitle">Edit Prefix ID</h2>
+          <p class="owner-modal__subtitle">Set the 3-digit server prefix used for 9-digit customer account numbers.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="accountPrefixModalClose" aria-label="Close account prefix modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="field field--wide">
+          <label for="accountPrefixInput">Prefix ID (3 digits)</label>
+          <input id="accountPrefixInput" type="text" inputmode="numeric" maxlength="3" placeholder="e.g. 100">
+        </div>
+        <p class="hint">Numbers only. The first digit must be 1-9. Keep this unique per server.</p>
+        <div class="result" id="accountPrefixResultModal"></div>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="accountPrefixModalCancel">Cancel</button>
+        <button type="button" class="primary" id="accountPrefixSaveBtn">Save Prefix ID</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="owner-modal" id="securityModal" aria-hidden="true">
+    <div class="owner-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="securityModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="securityModalTitle">Master Key and Schema</h2>
+          <p class="owner-modal__subtitle">Manage the master key and run schema updates from one secure panel.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="securityModalClose" aria-label="Close security modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="field field--wide">
+          <label for="masterKeyInput">CONFIG_MASTER_KEY</label>
+          <input id="masterKeyInput" type="password" autocomplete="new-password" placeholder="Enter master key">
+        </div>
+        <p class="hint">Required to encrypt/decrypt sensitive integrations. Keep this private.</p>
+        <div class="result" id="masterKeyResultModal"></div>
+        <div class="card-divider"></div>
+        <p class="section-sub">Run schema update after MySQL and master key are configured.</p>
+        <div class="result" id="schemaResultModal"></div>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="securityModalCancel">Cancel</button>
+        <button type="button" class="ghost" id="masterKeyClearBtn">Clear Master Key</button>
+        <button type="button" class="ghost" id="masterKeySaveBtn">Save Master Key</button>
+        <button type="button" class="primary" id="schemaRunBtn">Run Schema Update</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="owner-modal" id="appDownloadsModal" aria-hidden="true">
+    <div class="owner-modal__dialog owner-modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="appDownloadsModalTitle">
+      <div class="owner-modal__header">
+        <div>
+          <h2 class="owner-modal__title" id="appDownloadsModalTitle">Manage Download Apps</h2>
+          <p class="owner-modal__subtitle">Set the app name and upload an icon plus app file for each public download slot.</p>
+        </div>
+        <button type="button" class="owner-modal__close" id="appDownloadsModalClose" aria-label="Close download apps modal">&times;</button>
+      </div>
+      <div class="owner-modal__body">
+        <div class="mysql-status" id="appDownloadsStatusModal">Download apps status: checking...</div>
+        <div class="result" id="appDownloadsResultModal"></div>
+
+        <div class="app-downloads-grid">
+          <section class="app-download-slot" data-owner-app-slot="1">
+            <div class="app-download-slot__head">
+              <div>
+                <p class="app-download-slot__eyebrow">App 1</p>
+                <h3 class="app-download-slot__title">Official Mobile App</h3>
+              </div>
+              <div class="app-download-slot__preview">
+                <img class="app-download-slot__preview-image" src="/img/business-logo.svg" alt="" data-owner-app-preview>
+              </div>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload1Name">Name</label>
+              <input id="appDownload1Name" type="text" maxlength="120" placeholder="Official Mobile App" data-owner-app-name>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload1Icon">Icon</label>
+              <input id="appDownload1Icon" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.svg,image/*" data-owner-app-icon>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload1File">App</label>
+              <input id="appDownload1File" type="file" accept=".apk,.xapk,.aab,.ipa,.zip,application/octet-stream" data-owner-app-file>
+            </div>
+
+            <div class="app-download-slot__meta">
+              <p class="app-download-slot__meta-line" data-owner-app-icon-meta>Current icon: none uploaded.</p>
+              <p class="app-download-slot__meta-line" data-owner-app-file-meta>Current app: none uploaded.</p>
+            </div>
+          </section>
+
+          <section class="app-download-slot" data-owner-app-slot="2">
+            <div class="app-download-slot__head">
+              <div>
+                <p class="app-download-slot__eyebrow">App 2</p>
+                <h3 class="app-download-slot__title">Official Mobile App</h3>
+              </div>
+              <div class="app-download-slot__preview">
+                <img class="app-download-slot__preview-image" src="/img/business-logo.svg" alt="" data-owner-app-preview>
+              </div>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload2Name">Name</label>
+              <input id="appDownload2Name" type="text" maxlength="120" placeholder="Official Mobile App" data-owner-app-name>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload2Icon">Icon</label>
+              <input id="appDownload2Icon" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.svg,image/*" data-owner-app-icon>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload2File">App</label>
+              <input id="appDownload2File" type="file" accept=".apk,.xapk,.aab,.ipa,.zip,application/octet-stream" data-owner-app-file>
+            </div>
+
+            <div class="app-download-slot__meta">
+              <p class="app-download-slot__meta-line" data-owner-app-icon-meta>Current icon: none uploaded.</p>
+              <p class="app-download-slot__meta-line" data-owner-app-file-meta>Current app: none uploaded.</p>
+            </div>
+          </section>
+
+          <section class="app-download-slot" data-owner-app-slot="3">
+            <div class="app-download-slot__head">
+              <div>
+                <p class="app-download-slot__eyebrow">App 3</p>
+                <h3 class="app-download-slot__title">Official Mobile App</h3>
+              </div>
+              <div class="app-download-slot__preview">
+                <img class="app-download-slot__preview-image" src="/img/business-logo.svg" alt="" data-owner-app-preview>
+              </div>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload3Name">Name</label>
+              <input id="appDownload3Name" type="text" maxlength="120" placeholder="Official Mobile App" data-owner-app-name>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload3Icon">Icon</label>
+              <input id="appDownload3Icon" type="file" accept=".jpg,.jpeg,.png,.webp,.gif,.svg,image/*" data-owner-app-icon>
+            </div>
+
+            <div class="field field--wide">
+              <label for="appDownload3File">App</label>
+              <input id="appDownload3File" type="file" accept=".apk,.xapk,.aab,.ipa,.zip,application/octet-stream" data-owner-app-file>
+            </div>
+
+            <div class="app-download-slot__meta">
+              <p class="app-download-slot__meta-line" data-owner-app-icon-meta>Current icon: none uploaded.</p>
+              <p class="app-download-slot__meta-line" data-owner-app-file-meta>Current app: none uploaded.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="owner-modal__footer">
+        <button type="button" class="ghost" id="appDownloadsModalCancel">Cancel</button>
+        <button type="button" class="primary" id="appDownloadsSaveBtn">Save Download Apps</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/confirm-dialog.js?v=1.0"></script>
+  <script>
+    const openUpdateModalBtn = document.getElementById('openUpdateModalBtn');
+    const openDownloadModalBtn = document.getElementById('openDownloadModalBtn');
+    const updateModal = document.getElementById('updateModal');
+    const updateModalCloseBtn = document.getElementById('updateModalClose');
+    const updateModalCancelBtn = document.getElementById('updateModalCancel');
+    const downloadModal = document.getElementById('downloadModal');
+    const downloadModalCloseBtn = document.getElementById('downloadModalClose');
+    const downloadModalDoneBtn = document.getElementById('downloadModalDone');
+    const openMysqlModalBtn = document.getElementById('openMysqlModalBtn');
+    const mysqlModal = document.getElementById('mysqlModal');
+    const mysqlModalCloseBtn = document.getElementById('mysqlModalClose');
+    const mysqlModalCancelBtn = document.getElementById('mysqlModalCancel');
+    const openCloudflaredModalBtn = document.getElementById('openCloudflaredModalBtn');
+    const cloudflaredModal = document.getElementById('cloudflaredModal');
+    const cloudflaredModalCloseBtn = document.getElementById('cloudflaredModalClose');
+    const cloudflaredModalCancelBtn = document.getElementById('cloudflaredModalCancel');
+    const openAccountPrefixModalBtn = document.getElementById('openAccountPrefixModalBtn');
+    const accountPrefixModal = document.getElementById('accountPrefixModal');
+    const accountPrefixModalCloseBtn = document.getElementById('accountPrefixModalClose');
+    const accountPrefixModalCancelBtn = document.getElementById('accountPrefixModalCancel');
+    const openSecurityModalBtn = document.getElementById('openSecurityModalBtn');
+    const securityModal = document.getElementById('securityModal');
+    const securityModalCloseBtn = document.getElementById('securityModalClose');
+    const securityModalCancelBtn = document.getElementById('securityModalCancel');
+    const openAppDownloadsModalBtn = document.getElementById('openAppDownloadsModalBtn');
+    const appDownloadsModal = document.getElementById('appDownloadsModal');
+    const appDownloadsModalCloseBtn = document.getElementById('appDownloadsModalClose');
+    const appDownloadsModalCancelBtn = document.getElementById('appDownloadsModalCancel');
+
+    const updateBtn = document.getElementById('updateBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const downloadSelectedPagesBtn = document.getElementById('downloadSelectedPagesBtn');
+    const downloadPageChecklistWrapEl = document.getElementById('downloadPageChecklistWrap');
+    const downloadPageChecklistEl = document.getElementById('downloadPageChecklist');
+    const downloadPageHintEl = document.getElementById('downloadPageHint');
+    const downloadPageSelectAllBtn = document.getElementById('downloadPageSelectAll');
+    const downloadPageSelectNoneBtn = document.getElementById('downloadPageSelectNone');
+    const projectExportBtn = document.getElementById('projectExportBtn');
+    const projectExportIncludeDataEl = document.getElementById('projectExportIncludeData');
+    const projectExportIncludeNodeModulesEl = document.getElementById('projectExportIncludeNodeModules');
+    const applyNowEl = document.getElementById('applyNow');
+    const packageFileEl = document.getElementById('packageFile');
+    const updateScopeAllEl = document.getElementById('updateScopeAll');
+    const updateScopePagesEl = document.getElementById('updateScopePages');
+    const packageAnalyzeBtn = document.getElementById('packageAnalyzeBtn');
+    const packageAnalyzeResultEl = document.getElementById('packageAnalyzeResult');
+    const pageChecklistWrapEl = document.getElementById('pageChecklistWrap');
+    const pageChecklistEl = document.getElementById('pageChecklist');
+    const pageChecklistHintEl = document.getElementById('pageChecklistHint');
+    const pageChecklistSelectAllBtn = document.getElementById('pageChecklistSelectAll');
+    const pageChecklistSelectNoneBtn = document.getElementById('pageChecklistSelectNone');
+    const metaBox = document.getElementById('metaBox');
+    const resultEl = document.getElementById('result');
+    const cloudflaredStatusBox = document.getElementById('cloudflaredStatus');
+    const cloudflaredStatusModalBox = document.getElementById('cloudflaredStatusModal');
+    const cloudflaredTunnelIdEl = document.getElementById('cloudflaredTunnelId');
+    const cloudflaredHostnameEl = document.getElementById('cloudflaredHostname');
+    const cloudflaredCredentialsFileEl = document.getElementById('cloudflaredCredentialsFile');
+    const cloudflaredServiceEl = document.getElementById('cloudflaredService');
+    const cloudflaredWarpRoutingEl = document.getElementById('cloudflaredWarpRouting');
+    const cloudflaredReloadBtn = document.getElementById('cloudflaredReloadBtn');
+    const cloudflaredSaveBtn = document.getElementById('cloudflaredSaveBtn');
+    const cloudflaredCommandsEl = document.getElementById('cloudflaredCommands');
+    const cloudflaredResultEl = document.getElementById('cloudflaredResult');
+    const cloudflaredResultModalEl = document.getElementById('cloudflaredResultModal');
+
+    const mysqlStatusBox = document.getElementById('mysqlStatusBox');
+    const mysqlHostEl = document.getElementById('mysqlHost');
+    const mysqlPortEl = document.getElementById('mysqlPort');
+    const mysqlUserEl = document.getElementById('mysqlUser');
+    const mysqlPasswordEl = document.getElementById('mysqlPassword');
+    const mysqlDatabaseEl = document.getElementById('mysqlDatabase');
+    const mysqlConnLimitEl = document.getElementById('mysqlConnLimit');
+    const mysqlPasswordHint = document.getElementById('mysqlPasswordHint');
+    const mysqlTestBtn = document.getElementById('mysqlTestBtn');
+    const mysqlSaveBtn = document.getElementById('mysqlSaveBtn');
+    const mysqlResultEl = document.getElementById('mysqlResult');
+    const mysqlResultModalEl = document.getElementById('mysqlResultModal');
+    const accountPrefixStatusBox = document.getElementById('accountPrefixStatus');
+    const accountPrefixInputEl = document.getElementById('accountPrefixInput');
+    const accountPrefixSaveBtn = document.getElementById('accountPrefixSaveBtn');
+    const accountPrefixResultEl = document.getElementById('accountPrefixResult');
+    const accountPrefixResultModalEl = document.getElementById('accountPrefixResultModal');
+    const masterKeyStatusBox = document.getElementById('masterKeyStatus');
+    const masterKeyInputEl = document.getElementById('masterKeyInput');
+    const masterKeySaveBtn = document.getElementById('masterKeySaveBtn');
+    const masterKeyClearBtn = document.getElementById('masterKeyClearBtn');
+    const masterKeyResultEl = document.getElementById('masterKeyResult');
+    const masterKeyResultModalEl = document.getElementById('masterKeyResultModal');
+    const schemaRunBtn = document.getElementById('schemaRunBtn');
+    const schemaResultEl = document.getElementById('schemaResult');
+    const schemaResultModalEl = document.getElementById('schemaResultModal');
+    const appDownloadsStatusBox = document.getElementById('appDownloadsStatus');
+    const appDownloadsStatusModalBox = document.getElementById('appDownloadsStatusModal');
+    const appDownloadsSaveBtn = document.getElementById('appDownloadsSaveBtn');
+    const appDownloadsResultEl = document.getElementById('appDownloadsResult');
+    const appDownloadsResultModalEl = document.getElementById('appDownloadsResultModal');
+    const appDownloadsSlotRefs = Array.from(document.querySelectorAll('[data-owner-app-slot]'))
+      .map((slotEl) => ({
+        slot: Number(slotEl.dataset.ownerAppSlot || 0),
+        card: slotEl,
+        titleEl: slotEl.querySelector('.app-download-slot__title'),
+        nameInput: slotEl.querySelector('[data-owner-app-name]'),
+        iconInput: slotEl.querySelector('[data-owner-app-icon]'),
+        fileInput: slotEl.querySelector('[data-owner-app-file]'),
+        previewEl: slotEl.querySelector('[data-owner-app-preview]'),
+        iconMetaEl: slotEl.querySelector('[data-owner-app-icon-meta]'),
+        fileMetaEl: slotEl.querySelector('[data-owner-app-file-meta]'),
+        objectUrl: ''
+      }))
+      .filter((entry) => Number.isInteger(entry.slot) && entry.slot > 0)
+      .sort((a, b) => a.slot - b.slot);
+
+    const mysqlState = {
+      passwordSet: false,
+      runtimeConfigured: false
+    };
+    let mysqlEnabled = false;
+    let masterKeyConfigured = false;
+    let appDownloadsState = null;
+    let packagePreviewState = {
+      fileSignature: '',
+      pages: []
+    };
+    let downloadablePages = [];
+
+    const setResult = (message, type = '') => {
+      resultEl.className = `result${type ? ` ${type}` : ''}`;
+      resultEl.textContent = message || '';
+    };
+
+    const setCloudflaredResult = (message, type = '') => {
+      cloudflaredResultEl.className = `result${type ? ` ${type}` : ''}`;
+      cloudflaredResultEl.textContent = message || '';
+      if (cloudflaredResultModalEl) {
+        cloudflaredResultModalEl.className = `result${type ? ` ${type}` : ''}`;
+        cloudflaredResultModalEl.textContent = message || '';
+      }
+    };
+
+    const setMysqlResult = (message, type = '') => {
+      mysqlResultEl.className = `result${type ? ` ${type}` : ''}`;
+      mysqlResultEl.textContent = message || '';
+      if (mysqlResultModalEl) {
+        mysqlResultModalEl.className = `result${type ? ` ${type}` : ''}`;
+        mysqlResultModalEl.textContent = message || '';
+      }
+    };
+
+    const setAccountPrefixResult = (message, type = '') => {
+      accountPrefixResultEl.className = `result center${type ? ` ${type}` : ''}`;
+      accountPrefixResultEl.textContent = message || '';
+      if (accountPrefixResultModalEl) {
+        accountPrefixResultModalEl.className = `result${type ? ` ${type}` : ''}`;
+        accountPrefixResultModalEl.textContent = message || '';
+      }
+    };
+
+    const setMasterKeyResult = (message, type = '') => {
+      masterKeyResultEl.className = `result${type ? ` ${type}` : ''}`;
+      masterKeyResultEl.textContent = message || '';
+      if (masterKeyResultModalEl) {
+        masterKeyResultModalEl.className = `result${type ? ` ${type}` : ''}`;
+        masterKeyResultModalEl.textContent = message || '';
+      }
+    };
+
+    const setSchemaResult = (message, type = '') => {
+      schemaResultEl.className = `result${type ? ` ${type}` : ''}`;
+      schemaResultEl.textContent = message || '';
+      if (schemaResultModalEl) {
+        schemaResultModalEl.className = `result${type ? ` ${type}` : ''}`;
+        schemaResultModalEl.textContent = message || '';
+      }
+    };
+
+    const setAppDownloadsResult = (message, type = '') => {
+      appDownloadsResultEl.className = `result${type ? ` ${type}` : ''}`;
+      appDownloadsResultEl.textContent = message || '';
+      if (appDownloadsResultModalEl) {
+        appDownloadsResultModalEl.className = `result${type ? ` ${type}` : ''}`;
+        appDownloadsResultModalEl.textContent = message || '';
+      }
+    };
+
+    const setPackageAnalyzeResult = (message, type = '') => {
+      if (!packageAnalyzeResultEl) return;
+      packageAnalyzeResultEl.className = `modal-result${type ? ` ${type}` : ''}`;
+      packageAnalyzeResultEl.textContent = message || '';
+    };
+
+    const syncModalLock = () => {
+      const hasOpenModal = [
+        updateModal,
+        downloadModal,
+        mysqlModal,
+        cloudflaredModal,
+        accountPrefixModal,
+        securityModal,
+        appDownloadsModal
+      ].some((modal) => modal?.classList.contains('show'));
+      document.body.classList.toggle('modal-active', hasOpenModal);
+    };
+
+    const openModal = (modal) => {
+      if (!modal) return;
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      syncModalLock();
+    };
+
+    const closeModal = (modal) => {
+      if (!modal) return;
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      syncModalLock();
+    };
+
+    const closeAllModals = () => {
+      closeModal(updateModal);
+      closeModal(downloadModal);
+      closeModal(mysqlModal);
+      closeModal(cloudflaredModal);
+      closeModal(accountPrefixModal);
+      closeModal(securityModal);
+      if (appDownloadsModal?.classList.contains('show')) {
+        resetAppDownloadsModal();
+      }
+      closeModal(appDownloadsModal);
+    };
+
+    const clearPackageChecklist = () => {
+      packagePreviewState = { fileSignature: '', pages: [] };
+      if (pageChecklistEl) pageChecklistEl.innerHTML = '';
+      if (pageChecklistWrapEl) pageChecklistWrapEl.hidden = true;
+      if (pageChecklistHintEl) {
+        pageChecklistHintEl.textContent = 'Choose a ZIP file, then click Analyze Package Pages to load the checklist.';
+      }
+      setPackageAnalyzeResult('');
+    };
+
+    const escapeHtml = (value = '') => String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+    const renderPackageChecklist = (pages = []) => {
+      const list = Array.isArray(pages) ? pages : [];
+      if (!pageChecklistEl || !pageChecklistWrapEl) return;
+      if (!list.length) {
+        pageChecklistEl.innerHTML = '<p class="modal-note">No page entries found in this package.</p>';
+        pageChecklistWrapEl.hidden = false;
+        if (pageChecklistHintEl) {
+          pageChecklistHintEl.textContent = 'Switch to "Update all files" or upload another package with page files.';
+        }
+        return;
+      }
+      pageChecklistEl.innerHTML = list.map((page) => `
+        <label class="page-checklist-row">
+          <input type="checkbox" class="page-checklist-input" value="${escapeHtml(page.key)}">
+          <span>${escapeHtml(page.label || page.key)}</span>
+          <span class="page-checklist-pill">${page.pathCount || 1} file${Number(page.pathCount || 1) === 1 ? '' : 's'}</span>
+        </label>
+      `).join('');
+      pageChecklistWrapEl.hidden = false;
+      if (pageChecklistHintEl) {
+        pageChecklistHintEl.textContent = 'Select the pages you want to update, then click Upload + Update Structure.';
+      }
+    };
+
+    const renderDownloadPageChecklist = (pages = []) => {
+      const list = Array.isArray(pages) ? pages : [];
+      downloadablePages = list;
+      if (!downloadPageChecklistEl || !downloadPageChecklistWrapEl) return;
+      if (!list.length) {
+        downloadPageChecklistEl.innerHTML = '<p class="modal-note">No page updates available for one-by-one download.</p>';
+        downloadPageChecklistWrapEl.hidden = false;
+        if (downloadPageHintEl) {
+          downloadPageHintEl.textContent = 'Full structure download is still available.';
+        }
+        if (downloadSelectedPagesBtn) downloadSelectedPagesBtn.disabled = true;
+        return;
+      }
+
+      downloadPageChecklistEl.innerHTML = list.map((page) => `
+        <label class="page-checklist-row">
+          <input type="checkbox" class="download-page-checklist-input" value="${escapeHtml(page.key)}">
+          <span>${escapeHtml(page.label || page.key)}</span>
+          <span class="page-checklist-pill">${page.pathCount || 1} file${Number(page.pathCount || 1) === 1 ? '' : 's'}</span>
+        </label>
+      `).join('');
+      downloadPageChecklistWrapEl.hidden = false;
+      if (downloadPageHintEl) {
+        downloadPageHintEl.textContent = 'Select one or more pages, then download them as a smaller update ZIP.';
+      }
+      if (downloadSelectedPagesBtn) downloadSelectedPagesBtn.disabled = false;
+    };
+
+    const getSelectedPageKeys = () => {
+      if (!pageChecklistEl) return [];
+      return Array.from(pageChecklistEl.querySelectorAll('.page-checklist-input:checked'))
+        .map((input) => String(input.value || '').trim().toLowerCase())
+        .filter(Boolean);
+    };
+
+    const setAllPageSelections = (checked) => {
+      if (!pageChecklistEl) return;
+      pageChecklistEl.querySelectorAll('.page-checklist-input').forEach((input) => {
+        input.checked = Boolean(checked);
+      });
+    };
+
+    const getSelectedDownloadPageKeys = () => {
+      if (!downloadPageChecklistEl) return [];
+      return Array.from(downloadPageChecklistEl.querySelectorAll('.download-page-checklist-input:checked'))
+        .map((input) => String(input.value || '').trim().toLowerCase())
+        .filter(Boolean);
+    };
+
+    const setAllDownloadPageSelections = (checked) => {
+      if (!downloadPageChecklistEl) return;
+      downloadPageChecklistEl.querySelectorAll('.download-page-checklist-input').forEach((input) => {
+        input.checked = Boolean(checked);
+      });
+    };
+
+    const getUpdateScope = () => (updateScopePagesEl?.checked ? 'pages' : 'all');
+
+    const setUpdateLoading = (loading) => {
+      updateBtn.disabled = loading;
+      if (applyNowEl) applyNowEl.disabled = loading;
+      if (packageAnalyzeBtn) packageAnalyzeBtn.disabled = loading;
+      if (updateScopeAllEl) updateScopeAllEl.disabled = loading;
+      if (updateScopePagesEl) updateScopePagesEl.disabled = loading;
+      if (openUpdateModalBtn) openUpdateModalBtn.disabled = loading;
+      const applying = applyNowEl ? applyNowEl.checked : true;
+      updateBtn.textContent = loading
+        ? (applying ? 'Uploading + Applying...' : 'Uploading...')
+        : 'Upload + Update Structure';
+    };
+
+    const setDownloadLoading = (loading) => {
+      downloadBtn.disabled = loading;
+      if (downloadSelectedPagesBtn) downloadSelectedPagesBtn.disabled = loading || !downloadablePages.length;
+      if (openDownloadModalBtn) openDownloadModalBtn.disabled = loading;
+      downloadBtn.textContent = loading ? 'Preparing...' : 'Download Structure';
+      if (downloadSelectedPagesBtn) {
+        downloadSelectedPagesBtn.textContent = loading ? 'Preparing...' : 'Download Selected Updates';
+      }
+    };
+
+    const setProjectExportLoading = (loading) => {
+      if (!projectExportBtn) return;
+      projectExportBtn.disabled = loading;
+      if (openDownloadModalBtn) openDownloadModalBtn.disabled = loading;
+      projectExportBtn.textContent = loading ? 'Preparing Export...' : 'Download Project Export';
+    };
+
+    const setCloudflaredLoading = (loading, saveLabel = 'Saving...') => {
+      cloudflaredReloadBtn.disabled = loading;
+      cloudflaredSaveBtn.disabled = loading;
+      cloudflaredSaveBtn.textContent = loading ? saveLabel : 'Save Tunnel Config';
+    };
+
+    const setMysqlLoading = (button, loading, defaultLabel, loadingLabel) => {
+      button.disabled = loading;
+      button.textContent = loading ? loadingLabel : defaultLabel;
+    };
+
+    const setAccountPrefixLoading = (loading) => {
+      if (!accountPrefixSaveBtn) return;
+      accountPrefixSaveBtn.disabled = loading;
+      accountPrefixSaveBtn.textContent = loading ? 'Saving...' : 'Save Prefix ID';
+    };
+
+    const setMasterKeyLoading = (loading, label = 'Saving...') => {
+      masterKeySaveBtn.disabled = loading;
+      masterKeyClearBtn.disabled = loading;
+      masterKeySaveBtn.textContent = loading ? label : 'Save Master Key';
+    };
+
+    const setSchemaLoading = (loading) => {
+      schemaRunBtn.disabled = loading;
+      schemaRunBtn.textContent = loading ? 'Running...' : 'Run Schema Update';
+    };
+
+    const formatFileSize = (bytes) => {
+      const value = Number(bytes);
+      if (!Number.isFinite(value) || value <= 0) return '';
+      if (value >= 1024 * 1024) {
+        return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+      }
+      if (value >= 1024) {
+        return `${Math.round(value / 1024)} KB`;
+      }
+      return `${value} B`;
+    };
+
+    const buildDefaultOwnerAppSlot = (slot) => ({
+      slot,
+      name: 'Official Mobile App',
+      iconUrl: '',
+      iconFileName: '',
+      iconMimeType: '',
+      appUrl: '',
+      appFileName: '',
+      appMimeType: '',
+      appSizeBytes: 0,
+      updatedAt: ''
+    });
+
+    const defaultOwnerAppDownloadsState = () => ({
+      enabled: false,
+      configuredSlots: 0,
+      slots: appDownloadsSlotRefs.map(({ slot }) => buildDefaultOwnerAppSlot(slot))
+    });
+
+    const normalizeOwnerAppDownloadsPayload = (payload = {}) => {
+      const bySlot = new Map();
+      if (Array.isArray(payload.slots)) {
+        payload.slots.forEach((entry) => {
+          const slot = Number(entry?.slot || 0);
+          if (!Number.isInteger(slot) || slot < 1) return;
+          bySlot.set(slot, {
+            ...buildDefaultOwnerAppSlot(slot),
+            ...entry,
+            slot,
+            name: String(entry?.name || '').trim() || 'Official Mobile App',
+            iconUrl: String(entry?.iconUrl || '').trim(),
+            iconFileName: String(entry?.iconFileName || '').trim(),
+            iconMimeType: String(entry?.iconMimeType || '').trim(),
+            appUrl: String(entry?.appUrl || '').trim(),
+            appFileName: String(entry?.appFileName || '').trim(),
+            appMimeType: String(entry?.appMimeType || '').trim(),
+            appSizeBytes: Number.isFinite(Number(entry?.appSizeBytes)) ? Math.max(0, Math.round(Number(entry.appSizeBytes))) : 0,
+            updatedAt: String(entry?.updatedAt || '').trim()
+          });
+        });
+      }
+
+      const slots = appDownloadsSlotRefs.map(({ slot }) => bySlot.get(slot) || buildDefaultOwnerAppSlot(slot));
+      return {
+        enabled: Boolean(payload.enabled),
+        configuredSlots: slots.filter((slot) => Boolean(slot.appUrl)).length,
+        slots
+      };
+    };
+
+    const getOwnerAppSlotState = (slotNumber) => {
+      if (!appDownloadsState || !Array.isArray(appDownloadsState.slots)) {
+        return buildDefaultOwnerAppSlot(slotNumber);
+      }
+      return appDownloadsState.slots.find((slot) => Number(slot.slot) === Number(slotNumber)) || buildDefaultOwnerAppSlot(slotNumber);
+    };
+
+    const formatOwnerAppTimestamp = (value) => {
+      if (!value) return '';
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return '';
+      return parsed.toLocaleString();
+    };
+
+    const revokeOwnerAppPreview = (slotRef) => {
+      if (slotRef?.objectUrl) {
+        URL.revokeObjectURL(slotRef.objectUrl);
+        slotRef.objectUrl = '';
+      }
+    };
+
+    const setAppDownloadsInputsDisabled = (disabled) => {
+      appDownloadsSlotRefs.forEach((slotRef) => {
+        if (slotRef.nameInput) slotRef.nameInput.disabled = disabled;
+        if (slotRef.iconInput) slotRef.iconInput.disabled = disabled;
+        if (slotRef.fileInput) slotRef.fileInput.disabled = disabled;
+      });
+    };
+
+    const setAppDownloadsLoading = (loading, label = 'Saving...') => {
+      if (openAppDownloadsModalBtn) openAppDownloadsModalBtn.disabled = loading;
+      if (appDownloadsSaveBtn) {
+        appDownloadsSaveBtn.disabled = loading || !Boolean(appDownloadsState?.enabled);
+        appDownloadsSaveBtn.textContent = loading ? label : 'Save Download Apps';
+      }
+      setAppDownloadsInputsDisabled(Boolean(loading) || !Boolean(appDownloadsState?.enabled));
+    };
+
+    const updateOwnerAppSlotSelection = (slotRef) => {
+      if (!slotRef) return;
+      const slotState = getOwnerAppSlotState(slotRef.slot);
+      const appName = String(slotRef.nameInput?.value || slotState.name || 'Official Mobile App').trim() || 'Official Mobile App';
+      const pendingIcon = slotRef.iconInput?.files && slotRef.iconInput.files[0];
+      const pendingApp = slotRef.fileInput?.files && slotRef.fileInput.files[0];
+      const updatedAtLabel = formatOwnerAppTimestamp(slotState.updatedAt);
+
+      if (slotRef.titleEl) {
+        slotRef.titleEl.textContent = appName;
+      }
+
+      if (pendingIcon) {
+        revokeOwnerAppPreview(slotRef);
+        slotRef.objectUrl = URL.createObjectURL(pendingIcon);
+        if (slotRef.previewEl) {
+          slotRef.previewEl.src = slotRef.objectUrl;
+          slotRef.previewEl.alt = `${appName} icon preview`;
+        }
+        if (slotRef.iconMetaEl) {
+          slotRef.iconMetaEl.textContent = `Selected icon: ${pendingIcon.name}`;
+        }
+      } else {
+        revokeOwnerAppPreview(slotRef);
+        if (slotRef.previewEl) {
+          slotRef.previewEl.src = slotState.iconUrl || '/img/business-logo.svg';
+          slotRef.previewEl.alt = `${appName} icon preview`;
+        }
+        if (slotRef.iconMetaEl) {
+          slotRef.iconMetaEl.textContent = slotState.iconUrl
+            ? `Current icon: ${slotState.iconFileName || 'Uploaded icon'}${updatedAtLabel ? ` | Updated ${updatedAtLabel}` : ''}`
+            : 'Current icon: none uploaded.';
+        }
+      }
+
+      if (slotRef.fileMetaEl) {
+        if (pendingApp) {
+          const selectedSize = formatFileSize(pendingApp.size);
+          slotRef.fileMetaEl.textContent = `Selected app: ${pendingApp.name}${selectedSize ? ` | ${selectedSize}` : ''}`;
+        } else if (slotState.appUrl) {
+          const currentSize = formatFileSize(slotState.appSizeBytes);
+          slotRef.fileMetaEl.textContent = `Current app: ${slotState.appFileName || 'Uploaded app'}${currentSize ? ` | ${currentSize}` : ''}${updatedAtLabel ? ` | Updated ${updatedAtLabel}` : ''}`;
+        } else {
+          slotRef.fileMetaEl.textContent = 'Current app: none uploaded.';
+        }
+      }
+    };
+
+    const renderAppDownloadsSlot = (slotPayload) => {
+      const slotRef = appDownloadsSlotRefs.find((entry) => entry.slot === Number(slotPayload?.slot));
+      if (!slotRef) return;
+      revokeOwnerAppPreview(slotRef);
+      if (slotRef.nameInput) {
+        slotRef.nameInput.value = String(slotPayload?.name || '').trim() || 'Official Mobile App';
+      }
+      if (slotRef.iconInput) slotRef.iconInput.value = '';
+      if (slotRef.fileInput) slotRef.fileInput.value = '';
+      updateOwnerAppSlotSelection(slotRef);
+    };
+
+    const renderAppDownloadsStatus = (payload) => {
+      const normalized = normalizeOwnerAppDownloadsPayload(payload || {});
+      appDownloadsState = normalized;
+
+      const totalSlots = appDownloadsSlotRefs.length;
+      const configuredSlots = Number(normalized.configuredSlots || 0);
+      let statusText = 'Download apps status: Configure MySQL first.';
+      if (normalized.enabled) {
+        statusText = configuredSlots > 0
+          ? `Download apps status: ${configuredSlots} of ${totalSlots} slot${totalSlots === 1 ? '' : 's'} ready`
+          : 'Download apps status: No app files uploaded yet.';
+      }
+
+      if (appDownloadsStatusBox) {
+        appDownloadsStatusBox.textContent = statusText;
+      }
+      if (appDownloadsStatusModalBox) {
+        appDownloadsStatusModalBox.textContent = statusText;
+      }
+
+      normalized.slots.forEach((slot) => renderAppDownloadsSlot(slot));
+    };
+
+    const syncSchemaButton = () => {
+      const disabled = !mysqlEnabled || !masterKeyConfigured;
+      schemaRunBtn.disabled = disabled;
+      if (!mysqlEnabled) {
+        schemaRunBtn.title = 'Configure MySQL first.';
+      } else if (!masterKeyConfigured) {
+        schemaRunBtn.title = 'Set CONFIG_MASTER_KEY first.';
+      } else {
+        schemaRunBtn.title = '';
+      }
+    };
+
+
+    const renderMeta = (data) => {
+      renderDownloadPageChecklist(Array.isArray(data.downloadablePages) ? data.downloadablePages : []);
+      if (!data.package) {
+        metaBox.textContent = 'Latest package: not generated yet. Click Upload + Update Structure first.';
+        return;
+      }
+
+      const sizeMb = (Number(data.package.sizeBytes || 0) / (1024 * 1024)).toFixed(2);
+      metaBox.textContent = `Latest package: ${data.package.name} | ${sizeMb} MB | updated ${new Date(data.package.updatedAt).toLocaleString()}`;
+    };
+
+    const parseFilename = (dispositionHeader, fallbackName = 'billing-system-structure-latest.zip') => {
+      if (!dispositionHeader) return fallbackName;
+      const utf8Match = dispositionHeader.match(/filename\*=UTF-8''([^;]+)/i);
+      if (utf8Match && utf8Match[1]) {
+        return decodeURIComponent(utf8Match[1]).replace(/[\/\\?%*:|"<>]/g, '-');
+      }
+      const plainMatch = dispositionHeader.match(/filename=\"?([^\"]+)\"?/i);
+      if (plainMatch && plainMatch[1]) {
+        return plainMatch[1].replace(/[\/\\?%*:|"<>]/g, '-');
+      }
+      return fallbackName;
+    };
+
+    const startDirectDownload = (url) => {
+      const link = document.createElement('a');
+      link.href = url;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    };
+
+    const buildAppDownloadsPayloadFromForm = () => ({
+      slots: appDownloadsSlotRefs.map((slotRef) => ({
+        slot: slotRef.slot,
+        name: String(slotRef.nameInput?.value || '').trim() || 'Official Mobile App'
+      }))
+    });
+
+    const fetchAppDownloadsConfig = async () => {
+      const response = await fetch('/api/structure/app-downloads', {
+        cache: 'no-store',
+        credentials: 'include'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to load download apps.');
+      }
+      renderAppDownloadsStatus(data);
+      return data;
+    };
+
+    const uploadAppDownloadAsset = async (slotNumber, kind, file) => {
+      if (!file) return null;
+      const endpoint = kind === 'icon'
+        ? `/api/structure/app-downloads/${slotNumber}/icon`
+        : `/api/structure/app-downloads/${slotNumber}/file`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(file.name || `app-${slotNumber}`)
+        },
+        credentials: 'include',
+        body: file
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || `Failed to upload ${kind}.`);
+      }
+      return data;
+    };
+
+    const defaultCloudflaredConfig = () => ({
+      tunnelId: '',
+      credentialsFile: '',
+      hostname: '',
+      service: 'http://127.0.0.1:3000',
+      warpRoutingEnabled: false
+    });
+
+    const cloudflaredPayloadFromForm = () => ({
+      tunnelId: cloudflaredTunnelIdEl.value.trim(),
+      credentialsFile: cloudflaredCredentialsFileEl.value.trim(),
+      hostname: cloudflaredHostnameEl.value.trim(),
+      service: cloudflaredServiceEl.value.trim(),
+      warpRoutingEnabled: cloudflaredWarpRoutingEl.checked
+    });
+
+    const buildCloudflaredCommands = (incoming = {}) => {
+      const config = incoming || {};
+      const tunnelId = String(config.tunnelId || '').trim() || '<TUNNEL_ID>';
+      const hostname = String(config.hostname || '').trim() || '<app.example.com>';
+      return [
+        'winget install --id Cloudflare.cloudflared -e',
+        'cloudflared tunnel login',
+        `cloudflared tunnel route dns ${tunnelId} ${hostname}`,
+        'npm start'
+      ];
+    };
+
+    const renderCloudflaredCommands = (commands, config) => {
+      const lines = Array.isArray(commands) && commands.length
+        ? commands
+        : buildCloudflaredCommands(config);
+      cloudflaredCommandsEl.textContent = lines.join('\n');
+    };
+
+    const setCloudflaredForm = (incoming) => {
+      const config = incoming || defaultCloudflaredConfig();
+      cloudflaredTunnelIdEl.value = config.tunnelId || '';
+      cloudflaredCredentialsFileEl.value = config.credentialsFile || '';
+      cloudflaredHostnameEl.value = config.hostname || '';
+      cloudflaredServiceEl.value = config.service || 'http://127.0.0.1:3000';
+      cloudflaredWarpRoutingEl.checked = Boolean(config.warpRoutingEnabled);
+    };
+
+    const renderCloudflaredStatus = (payload) => {
+      const installed = Boolean(payload.installed);
+      const configExists = Boolean(payload.configExists);
+      const installLabel = installed ? 'Installed' : 'Not installed';
+      const configLabel = configExists ? 'Saved' : 'Missing';
+      const version = String(payload.version || '').trim();
+      const installError = String(payload.installError || '').trim();
+      const configPath = String(payload.configPath || '').trim();
+
+      const pieces = [
+        `Cloudflared: ${installLabel}`,
+        `Config: ${configLabel}`
+      ];
+      if (version) {
+        pieces.push(version);
+      } else if (!installed && installError) {
+        pieces.push(installError);
+      }
+      if (configPath) {
+        pieces.push(`Path: ${configPath}`);
+      }
+      cloudflaredStatusBox.textContent = pieces.join(' | ');
+      if (cloudflaredStatusModalBox) {
+        cloudflaredStatusModalBox.textContent = pieces.join(' | ');
+      }
+
+      const config = payload.config || defaultCloudflaredConfig();
+      setCloudflaredForm(config);
+      renderCloudflaredCommands(payload.commands, config);
+    };
+
+    const refreshCloudflaredCommandPreview = () => {
+      renderCloudflaredCommands(null, cloudflaredPayloadFromForm());
+    };
+
+    const normalizeAccountPrefixId = (value = '') =>
+      String(value || '')
+        .replace(/\D/g, '')
+        .slice(0, 3);
+
+    const isValidAccountPrefixId = (value = '') => /^[1-9]\d{2}$/.test(normalizeAccountPrefixId(value));
+
+    const accountPrefixPayloadFromForm = () => ({
+      prefixId: normalizeAccountPrefixId(accountPrefixInputEl.value)
+    });
+
+    const renderAccountPrefixStatus = (payload) => {
+      const enabled = Boolean(payload.enabled);
+      const prefixId = normalizeAccountPrefixId(payload.prefixId || '');
+
+      accountPrefixInputEl.value = prefixId;
+      accountPrefixSaveBtn.disabled = !enabled;
+
+      if (!enabled) {
+        accountPrefixStatusBox.textContent = 'Prefix status: Configure MySQL first.';
+        return;
+      }
+
+      accountPrefixStatusBox.textContent = prefixId
+        ? `Prefix status: Configured (${prefixId})`
+        : 'Prefix status: Not set';
+    };
+
+    const setMysqlForm = (config) => {
+      const cfg = config || {};
+      mysqlHostEl.value = cfg.host || '';
+      mysqlPortEl.value = cfg.port || '';
+      mysqlUserEl.value = cfg.user || '';
+      mysqlDatabaseEl.value = cfg.database || '';
+      mysqlConnLimitEl.value = cfg.connLimit || '';
+      mysqlPasswordEl.value = '';
+
+      mysqlState.passwordSet = Boolean(cfg.passwordSet);
+      mysqlPasswordHint.textContent = mysqlState.passwordSet
+        ? 'A password is already saved. Leaving this blank keeps it unchanged.'
+        : 'Password is optional. Leave blank to keep empty password.';
+    };
+
+    const renderMysqlStatus = (payload) => {
+      const source = String(payload.source || 'none');
+      const enabled = Boolean(payload.enabled);
+      const runtimeConfigured = Boolean(payload.runtimeConfigured);
+      mysqlState.runtimeConfigured = runtimeConfigured;
+      mysqlEnabled = enabled;
+
+      mysqlStatusBox.textContent = `MySQL status: ${enabled ? 'Enabled' : 'Disabled'}`;
+
+      const displayConfig = payload.runtimeConfig || payload.config || null;
+      setMysqlForm(displayConfig);
+      syncSchemaButton();
+    };
+
+    const renderMasterKeyStatus = (payload) => {
+      const source = String(payload.source || 'none');
+      masterKeyConfigured = Boolean(payload.configured);
+      const sourceLabel = source === 'env'
+        ? 'Environment'
+        : source === 'file'
+          ? 'Saved on this server'
+          : 'Not configured';
+
+      masterKeyStatusBox.textContent = `Master key status: ${masterKeyConfigured ? 'Configured' : 'Missing'} | Source: ${sourceLabel}`;
+      masterKeyClearBtn.disabled = !masterKeyConfigured;
+      syncSchemaButton();
+    };
+
+    const normalizeMysqlHostPortFields = () => {
+      const rawHost = mysqlHostEl.value.trim();
+      const rawPort = mysqlPortEl.value.trim();
+      if (!rawHost) {
+        return { host: '', port: rawPort };
+      }
+
+      const bracketedMatch = rawHost.match(/^\[([^\]]+)\](?::(\d{1,5}))?$/);
+      if (bracketedMatch) {
+        mysqlHostEl.value = (bracketedMatch[1] || '').trim();
+        if (bracketedMatch[2]) {
+          mysqlPortEl.value = bracketedMatch[2];
+        }
+        return {
+          host: mysqlHostEl.value.trim(),
+          port: mysqlPortEl.value.trim()
+        };
+      }
+
+      const colonCount = (rawHost.match(/:/g) || []).length;
+      if (colonCount === 1) {
+        const hostPortMatch = rawHost.match(/^([^:]+):(\d{1,5})$/);
+        if (hostPortMatch) {
+          mysqlHostEl.value = (hostPortMatch[1] || '').trim();
+          mysqlPortEl.value = hostPortMatch[2];
+        }
+      }
+
+      return {
+        host: mysqlHostEl.value.trim(),
+        port: mysqlPortEl.value.trim()
+      };
+    };
+
+    const mysqlPayloadFromForm = (extra = {}) => {
+      const { host, port } = normalizeMysqlHostPortFields();
+      return {
+        host,
+        port,
+        user: mysqlUserEl.value.trim(),
+        password: mysqlPasswordEl.value,
+        database: mysqlDatabaseEl.value.trim(),
+        connLimit: mysqlConnLimitEl.value.trim(),
+        preservePassword: true,
+        ...extra
+      };
+    };
+
+    const fetchStatus = async () => {
+      const response = await fetch('/api/structure/status', {
+        cache: 'no-store',
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to load status');
+      }
+      renderMeta(data);
+    };
+
+    const fetchMysqlConfig = async () => {
+      const response = await fetch('/api/structure/mysql-config', {
+        cache: 'no-store',
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to load MySQL config');
+      }
+      renderMysqlStatus(data);
+    };
+
+    const fetchAccountPrefixSettings = async () => {
+      const response = await fetch('/api/structure/account-number-settings', {
+        cache: 'no-store',
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to load account prefix settings');
+      }
+      renderAccountPrefixStatus(data);
+    };
+
+    const fetchMasterKeyStatus = async () => {
+      const response = await fetch('/api/structure/master-key', {
+        cache: 'no-store',
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to load master key status');
+      }
+      renderMasterKeyStatus(data);
+    };
+
+    const fetchCloudflaredStatus = async () => {
+      const response = await fetch('/api/structure/cloudflared', {
+        cache: 'no-store',
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to load cloudflared status');
+      }
+      renderCloudflaredStatus(data);
+    };
+
+    const resetAppDownloadsModal = () => {
+      if (!appDownloadsState) {
+        appDownloadsState = defaultOwnerAppDownloadsState();
+      }
+      renderAppDownloadsStatus(appDownloadsState);
+      setAppDownloadsResult('');
+    };
+
+    const getSelectedPackageFile = () => {
+      const file = packageFileEl?.files && packageFileEl.files[0];
+      if (!file) {
+        throw new Error('Select a .zip file first');
+      }
+      const loweredName = String(file.name || '').toLowerCase();
+      if (!loweredName.endsWith('.zip')) {
+        throw new Error('Only .zip files are supported');
+      }
+      return file;
+    };
+
+    const analyzePackagePages = async (file) => {
+      if (!file) return [];
+      setPackageAnalyzeResult('');
+      if (packageAnalyzeBtn) {
+        packageAnalyzeBtn.disabled = true;
+        packageAnalyzeBtn.textContent = 'Analyzing...';
+      }
+      try {
+        const response = await fetch('/api/structure/update/preview', {
+          method: 'POST',
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'X-Package-Name': file.name
+          },
+          credentials: 'include',
+          body: file
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to analyze package.');
+        }
+
+        const pages = Array.isArray(data.pages) ? data.pages : [];
+        packagePreviewState = {
+          fileSignature: `${String(file.name || '')}:${Number(file.size || 0)}:${Number(file.lastModified || 0)}`,
+          pages
+        };
+        renderPackageChecklist(pages);
+        if (pages.length) {
+          setPackageAnalyzeResult(`Found ${pages.length} page${pages.length === 1 ? '' : 's'} in package.`, 'ok');
+        } else {
+          setPackageAnalyzeResult('No page entries found in package.', 'error');
+        }
+        return pages;
+      } finally {
+        if (packageAnalyzeBtn) {
+          packageAnalyzeBtn.disabled = false;
+          packageAnalyzeBtn.textContent = 'Analyze Package Pages';
+        }
+      }
+    };
+
+    openUpdateModalBtn?.addEventListener('click', () => {
+      openModal(updateModal);
+    });
+    openDownloadModalBtn?.addEventListener('click', () => {
+      openModal(downloadModal);
+      fetchStatus().catch((error) => {
+        if (downloadPageHintEl) {
+          downloadPageHintEl.textContent = error.message || 'Failed to load available page updates.';
+        }
+      });
+    });
+    openMysqlModalBtn?.addEventListener('click', () => {
+      setMysqlResult('');
+      openModal(mysqlModal);
+    });
+    openCloudflaredModalBtn?.addEventListener('click', () => {
+      setCloudflaredResult('');
+      openModal(cloudflaredModal);
+    });
+    openAccountPrefixModalBtn?.addEventListener('click', () => {
+      setAccountPrefixResult('');
+      openModal(accountPrefixModal);
+    });
+    openSecurityModalBtn?.addEventListener('click', () => {
+      setMasterKeyResult('');
+      setSchemaResult('');
+      openModal(securityModal);
+    });
+    openAppDownloadsModalBtn?.addEventListener('click', async () => {
+      setAppDownloadsResult('');
+      openModal(appDownloadsModal);
+      try {
+        setAppDownloadsLoading(true, 'Loading...');
+        await fetchAppDownloadsConfig();
+      } catch (error) {
+        setAppDownloadsResult(error.message || 'Failed to load download apps.', 'error');
+      } finally {
+        setAppDownloadsLoading(false);
+      }
+    });
+
+    [updateModalCloseBtn, updateModalCancelBtn].forEach((button) => {
+      button?.addEventListener('click', () => closeModal(updateModal));
+    });
+    [downloadModalCloseBtn, downloadModalDoneBtn].forEach((button) => {
+      button?.addEventListener('click', () => closeModal(downloadModal));
+    });
+    [mysqlModalCloseBtn, mysqlModalCancelBtn].forEach((button) => {
+      button?.addEventListener('click', () => closeModal(mysqlModal));
+    });
+    [cloudflaredModalCloseBtn, cloudflaredModalCancelBtn].forEach((button) => {
+      button?.addEventListener('click', () => closeModal(cloudflaredModal));
+    });
+    [accountPrefixModalCloseBtn, accountPrefixModalCancelBtn].forEach((button) => {
+      button?.addEventListener('click', () => closeModal(accountPrefixModal));
+    });
+    [securityModalCloseBtn, securityModalCancelBtn].forEach((button) => {
+      button?.addEventListener('click', () => closeModal(securityModal));
+    });
+    [appDownloadsModalCloseBtn, appDownloadsModalCancelBtn].forEach((button) => {
+      button?.addEventListener('click', () => {
+        resetAppDownloadsModal();
+        closeModal(appDownloadsModal);
+      });
+    });
+
+    [updateModal, downloadModal, mysqlModal, cloudflaredModal, accountPrefixModal, securityModal, appDownloadsModal].forEach((modal) => {
+      modal?.addEventListener('click', (event) => {
+        if (event.target === modal) {
+          if (modal === appDownloadsModal) {
+            resetAppDownloadsModal();
+          }
+          closeModal(modal);
+        }
+      });
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeAllModals();
+      }
+    });
+
+    packageFileEl?.addEventListener('change', () => {
+      clearPackageChecklist();
+    });
+
+    updateScopeAllEl?.addEventListener('change', () => {
+      if (!updateScopeAllEl.checked) return;
+      if (pageChecklistHintEl) {
+        pageChecklistHintEl.textContent = 'All eligible files from package will be applied.';
+      }
+    });
+
+    updateScopePagesEl?.addEventListener('change', () => {
+      if (!updateScopePagesEl.checked) return;
+      if (!packagePreviewState.pages.length && pageChecklistHintEl) {
+        pageChecklistHintEl.textContent = 'Choose a ZIP file, then click Analyze Package Pages to load the checklist.';
+      }
+    });
+
+    packageAnalyzeBtn?.addEventListener('click', async () => {
+      try {
+        const file = getSelectedPackageFile();
+        await analyzePackagePages(file);
+      } catch (error) {
+        setPackageAnalyzeResult(error.message || 'Failed to analyze package.', 'error');
+      }
+    });
+
+    appDownloadsSlotRefs.forEach((slotRef) => {
+      slotRef.nameInput?.addEventListener('input', () => updateOwnerAppSlotSelection(slotRef));
+      slotRef.iconInput?.addEventListener('change', () => updateOwnerAppSlotSelection(slotRef));
+      slotRef.fileInput?.addEventListener('change', () => updateOwnerAppSlotSelection(slotRef));
+    });
+
+    pageChecklistSelectAllBtn?.addEventListener('click', () => setAllPageSelections(true));
+    pageChecklistSelectNoneBtn?.addEventListener('click', () => setAllPageSelections(false));
+    downloadPageSelectAllBtn?.addEventListener('click', () => setAllDownloadPageSelections(true));
+    downloadPageSelectNoneBtn?.addEventListener('click', () => setAllDownloadPageSelections(false));
+
+    updateBtn.addEventListener('click', async () => {
+      setResult('');
+      try {
+        const file = getSelectedPackageFile();
+        setUpdateLoading(true);
+        const applyNow = applyNowEl ? applyNowEl.checked : true;
+        const scope = getUpdateScope();
+        let selectedPages = [];
+
+        if (scope === 'pages' && applyNow) {
+          const fileSignature = `${String(file.name || '')}:${Number(file.size || 0)}:${Number(file.lastModified || 0)}`;
+          const sameFilePreview = packagePreviewState.fileSignature === fileSignature;
+          if (!sameFilePreview || !Array.isArray(packagePreviewState.pages) || !packagePreviewState.pages.length) {
+            await analyzePackagePages(file);
+          }
+          selectedPages = getSelectedPageKeys();
+          if (!selectedPages.length) {
+            throw new Error('Select at least one page from checklist before updating.');
+          }
+        }
+
+        const query = new URLSearchParams({
+          apply: applyNow ? 'true' : 'false',
+          scope
+        });
+        const response = await fetch(`/api/structure/update?${query.toString()}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'X-Package-Name': file.name,
+            'X-Structure-Pages': JSON.stringify(selectedPages)
+          },
+          credentials: 'include',
+          body: file
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to update structure');
+        }
+
+        let successMessage = data.message || 'Structure package uploaded successfully.';
+        if (data.apply && data.apply.applied) {
+          const appliedCount = Number(data.apply.appliedCount || 0);
+          const deletedCount = Number(data.apply.deletedCount || 0);
+          const skippedCount = Number(data.apply.skippedCount || 0);
+          const filteredCount = Number(data.apply.filteredCount || 0);
+          successMessage += ` Applied ${appliedCount} file(s)`;
+          if (deletedCount > 0) {
+            successMessage += `, deleted ${deletedCount} stale file(s)`;
+          }
+          if (skippedCount > 0) {
+            successMessage += `, skipped ${skippedCount} protected file(s)`;
+          }
+          if (filteredCount > 0) {
+            successMessage += `, filtered out ${filteredCount} file(s)`;
+          }
+          if (String(data.apply.scope || '') === 'pages' && Array.isArray(data.apply.selectedPages) && data.apply.selectedPages.length) {
+            successMessage += ` [Pages: ${data.apply.selectedPages.join(', ')}]`;
+          }
+          successMessage += '.';
+        }
+        if (data.cleanup && Number(data.cleanup.deletedCount || 0) > 0) {
+          const cleanupCount = Number(data.cleanup.deletedCount || 0);
+          const cleanupMb = (Number(data.cleanup.deletedBytes || 0) / (1024 * 1024)).toFixed(2);
+          successMessage += ` Cleaned ${cleanupCount} old structure item(s), freed ${cleanupMb} MB.`;
+        }
+        if (data.cleanup && Array.isArray(data.cleanup.errors) && data.cleanup.errors.length) {
+          successMessage += ' Some old structure files could not be deleted; check server logs.';
+        }
+        setResult(successMessage, 'ok');
+        packageFileEl.value = '';
+        clearPackageChecklist();
+        closeModal(updateModal);
+        await fetchStatus();
+      } catch (error) {
+        setResult(error.message || 'Failed to update structure', 'error');
+      } finally {
+        setUpdateLoading(false);
+      }
+    });
+
+    downloadBtn.addEventListener('click', async () => {
+      setResult('');
+      try {
+        setDownloadLoading(true);
+        startDirectDownload('/api/structure/download');
+        setResult('Structure package download started.', 'ok');
+        await fetchStatus();
+      } catch (error) {
+        setResult(error.message || 'Failed to download package', 'error');
+      } finally {
+        setDownloadLoading(false);
+      }
+    });
+
+    downloadSelectedPagesBtn?.addEventListener('click', async () => {
+      setResult('');
+      try {
+        const selectedPages = getSelectedDownloadPageKeys();
+        if (!selectedPages.length) {
+          throw new Error('Select at least one page update to download.');
+        }
+        setDownloadLoading(true);
+        const params = new URLSearchParams({
+          scope: 'pages',
+          pages: selectedPages.join(',')
+        });
+        startDirectDownload(`/api/structure/download?${params.toString()}`);
+        setResult(`Selected update download started (${selectedPages.length} page${selectedPages.length === 1 ? '' : 's'}).`, 'ok');
+      } catch (error) {
+        setResult(error.message || 'Failed to download selected updates', 'error');
+      } finally {
+        setDownloadLoading(false);
+      }
+    });
+
+    if (projectExportBtn) {
+      projectExportBtn.addEventListener('click', async () => {
+        setResult('');
+        try {
+          setProjectExportLoading(true);
+          const includeData = projectExportIncludeDataEl ? projectExportIncludeDataEl.checked : false;
+          const includeNodeModules = projectExportIncludeNodeModulesEl ? projectExportIncludeNodeModulesEl.checked : false;
+          const params = new URLSearchParams({
+            includeData: includeData ? 'true' : 'false',
+            includeNodeModules: includeNodeModules ? 'true' : 'false'
+          });
+
+          startDirectDownload(`/api/structure/project-zip?${params.toString()}`);
+
+          const cleanExport = !includeData && !includeNodeModules;
+          const message = cleanExport
+            ? 'Project export download started (clean mode: no data, no node_modules, no MySQL config/master key).'
+            : 'Project export download started.';
+          setResult(message, 'ok');
+        } catch (error) {
+          setResult(error.message || 'Failed to download project export', 'error');
+        } finally {
+          setProjectExportLoading(false);
+        }
+      });
+    }
+
+    cloudflaredReloadBtn.addEventListener('click', async () => {
+      setCloudflaredResult('');
+      try {
+        setCloudflaredLoading(true, 'Loading...');
+        await fetchCloudflaredStatus();
+      } catch (error) {
+        setCloudflaredResult(error.message || 'Failed to load cloudflared status', 'error');
+      } finally {
+        setCloudflaredLoading(false);
+      }
+    });
+
+    cloudflaredSaveBtn.addEventListener('click', async () => {
+      setCloudflaredResult('');
+      try {
+        setCloudflaredLoading(true, 'Saving...');
+        const response = await fetch('/api/structure/cloudflared', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(cloudflaredPayloadFromForm())
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to save cloudflared config');
+        }
+        renderCloudflaredStatus(data);
+        setCloudflaredResult(data.message || 'Cloudflared config saved.', 'ok');
+        closeModal(cloudflaredModal);
+      } catch (error) {
+        setCloudflaredResult(error.message || 'Failed to save cloudflared config', 'error');
+      } finally {
+        setCloudflaredLoading(false);
+      }
+    });
+
+    [
+      cloudflaredTunnelIdEl,
+      cloudflaredHostnameEl,
+      cloudflaredCredentialsFileEl,
+      cloudflaredServiceEl
+    ].forEach((field) => {
+      field.addEventListener('input', refreshCloudflaredCommandPreview);
+    });
+    cloudflaredWarpRoutingEl.addEventListener('change', refreshCloudflaredCommandPreview);
+    refreshCloudflaredCommandPreview();
+    mysqlHostEl.addEventListener('blur', normalizeMysqlHostPortFields);
+
+    mysqlTestBtn.addEventListener('click', async () => {
+      setMysqlResult('');
+      try {
+        setMysqlLoading(mysqlTestBtn, true, 'Test Connection', 'Testing...');
+        const response = await fetch('/api/structure/mysql-config/test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(mysqlPayloadFromForm())
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'MySQL test failed');
+        }
+        setMysqlResult(data.message || 'MySQL connection test passed.', 'ok');
+      } catch (error) {
+        setMysqlResult(error.message || 'MySQL test failed', 'error');
+      } finally {
+        setMysqlLoading(mysqlTestBtn, false, 'Test Connection', 'Testing...');
+      }
+    });
+
+    mysqlSaveBtn.addEventListener('click', async () => {
+      setMysqlResult('');
+      try {
+        setMysqlLoading(mysqlSaveBtn, true, 'Save MySQL Config', 'Saving...');
+        const response = await fetch('/api/structure/mysql-config', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(mysqlPayloadFromForm({ verify: true }))
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to save MySQL config');
+        }
+        setMysqlResult(data.message || 'MySQL config saved.', 'ok');
+        await fetchMysqlConfig();
+        await fetchAccountPrefixSettings();
+        closeModal(mysqlModal);
+      } catch (error) {
+        setMysqlResult(error.message || 'Failed to save MySQL config', 'error');
+      } finally {
+        setMysqlLoading(mysqlSaveBtn, false, 'Save MySQL Config', 'Saving...');
+      }
+    });
+
+    accountPrefixInputEl.addEventListener('input', () => {
+      accountPrefixInputEl.value = normalizeAccountPrefixId(accountPrefixInputEl.value);
+    });
+
+    accountPrefixSaveBtn.addEventListener('click', async () => {
+      setAccountPrefixResult('');
+      try {
+        const payload = accountPrefixPayloadFromForm();
+        if (payload.prefixId && !isValidAccountPrefixId(payload.prefixId)) {
+          throw new Error('Prefix ID must be 3 digits and start with 1-9.');
+        }
+        setAccountPrefixLoading(true);
+        const response = await fetch('/api/structure/account-number-settings', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to save account prefix settings');
+        }
+        setAccountPrefixResult(data.message || 'Account prefix ID saved.', 'ok');
+        await fetchAccountPrefixSettings();
+        closeModal(accountPrefixModal);
+      } catch (error) {
+        setAccountPrefixResult(error.message || 'Failed to save account prefix settings', 'error');
+      } finally {
+        setAccountPrefixLoading(false);
+      }
+    });
+
+    masterKeySaveBtn.addEventListener('click', async () => {
+      setMasterKeyResult('');
+      const value = masterKeyInputEl.value.trim();
+      if (!value) {
+        setMasterKeyResult('Master key is required.', 'error');
+        return;
+      }
+      try {
+        setMasterKeyLoading(true, 'Saving...');
+        const response = await fetch('/api/structure/master-key', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ masterKey: value, persist: true })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to save master key');
+        }
+        masterKeyInputEl.value = '';
+        setMasterKeyResult(data.message || 'Master key saved.', 'ok');
+        await fetchMasterKeyStatus();
+      } catch (error) {
+        setMasterKeyResult(error.message || 'Failed to save master key', 'error');
+      } finally {
+        setMasterKeyLoading(false);
+      }
+    });
+
+    masterKeyClearBtn.addEventListener('click', async () => {
+      setMasterKeyResult('');
+      const ok = window.appConfirm
+        ? await window.appConfirm('Clear the stored master key? Existing encrypted integrations may become unreadable.', { title: 'Clear Master Key' })
+        : window.confirm('Clear the stored master key? Existing encrypted integrations may become unreadable.');
+      if (!ok) return;
+      try {
+        setMasterKeyLoading(true, 'Clearing...');
+        const response = await fetch('/api/structure/master-key', {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to clear master key');
+        }
+        setMasterKeyResult(data.message || 'Master key cleared.', 'ok');
+        await fetchMasterKeyStatus();
+      } catch (error) {
+        setMasterKeyResult(error.message || 'Failed to clear master key', 'error');
+      } finally {
+        setMasterKeyLoading(false);
+      }
+    });
+
+    schemaRunBtn.addEventListener('click', async () => {
+      setSchemaLoading(true);
+      setSchemaResult('Running schema update...', '');
+
+      try {
+        const payload = {
+          reset: false
+        };
+        const response = await fetch('/api/structure/mysql-schema', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Schema update failed.');
+        }
+        setSchemaResult(data.message || 'Schema update complete.', 'ok');
+      } catch (error) {
+        setSchemaResult(error.message || 'Schema update failed.', 'error');
+      } finally {
+        setSchemaLoading(false);
+      }
+    });
+
+    appDownloadsSaveBtn?.addEventListener('click', async () => {
+      setAppDownloadsResult('');
+      const pendingUploads = appDownloadsSlotRefs.map((slotRef) => ({
+        slot: slotRef.slot,
+        iconFile: slotRef.iconInput?.files && slotRef.iconInput.files[0] ? slotRef.iconInput.files[0] : null,
+        appFile: slotRef.fileInput?.files && slotRef.fileInput.files[0] ? slotRef.fileInput.files[0] : null
+      }));
+      try {
+        setAppDownloadsLoading(true, 'Saving...');
+        const response = await fetch('/api/structure/app-downloads', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(buildAppDownloadsPayloadFromForm())
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || 'Failed to save download apps.');
+        }
+
+        const successMessages = [data.message || 'Download apps saved.'];
+
+        for (const slotUpload of pendingUploads) {
+          const { slot, iconFile, appFile } = slotUpload;
+          if (iconFile) {
+            const iconResult = await uploadAppDownloadAsset(slot, 'icon', iconFile);
+            successMessages.push(iconResult?.message || `App ${slot} icon uploaded.`);
+          }
+          if (appFile) {
+            const appResult = await uploadAppDownloadAsset(slot, 'file', appFile);
+            successMessages.push(appResult?.message || `App ${slot} package uploaded.`);
+          }
+        }
+
+        await fetchAppDownloadsConfig();
+        setAppDownloadsResult(successMessages[successMessages.length - 1] || 'Download apps saved.', 'ok');
+        closeModal(appDownloadsModal);
+      } catch (error) {
+        setAppDownloadsResult(error.message || 'Failed to save download apps.', 'error');
+        await fetchAppDownloadsConfig().catch(() => {});
+      } finally {
+        setAppDownloadsLoading(false);
+      }
+    });
+
+    (async () => {
+      setUpdateLoading(true);
+      setDownloadLoading(true);
+      setProjectExportLoading(true);
+      setCloudflaredLoading(true, 'Loading...');
+      setMysqlLoading(mysqlTestBtn, true, 'Test Connection', 'Testing...');
+      setMysqlLoading(mysqlSaveBtn, true, 'Save MySQL Config', 'Saving...');
+      setAccountPrefixLoading(true);
+      setMasterKeyLoading(true, 'Loading...');
+      appDownloadsState = defaultOwnerAppDownloadsState();
+      setAppDownloadsLoading(true, 'Loading...');
+      try {
+        await Promise.all([
+          fetchStatus(),
+          fetchCloudflaredStatus(),
+          fetchMysqlConfig(),
+          fetchAccountPrefixSettings(),
+          fetchMasterKeyStatus(),
+          fetchAppDownloadsConfig()
+        ]);
+      } catch (error) {
+        const message = error.message || 'Failed to load page status';
+        setResult(message, 'error');
+        setCloudflaredResult(message, 'error');
+        setMysqlResult(message, 'error');
+        setAccountPrefixResult(message, 'error');
+        setMasterKeyResult(message, 'error');
+        setAppDownloadsResult(message, 'error');
+      } finally {
+        setUpdateLoading(false);
+        setDownloadLoading(false);
+        setProjectExportLoading(false);
+        setCloudflaredLoading(false);
+        setMysqlLoading(mysqlTestBtn, false, 'Test Connection', 'Testing...');
+        setMysqlLoading(mysqlSaveBtn, false, 'Save MySQL Config', 'Saving...');
+        setAccountPrefixLoading(false);
+        setMasterKeyLoading(false);
+        setAppDownloadsLoading(false);
+      }
+    })();
+  </script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>
+
+
+
+
+

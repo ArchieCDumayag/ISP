@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Payment Queue History - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/payment-confirmation-queue-history.css?v=1.2">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page queue-history-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <h1>Payment Queue History</h1>
+                    </div>
+                </section>
+
+                <section class="section-frame queue-history-panel">
+                    <div class="section-toolbar queue-history-toolbar">
+                        <div class="queue-history-controls">
+                            <label for="queueHistoryAccountFilter">Account #</label>
+                            <input type="search" id="queueHistoryAccountFilter" placeholder="Optional account number">
+                        </div>
+                        <div class="queue-history-switch-wrap">
+                            <div class="view-toggle queue-history-switch">
+                                <button type="button" class="toggle-btn active" id="historyApprovedSwitchBtn" data-history-view="approved">
+                                    <i class="ti ti-check" aria-hidden="true"></i> Approved History
+                                </button>
+                                <button type="button" class="toggle-btn" id="historyRejectedSwitchBtn" data-history-view="rejected">
+                                    <i class="ti ti-x" aria-hidden="true"></i> Rejected History
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="historyApprovedView">
+                        <div class="table-wrapper queue-history-table-wrap">
+                            <table class="queue-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Customer</th>
+                                        <th>Submitted</th>
+                                        <th>Reviewed</th>
+                                        <th>Amount</th>
+                                        <th>Ref. #</th>
+                                        <th>Proof</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyApprovedTableBody">
+                                    <tr>
+                                        <td colspan="6" class="history-empty">Loading approved history...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="historyRejectedView" style="display:none;">
+                        <div class="table-wrapper queue-history-table-wrap">
+                            <table class="queue-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Customer</th>
+                                        <th>Submitted</th>
+                                        <th>Reviewed</th>
+                                        <th>Amount</th>
+                                        <th>Reason</th>
+                                        <th>Proof</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyRejectedTableBody">
+                                    <tr>
+                                        <td colspan="6" class="history-empty">Loading rejected history...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="payment-confirmation-queue-history.js?v=1.1"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

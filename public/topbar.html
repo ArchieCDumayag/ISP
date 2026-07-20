@@ -1,0 +1,246 @@
+<header class="topbar">
+    <div class="topbar-left">
+        <button
+            type="button"
+            class="topbar-btn topbar-menu-toggle"
+            id="topbarMenuToggle"
+            aria-label="Open navigation menu"
+            data-tooltip="Menu"
+            aria-controls="sidebar"
+            aria-expanded="false"
+        >
+            <i class="topbar-icon ti ti-menu-2" aria-hidden="true"></i>
+        </button>
+        <div class="logo-chip" aria-hidden="true">
+            <img src="/img/business-logo.svg" alt="" class="logo-chip__image" id="topbarLogo" loading="lazy">
+            <span class="logo-chip__fallback" id="topbarLogoFallback">DP</span>
+        </div>
+        <div class="topbar-brand">
+            <span class="topbar-eyebrow">Corporate Console</span>
+            <div class="topbar-title">
+                <span class="topbar-business" id="topbarBusinessName">Dante Point To Point Pisonet</span>
+                <span class="topbar-separator" aria-hidden="true"></span>
+                <span class="topbar-tagline" id="topbarBusinessTagline">Fiber Network</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="topbar-right">
+        <button type="button" class="topbar-btn" data-action="theme-toggle" aria-label="Switch theme" data-tooltip="Dark mode">
+            <i data-ti-light="moon-stars" data-ti-dark="sun" class="topbar-icon ti ti-moon-stars" aria-hidden="true"></i>
+        </button>
+
+        <button type="button" class="topbar-btn" id="topbarLogs" aria-haspopup="dialog" aria-expanded="false" aria-controls="logsModal" aria-label="View activity log" data-tooltip="Activity log">
+            <i class="topbar-icon ti ti-clipboard-list" aria-hidden="true"></i>
+        </button>
+
+        <div class="topbar-profile-container">
+            <button
+                type="button"
+                class="topbar-profile"
+                id="topbarProfile"
+                data-tooltip="Profile"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="profileModal"
+            >
+                <span class="profile-avatar" id="profileAvatar" aria-hidden="true">
+                    <i class="profile-avatar__icon ti ti-user" aria-hidden="true"></i>
+                </span>
+                <div class="profile-meta">
+                    <span class="profile-name" id="profileName"></span>
+                    <span class="profile-role" id="profileRole"></span>
+                </div>
+            </button>
+        </div>
+
+        <button type="button" class="topbar-btn" data-action="import" aria-label="Import" data-tooltip="Import">
+            <i class="topbar-icon ti ti-upload" aria-hidden="true"></i>
+        </button>
+
+        <button type="button" class="topbar-btn" data-action="export" aria-label="Export" data-tooltip="Export">
+            <i class="topbar-icon ti ti-download" aria-hidden="true"></i>
+        </button>
+
+        <button type="button" class="topbar-btn topbar-btn--logout" data-action="logout" aria-label="Log out" data-tooltip="Log out">
+            <i class="topbar-icon ti ti-logout" aria-hidden="true"></i>
+        </button>
+    </div>
+</header>
+
+<div class="profile-modal" id="profileModal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle" hidden>
+    <div class="profile-modal__backdrop" data-profile-close></div>
+    <div class="profile-modal__content" role="document" tabindex="-1">
+        <header class="profile-modal__header">
+            <div>
+                <h2 class="profile-modal__title" id="profileModalTitle">Business profile</h2>
+                <p class="profile-modal__subtitle">Current details shown in the billing console.</p>
+            </div>
+            <button type="button" class="profile-modal__close" aria-label="Close profile viewer" data-profile-close>
+                <i aria-hidden="true" class="ti ti-circle-x"></i>
+            </button>
+        </header>
+        <div class="profile-modal__body">
+            <div class="profile-modal__branding">
+                <div class="profile-modal__branding-logo" aria-hidden="true">
+                    <img src="/img/business-logo.svg" alt="" id="profileModalLogo" class="profile-modal__branding-image" loading="lazy">
+                    <span class="profile-modal__branding-fallback" id="profileModalLogoFallback">DP</span>
+                </div>
+                <div class="profile-modal__branding-info">
+                    <span class="profile-modal__branding-name" id="profileModalBusinessName">Dante Point To Point Pisonet</span>
+                    <span class="profile-modal__branding-tagline" id="profileModalBusinessTagline">Fiber Network</span>
+                </div>
+            </div>
+            <div class="profile-modal__grid">
+                <div class="profile-modal__item">
+                    <span class="profile-label">Business</span>
+                    <span class="profile-value" id="profileBusiness">Dante Point To Point Pisonet</span>
+                </div>
+                <div class="profile-modal__item">
+                    <span class="profile-label">Business tagline</span>
+                    <span class="profile-value" id="profileBusinessTagline">Fiber Network</span>
+                </div>
+                <div class="profile-modal__item">
+                    <span class="profile-label">Support email</span>
+                    <span class="profile-value" id="profileBusinessEmail"></span>
+                </div>
+                <div class="profile-modal__item">
+                    <span class="profile-label">Contact</span>
+                    <span class="profile-value" id="profileBusinessContact">--</span>
+                </div>
+                <div class="profile-modal__item profile-modal__item--wide profile-menu__section--multiline">
+                    <span class="profile-label">Address</span>
+                    <span class="profile-value" id="profileBusinessAddress">--</span>
+                </div>
+                <div class="profile-modal__item">
+                    <span class="profile-label">Account</span>
+                    <span class="profile-value" id="profileAccount">--</span>
+                </div>
+                <div class="profile-modal__item">
+                    <span class="profile-label">Role</span>
+                    <span class="profile-value" id="profileRoleDetail">--</span>
+                </div>
+                <div class="profile-modal__item">
+                    <span class="profile-label">Last login</span>
+                    <span class="profile-value" id="profileLastLogin">--</span>
+                </div>
+            </div>
+        </div>
+        <footer class="profile-modal__footer">
+            <button type="button" class="ghost-btn ghost-btn--subtle" data-profile-close>Close</button>
+            <button type="button" class="primary-btn profile-modal__edit" id="profileEditBtn">
+                <i aria-hidden="true" class="ti ti-pencil"></i>
+                Edit business info
+            </button>
+        </footer>
+    </div>
+</div>
+
+<div class="profile-edit-modal" id="profileEditModal" role="dialog" aria-modal="true" aria-labelledby="profileEditTitle" hidden>
+    <div class="profile-edit-modal__backdrop" data-profile-edit-close></div>
+    <div class="profile-edit-modal__content" role="document">
+        <header class="profile-edit-modal__header">
+            <div>
+                <h2 class="profile-edit-modal__title" id="profileEditTitle">Business profile</h2>
+                <p class="profile-edit-modal__subtitle">Update the details shown across the billing console.</p>
+            </div>
+            <button type="button" class="profile-edit-modal__close" aria-label="Close editor" data-profile-edit-close>
+                <i aria-hidden="true" class="ti ti-circle-x"></i>
+            </button>
+        </header>
+        <form class="profile-edit-form tabler-form" id="profileEditForm">
+            <div class="profile-edit-form__grid">
+                <label class="profile-edit-form__field">
+                    <span class="profile-edit-form__label form-label required">Business name</span>
+                    <input class="form-control" type="text" id="profileEditName" name="businessName" required autocomplete="organization">
+                </label>
+                <label class="profile-edit-form__field">
+                    <span class="profile-edit-form__label form-label">Support email</span>
+                    <input class="form-control" type="email" id="profileEditEmail" name="businessEmail" autocomplete="email">
+                </label>
+                <label class="profile-edit-form__field profile-edit-form__field--full">
+                    <span class="profile-edit-form__label form-label">Business tagline</span>
+                    <input class="form-control" type="text" id="profileEditTagline" name="businessTagline">
+                </label>
+                <label class="profile-edit-form__field">
+                    <span class="profile-edit-form__label form-label">Contact number</span>
+                    <input class="form-control" type="text" id="profileEditContact" name="businessContact" autocomplete="tel">
+                </label>
+                <label class="profile-edit-form__field profile-edit-form__field--full">
+                    <span class="profile-edit-form__label form-label">Service address</span>
+                    <textarea class="form-control" id="profileEditAddress" name="businessAddress" rows="3"></textarea>
+                </label>
+            </div>
+            <div class="profile-edit-logo">
+                <div class="profile-edit-logo__preview" data-logo-preview>
+                    <img alt="" class="profile-edit-logo__preview-image" data-logo-preview-image hidden>
+                    <span class="profile-edit-logo__preview-fallback" data-logo-preview-fallback>DP</span>
+                </div>
+                <div class="profile-edit-logo__fields">
+                    <label class="profile-edit-form__field profile-edit-form__field--stack">
+                        <span class="profile-edit-form__label form-label">Upload logo</span>
+                        <input class="form-control" type="file" id="profileEditLogo" accept="image/*">
+                        <span class="profile-edit-logo__help form-hint">PNG or SVG, square images work best. If no logo has been uploaded yet, initials will be shown.</span>
+                    </label>
+                </div>
+            </div>
+            <div class="profile-edit-modal__footer">
+                <button type="button" class="ghost-btn ghost-btn--subtle" data-profile-edit-close>Cancel</button>
+                <button type="submit" class="primary-btn" id="profileEditSave">Save changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="logs-modal" id="logsModal" role="dialog" aria-modal="true" aria-labelledby="logsModalTitle" hidden>
+    <div class="logs-modal__backdrop" data-logs-close></div>
+    <div class="logs-modal__content" role="document">
+        <header class="logs-modal__header">
+            <div>
+                <h2 class="logs-modal__title" id="logsModalTitle">Activity log</h2>
+                <p class="logs-modal__subtitle">Recent actions across the billing console.</p>
+            </div>
+            <button type="button" class="logs-modal__close" aria-label="Close activity log" data-logs-close>
+                <i aria-hidden="true" class="ti ti-circle-x"></i>
+            </button>
+        </header>
+        <div class="logs-modal__body">
+            <ol class="logs-modal__list list-group tabler-list list-group-flush list-group-numbered" id="logsList">
+                <li class="empty list-group-item">No activity yet.</li>
+            </ol>
+        </div>
+        <footer class="logs-modal__footer">
+            <button type="button" class="ghost-btn ghost-btn--subtle" data-logs-close>Close</button>
+            <button type="button" class="ghost-btn ghost-btn--danger" id="logsClear">
+                <i aria-hidden="true" class="ti ti-trash"></i>
+                Clear log
+            </button>
+        </footer>
+    </div>
+</div>
+
+<div class="reset-overlay" id="credentialResetOverlay" hidden>
+    <div class="reset-card" role="dialog" aria-modal="true" aria-labelledby="credentialResetTitle">
+        <h2 id="credentialResetTitle">Change default admin credentials</h2>
+        <p>Default backup admin credentials detected. Please set a new username and password before continuing.</p>
+
+        <div class="reset-field">
+            <label class="form-label" for="credentialResetUsername">New username</label>
+            <input class="form-control" type="text" id="credentialResetUsername" autocomplete="username">
+        </div>
+        <div class="reset-field">
+            <label class="form-label" for="credentialResetPassword">New password</label>
+            <input class="form-control" type="password" id="credentialResetPassword" autocomplete="new-password">
+        </div>
+        <div class="reset-field">
+            <label class="form-label" for="credentialResetPasswordConfirm">Confirm new password</label>
+            <input class="form-control" type="password" id="credentialResetPasswordConfirm" autocomplete="new-password">
+        </div>
+
+        <p class="reset-error invalid-feedback" id="credentialResetError"></p>
+
+        <div class="reset-actions">
+            <button type="button" class="primary-btn" id="credentialResetSaveBtn">Save and continue</button>
+        </div>
+    </div>
+</div>

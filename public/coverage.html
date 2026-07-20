@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Coverage Table - Dante Point To Point Pisonet</title>
+    <script src="theme-init.js?v=2.6"></script>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="coverage.css?v=1.6">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar"></div>
+    <div class="app-main">
+      <div id="topbar"></div>
+
+      <main class="page coverage-page">
+        <section class="section-header">
+          <div class="page-title">
+            <h1>Coverage Table</h1>
+            <p class="subtitle">Manage service coverage areas in table view.</p>
+          </div>
+          <div class="header-actions">
+            <button class="add-btn" id="openModalBtn"><i class="ti ti-map-pin" aria-hidden="true"></i> Add Coverage Area</button>
+          </div>
+        </section>
+
+        <div class="section-frame table-wrapper elevated coverage-directory" style="padding:0;">
+          <div class="section-toolbar">
+            <div class="search-field">
+              <i class="ti ti-search" aria-hidden="true"></i>
+              <input id="searchCoverage" type="search" placeholder="Search area, code, or router" aria-label="Search coverage">
+            </div>
+            <div class="toolbar-actions">
+              <div class="page-size-control">
+                <label for="coverageSortSelect">Sort</label>
+                <div class="select-wrapper">
+                  <select id="coverageSortSelect" name="coverageSortSelect">
+                    <option value="">Default</option>
+                    <option value="nameAsc">A-Z</option>
+                    <option value="nameDesc">Z-A</option>
+                  </select>
+                </div>
+              </div>
+              <div class="page-size-control">
+                <label for="coveragePageSizeSelect">Show</label>
+                <div class="select-wrapper">
+                  <select id="coveragePageSizeSelect" name="coveragePageSizeSelect">
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </div>
+              </div>
+              <button class="ghost-btn" id="filterBtn" type="button"><i class="ti ti-filter" aria-hidden="true"></i> Filter</button>
+            </div>
+          </div>
+
+          <div id="tableView">
+            <table class="coverage-table">
+              <thead>
+                <tr>
+                  <th class="coverage-id-col">ID</th>
+                  <th class="coverage-area-col">Area Name</th>
+                  <th class="coverage-router-col">MikroTik Link</th>
+                  <th class="coverage-date-col">Created</th>
+                  <th class="coverage-date-col">Updated</th>
+                  <th class="coverage-clients-col">Total Clients</th>
+                  <th class="actions-col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="coverageTbody"></tbody>
+            </table>
+            <div class="empty-state" id="emptyState" style="display:none;">
+              <i class="ti ti-map-pin" aria-hidden="true"></i>
+              <p>No coverage areas found.</p>
+            </div>
+          </div>
+          <div class="table-footer" id="coverageFooter">
+            <div class="footer-summary" id="coverageSummary"></div>
+            <div class="footer-controls">
+              <button type="button" class="footer-btn" id="coveragePrev" aria-label="Previous page" disabled>&#8249;</button>
+              <span class="footer-page-info" id="coveragePageInfo">Page 1 of 1</span>
+              <button type="button" class="footer-btn" id="coverageNext" aria-label="Next page" disabled>&#8250;</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="coverageModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h2 id="modalTitle">Add Coverage Area</h2>
+          <p class="modal-subtitle">Register a serviceable location</p>
+        </div>
+        <button class="close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="modal-body">
+        <form id="coverageForm" class="plan-form" autocomplete="off">
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Area Name</label>
+              <input type="text" name="name" required>
+            </div>
+            <div class="form-field">
+              <label>MikroTik Link</label>
+              <select name="mikrotikId" id="coverageMikrotikLink">
+                <option value="">No MikroTik link</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer form-actions">
+        <button type="button" class="ghost-btn" id="cancelBtn">Cancel</button>
+        <button type="submit" form="coverageForm" class="primary-btn"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="filterModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle" aria-hidden="true">
+    <div class="modal-content" style="width: min(560px, 95vw);">
+      <div class="modal-header">
+        <div>
+          <h2 id="filterModalTitle">Filter Coverage</h2>
+          <p class="modal-subtitle">Filter coverage areas in the table view.</p>
+        </div>
+        <button class="close-modal" id="closeFilterModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <form id="filterForm" class="plan-form" autocomplete="off">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="filterClients">Filter by Clients</label>
+              <select id="filterClients" name="filterClients">
+                <option value="">All Areas</option>
+                <option value="withClients">With Clients</option>
+                <option value="withoutClients">No Clients</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer form-actions">
+          <button type="button" class="ghost-btn" id="resetFiltersBtn">Reset Filters</button>
+          <button type="submit" class="primary-btn"><i class="ti ti-check" aria-hidden="true"></i> Apply Filters</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="layout.js?v=3.5"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const API = '/api/coverage';
+      const API_CUSTOMERS = '/api/customers';
+
+      const tbody = document.getElementById('coverageTbody');
+      const emptyState = document.getElementById('emptyState');
+      const emptyStateMessage = emptyState?.querySelector('p');
+      const searchInput = document.getElementById('searchCoverage');
+      const filterBtn = document.getElementById('filterBtn');
+      const filterModal = document.getElementById('filterModal');
+      const filterForm = document.getElementById('filterForm');
+      const filterClientsSelect = document.getElementById('filterClients');
+      const coverageSortSelect = document.getElementById('coverageSortSelect');
+      const coveragePageSizeSelect = document.getElementById('coveragePageSizeSelect');
+      const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+      const modal = document.getElementById('coverageModal');
+      const form = document.getElementById('coverageForm');
+      const routerLinkSelect = document.getElementById('coverageMikrotikLink');
+      const routerLinkField = routerLinkSelect?.closest('.form-field') || null;
+      const coverageFooter = document.getElementById('coverageFooter');
+      const coverageSummary = document.getElementById('coverageSummary');
+      const coveragePageInfo = document.getElementById('coveragePageInfo');
+      const coveragePrev = document.getElementById('coveragePrev');
+      const coverageNext = document.getElementById('coverageNext');
+      let coverageData = [];
+      let customerCountsByArea = new Map();
+      let mikrotikRouters = [];
+      let defaultMikrotikRouterId = '';
+      let mikrotikEnabled = false;
+      let editId = null;
+      const coveragePagination = {
+        page: 1,
+        pageSize: Number(coveragePageSizeSelect?.value || 10)
+      };
+
+      const normalizeName = (value) => String(value || '').trim().toLowerCase();
+      const normalizeRouterId = (value) => String(value || '').trim();
+      const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      const resolveMikrotikEnabledState = (settings = {}) => {
+        if (typeof window.resolveMikrotikEnabledState === 'function') {
+          return window.resolveMikrotikEnabledState(settings);
+        }
+        const globalEnabled = Boolean(settings?.mikrotik?.enabled);
+        const routers = Array.isArray(settings?.mikrotikRouters) ? settings.mikrotikRouters : [];
+        const hasRouter = Boolean(globalEnabled && routers.some((router) => {
+          if (router?.enabled === false) return false;
+          const address = String(router?.address || '').trim();
+          const username = String(router?.username || '').trim();
+          const password = String(router?.password ?? '').trim();
+          return Boolean(address && username && password);
+        }));
+        const legacy = settings?.mikrotik || {};
+        const legacyEnabled = Boolean(
+          globalEnabled
+          && String(legacy?.address || '').trim()
+          && String(legacy?.username || '').trim()
+          && String(legacy?.password ?? '').trim()
+        );
+        return { enabled: Boolean(hasRouter || legacyEnabled) };
+      };
+      const applyMikrotikVisibility = () => {
+        const mikrotikColumnHeader = document.querySelector('.coverage-table thead .coverage-router-col');
+        if (mikrotikColumnHeader) {
+          mikrotikColumnHeader.style.display = mikrotikEnabled ? '' : 'none';
+        }
+        if (routerLinkField) {
+          routerLinkField.style.display = mikrotikEnabled ? '' : 'none';
+        }
+        if (searchInput) {
+          searchInput.placeholder = mikrotikEnabled
+            ? 'Search area, code, or router'
+            : 'Search area or code';
+        }
+        document.dispatchEvent(new CustomEvent('page:search-ready', {
+          detail: {
+            placeholder: mikrotikEnabled
+              ? 'Search coverage by name, code, or router'
+              : 'Search coverage by name or code'
+          }
+        }));
+      };
+      const coerceRouterRecord = (router = {}) => {
+        const id = normalizeRouterId(router?.id);
+        if (!id) return null;
+        const label = String(router?.label || router?.address || id).trim() || id;
+        return {
+          id,
+          label,
+          address: String(router?.address || '').trim(),
+          isDefault: Boolean(router?.isDefault)
+        };
+      };
+      const resolveDefaultRouterId = (settings, routers = []) => {
+        const preferred = normalizeRouterId(settings?.mikrotikDefaultId);
+        if (preferred && routers.some((router) => normalizeRouterId(router?.id) === preferred)) {
+          return preferred;
+        }
+        const explicitDefault = routers.find((router) => router?.isDefault);
+        if (explicitDefault?.id) return normalizeRouterId(explicitDefault.id);
+        return normalizeRouterId(routers[0]?.id);
+      };
+      const resolveRouterLabel = (routerId = '') => {
+        const normalizedId = normalizeRouterId(routerId);
+        if (!normalizedId) return '';
+        const matched = mikrotikRouters.find((router) => normalizeRouterId(router?.id) === normalizedId);
+        return String(matched?.label || matched?.address || normalizedId).trim() || normalizedId;
+      };
+      const refreshRouterLinkOptions = (preferredValue = '') => {
+        if (!routerLinkSelect) return;
+        const desiredValue = normalizeRouterId(preferredValue) || normalizeRouterId(routerLinkSelect.value);
+        routerLinkSelect.innerHTML = '<option value="">No MikroTik link</option>';
+        mikrotikRouters.forEach((router) => {
+          const label = router.isDefault ? `${router.label} (Default)` : router.label;
+          routerLinkSelect.add(new Option(label, router.id));
+        });
+        if (desiredValue) {
+          const hasOption = Array.from(routerLinkSelect.options).some((option) => option.value === desiredValue);
+          if (!hasOption) {
+            routerLinkSelect.add(new Option(resolveRouterLabel(desiredValue), desiredValue));
+          }
+          routerLinkSelect.value = desiredValue;
+        } else {
+          routerLinkSelect.value = '';
+        }
+      };
+      const loadRouterOptions = async () => {
+        try {
+          const res = await fetch('/api/integrations', { cache: 'no-store' });
+          const data = await res.json().catch(() => ({}));
+          const settings = data?.settings || {};
+          mikrotikEnabled = Boolean(resolveMikrotikEnabledState(settings).enabled);
+          if (mikrotikEnabled) {
+            mikrotikRouters = (Array.isArray(settings?.mikrotikRouters) ? settings.mikrotikRouters : [])
+              .map(coerceRouterRecord)
+              .filter(Boolean);
+            defaultMikrotikRouterId = resolveDefaultRouterId(settings, mikrotikRouters);
+            mikrotikRouters = mikrotikRouters.map((router) => ({
+              ...router,
+              isDefault: normalizeRouterId(router.id) === defaultMikrotikRouterId
+            }));
+          } else {
+            mikrotikRouters = [];
+            defaultMikrotikRouterId = '';
+          }
+        } catch {
+          mikrotikEnabled = false;
+          mikrotikRouters = [];
+          defaultMikrotikRouterId = '';
+        }
+        applyMikrotikVisibility();
+        refreshRouterLinkOptions();
+        renderTable();
+      };
+      const coerceRecord = (record = {}) => ({
+        ...record,
+        id: Number(record.id ?? record.coverageId ?? 0) || record.id || '',
+        name: record.name || record.areaName || '',
+        areaCode: record.areaCode || record.code || '',
+        mikrotikId: normalizeRouterId(record.mikrotikId || record.routerId),
+        created: record.created || record.createdAt || '',
+        updated: record.updated || record.updatedAt || ''
+      });
+
+      const formatDateOnly = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '-';
+        const parsed = new Date(raw.includes('T') ? raw : `${raw}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) return raw;
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      };
+
+      const hasDuplicateName = (name, excludeId) => {
+        const normalized = normalizeName(name);
+        if (!normalized) return false;
+        return coverageData.some((area) => area.id !== excludeId && normalizeName(area.name) === normalized);
+      };
+
+      const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, {
+        sensitivity: 'base',
+        numeric: true
+      });
+
+      const getAreaClientCount = (row) => customerCountsByArea.get(normalizeName(row?.name || '')) || 0;
+
+      const hasActiveFilters = () => Boolean(
+        String(searchInput?.value || '').trim()
+        || String(filterClientsSelect?.value || '').trim()
+      );
+
+      const filteredRows = () => {
+        const q = String(searchInput?.value || '').trim().toLowerCase();
+        const clientsFilter = String(filterClientsSelect?.value || '').trim();
+        const sortFilter = String(coverageSortSelect?.value || '').trim();
+        let rows = coverageData.slice();
+
+        if (q) {
+          rows = rows.filter((row) =>
+            String(row.name || '').toLowerCase().includes(q) ||
+            String(row.areaCode || '').toLowerCase().includes(q) ||
+            String(resolveRouterLabel(row.mikrotikId) || '').toLowerCase().includes(q) ||
+            String(row.mikrotikId || '').toLowerCase().includes(q) ||
+            String(row.id || '').toLowerCase().includes(q)
+          );
+        }
+
+        if (clientsFilter === 'withClients') {
+          rows = rows.filter((row) => getAreaClientCount(row) > 0);
+        } else if (clientsFilter === 'withoutClients') {
+          rows = rows.filter((row) => getAreaClientCount(row) === 0);
+        }
+
+        if (sortFilter) {
+          rows.sort((left, right) => {
+            if (sortFilter === 'nameAsc') return compareText(left.name, right.name);
+            if (sortFilter === 'nameDesc') return compareText(right.name, left.name);
+            return 0;
+          });
+        }
+
+        return rows;
+      };
+
+      const updateCoverageFooter = (total, start, end, pageCount) => {
+        if (!coverageFooter) return;
+
+        if (total === 0) {
+          coverageSummary.textContent = 'Showing 0 of 0 coverage areas';
+          coveragePageInfo.textContent = 'Page 1 of 1';
+        } else {
+          coverageSummary.textContent = `Showing ${start}-${end} of ${total} coverage areas`;
+          coveragePageInfo.textContent = `Page ${coveragePagination.page} of ${pageCount}`;
+        }
+
+        if (coveragePrev) {
+          coveragePrev.disabled = total === 0 || coveragePagination.page <= 1;
+        }
+        if (coverageNext) {
+          coverageNext.disabled = total === 0 || coveragePagination.page >= pageCount;
+        }
+      };
+
+      const fetchCustomerCountsByArea = async () => {
+        try {
+          const res = await fetch(API_CUSTOMERS, { cache: 'no-store' });
+          const data = await res.json().catch(() => ({}));
+          const customers = Array.isArray(data) ? data : (Array.isArray(data.customers) ? data.customers : []);
+          return customers.reduce((acc, customer) => {
+            const key = normalizeName(customer?.area || '');
+            if (!key) return acc;
+            acc.set(key, (acc.get(key) || 0) + 1);
+            return acc;
+          }, new Map());
+        } catch {
+          return new Map();
+        }
+      };
+
+      const renderTable = () => {
+        const rows = filteredRows();
+        const total = rows.length;
+        const pageSize = Math.max(1, Number(coveragePagination.pageSize) || 10);
+        const pageCount = Math.max(1, Math.ceil(total / pageSize));
+        coveragePagination.page = Math.min(Math.max(coveragePagination.page, 1), pageCount);
+        const startIndex = total === 0 ? 0 : (coveragePagination.page - 1) * pageSize;
+        const pageRows = rows.slice(startIndex, startIndex + pageSize);
+        const start = total === 0 ? 0 : startIndex + 1;
+        const end = total === 0 ? 0 : startIndex + pageRows.length;
+
+        tbody.innerHTML = pageRows.map((row) => {
+          const totalClients = getAreaClientCount(row);
+          const safeId = escapeHtml(row.id || '-');
+          const safeName = escapeHtml(row.name || '-');
+          const safeAreaCode = escapeHtml(row.areaCode || `Area ID ${row.id || '-'}`);
+          const routerId = normalizeRouterId(row.mikrotikId);
+          const routerLabel = routerId ? resolveRouterLabel(routerId) : '';
+          const safeRouterLabel = escapeHtml(routerLabel || 'Unlinked');
+          const safeRouterMeta = escapeHtml(routerId || 'Generate follows selected/default router');
+          const routerCell = mikrotikEnabled
+            ? `
+              <td class="coverage-router-cell">
+                <div class="coverage-router-link${routerId ? ' is-linked' : ''}">
+                  <span class="coverage-router-link__status" aria-hidden="true"></span>
+                  <span class="coverage-router-link__body">
+                    <span class="coverage-router-link__label">${safeRouterLabel}</span>
+                    <span class="coverage-router-link__meta">${safeRouterMeta}</span>
+                  </span>
+                </div>
+              </td>`
+            : '';
+          return `
+            <tr data-id="${row.id}">
+              <td class="coverage-id-cell"><span class="coverage-id-badge">${safeId}</span></td>
+              <td class="coverage-area-data">
+                <div class="coverage-area-cell">
+                  <span class="coverage-area-cell__icon" aria-hidden="true"><i class="ti ti-map-pin" aria-hidden="true"></i></span>
+                  <span class="coverage-area-cell__body">
+                    <span class="coverage-area-cell__name">${safeName}</span>
+                    <span class="coverage-area-cell__meta">${safeAreaCode}</span>
+                  </span>
+                </div>
+              </td>
+              ${routerCell}
+              <td class="coverage-date-cell"><span class="coverage-date-pill">${escapeHtml(formatDateOnly(row.created))}</span></td>
+              <td class="coverage-date-cell"><span class="coverage-date-pill">${escapeHtml(formatDateOnly(row.updated))}</span></td>
+              <td class="coverage-clients-cell"><span class="coverage-clients-pill${totalClients > 0 ? ' is-active' : ''}">${escapeHtml(totalClients)}</span></td>
+              <td class="row-actions">
+                <div class="coverage-row-actions">
+                  <button class="ghost-icon" data-action="edit" title="Edit" aria-label="Edit ${safeName}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+                  <button class="ghost-icon danger" data-action="delete" title="Delete" aria-label="Delete ${safeName}"><i class="ti ti-trash" aria-hidden="true"></i></button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        if (emptyStateMessage) {
+          emptyStateMessage.textContent = !coverageData.length
+            ? 'No coverage areas found.'
+            : (hasActiveFilters() ? 'No coverage areas match the current filters.' : 'No coverage areas found.');
+        }
+        emptyState.style.display = total ? 'none' : 'flex';
+        updateCoverageFooter(total, start, end, pageCount);
+      };
+
+      const loadData = async () => {
+        try {
+          const [res, counts] = await Promise.all([
+            fetch(API, { cache: 'no-store' }),
+            fetchCustomerCountsByArea()
+          ]);
+          const payload = await res.json().catch(() => ([]));
+          const list = Array.isArray(payload) ? payload : (Array.isArray(payload.items) ? payload.items : []);
+          coverageData = list.map(coerceRecord);
+          customerCountsByArea = counts;
+        } catch {
+          coverageData = [];
+          customerCountsByArea = new Map();
+        }
+        renderTable();
+      };
+
+      const openModal = (record = null) => {
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+        form.reset();
+        editId = null;
+        document.getElementById('modalTitle').textContent = record ? 'Edit Coverage Area' : 'Add Coverage Area';
+        refreshRouterLinkOptions(record?.mikrotikId || '');
+        if (record) {
+          form.name.value = record.name || '';
+          if (routerLinkSelect) {
+            routerLinkSelect.value = normalizeRouterId(record.mikrotikId);
+          }
+          editId = record.id;
+        }
+        setTimeout(() => form.elements.name?.focus(), 50);
+      };
+
+      const closeModal = () => {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        editId = null;
+      };
+
+      const openFilterModal = () => {
+        filterModal?.classList.add('show');
+        filterModal?.setAttribute('aria-hidden', 'false');
+      };
+
+      const closeFilterModal = () => {
+        filterModal?.classList.remove('show');
+        filterModal?.setAttribute('aria-hidden', 'true');
+      };
+
+      const handleSubmit = async (event) => {
+        event.preventDefault();
+
+        const unlock = window.withSubmitLock ? window.withSubmitLock(form, { label: 'Saving...' }) : null;
+        if (window.withSubmitLock && !unlock) return;
+
+        const fd = new FormData(form);
+        const currentId = editId == null ? null : Number(editId);
+        const rawName = String(fd.get('name') || '').trim();
+        const currentRecord = currentId == null
+          ? null
+          : (coverageData.find((item) => Number(item.id) === currentId) || null);
+        const linkedRouterId = mikrotikEnabled
+          ? normalizeRouterId(fd.get('mikrotikId') || '')
+          : normalizeRouterId(currentRecord?.mikrotikId || '');
+
+        if (!rawName) {
+          alert('Area name is required.');
+          if (unlock) unlock();
+          return;
+        }
+        if (hasDuplicateName(rawName, currentId)) {
+          alert('Area name already exists. Please choose a different name.');
+          if (unlock) unlock();
+          return;
+        }
+
+        const payload = {
+          name: rawName,
+          mikrotikId: linkedRouterId
+        };
+        if (currentId == null) {
+          payload.created = new Date().toISOString().slice(0, 10);
+        }
+
+        try {
+          const res = await fetch(currentId != null ? `${API}/${currentId}` : API, {
+            method: currentId != null ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.msg || data.error || 'Failed to save coverage area.');
+          closeModal();
+          await loadData();
+        } catch (error) {
+          alert(error.message || 'Failed to save coverage area.');
+        } finally {
+          if (unlock) unlock();
+        }
+      };
+
+      const handleDelete = async (id) => {
+        const confirmed = window.appConfirm
+          ? await window.appConfirm('Delete this coverage area?', { title: 'Delete Coverage Area' })
+          : window.confirm('Delete this coverage area?');
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.msg || data.error || 'Failed to delete coverage area.');
+          await loadData();
+        } catch (error) {
+          alert(error.message || 'Failed to delete coverage area.');
+        }
+      };
+
+      searchInput?.addEventListener('input', () => {
+        coveragePagination.page = 1;
+        renderTable();
+      });
+      coverageSortSelect?.addEventListener('change', () => {
+        coveragePagination.page = 1;
+        renderTable();
+      });
+      coveragePageSizeSelect?.addEventListener('change', () => {
+        coveragePagination.pageSize = Math.max(1, Number(coveragePageSizeSelect.value) || 10);
+        coveragePagination.page = 1;
+        renderTable();
+      });
+      filterBtn?.addEventListener('click', openFilterModal);
+      filterForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        coveragePagination.page = 1;
+        renderTable();
+        closeFilterModal();
+      });
+      resetFiltersBtn?.addEventListener('click', () => {
+        filterForm?.reset();
+        coveragePagination.page = 1;
+        renderTable();
+        closeFilterModal();
+      });
+      coveragePrev?.addEventListener('click', () => {
+        if (coveragePagination.page <= 1) return;
+        coveragePagination.page -= 1;
+        renderTable();
+      });
+      coverageNext?.addEventListener('click', () => {
+        coveragePagination.page += 1;
+        renderTable();
+      });
+      document.getElementById('closeFilterModalBtn')?.addEventListener('click', closeFilterModal);
+      document.getElementById('openModalBtn')?.addEventListener('click', () => openModal());
+      document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
+      document.getElementById('cancelBtn')?.addEventListener('click', closeModal);
+      modal?.addEventListener('click', (event) => {
+        if (event.target === modal) closeModal();
+      });
+      filterModal?.addEventListener('click', (event) => {
+        if (event.target === filterModal) closeFilterModal();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          if (filterModal?.classList.contains('show')) closeFilterModal();
+          if (modal?.classList.contains('show')) closeModal();
+        }
+      });
+      form?.addEventListener('submit', handleSubmit);
+
+      tbody?.addEventListener('click', (event) => {
+        const btn = event.target.closest('button[data-action]');
+        if (!btn) return;
+        const row = btn.closest('tr[data-id]');
+        if (!row) return;
+        const id = Number(row.dataset.id);
+        const record = coverageData.find((item) => Number(item.id) === id);
+        if (btn.dataset.action === 'edit' && record) {
+          openModal(record);
+          return;
+        }
+        if (btn.dataset.action === 'delete') {
+          handleDelete(id);
+        }
+      });
+
+      applyMikrotikVisibility();
+      Promise.all([
+        loadRouterOptions(),
+        loadData()
+      ]).catch(() => {
+        tbody.innerHTML = '';
+        if (emptyStateMessage) emptyStateMessage.textContent = 'No coverage areas found.';
+        emptyState.style.display = 'flex';
+      });
+    });
+  </script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

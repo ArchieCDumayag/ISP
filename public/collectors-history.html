@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Collector History - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/plans.css?v=2.0">
+    <link rel="stylesheet" href="css/collectors.css?v=2.3">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page collectors-history-page">
+                <section class="collection-history-shell" aria-labelledby="collectionHistoryTitle">
+                    <div class="collection-history-top">
+                        <div class="collection-history-title">
+                            <span class="collection-history-title__icon" aria-hidden="true">
+                                <i class="ti ti-chart-line" aria-hidden="true"></i>
+                            </span>
+                            <div>
+                                <h1 id="collectionHistoryTitle">Collection history</h1>
+                                <p>Track collection performance by month and collector.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="collection-history-controls">
+                        <div class="collection-history-filter">
+                            <label for="monthFilter">Month</label>
+                            <div class="collection-history-select">
+                                <i class="ti ti-calendar" aria-hidden="true"></i>
+                                <select id="monthFilter">
+                                <option value="">All months</option>
+                            </select>
+                                <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="collection-history-table-wrap" id="historyTableWrapper">
+                        <table class="collection-history-table">
+                            <thead>
+                                <tr>
+                                    <th><i class="ti ti-calendar" aria-hidden="true"></i> Collection Period</th>
+                                    <th><i class="ti ti-user" aria-hidden="true"></i> Collector</th>
+                                    <th><i class="ti ti-credit-card" aria-hidden="true"></i> Total Collected</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr>
+                                    <td colspan="3" class="collection-history-empty">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="collection-history-footer">
+                            <div class="collection-history-record-count">
+                                <span class="collection-history-info-icon" aria-hidden="true"><i class="ti ti-info-circle" aria-hidden="true"></i></span>
+                                <span id="historySummary">Loading history...</span>
+                            </div>
+                            <div class="collection-history-live">
+                                <span>Live data</span>
+                                <span class="collection-history-live-dot" aria-hidden="true"></span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!-- Modal for per-area breakdown -->
+    <div class="modal" id="historyModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header">
+                <div>
+                    <h2 id="historyModalTitle">Area breakdown</h2>
+                    <p class="modal-subtitle" id="historyModalSubtitle"></p>
+                </div>
+                <button class="close-modal" id="historyModalClose" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-wrapper elevated" id="historyModalBody">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/collectors-history.js?v=1.4"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>
+

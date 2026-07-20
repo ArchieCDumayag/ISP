@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Customer App Pop Up Reminder - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/customer-app.css?v=1.4">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page customer-app-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Customer App</p>
+                        <h1>Pop Up Reminder</h1>
+                        <p class="subtitle">Create push notifications for the customer app.</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="primary-btn" type="button" id="openPushModalBtn">
+                            <i class="ti ti-plus" aria-hidden="true"></i> Add App Notification
+                        </button>
+                    </div>
+                </section>
+
+                <section class="section-frame customer-app-shell">
+                    <div class="push-dashboard">
+                        <div class="push-dashboard__head">
+                            <div>
+                                <p class="eyebrow">Push Notifications</p>
+                                <h2>Notification Rules</h2>
+                            </div>
+                            <div class="push-status-strip" aria-live="polite">
+                                <span><i class="ti ti-shield-half" aria-hidden="true"></i><strong id="pushConfigState">Checking</strong></span>
+                                <span><i class="ti ti-device-mobile" aria-hidden="true"></i><strong id="pushDeviceCount">0 devices</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="customer-app-tabs push-page-tabs" role="tablist" aria-label="Push notification views">
+                            <button class="push-page-tab active" type="button" data-push-page="active" role="tab" aria-selected="true" aria-controls="pushActivePage">
+                                <i class="ti ti-bolt" aria-hidden="true"></i>
+                                <span>Active</span>
+                                <strong id="pushActiveCount">0</strong>
+                            </button>
+                            <button class="push-page-tab" type="button" data-push-page="completed" role="tab" aria-selected="false" aria-controls="pushCompletedPage">
+                                <i class="ti ti-circle-check" aria-hidden="true"></i>
+                                <span>Completed</span>
+                                <strong id="pushCompletedCount">0</strong>
+                            </button>
+                        </div>
+
+                        <div class="push-page-panel" id="pushActivePage" data-push-page-panel="active" role="tabpanel">
+                            <div class="push-rule-list" id="pushRuleList"></div>
+                            <div class="empty-state empty-state--wide" id="pushEmptyState">
+                                <i class="ti ti-bell" aria-hidden="true"></i>
+                                <p>No active push notifications.</p>
+                            </div>
+                        </div>
+
+                        <div class="push-page-panel push-completed-panel" id="pushCompletedPage" data-push-page-panel="completed" role="tabpanel" hidden>
+                            <div class="push-completed-panel__head">
+                                <div>
+                                    <p class="eyebrow">History</p>
+                                    <h2>Completed Schedules</h2>
+                                </div>
+                            </div>
+                            <div class="push-rule-list" id="pushCompletedRuleList"></div>
+                            <div class="empty-state empty-state--wide" id="pushCompletedEmptyState">
+                                <i class="ti ti-circle-check" aria-hidden="true"></i>
+                                <p>No completed scheduled notifications yet.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="modal push-modal" id="pushNotificationModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pushModalTitle">
+                    <div class="modal-content push-modal__content">
+                        <div class="modal-header">
+                            <div>
+                                <h2 id="pushModalTitle">Add App Notification</h2>
+                            </div>
+                            <button class="ghost-icon" type="button" id="closePushModalBtn" aria-label="Close">
+                                <i class="ti ti-x" aria-hidden="true"></i>
+                            </button>
+                        </div>
+
+                        <form class="push-builder-form" id="pushNotificationForm">
+                            <div class="form-grid-two">
+                                <label class="form-row" for="pushTemplate">
+                                    <span>Template</span>
+                                    <select id="pushTemplate" name="template">
+                                        <option value="">Custom message</option>
+                                    </select>
+                                </label>
+
+                                <label class="form-row" for="pushTitle">
+                                    <span>Title</span>
+                                    <input type="text" id="pushTitle" name="title" maxlength="80" placeholder="Billing Reminder">
+                                </label>
+                            </div>
+
+                            <label class="form-row" for="pushMessage">
+                                <span>Message</span>
+                                <textarea id="pushMessage" name="message" maxlength="500" rows="5" placeholder="Example: Hi {name}, your internet bill is due soon. Please settle your balance to avoid interruption."></textarea>
+                            </label>
+
+                            <fieldset class="push-fieldset">
+                                <legend>Recipients</legend>
+                                <div class="segmented-control" role="radiogroup" aria-label="Recipients">
+                                    <label><input type="radio" name="recipientMode" value="all" checked><span>All</span></label>
+                                    <label><input type="radio" name="recipientMode" value="area"><span>By Area</span></label>
+                                    <label><input type="radio" name="recipientMode" value="customer"><span>By Customer</span></label>
+                                </div>
+
+                                <div class="form-row conditional-field" id="areaSelectField">
+                                    <span>Areas</span>
+                                    <div class="recipient-picker" data-recipient-picker="area">
+                                        <select class="recipient-picker__native" id="pushAreas" name="areaNames" multiple aria-label="Selected areas"></select>
+                                        <div class="recipient-picker__tools">
+                                            <label class="recipient-search" for="pushAreaSearch">
+                                                <i class="ti ti-search" aria-hidden="true"></i>
+                                                <input type="search" id="pushAreaSearch" placeholder="Search area">
+                                            </label>
+                                            <span class="recipient-picker__count" id="pushAreaCount">0 selected</span>
+                                            <button class="recipient-picker__clear" type="button" data-recipient-clear="area" aria-label="Clear selected areas">
+                                                <i class="ti ti-x" aria-hidden="true"></i>
+                                                <span>Clear</span>
+                                            </button>
+                                        </div>
+                                        <div class="recipient-picker__list recipient-picker__list--areas" id="pushAreaList" role="listbox" aria-multiselectable="true"></div>
+                                    </div>
+                                </div>
+
+                                <div class="form-row conditional-field" id="customerSelectField">
+                                    <span>Customers</span>
+                                    <div class="recipient-picker" data-recipient-picker="customer">
+                                        <select class="recipient-picker__native" id="pushCustomers" name="accountNumbers" multiple aria-label="Selected customers"></select>
+                                        <div class="recipient-picker__tools">
+                                            <label class="recipient-search" for="pushCustomerSearch">
+                                                <i class="ti ti-search" aria-hidden="true"></i>
+                                                <input type="search" id="pushCustomerSearch" placeholder="Search customer, account, or area">
+                                            </label>
+                                            <span class="recipient-picker__count" id="pushCustomerCount">0 selected</span>
+                                            <button class="recipient-picker__clear" type="button" data-recipient-clear="customer" aria-label="Clear selected customers">
+                                                <i class="ti ti-x" aria-hidden="true"></i>
+                                                <span>Clear</span>
+                                            </button>
+                                        </div>
+                                        <div class="recipient-picker__list" id="pushCustomerList" role="listbox" aria-multiselectable="true"></div>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="push-fieldset">
+                                <legend>Trigger</legend>
+                                <div class="segmented-control" role="radiogroup" aria-label="Trigger">
+                                    <label><input type="radio" name="triggerMode" value="schedule" checked><span>Schedule</span></label>
+                                    <label><input type="radio" name="triggerMode" value="event"><span>Event</span></label>
+                                </div>
+
+                                <label class="form-row conditional-field" id="scheduleAtField" for="pushScheduleAt">
+                                    <span>Date and Time</span>
+                                    <input type="datetime-local" id="pushScheduleAt" name="scheduleAt">
+                                </label>
+
+                                <div class="conditional-field" id="eventFields">
+                                    <div class="form-grid-two">
+                                        <label class="form-row" for="pushEventType">
+                                            <span>Event</span>
+                                            <select id="pushEventType" name="eventType">
+                                                <option value="due-date">Due Date</option>
+                                                <option value="billing-date">Billing Date</option>
+                                                <option value="overdue">Overdue</option>
+                                            </select>
+                                        </label>
+
+                                        <label class="form-row" for="pushDelayDirection">
+                                            <span>Delay</span>
+                                            <select id="pushDelayDirection" name="delayDirection">
+                                                <option value="after">After event</option>
+                                                <option value="before">Before event</option>
+                                            </select>
+                                        </label>
+                                    </div>
+
+                                    <div class="form-grid-two">
+                                        <label class="form-row" for="pushDelayAmount">
+                                            <span>Delay Amount</span>
+                                            <input type="number" id="pushDelayAmount" name="delayAmount" min="0" max="365" step="1" value="0">
+                                        </label>
+
+                                        <label class="form-row" for="pushDelayUnit">
+                                            <span>Delay Unit</span>
+                                            <select id="pushDelayUnit" name="delayUnit">
+                                                <option value="days">Days</option>
+                                                <option value="hours">Hours</option>
+                                                <option value="minutes">Minutes</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <div class="form-actions">
+                                <p class="form-status" id="pushModalStatus" role="status" aria-live="polite"></p>
+                                <div class="scheduler-actions">
+                                    <button class="ghost-btn" type="button" id="cancelPushModalBtn">Cancel</button>
+                                    <button class="primary-btn" type="submit" id="savePushNotificationBtn">
+                                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save Push
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="modal push-modal" id="pushHistoryModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="pushHistoryTitle">
+                    <div class="modal-content push-modal__content push-history-modal__content">
+                        <div class="modal-header">
+                            <div>
+                                <h2 id="pushHistoryTitle">Notification History</h2>
+                            </div>
+                            <button class="ghost-icon" type="button" id="closePushHistoryModalBtn" aria-label="Close history">
+                                <i class="ti ti-x" aria-hidden="true"></i>
+                            </button>
+                        </div>
+
+                        <div class="push-history-list" id="pushHistoryList"></div>
+                        <div class="empty-state empty-state--wide" id="pushHistoryEmpty">
+                            <i class="ti ti-clock" aria-hidden="true"></i>
+                            <p>No send history yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/customer-app-popup-reminder.js?v=1.2"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

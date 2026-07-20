@@ -1,0 +1,142 @@
+/* Monthly Collection Trend - Specific Styles */
+
+:root {
+    --primary-color: #007BFF;
+    --secondary-color: #4CAF50;
+    --accent-color: #FFC107;
+    --danger-color: #DC3545;
+    --light-gray-bg: #F5F7FA;
+    --text-color: #333;
+    --card-bg: #FFFFFF;
+    --border-color: #E0E0E0;
+}
+
+body {
+    background-color: var(--light-gray-bg);
+    font-family: 'Poppins', sans-serif;
+}
+
+.main-content {
+    background-color: var(--light-gray-bg);
+}
+
+.content-wrapper {
+    padding: 2rem;
+}
+
+/* KPI Summary Cards */
+.kpi-summary {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.kpi-card {
+    flex: 1;
+    background-color: var(--card-bg);
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
+    position: relative;
+    min-width: 180px;
+}
+
+.kpi-card h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #555;
+}
+
+.kpi-card p {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.kpi-card .icon {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    font-size: 2rem;
+    opacity: 0.7;
+}
+
+.kpi-card.good p {
+    color: var(--secondary-color);
+}
+
+.kpi-card.moderate p {
+    color: var(--accent-color);
+}
+
+.kpi-card.bad p {
+    color: var(--danger-color);
+}
+
+/* Chart Container */
+.chart-container {
+    background-color: var(--card-bg);
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    margin-bottom: 2rem;
+}
+
+.chart-container h3 {
+    margin-top: 0;
+    font-weight: 600;
+}
+
+/* Table Container */
+.table-container {
+    background-color: var(--card-bg);
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    overflow-x: auto;
+}
+
+.table-container h3 {
+    margin-top: 0;
+    font-weight: 600;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+thead th {
+    font-weight: 600;
+    color: #555;
+    background-color: #fafafa;
+}
+
+tbody tr:hover {
+    background-color: #f5f5f5;
+}
+
+.positive {
+    color: var(--secondary-color);
+    font-weight: 600;
+}
+
+.negative {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
+.neutral {
+    color: #888;
+}

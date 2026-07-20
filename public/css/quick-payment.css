@@ -1,0 +1,810 @@
+:root {
+    color-scheme: light;
+    --page: #eef4f8;
+    --panel: #ffffff;
+    --ink: #101828;
+    --muted: #5e6676;
+    --line: #cfd9e5;
+    --soft-line: #d9e7e6;
+    --primary: #007568;
+    --primary-dark: #005e54;
+    --primary-soft: #eaf7f5;
+    --blue: #136ef6;
+    --danger: #c5221f;
+    --success-bg: #eaf8f3;
+    --warning-bg: #fff7e6;
+    --shadow: 0 20px 55px rgba(33, 46, 70, 0.16);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+    color: var(--ink);
+    background:
+        linear-gradient(135deg, rgba(0, 117, 104, 0.08), transparent 30%),
+        linear-gradient(315deg, rgba(19, 110, 246, 0.1), transparent 36%),
+        var(--page);
+}
+
+button,
+input {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+.quick-pay-shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 26px 16px;
+}
+
+.quick-pay-panel {
+    width: min(100%, 720px);
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(189, 204, 220, 0.95);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: clamp(22px, 4vw, 34px);
+}
+
+.quick-pay-brand {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-bottom: 30px;
+}
+
+.quick-pay-logo {
+    display: grid;
+    place-items: center;
+    width: 94px;
+    height: 94px;
+    border-radius: 50%;
+    background: #071319;
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+
+.quick-pay-logo img {
+    width: 88px;
+    height: 88px;
+    object-fit: contain;
+}
+
+.quick-pay-brand-copy p,
+.quick-pay-brand-copy h1,
+.quick-pay-brand-copy span {
+    margin: 0;
+}
+
+.quick-pay-brand-copy p {
+    color: var(--primary-dark);
+    font-size: clamp(1.15rem, 3vw, 1.65rem);
+    line-height: 1.05;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.quick-pay-brand-copy h1 {
+    margin-top: 4px;
+    font-size: clamp(2rem, 6vw, 3rem);
+    line-height: 1.02;
+    letter-spacing: 0;
+}
+
+.quick-pay-brand-copy span {
+    display: block;
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: clamp(0.98rem, 2vw, 1.1rem);
+}
+
+.quick-pay-form {
+    display: grid;
+    gap: 14px;
+}
+
+.quick-pay-form label,
+.quick-pay-section h2 {
+    font-size: 1.05rem;
+    color: var(--ink);
+    font-weight: 900;
+    margin: 0;
+}
+
+.quick-pay-input {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid #b9c8d6;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 0 18px;
+    min-height: 70px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.quick-pay-input:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 117, 104, 0.14);
+}
+
+.quick-pay-input > i {
+    color: var(--primary);
+    font-size: 1.55rem;
+}
+
+.quick-pay-input input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #050811;
+    font-size: clamp(1.35rem, 5vw, 1.85rem);
+    font-weight: 900;
+}
+
+.quick-pay-check {
+    display: none;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    color: var(--primary);
+    flex: 0 0 auto;
+}
+
+.quick-pay-input.is-valid .quick-pay-check {
+    display: grid;
+}
+
+.quick-pay-form button,
+.quick-pay-submit {
+    min-height: 68px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--primary);
+    color: #ffffff;
+    font-size: 1.05rem;
+    font-weight: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    box-shadow: 0 8px 18px rgba(0, 117, 104, 0.22);
+}
+
+.quick-pay-form button i,
+.quick-pay-submit i {
+    font-size: 1.25rem;
+}
+
+.quick-pay-form button:hover,
+.quick-pay-submit:hover {
+    background: var(--primary-dark);
+}
+
+.quick-pay-form button:disabled,
+.quick-pay-submit:disabled,
+.quick-pay-method:disabled,
+.quick-pay-amount-option:disabled {
+    opacity: 0.64;
+    cursor: not-allowed;
+}
+
+.quick-pay-status {
+    margin: 18px 0 0;
+    border-radius: 8px;
+    padding: 13px 15px;
+    background: var(--warning-bg);
+    color: #7a4a00;
+    font-size: 0.94rem;
+    font-weight: 800;
+}
+
+.quick-pay-status.is-error {
+    background: #fff0ee;
+    color: var(--danger);
+}
+
+.quick-pay-status.is-success {
+    background: var(--success-bg);
+    color: #067647;
+}
+
+.quick-pay-result {
+    margin-top: 24px;
+    display: grid;
+    gap: 22px;
+}
+
+.quick-pay-result[hidden] {
+    display: none;
+}
+
+.quick-pay-result.is-expanded {
+    animation: quickPayExpand 180ms ease-out;
+}
+
+@keyframes quickPayExpand {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.quick-pay-summary {
+    border: 1px solid #b7d8d3;
+    background: linear-gradient(180deg, #f3fbfa 0%, #f7fcfb 100%);
+    border-radius: 8px;
+    padding: clamp(18px, 3vw, 28px);
+}
+
+.quick-pay-summary-grid {
+    display: grid;
+    grid-template-columns: auto 1fr minmax(190px, 0.9fr);
+    gap: 22px;
+    align-items: start;
+}
+
+.quick-pay-avatar {
+    display: grid;
+    place-items: center;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    background: #dff2ee;
+    color: var(--primary);
+    font-size: 1.9rem;
+}
+
+.quick-pay-summary small {
+    display: block;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.quick-pay-summary strong,
+.quick-pay-summary b {
+    display: block;
+    color: #050811;
+    font-size: 1.06rem;
+    line-height: 1.28;
+    margin: 4px 0 16px;
+    overflow-wrap: anywhere;
+}
+
+.quick-pay-summary b {
+    font-weight: 800;
+}
+
+.quick-pay-summary-meta {
+    border-left: 1px solid #cdddda;
+    padding-left: 28px;
+    display: grid;
+    gap: 20px;
+}
+
+.quick-pay-summary-meta p {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin: 0;
+}
+
+.quick-pay-summary-meta i {
+    color: var(--primary);
+    font-size: 1.45rem;
+    width: 26px;
+    text-align: center;
+    margin-top: 3px;
+}
+
+.quick-pay-summary-meta .is-due {
+    color: var(--danger);
+}
+
+.quick-pay-divider {
+    margin: 6px 0 18px;
+    border-top: 1px dashed #bfd2d0;
+}
+
+.quick-pay-total {
+    text-align: center;
+}
+
+.quick-pay-total span,
+.quick-pay-total small {
+    display: block;
+    color: var(--muted);
+}
+
+.quick-pay-total span {
+    font-size: 1.06rem;
+    font-weight: 800;
+}
+
+.quick-pay-total strong {
+    display: block;
+    margin: 6px 0 10px;
+    color: var(--primary-dark);
+    font-size: clamp(2.7rem, 9vw, 4.7rem);
+    line-height: 0.98;
+    letter-spacing: 0;
+}
+
+.quick-pay-total small {
+    font-size: 0.9rem;
+}
+
+.quick-pay-section {
+    display: grid;
+    gap: 12px;
+}
+
+.quick-pay-methods {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.quick-pay-method {
+    position: relative;
+    min-height: 92px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    color: var(--ink);
+    display: grid;
+    grid-template-columns: 86px 1fr;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 22px;
+    text-align: left;
+    font-weight: 900;
+}
+
+.quick-pay-method.is-selected {
+    border-color: var(--blue);
+    box-shadow: inset 0 0 0 1px var(--blue);
+    background: #eff6ff;
+}
+
+.quick-pay-method > i {
+    display: none;
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 0 8px 0 12px;
+    background: var(--blue);
+    color: #ffffff;
+}
+
+.quick-pay-method.is-selected > i {
+    display: grid;
+}
+
+.method-mark {
+    display: grid;
+    place-items: center;
+    width: 66px;
+    height: 58px;
+    border-radius: 8px;
+    color: #ffffff;
+    font-weight: 900;
+}
+
+.method-mark--gcash {
+    background: #0b63f6;
+    font-size: 2rem;
+}
+
+.method-mark--maya {
+    background: #020805;
+    color: #58f29b;
+    font-size: 1.2rem;
+}
+
+.method-mark--grab {
+    background: #0bbf62;
+    font-size: 0.95rem;
+}
+
+.method-mark--shopee {
+    background: #f45b2d;
+    font-size: 2rem;
+}
+
+.quick-pay-amount-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.quick-pay-amount-option {
+    min-height: 62px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: #344054;
+    text-align: left;
+    font-weight: 800;
+}
+
+.quick-pay-amount-option.is-selected {
+    border-color: var(--primary);
+    box-shadow: inset 0 0 0 1px var(--primary);
+    background: #f6fffd;
+}
+
+.quick-pay-amount-option i,
+.quick-pay-amount-option strong {
+    color: var(--primary);
+}
+
+.quick-pay-custom-amount {
+    display: grid;
+    gap: 8px;
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.quick-pay-custom-amount[hidden] {
+    display: none;
+}
+
+.quick-pay-custom-amount input {
+    width: 100%;
+    min-height: 52px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0 14px;
+    outline: 0;
+    font-weight: 900;
+    color: var(--ink);
+}
+
+.quick-pay-custom-amount input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 117, 104, 0.14);
+}
+
+.quick-pay-submit {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.quick-pay-secure {
+    margin: -4px 0 0;
+    color: #667085;
+    text-align: center;
+    font-size: 0.94rem;
+    line-height: 1.5;
+}
+
+.quick-pay-secure i {
+    color: #667085;
+    margin-right: 5px;
+}
+
+.quick-pay-secure span {
+    display: block;
+}
+
+@media (max-width: 680px) {
+    .quick-pay-shell {
+        padding: 10px;
+    }
+
+    .quick-pay-panel {
+        padding: 14px;
+    }
+
+    .quick-pay-brand {
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .quick-pay-logo {
+        width: 54px;
+        height: 54px;
+    }
+
+    .quick-pay-logo img {
+        width: 50px;
+        height: 50px;
+    }
+
+    .quick-pay-brand-copy p {
+        font-size: 1rem;
+    }
+
+    .quick-pay-brand-copy h1 {
+        font-size: 1.7rem;
+        margin-top: 2px;
+    }
+
+    .quick-pay-brand-copy span {
+        font-size: 0.82rem;
+        margin-top: 5px;
+    }
+
+    .quick-pay-form {
+        gap: 10px;
+    }
+
+    .quick-pay-form label,
+    .quick-pay-section h2 {
+        font-size: 0.9rem;
+    }
+
+    .quick-pay-input {
+        min-height: 50px;
+        gap: 10px;
+        padding: 0 12px;
+    }
+
+    .quick-pay-input > i {
+        font-size: 1.18rem;
+    }
+
+    .quick-pay-input input {
+        font-size: 1.18rem;
+    }
+
+    .quick-pay-check {
+        width: 28px;
+        height: 28px;
+        border-width: 2px;
+    }
+
+    .quick-pay-form button,
+    .quick-pay-submit {
+        min-height: 50px;
+        gap: 9px;
+        font-size: 0.92rem;
+    }
+
+    .quick-pay-status {
+        margin-top: 12px;
+        padding: 10px 12px;
+        font-size: 0.82rem;
+    }
+
+    .quick-pay-result {
+        margin-top: 16px;
+        gap: 14px;
+    }
+
+    .quick-pay-summary {
+        padding: 12px;
+    }
+
+    .quick-pay-summary-grid {
+        grid-template-columns: 42px minmax(0, 1fr) minmax(92px, 0.85fr);
+        gap: 10px;
+    }
+
+    .quick-pay-avatar {
+        width: 42px;
+        height: 42px;
+        font-size: 1.2rem;
+    }
+
+    .quick-pay-summary small {
+        font-size: 0.68rem;
+    }
+
+    .quick-pay-summary strong,
+    .quick-pay-summary b {
+        font-size: 0.82rem;
+        margin: 3px 0 9px;
+    }
+
+    .quick-pay-summary-meta {
+        border-left: 1px solid #cdddda;
+        padding-left: 12px;
+        gap: 10px;
+    }
+
+    .quick-pay-summary-meta p {
+        gap: 7px;
+    }
+
+    .quick-pay-summary-meta i {
+        width: 18px;
+        font-size: 1rem;
+        margin-top: 1px;
+    }
+
+    .quick-pay-divider {
+        margin: 2px 0 12px;
+    }
+
+    .quick-pay-total span {
+        font-size: 0.9rem;
+    }
+
+    .quick-pay-total strong {
+        font-size: clamp(2.15rem, 13vw, 3rem);
+        margin: 4px 0 8px;
+    }
+
+    .quick-pay-total small {
+        font-size: 0.72rem;
+    }
+
+    .quick-pay-section {
+        gap: 9px;
+    }
+
+    .quick-pay-methods,
+    .quick-pay-amount-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+    }
+
+    .quick-pay-method {
+        grid-template-columns: 44px 1fr;
+        min-height: 62px;
+        gap: 8px;
+        padding: 8px;
+        font-size: 0.85rem;
+    }
+
+    .quick-pay-method > i {
+        width: 26px;
+        height: 26px;
+        border-radius: 0 8px 0 10px;
+        font-size: 0.72rem;
+    }
+
+    .method-mark {
+        width: 38px;
+        height: 34px;
+        font-size: 0.78rem;
+    }
+
+    .method-mark--gcash,
+    .method-mark--shopee {
+        font-size: 1.35rem;
+    }
+
+    .method-mark--maya {
+        font-size: 0.78rem;
+    }
+
+    .method-mark--grab {
+        font-size: 0.68rem;
+    }
+
+    .quick-pay-amount-option {
+        min-height: 52px;
+        grid-template-columns: auto 1fr auto;
+        gap: 7px;
+        padding: 8px;
+        font-size: 0.78rem;
+    }
+
+    .quick-pay-custom-amount {
+        font-size: 0.82rem;
+    }
+
+    .quick-pay-custom-amount input {
+        min-height: 46px;
+    }
+
+    .quick-pay-secure {
+        font-size: 0.76rem;
+    }
+}
+
+@media (max-width: 420px) {
+    .quick-pay-shell {
+        padding: 8px;
+        place-items: start center;
+    }
+
+    .quick-pay-panel {
+        padding: 10px;
+    }
+
+    .quick-pay-logo {
+        width: 48px;
+        height: 48px;
+    }
+
+    .quick-pay-logo img {
+        width: 44px;
+        height: 44px;
+    }
+
+    .quick-pay-brand-copy p {
+        font-size: 0.86rem;
+    }
+
+    .quick-pay-brand-copy h1 {
+        font-size: 1.45rem;
+    }
+
+    .quick-pay-brand-copy span {
+        font-size: 0.76rem;
+    }
+
+    .quick-pay-summary-grid {
+        grid-template-columns: 36px minmax(0, 1fr);
+        gap: 9px;
+    }
+
+    .quick-pay-avatar {
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+
+    .quick-pay-summary-meta {
+        grid-column: 1 / -1;
+        border-left: 0;
+        border-top: 1px solid #cdddda;
+        padding: 10px 0 0;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .quick-pay-method {
+        grid-template-columns: 36px 1fr;
+        min-height: 56px;
+        gap: 7px;
+        padding: 7px;
+        font-size: 0.78rem;
+    }
+
+    .method-mark {
+        width: 32px;
+        height: 30px;
+    }
+
+    .method-mark--gcash,
+    .method-mark--shopee {
+        font-size: 1.1rem;
+    }
+
+    .quick-pay-amount-option {
+        grid-template-columns: auto minmax(0, 1fr);
+        font-size: 0.72rem;
+    }
+
+    .quick-pay-amount-option strong {
+        grid-column: 1 / -1;
+        justify-self: end;
+        font-size: 0.82rem;
+    }
+
+    .quick-pay-submit {
+        font-size: 0.86rem;
+    }
+}

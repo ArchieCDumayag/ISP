@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Account Statement</title>
+    <script src="theme-init.js?v=2.6"></script>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <style>
+        :root {
+            --statement-blue: #0b4f6c;
+            --statement-border: #cbd5e1;
+            --statement-muted: #6b7280;
+            --statement-page-width: 210mm;
+            --statement-page-height: 297mm;
+            --statement-page-margin: 12.7mm;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body.statement-body {
+            background: #f2f4f8;
+            font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
+            color: #111827;
+            margin: 0;
+            padding: 24px;
+        }
+
+        body.statement-body[data-pdf-mode="1"] {
+            background: #ffffff;
+            padding: 0;
+        }
+
+        .statement-page {
+            width: var(--statement-page-width);
+            min-height: var(--statement-page-height);
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+            padding: var(--statement-page-margin);
+            box-sizing: border-box;
+        }
+
+        body.statement-body[data-pdf-mode="1"] .statement-page {
+            margin: 0;
+            border-radius: 0;
+            box-shadow: none;
+            min-height: calc(var(--statement-page-height) - 0.5mm);
+            page-break-after: avoid;
+        }
+
+        .statement-page {
+            position: relative;
+        }
+
+        .statement-header-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 8px;
+        }
+
+        .statement-title {
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.4rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin: 12px 0 16px;
+            color: var(--statement-blue);
+        }
+
+        .statement-header-left {
+            display: grid;
+            grid-template-columns: 18mm 1fr;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .brand-logo {
+            width: 16mm;
+            height: 16mm;
+            border-radius: 0;
+            border: none;
+            background: transparent;
+            display: grid;
+            place-items: center;
+            color: #7b7b7b;
+            font-size: 0.72rem;
+            overflow: hidden;
+        }
+
+        .brand-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            box-sizing: border-box;
+            padding: 4%;
+            object-position: center;
+            display: none;
+        }
+
+        .brand-logo.has-logo img {
+            display: block;
+        }
+
+        .brand-logo.has-logo span {
+            display: none;
+        }
+
+        .brand-text {
+            text-align: left;
+        }
+
+        .brand-name {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .brand-address {
+            margin: 3px 0 0;
+            font-size: 0.86rem;
+            color: var(--statement-muted);
+            line-height: 1.1;
+        }
+
+        .brand-contact {
+            margin-top: 4px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8rem;
+            color: var(--statement-muted);
+            line-height: 1.1;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 6px 10px;
+        }
+
+        .detail-grid .label {
+            color: var(--statement-muted);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .detail-grid .value {
+            color: #111827;
+            font-weight: 600;
+        }
+
+        .contact-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .contact-item svg {
+            width: 13px;
+            height: 13px;
+            fill: #94a3b8;
+        }
+
+
+        .statement-meta-panel {
+            text-align: left;
+            display: flex;
+            justify-content: flex-end;
+            align-items: flex-start;
+        }
+
+        .statement-meta-panel h2 {
+            margin: 0 0 10px;
+            font-size: 1.35rem;
+            color: var(--statement-blue);
+        }
+
+        .meta-row {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 10px;
+            padding: 0;
+            min-height: 24px;
+            border-bottom: 1px solid var(--statement-border);
+            font-size: 0.8rem;
+            line-height: 1.1;
+            align-items: center;
+        }
+
+        .meta-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .meta-row strong {
+            text-align: left;
+        }
+
+        .meta-body {
+            min-height: 0;
+            padding: 2px 10px 0;
+            display: inline-block;
+            max-width: 100%;
+        }
+
+        .statement-meta-panel .meta-body {
+            min-height: 0;
+            width: 100%;
+        }
+
+        .statement-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 18px;
+        }
+
+        .block-header {
+            background: var(--statement-blue);
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.78rem;
+            padding: 6px 10px;
+        }
+
+        .summary-download {
+            text-transform: none;
+            letter-spacing: normal;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.95);
+            color: var(--statement-blue);
+            cursor: pointer;
+        }
+
+        .summary-download:hover {
+            filter: brightness(0.98);
+        }
+
+        .print-actions .summary-download {
+            font-size: 0.85rem;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border-color: var(--statement-border);
+        }
+
+        .print-actions {
+            gap: 10px;
+        }
+
+        .block-body {
+            border: 1px solid var(--statement-border);
+            padding: 10px;
+            font-size: 0.85rem;
+            min-height: 0;
+        }
+
+        .statement-block .block-body {
+            min-height: 96px;
+        }
+
+        .block-body p {
+            margin: 4px 0;
+        }
+
+        .block-name {
+            font-weight: 700;
+        }
+
+        .summary-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .summary-row.total {
+            border-top: 1px solid var(--statement-border);
+            padding-top: 6px;
+            margin-top: 6px;
+            font-weight: 700;
+        }
+
+        .statement-section {
+            margin-bottom: 18px;
+        }
+
+        .customer-contact-editor .block-body {
+            min-height: 0;
+        }
+
+        .contact-editor-note {
+            margin: 0 0 12px;
+            color: var(--statement-muted);
+            line-height: 1.5;
+        }
+
+        .contact-editor-form {
+            display: grid;
+            gap: 12px;
+        }
+
+        .contact-editor-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .contact-editor-field {
+            display: grid;
+            gap: 6px;
+        }
+
+        .contact-editor-field span {
+            color: var(--statement-muted);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .contact-editor-field input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            border: 1px solid var(--statement-border);
+            border-radius: 6px;
+            font: inherit;
+            color: #111827;
+            background: #ffffff;
+        }
+
+        .contact-editor-field input:focus {
+            outline: 2px solid rgba(11, 79, 108, 0.15);
+            border-color: var(--statement-blue);
+        }
+
+        .contact-editor-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .contact-editor-status {
+            margin: 0;
+            min-height: 1.2em;
+            color: var(--statement-muted);
+        }
+
+        .contact-editor-status.is-success {
+            color: #047857;
+        }
+
+        .contact-editor-status.is-error {
+            color: #b91c1c;
+        }
+
+        .contact-save-btn {
+            padding: 9px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--statement-blue);
+            background: var(--statement-blue);
+            color: #ffffff;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .contact-save-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
+
+        .statement-footer {
+            margin-top: 16px;
+            padding-top: 6px;
+            border-top: 1px solid var(--statement-border);
+            text-align: center;
+            font-size: 0.72rem;
+            color: var(--statement-muted);
+        }
+
+        table.statement-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0;
+        }
+
+        table.statement-table th,
+        table.statement-table td {
+            border: 1px solid var(--statement-border);
+            padding: 6px 8px;
+            font-size: 0.82rem;
+            text-align: left;
+        }
+
+        table.statement-table th {
+            background: var(--statement-blue);
+            color: #ffffff;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.06em;
+        }
+
+        table.statement-table td.amount,
+        table.statement-table th.amount {
+            text-align: right;
+        }
+
+        table.statement-table tbody tr:nth-child(even) {
+            background: #f3f4f6;
+        }
+
+        .print-actions {
+            margin-top: 18px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        body.statement-body[data-pdf-mode="1"] .print-actions {
+            display: none !important;
+        }
+
+        .print-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--statement-border);
+            background: #ffffff;
+            color: #0f172a;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        @media (max-width: 760px) {
+            body.statement-body {
+                padding: 12px;
+            }
+
+            .statement-page {
+                width: 100%;
+                min-height: auto;
+                border-radius: 12px;
+                padding: 16px;
+            }
+
+            .statement-header-row,
+            .statement-columns {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .statement-meta-panel {
+                justify-content: flex-start;
+            }
+
+            .brand-name {
+                white-space: normal;
+            }
+
+            .detail-grid,
+            .meta-row {
+                grid-template-columns: 1fr;
+                gap: 4px;
+            }
+
+            .contact-editor-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .contact-editor-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            table.statement-table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+
+            .print-actions {
+                justify-content: stretch;
+            }
+
+            .print-btn {
+                width: 100%;
+            }
+        }
+
+        @page {
+            size: A4;
+            margin: 0;
+        }
+
+        @media print {
+            html,
+            body {
+                width: var(--statement-page-width);
+                height: var(--statement-page-height);
+            }
+
+            body.statement-body {
+                background: #ffffff;
+                padding: 0;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .statement-page {
+                margin: 0;
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .print-actions {
+                display: none !important;
+            }
+
+            .summary-download {
+                display: none;
+            }
+
+            .customer-contact-editor {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="statement-body">
+    <main class="statement-page">
+        <div class="statement-header-row">
+            <header class="statement-header-left">
+                <div class="brand-logo" id="acctBusinessLogoBox">
+                    <img id="acctBusinessLogo" alt="Company logo" hidden>
+                    <span id="acctBusinessLogoFallback">Logo</span>
+                </div>
+                <div class="brand-text">
+                    <p class="brand-name" id="acctBusinessName"></p>
+                    <p class="brand-address" id="acctBusinessAddress"></p>
+                    <div class="brand-contact">
+                        <span class="contact-item">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2Zm0 4-8 5-8-5V6l8 5 8-5v2Z"/>
+                            </svg>
+                            <span id="acctBusinessEmail"></span>
+                        </span>
+                        <span class="contact-item">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.57 3.59.57a1 1 0 0 1 1 1v3.5a1 1 0 0 1-1 1C10.07 21 3 13.93 3 5a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.2 2.47.57 3.59a1 1 0 0 1-.24 1l-2.21 2.2Z"/>
+                            </svg>
+                            <span id="acctBusinessContact"></span>
+                        </span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="statement-meta-panel">
+                <div class="block-body meta-body">
+                    <div class="meta-row">
+                        <span>Date</span>
+                        <strong id="acctStatementGenerated">-</strong>
+                    </div>
+                    <div class="meta-row">
+                        <span>Statement #</span>
+                        <strong id="acctStatementId">AS-000000000</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p class="statement-title">Account Statement</p>
+
+        <div class="statement-columns">
+            <section class="statement-block">
+                <div class="block-header">Bill To:</div>
+                <div class="block-body">
+                    <div class="detail-grid">
+                        <span class="label">Name</span>
+                        <span class="value" id="acctToName">-</span>
+                        <span class="label">Account No.</span>
+                        <span class="value" id="acctStatementAccount">-</span>
+                        <span class="label">Service Address</span>
+                        <span class="value" id="acctToAddress">-</span>
+                        <span class="label">Contact No.</span>
+                        <span class="value" id="acctToPhone">-</span>
+                        <span class="label">Email</span>
+                        <span class="value" id="acctToEmail">-</span>
+                        <span class="label">Plan</span>
+                        <span class="value" id="acctToPlan">-</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="statement-block">
+                <div class="block-header">Account Summary</div>
+                <div class="block-body">
+                    <div class="summary-row">
+                        <span>Previous Balance</span>
+                        <strong id="acctSummaryPrevious">-</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>Credits</span>
+                        <strong id="acctSummaryCredits">-</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>New Charges</span>
+                        <strong id="acctSummaryCharges">-</strong>
+                    </div>
+                    <div class="summary-row total">
+                        <span>Total Balance Due</span>
+                        <strong id="acctSummaryTotal">-</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>Open Support Tickets</span>
+                        <strong id="acctSummaryOpenTickets">-</strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>Payment Due Date</span>
+                        <strong id="acctSummaryDue">-</strong>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <section class="statement-section customer-contact-editor" id="acctContactSection" hidden>
+            <div class="block-header">Update Contact Info</div>
+            <div class="block-body">
+                <p class="contact-editor-note">Keep your mobile number and email updated so we can send billing reminders and support updates to the right contact details.</p>
+                <form class="contact-editor-form" id="acctContactForm">
+                    <div class="contact-editor-grid">
+                        <label class="contact-editor-field">
+                            <span>Mobile Number</span>
+                            <input type="tel" id="acctContactMobileInput" name="mobile" maxlength="16" inputmode="tel" placeholder="09xxxxxxxxx">
+                        </label>
+                        <label class="contact-editor-field">
+                            <span>Email Address</span>
+                            <input type="email" id="acctContactEmailInput" name="email" maxlength="150" placeholder="name@example.com">
+                        </label>
+                    </div>
+                    <div class="contact-editor-actions">
+                        <p class="contact-editor-status" id="acctContactStatus" aria-live="polite"></p>
+                        <button class="contact-save-btn" id="acctContactSaveBtn" type="submit">Save Contact Info</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="statement-section">
+            <div class="block-header">Bill Summary</div>
+            <table class="statement-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">Period</th>
+                        <th style="width: 20%;" class="amount">Charges</th>
+                        <th style="width: 20%;" class="amount">Payments</th>
+                        <th style="width: 20%;" class="amount">Net</th>
+                    </tr>
+                </thead>
+                <tbody id="acctLedgerBody">
+                    <tr>
+                        <td colspan="4">No transactions available.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <footer class="statement-footer">
+            Generated electronically for your convenience. No signature required. If you have any concerns, please contact our support team.
+        </footer>
+
+        <div class="print-actions">
+            <button class="summary-download" type="button" onclick="downloadPdf()">Save as PDF</button>
+            <button class="print-btn" type="button" onclick="window.print()">Print</button>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const requestedAccountNumber = String(params.get('account') || '').trim();
+            let accountNumber = requestedAccountNumber;
+            const isPdfMode = params.get('pdf') === '1';
+            let customerContextPromise = null;
+            if (isPdfMode && document.body) {
+                document.body.dataset.pdfMode = '1';
+            }
+
+            const BUSINESS_PROFILE_KEY = 'billing-business-profile';
+            const BUSINESS_PROFILE_API = '/api/business-profile';
+            const DEFAULT_BUSINESS_PROFILE = {
+                businessName: '',
+                tagline: '',
+                supportEmail: '',
+                contact: '',
+                address: '',
+                logoUrl: ''
+            };
+
+            const loadCustomerContext = async () => {
+                if (customerContextPromise) return customerContextPromise;
+                customerContextPromise = (async () => {
+                    try {
+                        const response = await fetch('/api/customers/me', { credentials: 'include', cache: 'no-store' });
+                        if (!response.ok) return null;
+                        const data = await response.json();
+                        if (!data || !data.customer) return null;
+                        const contextAccount = String(data.customer.accountNumber || '').trim();
+                        if (requestedAccountNumber && contextAccount && contextAccount !== requestedAccountNumber) {
+                            return null;
+                        }
+                        return data;
+                    } catch (error) {
+                        return null;
+                    }
+                })();
+                return customerContextPromise;
+            };
+
+            const setCustomerContext = (data) => {
+                customerContextPromise = Promise.resolve(data || null);
+                return customerContextPromise;
+            };
+
+            const resolveAccountNumber = async () => {
+                const context = await loadCustomerContext();
+                if (context?.customer?.accountNumber) {
+                    accountNumber = String(context.customer.accountNumber);
+                }
+                if (!accountNumber) accountNumber = '000000000';
+                return context;
+            };
+
+            const loadBusinessProfile = () => {
+                try {
+                    const raw = localStorage.getItem(BUSINESS_PROFILE_KEY);
+                    if (!raw) return { ...DEFAULT_BUSINESS_PROFILE };
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object') {
+                        return { ...DEFAULT_BUSINESS_PROFILE, ...parsed };
+                    }
+                } catch {
+                    // ignore parsing issues
+                }
+                return { ...DEFAULT_BUSINESS_PROFILE };
+            };
+
+            const saveBusinessProfile = (profile) => {
+                try {
+                    localStorage.setItem(BUSINESS_PROFILE_KEY, JSON.stringify(profile));
+                } catch {
+                    // ignore storage issues
+                }
+            };
+
+            const fetchBusinessProfileFromApi = async () => {
+                try {
+                    const res = await fetch(BUSINESS_PROFILE_API, { credentials: 'include' });
+                    if (!res.ok) throw new Error(`status ${res.status}`);
+                    const data = await res.json();
+                    const merged = { ...DEFAULT_BUSINESS_PROFILE, ...data };
+                    saveBusinessProfile(merged);
+                    return merged;
+                } catch (err) {
+                    console.warn('Business profile fetch failed:', err);
+                    return null;
+                }
+            };
+
+            const setText = (id, value) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = value ?? '';
+            };
+
+            const normalizeTextValue = (value) => {
+                if (value === null || value === undefined) return '';
+                return String(value).trim();
+            };
+
+            const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const customerContactSection = document.getElementById('acctContactSection');
+            const customerContactForm = document.getElementById('acctContactForm');
+            const customerContactMobileInput = document.getElementById('acctContactMobileInput');
+            const customerContactEmailInput = document.getElementById('acctContactEmailInput');
+            const customerContactStatus = document.getElementById('acctContactStatus');
+            const customerContactSaveBtn = document.getElementById('acctContactSaveBtn');
+
+            const normalizeCustomerMobileInput = (value) => {
+                const original = normalizeTextValue(value);
+                if (!original) return '';
+                const compact = original.replace(/[^\d+]/g, '');
+                let local = compact;
+                if (local.startsWith('+63')) local = `0${local.slice(3)}`;
+                if (local.startsWith('63')) local = `0${local.slice(2)}`;
+                if (local.startsWith('9') && local.length === 10) local = `0${local}`;
+                const digits = local.replace(/\D+/g, '');
+                return /^09\d{9}$/.test(digits) ? digits : '';
+            };
+
+            const buildCustomerContact = (customer) =>
+                normalizeTextValue(
+                    customer?.mobileRaw ||
+                    customer?.mobile ||
+                    customer?.contactNumber ||
+                    customer?.phone ||
+                    customer?.contact
+                );
+
+            const buildCustomerEmail = (customer) => normalizeTextValue(customer?.email);
+
+            const toggleCustomerContactEditor = (show) => {
+                if (!customerContactSection) return;
+                customerContactSection.hidden = !show;
+            };
+
+            const setCustomerContactStatus = (message = '', type = '') => {
+                if (!customerContactStatus) return;
+                customerContactStatus.textContent = message;
+                customerContactStatus.classList.toggle('is-success', type === 'success');
+                customerContactStatus.classList.toggle('is-error', type === 'error');
+            };
+
+            const setCustomerContactSubmitting = (isSubmitting) => {
+                if (!customerContactSaveBtn) return;
+                customerContactSaveBtn.disabled = Boolean(isSubmitting);
+                customerContactSaveBtn.textContent = isSubmitting ? 'Saving...' : 'Save Contact Info';
+            };
+
+            const applyCustomerContactInfo = (customer) => {
+                const mobile = buildCustomerContact(customer);
+                const email = buildCustomerEmail(customer);
+                setText('acctToPhone', mobile || '-');
+                setText('acctToEmail', email || '-');
+                if (customerContactMobileInput) customerContactMobileInput.value = mobile;
+                if (customerContactEmailInput) customerContactEmailInput.value = email;
+            };
+
+            const handleCustomerContactSubmit = async (event) => {
+                event.preventDefault();
+                setCustomerContactStatus('');
+                setCustomerContactSubmitting(true);
+                try {
+                    const context = await loadCustomerContext();
+                    if (!context?.customer) {
+                        throw new Error('Customer session is required to update contact info.');
+                    }
+
+                    const rawMobile = normalizeTextValue(customerContactMobileInput?.value);
+                    const normalizedMobile = rawMobile ? normalizeCustomerMobileInput(rawMobile) : '';
+                    if (rawMobile && !normalizedMobile) {
+                        throw new Error('Please enter a valid mobile number.');
+                    }
+
+                    const email = normalizeTextValue(customerContactEmailInput?.value);
+                    if (email && !EMAIL_PATTERN.test(email)) {
+                        throw new Error('Please enter a valid email address.');
+                    }
+
+                    const response = await fetch('/api/customers/me/contact', {
+                        method: 'PUT',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            mobileRaw: normalizedMobile,
+                            email
+                        })
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(data?.error || 'Failed to update contact info.');
+                    }
+
+                    const nextCustomer = data?.customer || {
+                        ...context.customer,
+                        mobile: normalizedMobile || null,
+                        mobileRaw: normalizedMobile || null,
+                        email: email || null
+                    };
+                    setCustomerContext({ ...context, customer: nextCustomer });
+                    applyCustomerContactInfo(nextCustomer);
+                    setCustomerContactStatus('Contact info updated.', 'success');
+                } catch (error) {
+                    setCustomerContactStatus(error.message || 'Failed to update contact info.', 'error');
+                } finally {
+                    setCustomerContactSubmitting(false);
+                }
+            };
+
+            customerContactForm?.addEventListener('submit', handleCustomerContactSubmit);
+
+            let businessProfile = { ...DEFAULT_BUSINESS_PROFILE };
+            let currentBusinessName = DEFAULT_BUSINESS_PROFILE.businessName;
+            let dataReady = false;
+            let profileReady = false;
+            let profileFetchDone = false;
+            let logoLoadToken = 0;
+
+            const markReady = () => {
+                if (dataReady && profileReady && profileFetchDone && document.body) {
+                    document.body.dataset.statementReady = 'true';
+                }
+            };
+
+            const computeInitials = (value) => {
+                if (!value) return 'Logo';
+                const words = String(value).trim().split(/\s+/).filter(Boolean);
+                if (!words.length) return 'Logo';
+                const initials = words.slice(0, 2).map((word) => word[0]?.toUpperCase() || '');
+                const result = initials.join('');
+                if (result.length === 1) return `${result}${result}`;
+                return result.slice(0, 2) || 'Logo';
+            };
+
+            const applyBusinessProfile = (profileOverride) => {
+                const profile = profileOverride || businessProfile || loadBusinessProfile();
+                const businessName = String(profile.businessName || DEFAULT_BUSINESS_PROFILE.businessName || '').trim();
+                currentBusinessName = businessName;
+                setText('acctBusinessName', businessName);
+
+                const address = String(profile.address || '').trim();
+                setText('acctBusinessAddress', address);
+
+                const supportEmail = String(profile.supportEmail || '').trim();
+                setText('acctBusinessEmail', supportEmail);
+
+                const contact = String(profile.contact || '').trim();
+                setText('acctBusinessContact', contact);
+
+                const logoUrl = String(profile.logoUrl || '').trim();
+                const logoBox = document.getElementById('acctBusinessLogoBox');
+                const logoImg = document.getElementById('acctBusinessLogo');
+                const fallback = document.getElementById('acctBusinessLogoFallback');
+                const initials = computeInitials(businessName);
+                if (fallback) fallback.textContent = initials;
+                const token = ++logoLoadToken;
+                profileReady = false;
+                const finalizeProfile = () => {
+                    if (token !== logoLoadToken) return;
+                    profileReady = true;
+                    markReady();
+                };
+                if (logoImg) {
+                    logoImg.onerror = () => {
+                        logoImg.setAttribute('hidden', 'true');
+                        logoBox?.classList.remove('has-logo');
+                        finalizeProfile();
+                    };
+                    logoImg.onload = () => {
+                        finalizeProfile();
+                    };
+                    if (logoUrl) {
+                        logoImg.setAttribute('src', logoUrl);
+                        logoImg.removeAttribute('hidden');
+                    } else {
+                        logoImg.removeAttribute('src');
+                        logoImg.setAttribute('hidden', 'true');
+                        finalizeProfile();
+                    }
+                    if (logoUrl && logoImg.complete) {
+                        finalizeProfile();
+                    }
+                } else {
+                    finalizeProfile();
+                }
+                if (logoBox) {
+                    logoBox.classList.toggle('has-logo', Boolean(logoUrl));
+                }
+                if (logoUrl) {
+                    setTimeout(finalizeProfile, 1500);
+                }
+
+                document.title = currentBusinessName
+                    ? `Account Statement - ${currentBusinessName} (${accountNumber})`
+                    : `Account Statement (${accountNumber})`;
+            };
+
+            applyBusinessProfile(businessProfile);
+            fetchBusinessProfileFromApi().then((next) => {
+                if (next) {
+                    businessProfile = next;
+                    applyBusinessProfile(next);
+                }
+            }).finally(() => {
+                profileFetchDone = true;
+                markReady();
+            });
+
+            const mockPaymentStore = {
+                '10000001': {
+                    planId: 'home-fiber-100',
+                    planName: 'Home Fiber 100',
+                    planAmount: 1499,
+                    balance: 0,
+                    dueDate: '2023-10-28',
+                    status: 'Paid',
+                    lastPaymentDate: '2023-10-05',
+                    lastPaymentAmount: 1499,
+                    subscriberName: 'Juan Dela Cruz',
+                    history: [
+                        { id: 'bill-10000001-2023-10', type: 'bill', date: '2023-10-01', amount: 1499, description: 'October 2023 MRC', status: 'Issued', recordedAt: '2023-10-01T02:00:00Z' },
+                        { id: 'pay-10000001-2023-10-05', type: 'payment', date: '2023-10-05', amount: 1499, method: 'Auto-debit', reference: 'AD-238812', status: 'Posted', recordedAt: '2023-10-05T08:05:00Z' },
+                        { id: 'bill-10000001-2023-09', type: 'bill', date: '2023-09-01', amount: 1499, description: 'September 2023 MRC', status: 'Issued', recordedAt: '2023-09-01T02:00:00Z' }
+                    ]
+                },
+                '10000002': {
+                    planId: 'home-50mbps',
+                    planName: 'Home 50Mbps',
+                    planAmount: 1299,
+                    balance: 1299,
+                    dueDate: '2023-11-15',
+                    status: 'Due',
+                    lastPaymentDate: '2023-09-15',
+                    lastPaymentAmount: 1299,
+                    subscriberName: 'Maria Santos',
+                    history: [
+                        { id: 'bill-10000002-2023-11', type: 'bill', date: '2023-11-01', amount: 1299, description: 'November 2023 MRC', status: 'Issued', recordedAt: '2023-11-01T03:30:00Z' },
+                        { id: 'bill-10000002-2023-10', type: 'bill', date: '2023-10-01', amount: 1299, description: 'October 2023 MRC', status: 'Issued', recordedAt: '2023-10-01T03:30:00Z' },
+                        { id: 'pay-10000002-2023-09-15', type: 'payment', date: '2023-09-15', amount: 1299, method: 'GCash', reference: 'GC-881512', status: 'Posted', recordedAt: '2023-09-15T10:15:00Z' }
+                    ]
+                },
+                '10000003': {
+                    planId: 'home-fiber-200',
+                    planName: 'Home Fiber 200',
+                    planAmount: 2199,
+                    balance: 2598,
+                    dueDate: '2023-10-20',
+                    status: 'Overdue',
+                    lastPaymentDate: '2023-08-20',
+                    lastPaymentAmount: 2199,
+                    subscriberName: 'Carlos Reyes',
+                    history: [
+                        { id: 'bill-10000003-2023-10', type: 'bill', date: '2023-10-01', amount: 2199, description: 'October 2023 MRC', status: 'Issued', recordedAt: '2023-10-01T04:00:00Z' },
+                        { id: 'bill-10000003-2023-09', type: 'bill', date: '2023-09-01', amount: 2199, description: 'September 2023 MRC', status: 'Issued', recordedAt: '2023-09-01T04:00:00Z' },
+                        { id: 'bill-10000003-late', type: 'bill', date: '2023-09-21', amount: 399, description: 'Late fee', status: 'Issued', recordedAt: '2023-09-21T06:30:00Z' },
+                        { id: 'pay-10000003-2023-08-20', type: 'payment', date: '2023-08-20', amount: 2199, method: 'Bank transfer', reference: 'BT-002218', status: 'Posted', recordedAt: '2023-08-20T06:40:00Z' }
+                    ]
+                }
+            };
+
+            function formatCurrency(amount) {
+                const numeric = Number(amount);
+                const safeAmount = Number.isFinite(numeric) ? numeric : 0;
+                return `\u20B1${safeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            }
+
+            function formatDate(value, fallback = '-') {
+                if (!value || value === 'N/A') return fallback;
+                const parsed = new Date(value);
+                if (Number.isNaN(parsed.getTime())) {
+                    return value;
+                }
+                return parsed.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+            }
+
+            function ensureRecord(account) {
+                const key = (account || '').toString().trim();
+                if (!key) {
+                    return {
+                        planId: '',
+                        planName: '',
+                        planAmount: null,
+                        balance: 0,
+                        dueDate: 'N/A',
+                        status: 'Paid',
+                        lastPaymentDate: 'N/A',
+                        lastPaymentAmount: 0,
+                        subscriberName: '',
+                        history: []
+                    };
+                }
+                if (!mockPaymentStore[key]) {
+                    mockPaymentStore[key] = {
+                        planId: '',
+                        planName: '',
+                        planAmount: null,
+                        balance: 0,
+                        dueDate: 'N/A',
+                        status: 'Paid',
+                        lastPaymentDate: 'N/A',
+                        lastPaymentAmount: 0,
+                        subscriberName: '',
+                        history: []
+                    };
+                } else if (!Array.isArray(mockPaymentStore[key].history)) {
+                    mockPaymentStore[key].history = [];
+                }
+                return mockPaymentStore[key];
+            }
+
+            async function loadPaymentHistory(account) {
+                if (!account) return [];
+                try {
+                    const context = await loadCustomerContext();
+                    if (context?.paymentHistory) {
+                        return Array.isArray(context.paymentHistory) ? context.paymentHistory : [];
+                    }
+                    const response = await fetch(`/api/payments/${encodeURIComponent(account)}`, {
+                        credentials: 'include',
+                        cache: 'no-store'
+                    });
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch payment history');
+                    }
+                    const data = await response.json();
+                    return Array.isArray(data.history) ? data.history : [];
+                } catch (error) {
+                    console.warn('Unable to load payment history:', error.message);
+                    return [];
+                }
+            }
+
+            async function loadCustomerSnapshot() {
+                try {
+                    const context = await loadCustomerContext();
+                    if (context?.customer) {
+                        return [context.customer];
+                    }
+                    const response = await fetch('/api/customers', { credentials: 'include', cache: 'no-store' });
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch customers');
+                    }
+                    const data = await response.json();
+                    return Array.isArray(data.customers) ? data.customers : [];
+                } catch (error) {
+                    console.warn('Unable to load customer data:', error.message);
+                    return [];
+                }
+            }
+
+            function resolveEntryDate(entry) {
+                return entry?.date || entry?.recordedAt || entry?.createdAt || entry?.updatedAt || '';
+            }
+
+            function resolveEntryDirection(entry) {
+                const direction = String(entry?.direction || '').toLowerCase();
+                if (direction === 'credit' || direction === 'debit') return direction;
+                const kind = String(entry?.kind || entry?.type || '').toLowerCase();
+                if (['payment', 'credit', 'refund', 'adjustment'].includes(kind)) return 'credit';
+                if (['bill', 'charge', 'debit'].includes(kind)) return 'debit';
+                const amount = Number(entry?.amount);
+                if (Number.isFinite(amount) && amount < 0) return 'credit';
+                return 'debit';
+            }
+
+            function summarizeLedger(history, balanceOverride) {
+                const entries = Array.isArray(history) ? history.slice() : [];
+                const normalized = entries.map((entry, index) => {
+                    const dateValue = resolveEntryDate(entry);
+                    const timestamp = dateValue ? new Date(dateValue).getTime() : 0;
+                    return {
+                        raw: entry,
+                        index,
+                        date: dateValue,
+                        timestamp: Number.isFinite(timestamp) ? timestamp : 0,
+                        direction: resolveEntryDirection(entry),
+                        amount: Math.abs(Number(entry?.amount) || 0)
+                    };
+                }).sort((a, b) => (a.timestamp - b.timestamp) || (a.index - b.index));
+
+                const getPeriodKey = (entry) => {
+                    const rawDate = String(entry?.date || '').trim();
+                    const directMatch = rawDate.match(/^(\d{4})-(\d{2})/);
+                    if (directMatch) return `${directMatch[1]}-${directMatch[2]}`;
+                    const parsed = rawDate ? new Date(rawDate) : null;
+                    if (!parsed || Number.isNaN(parsed.getTime())) return '';
+                    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+                };
+                const latestCharge = normalized.slice().reverse().find((entry) =>
+                    entry.direction === 'debit' && getPeriodKey(entry)
+                );
+                const currentPeriodKey = latestCharge ? getPeriodKey(latestCharge) : '';
+                const currentEntries = currentPeriodKey
+                    ? normalized.filter((entry) => getPeriodKey(entry) === currentPeriodKey)
+                    : normalized;
+
+                let allCharges = 0;
+                let allCredits = 0;
+                normalized.forEach((entry) => {
+                    if (entry.direction === 'credit') {
+                        allCredits += entry.amount;
+                    } else {
+                        allCharges += entry.amount;
+                    }
+                });
+
+                let totalCharges = 0;
+                let totalCredits = 0;
+                currentEntries.forEach((entry) => {
+                    if (entry.direction === 'credit') {
+                        totalCredits += entry.amount;
+                    } else {
+                        totalCharges += entry.amount;
+                    }
+                });
+
+                allCharges = Number(allCharges.toFixed(2));
+                allCredits = Number(allCredits.toFixed(2));
+                totalCharges = Number(totalCharges.toFixed(2));
+                totalCredits = Number(totalCredits.toFixed(2));
+                const computedNet = Number((allCharges - allCredits).toFixed(2));
+                const currentNet = Number((totalCharges - totalCredits).toFixed(2));
+                const balanceNumber = Number(balanceOverride);
+                let totalDue = computedNet;
+                if (Number.isFinite(balanceNumber)) {
+                    if (balanceNumber !== 0 || computedNet === 0) {
+                        totalDue = balanceNumber;
+                    }
+                }
+                const previousBalance = Number((totalDue - currentNet).toFixed(2));
+
+                let running = 0;
+                const rows = normalized.map((entry) => {
+                    if (entry.direction === 'credit') {
+                        running -= entry.amount;
+                    } else {
+                        running += entry.amount;
+                    }
+                    running = Number(running.toFixed(2));
+                    return { ...entry, runningBalance: running };
+                });
+
+                return { totalCharges, totalCredits, totalDue, previousBalance, entries: rows, currentEntries };
+            }
+
+            function summarizeByMonth(history, referenceDate = new Date()) {
+                const entries = Array.isArray(history) ? history : [];
+                const referenceYear = referenceDate instanceof Date && !Number.isNaN(referenceDate.getTime())
+                    ? referenceDate.getFullYear()
+                    : new Date().getFullYear();
+                const currentYearBuckets = new Map();
+                const previousYearsBucket = {
+                    hasEntries: false,
+                    charges: 0,
+                    credits: 0
+                };
+                entries.forEach((entry) => {
+                    const dateValue = resolveEntryDate(entry);
+                    const parsed = dateValue ? new Date(dateValue) : null;
+                    if (!parsed || Number.isNaN(parsed.getTime())) return;
+                    const year = parsed.getFullYear();
+                    const amount = Math.abs(Number(entry?.amount) || 0);
+                    const direction = resolveEntryDirection(entry);
+                    if (year < referenceYear) {
+                        previousYearsBucket.hasEntries = true;
+                        if (direction === 'credit') {
+                            previousYearsBucket.credits += amount;
+                        } else {
+                            previousYearsBucket.charges += amount;
+                        }
+                        return;
+                    }
+                    const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+                    if (!currentYearBuckets.has(key)) {
+                        currentYearBuckets.set(key, {
+                            key,
+                            label: parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+                            charges: 0,
+                            credits: 0
+                        });
+                    }
+                    const bucket = currentYearBuckets.get(key);
+                    if (direction === 'credit') {
+                        bucket.credits += amount;
+                    } else {
+                        bucket.charges += amount;
+                    }
+                });
+
+                const currentYearRows = Array.from(currentYearBuckets.values())
+                    .sort((a, b) => a.key.localeCompare(b.key))
+                    .map((bucket) => {
+                        const charges = Number(bucket.charges.toFixed(2));
+                        const credits = Number(bucket.credits.toFixed(2));
+                        const net = Number((charges - credits).toFixed(2));
+                        return { label: bucket.label, charges, credits, net };
+                    });
+
+                if (!previousYearsBucket.hasEntries) {
+                    return currentYearRows;
+                }
+
+                const previousCharges = Number(previousYearsBucket.charges.toFixed(2));
+                const previousCredits = Number(previousYearsBucket.credits.toFixed(2));
+                const previousNet = Number((previousCharges - previousCredits).toFixed(2));
+                return [{
+                    label: 'Previous Year',
+                    charges: previousCharges,
+                    credits: previousCredits,
+                    net: previousNet
+                }, ...currentYearRows];
+            }
+
+            function computeBalanceFromHistory(history) {
+                const entries = Array.isArray(history) ? history : [];
+                let balance = 0;
+                entries.forEach((entry) => {
+                    const amount = Math.abs(Number(entry?.amount) || 0);
+                    const direction = resolveEntryDirection(entry);
+                    if (direction === 'credit') {
+                        balance -= amount;
+                    } else {
+                        balance += amount;
+                    }
+                });
+                return Number(balance.toFixed(2));
+            }
+
+            function buildCustomerAddress(customer) {
+                if (!customer) return '';
+                const direct = customer.address || customer.serviceAddress || customer.fullAddress || '';
+                if (direct) return direct;
+                const parts = [
+                    customer.street,
+                    customer.barangay,
+                    customer.municipality,
+                    customer.province
+                ].filter(Boolean);
+                return parts.join(', ');
+            }
+
+            function resolveInvoice(entry) {
+                const raw = String(entry?.invoiceNumber || entry?.invoice || entry?.reference || entry?.ref || entry?.id || '').trim();
+                if (!raw) return '-';
+                const lower = raw.toLowerCase();
+                if (lower === 'mrc' || lower === 'monthly recurring charge') {
+                    const dateText = String(entry?.date || '').trim();
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+                        return dateText.replace(/-/g, '');
+                    }
+                    const idDigits = String(entry?.id || '').replace(/\D+/g, '');
+                    return idDigits || raw;
+                }
+                return raw;
+            }
+
+            function describeEntry(entry, direction) {
+                const description = String(entry?.description || entry?.memo || entry?.notes || '').trim();
+                if (direction === 'credit') {
+                    if (description) return description;
+                    const method = String(entry?.method || entry?.channel || entry?.kind || entry?.type || 'Payment').trim();
+                    const reference = String(entry?.reference || entry?.ref || '').trim();
+                    if (reference) return `${method} (${reference})`;
+                    return method || 'Payment';
+                }
+                return description || 'Statement charge';
+            }
+
+            function populateStatement(record, customer, context = null) {
+                const generated = new Date();
+                const effectiveCustomer = context?.customer || customer || {};
+                setText('acctStatementAccount', accountNumber);
+                setText('acctStatementId', `AS-${accountNumber}-${generated.toISOString().slice(0, 10).replace(/-/g, '')}`);
+                setText('acctStatementGenerated', formatDate(generated.toISOString()));
+
+                const name = record.subscriberName || effectiveCustomer?.fullName || effectiveCustomer?.name || 'Subscriber';
+                setText('acctToName', name);
+                setText('acctToPlan', record.planName || effectiveCustomer?.planName || 'Not assigned');
+                const address = buildCustomerAddress(effectiveCustomer);
+                setText('acctToAddress', address || '-');
+                applyCustomerContactInfo(effectiveCustomer);
+
+                setText('acctSummaryDue', formatDate(record.dueDate || effectiveCustomer?.dueDate, 'No due date set'));
+
+                const ledger = summarizeLedger(record.history, record.balance);
+                setText('acctSummaryPrevious', formatCurrency(ledger.previousBalance));
+                setText('acctSummaryCredits', formatCurrency(ledger.totalCredits));
+                setText('acctSummaryCharges', formatCurrency(ledger.totalCharges));
+                setText('acctSummaryTotal', formatCurrency(ledger.totalDue));
+                const rawOpenCount = Number(context?.ticketSummary?.openCount);
+                const openCount = Number.isFinite(rawOpenCount) && rawOpenCount > 0 ? Math.floor(rawOpenCount) : 0;
+                setText('acctSummaryOpenTickets', openCount > 0 ? `${openCount} Open` : 'None');
+
+                const ledgerBody = document.getElementById('acctLedgerBody');
+                if (ledgerBody) {
+                    const monthly = summarizeByMonth(record.history);
+                    if (!monthly.length) {
+                        ledgerBody.innerHTML = '<tr><td colspan="4">No transactions available.</td></tr>';
+                    } else {
+                        const rows = monthly.map((entry) => {
+                            return `<tr>
+                                <td>${entry.label}</td>
+                                <td class="amount">${formatCurrency(entry.charges)}</td>
+                                <td class="amount">${formatCurrency(entry.credits)}</td>
+                                <td class="amount">${formatCurrency(entry.net)}</td>
+                            </tr>`;
+                        }).join('');
+                        ledgerBody.innerHTML = rows;
+                    }
+                }
+
+                document.title = currentBusinessName
+                    ? `Account Statement - ${currentBusinessName} (${accountNumber})`
+                    : `Account Statement (${accountNumber})`;
+            }
+
+            async function hydrate() {
+                await resolveAccountNumber();
+                const context = await loadCustomerContext();
+                toggleCustomerContactEditor(Boolean(context?.customer) && !isPdfMode);
+                const record = ensureRecord(accountNumber);
+                const customers = await loadCustomerSnapshot();
+                const customer = customers.find((item) => (item.accountNumber || '').toString() === accountNumber);
+                const paymentHistory = await loadPaymentHistory(accountNumber);
+                const customerBalance = Number(customer?.balance);
+                const hasCustomerBalance = Number.isFinite(customerBalance);
+                if (customer) {
+                    const fullName = customer.name || `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
+                    record.planId = customer.planId || record.planId;
+                    record.planName = customer.planName || record.planName;
+                    record.planAmount = customer.planAmount || record.planAmount;
+                    record.dueDate = customer.dueDate || record.dueDate;
+                    record.subscriberName = fullName || record.subscriberName;
+                    if (hasCustomerBalance) {
+                        record.balance = customerBalance;
+                    }
+                }
+                if (paymentHistory.length) {
+                    record.history = paymentHistory;
+                    if (!hasCustomerBalance) {
+                        record.balance = computeBalanceFromHistory(paymentHistory);
+                    }
+                }
+                populateStatement(record, customer, context);
+                dataReady = true;
+                markReady();
+            }
+
+            async function downloadPdf() {
+                await resolveAccountNumber();
+                const url = `/api/statements/account/${encodeURIComponent(accountNumber)}/pdf?t=${Date.now()}`;
+                try {
+                    const response = await fetch(url, {
+                        credentials: 'include',
+                        cache: 'no-store',
+                        headers: { Accept: 'application/pdf' }
+                    });
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!response.ok || !contentType.toLowerCase().includes('application/pdf')) {
+                        const payload = contentType.toLowerCase().includes('application/json')
+                            ? await response.json().catch(() => ({}))
+                            : {};
+                        throw new Error(payload.error || 'Unable to generate PDF right now.');
+                    }
+
+                    const blob = await response.blob();
+                    const disposition = response.headers.get('content-disposition') || '';
+                    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+                    const filename = filenameMatch
+                        ? decodeURIComponent(filenameMatch[1].replace(/"/g, '').trim())
+                        : `account-statement-${accountNumber}.pdf`;
+                    const objectUrl = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = objectUrl;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(objectUrl);
+                } catch (error) {
+                    alert(error.message || 'Unable to generate PDF right now.');
+                }
+            }
+
+            window.downloadPdf = downloadPdf;
+
+            hydrate();
+        })();
+    </script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

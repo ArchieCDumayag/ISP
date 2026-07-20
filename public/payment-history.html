@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Payment History - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/payment-history.css?v=3.3">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body class="payment-history-body">
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page payment-history-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <h1>Payment History</h1>
+                    </div>
+                </section>
+
+                <section class="page-insights">
+                    <div class="payment-history-metrics" aria-label="Payment history summary">
+                        <article class="payment-history-metric">
+                            <span class="payment-history-metric__icon">
+                                <i class="ti ti-receipt" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-history-metric__body">
+                                <p class="payment-history-metric__label">Entries</p>
+                                <strong class="payment-history-metric__value" id="historyMetricEntries">0</strong>
+                                <p class="payment-history-metric__meta">Posted payment logs in result</p>
+                            </div>
+                        </article>
+                        <article class="payment-history-metric payment-history-metric--success">
+                            <span class="payment-history-metric__icon">
+                                <i class="ti ti-cash" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-history-metric__body">
+                                <p class="payment-history-metric__label">Payments Collected</p>
+                                <strong class="payment-history-metric__value" id="historyMetricPayments">&#8369;0.00</strong>
+                                <p class="payment-history-metric__meta">Collected payments only</p>
+                            </div>
+                        </article>
+                        <article class="payment-history-metric payment-history-metric--warning">
+                            <span class="payment-history-metric__icon">
+                                <i class="ti ti-hash" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-history-metric__body">
+                                <p class="payment-history-metric__label">With Reference</p>
+                                <strong class="payment-history-metric__value" id="historyMetricReferences">0</strong>
+                                <p class="payment-history-metric__meta">Payments with reference or OR no.</p>
+                            </div>
+                        </article>
+                        <article class="payment-history-metric payment-history-metric--info">
+                            <span class="payment-history-metric__icon">
+                                <i class="ti ti-users" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-history-metric__body">
+                                <p class="payment-history-metric__label">Accounts Touched</p>
+                                <strong class="payment-history-metric__value" id="historyMetricAccounts">0</strong>
+                                <p class="payment-history-metric__meta">Unique accounts in current result</p>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="section-frame">
+                    <div class="section-toolbar payment-history-toolbar">
+                        <div class="search-field payment-history-search">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input
+                                type="search"
+                                id="paymentHistorySearch"
+                                placeholder="Search payments"
+                                aria-label="Search payment history"
+                            >
+                        </div>
+
+                        <div class="toolbar-inline-filters payment-history-inline-filters" aria-label="Payment history filters">
+                            <div class="toolbar-filter-control toolbar-filter-control--date">
+                                <label for="paymentHistoryStartDate">Start</label>
+                                <input type="date" id="paymentHistoryStartDate">
+                            </div>
+                            <div class="toolbar-filter-control toolbar-filter-control--date">
+                                <label for="paymentHistoryEndDate">End</label>
+                                <input type="date" id="paymentHistoryEndDate">
+                            </div>
+                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--area">
+                                <label for="paymentHistoryArea">Area</label>
+                                <div class="select-wrapper">
+                                    <select id="paymentHistoryArea">
+                                        <option value="">Areas</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--method">
+                                <label for="paymentHistoryMethod">Payment</label>
+                                <div class="select-wrapper">
+                                    <select id="paymentHistoryMethod">
+                                        <option value="">All methods</option>
+                                        <option value="cash">Cash</option>
+                                        <option value="gcash">GCash</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--recipient">
+                                <label for="paymentHistoryRecordedBy">Paid to</label>
+                                <div class="select-wrapper">
+                                    <select id="paymentHistoryRecordedBy">
+                                        <option value="">All recipients</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
+                                <label for="paymentHistorySort">Sort</label>
+                                <div class="select-wrapper">
+                                    <select id="paymentHistorySort">
+                                        <option value="newOld" selected>Newest</option>
+                                        <option value="oldNew">Oldest</option>
+                                        <option value="amountHighLow">High Amt</option>
+                                        <option value="amountLowHigh">Low Amt</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
+                                <label for="paymentHistoryPageSize">Show</label>
+                                <div class="select-wrapper">
+                                    <select id="paymentHistoryPageSize">
+                                        <option value="25" selected>25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper elevated">
+                        <table class="payment-history-table" aria-label="Payment history table">
+                            <caption>Payment history records</caption>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th class="is-center">Subscriber</th>
+                                    <th>Area</th>
+                                    <th class="is-num">Amount</th>
+                                    <th>Reference / OR</th>
+                                    <th>Recorded By</th>
+                                    <th class="is-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="paymentHistoryTableBody">
+                                <tr class="payment-history-empty-row">
+                                    <td colspan="7" class="payment-history-empty-cell">
+                                        <span class="payment-history-empty-message">Loading payment history...</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="table-footer">
+                        <div class="footer-summary" id="paymentHistorySummary">Loading payment history...</div>
+                        <div class="footer-controls">
+                            <button type="button" class="footer-btn" id="paymentHistoryPrev" aria-label="Previous page" disabled><</button>
+                            <span class="footer-page-info" id="paymentHistoryPageInfo">Page 1 of 1</span>
+                            <button type="button" class="footer-btn" id="paymentHistoryNext" aria-label="Next page" disabled>></button>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/payment-history.js?v=1.6"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Customer Portal Login</title>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="css/customer-portal.css?v=2.7">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+
+<body class="customer-login-body">
+    <main class="customer-login-shell">
+        <section class="customer-login-hero" aria-label="Customer portal brand">
+            <div class="customer-login-wifi-mark">
+                <i class="ti ti-wifi" aria-hidden="true"></i>
+            </div>
+            <h1 id="portalBusinessName" data-keep-label="true">FIBER CONNECT</h1>
+            <p>Reliable High-Speed Internet</p>
+        </section>
+
+        <section class="customer-login-panel">
+            <h2>Sign In</h2>
+
+            <form class="customer-login-form" id="customerLoginForm" autocomplete="on">
+                <div class="portal-field">
+                    <label for="customerLoginId">Client ID / Username</label>
+                    <div class="portal-input-icon">
+                        <i class="ti ti-user" aria-hidden="true"></i>
+                        <input type="text" id="customerLoginId" autocomplete="username" required>
+                    </div>
+                </div>
+                <div class="portal-field">
+                    <label for="customerPassword">Password</label>
+                    <div class="portal-input-icon portal-password-field">
+                        <i class="ti ti-lock" aria-hidden="true"></i>
+                        <input type="password" id="customerPassword" autocomplete="current-password" required>
+                        <button type="button" class="portal-icon-button" id="toggleCustomerPassword" aria-label="Show password">
+                            <i class="ti ti-eye" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <label class="customer-remember-row" for="customerRememberMe">
+                    <input type="checkbox" id="customerRememberMe" checked>
+                    <span>Remember me</span>
+                </label>
+                <p class="portal-error" id="customerLoginError" hidden></p>
+                <button type="submit" class="portal-primary-button" id="customerLoginSubmit">
+                    LOG IN
+                </button>
+            </form>
+        </section>
+
+        <p class="customer-login-help">
+            <span>Need help?</span>
+            <a href="/company-info.html">Contact Us</a>
+        </p>
+    </main>
+
+    <script src="js/customer-portal-login.js?v=1.1"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+
+</html>

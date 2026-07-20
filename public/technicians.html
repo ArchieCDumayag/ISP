@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Technicians - Dante Point To Point Pisonet</title>
+  <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="styles.css?v=2.9">
+  <link rel="stylesheet" href="css/technicians.css?v=1.0">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+  <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar"></div>
+    <div class="app-main">
+      <div id="topbar"></div>
+      <main class="page technician-page">
+        <section class="page-header">
+          <div class="page-title">
+            <p class="eyebrow">Field Operations</p>
+            <h1>Technician</h1>
+            <p class="subtitle">Assign jobs, track workloads, and confirm customer requests from the app.</p>
+          </div>
+          <div class="header-actions">
+            <button class="add-btn" id="openJobModal"><i class="ti ti-plus" aria-hidden="true"></i> Add Job</button>
+          </div>
+        </section>
+
+        <section class="section-frame elevated">
+          <header class="section-heading">
+            <div class="toolbar-actions">
+              <div class="page-size-control">
+                <label for="jobPageSize">Show</label>
+                <div class="select-wrapper">
+                  <select id="jobPageSize" name="jobPageSize">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                  </select>
+                </div>
+              </div>
+              <div class="filter-chips" role="radiogroup" aria-label="Job status filter">
+                <button class="chip active" data-job-filter="all" aria-checked="true">All</button>
+                <button class="chip" data-job-filter="scheduled" aria-checked="false">Scheduled</button>
+                <button class="chip" data-job-filter="in-progress" aria-checked="false">In Progress</button>
+              </div>
+            </div>
+          </header>
+          <div class="table-wrapper tech-table-wrapper">
+            <table class="settings-table tech-table" aria-label="Technician jobs">
+              <thead>
+              <tr>
+                  <th>#</th>
+                  <th>Job Number</th>
+                  <th>Job</th>
+                  <th>Technician</th>
+                  <th>Schedule</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="jobTableBody">
+                <tr><td colspan="8" style="text-align:center; padding:14px;">No jobs yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer" id="jobsFooter">
+            <div class="footer-summary" id="jobFooterSummary">No jobs to display</div>
+            <div class="footer-controls">
+              <button type="button" class="footer-btn" id="jobPrevPage" aria-label="Previous page" disabled><</button>
+              <span class="footer-page-info" id="jobPageInfo">Page 1 of 1</span>
+              <button type="button" class="footer-btn" id="jobNextPage" aria-label="Next page" disabled>></button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast" id="techToast" role="status" aria-live="polite"></div>
+
+  <div class="modal-overlay" id="jobModal" aria-hidden="true">
+    <div class="modal-container">
+      <header class="modal-header">
+        <div>
+          <p class="section-eyebrow" id="jobModalEyebrow">New Job</p>
+          <h3 id="jobModalTitle">Add and assign a job</h3>
+        </div>
+        <button type="button" class="modal-close" id="jobModalClose" aria-label="Close job modal">&times;</button>
+      </header>
+      <form id="jobModalForm" class="job-form">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="jobType">Job type</label>
+            <select id="jobType" name="type" required>
+              <option value="">Select type</option>
+              <option value="install" selected>Install</option>
+              <option value="repair">Repair</option>
+              <option value="relocate">Relocate</option>
+              <option value="fibre-break">Fibre break</option>
+              <option value="mainline-maintenance">Mainline maintenance</option>
+              <option value="disconnect">Disconnect</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="jobTech">Technician</label>
+            <select id="jobTech" name="technician" required>
+              <option value="">Select technician</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="jobSchedule">Schedule</label>
+            <input type="date" id="jobSchedule" name="schedule" required>
+          </div>
+          <div class="form-field full-row">
+            <label for="jobNotes">Description</label>
+            <textarea id="jobNotes" name="notes" rows="3"></textarea>
+          </div>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="ghost-btn" id="jobModalCancel">Cancel</button>
+          <button type="submit" class="primary-btn" id="jobModalSubmit"><i class="ti ti-send" aria-hidden="true"></i> Assign Job</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="assignJobModal" aria-hidden="true">
+    <div class="modal-container modal-compact">
+      <header class="modal-header">
+        <div>
+          <p class="section-eyebrow">Assignment</p>
+          <h3>Assign technician</h3>
+          <p class="field-hint" id="assignJobLabel">Job</p>
+        </div>
+        <button type="button" class="modal-close" id="assignJobModalClose" aria-label="Close assignment modal">&times;</button>
+      </header>
+      <form id="assignJobModalForm" class="job-form">
+        <div class="form-grid">
+          <div class="form-field full-row">
+            <label for="assignJobTechnician">Technician</label>
+            <select id="assignJobTechnician" name="technician">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="ghost-btn" id="assignJobModalCancel">Cancel</button>
+          <button type="submit" class="primary-btn"><i class="ti ti-user-check" aria-hidden="true"></i> Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script src="layout.js?v=3.5"></script>
+  <script src="js/technicians.js?v=1.3"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>
+
+
+
+
+
+

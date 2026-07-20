@@ -1,0 +1,73 @@
+<svg width="960" height="560" viewBox="0 0 960 560" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="480" y1="42" x2="480" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B8CAE8"/>
+      <stop offset="1" stop-color="#EEF1FB"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="480" y1="336" x2="480" y2="510" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5F8B4B"/>
+      <stop offset="1" stop-color="#294D26"/>
+    </linearGradient>
+    <linearGradient id="houseFront" x1="340" y1="250" x2="632" y2="454" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#667A9D"/>
+      <stop offset="1" stop-color="#2E4161"/>
+    </linearGradient>
+    <linearGradient id="roof" x1="468" y1="174" x2="468" y2="272" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#39404A"/>
+      <stop offset="1" stop-color="#1D232A"/>
+    </linearGradient>
+    <linearGradient id="path" x1="470" y1="552" x2="470" y2="388" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BCA88F"/>
+      <stop offset="1" stop-color="#E2D4C2"/>
+    </linearGradient>
+    <filter id="houseShadow" x="102" y="58" width="756" height="454" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#132430" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+
+  <rect x="60" y="40" width="840" height="480" rx="22" fill="url(#sky)"/>
+  <circle cx="716" cy="120" r="56" fill="#FFF6D3" opacity="0.68"/>
+  <rect x="60" y="316" width="840" height="204" rx="0" fill="url(#ground)"/>
+  <ellipse cx="484" cy="460" rx="360" ry="82" fill="#396130" opacity="0.45"/>
+  <g opacity="0.92">
+    <path d="M138 164L104 316H178L138 164Z" fill="#384E36"/>
+    <circle cx="138" cy="142" r="54" fill="#536E47"/>
+    <circle cx="174" cy="174" r="34" fill="#638452"/>
+    <path d="M790 160L758 316H824L790 160Z" fill="#384E36"/>
+    <circle cx="792" cy="140" r="58" fill="#4C6843"/>
+    <circle cx="748" cy="176" r="38" fill="#6B8C59"/>
+    <path d="M850 180L822 316H874L850 180Z" fill="#384E36"/>
+    <circle cx="850" cy="166" r="46" fill="#55734B"/>
+  </g>
+
+  <g filter="url(#houseShadow)">
+    <path d="M250 242L424 118H678L782 214V450H250V242Z" fill="url(#houseFront)"/>
+    <path d="M198 254L422 98L710 124L836 246H198V254Z" fill="url(#roof)"/>
+    <path d="M356 174L458 120L612 138L688 224H356V174Z" fill="#2A313A"/>
+    <rect x="272" y="260" width="486" height="190" fill="#4B6483"/>
+    <rect x="298" y="274" width="108" height="116" rx="8" fill="#F3E6B9"/>
+    <rect x="312" y="288" width="36" height="42" rx="4" fill="#FFF7D3"/>
+    <rect x="356" y="288" width="36" height="42" rx="4" fill="#FFF7D3"/>
+    <rect x="312" y="338" width="36" height="38" rx="4" fill="#FFF7D3"/>
+    <rect x="356" y="338" width="36" height="38" rx="4" fill="#FFF7D3"/>
+    <rect x="550" y="274" width="144" height="116" rx="8" fill="#F3E6B9"/>
+    <rect x="566" y="288" width="48" height="42" rx="4" fill="#FFF7D3"/>
+    <rect x="628" y="288" width="48" height="42" rx="4" fill="#FFF7D3"/>
+    <rect x="566" y="338" width="48" height="38" rx="4" fill="#FFF7D3"/>
+    <rect x="628" y="338" width="48" height="38" rx="4" fill="#FFF7D3"/>
+    <rect x="438" y="264" width="92" height="186" rx="10" fill="#7F4D2F"/>
+    <rect x="454" y="292" width="18" height="42" rx="3" fill="#D7A55A"/>
+    <rect x="478" y="292" width="18" height="42" rx="3" fill="#D7A55A"/>
+    <circle cx="508" cy="364" r="6" fill="#DFC58A"/>
+    <rect x="426" y="246" width="116" height="18" rx="9" fill="#EFE5D9"/>
+    <rect x="238" y="450" width="560" height="12" rx="6" fill="#213347" opacity="0.34"/>
+  </g>
+
+  <path d="M472 552C442 506 430 470 434 442C438 414 456 394 488 376C518 394 536 414 540 442C544 470 534 506 504 552H472Z" fill="url(#path)"/>
+  <path d="M486 548C468 506 462 474 468 450C474 426 488 408 510 396" stroke="#EADCC8" stroke-width="10" stroke-linecap="round"/>
+  <ellipse cx="260" cy="430" rx="42" ry="24" fill="#6A884D"/>
+  <ellipse cx="712" cy="424" rx="48" ry="26" fill="#6D9051"/>
+  <ellipse cx="226" cy="446" rx="24" ry="16" fill="#4A703D"/>
+  <ellipse cx="748" cy="446" rx="22" ry="14" fill="#4A703D"/>
+  <path d="M640 142C672 144 704 152 736 168" stroke="#8AD3DE" stroke-width="8" stroke-linecap="round" stroke-dasharray="10 18"/>
+</svg>

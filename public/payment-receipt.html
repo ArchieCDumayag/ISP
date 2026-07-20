@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Payment Receipt</title>
+    <link rel="stylesheet" href="/css/payment-receipt.css?v=1.1">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+<body>
+    <main class="receipt-shell">
+        <article class="receipt-card" aria-labelledby="receiptTitle">
+            <header class="receipt-brand">
+                <h1 id="receiptBusinessName">DANTE FIBER</h1>
+            </header>
+
+            <section class="receipt-body">
+                <p class="receipt-kicker">Digital Payment Receipt</p>
+                <div class="receipt-check" aria-hidden="true"></div>
+                <h2 id="receiptTitle">Payment Successful</h2>
+                <p class="receipt-verified" id="receiptVerified">Payment details are being loaded.</p>
+
+                <section class="receipt-amount" aria-label="Amount paid">
+                    <span>Amount Paid</span>
+                    <strong id="receiptAmount">PHP 0.00</strong>
+                </section>
+
+                <dl class="receipt-details">
+                    <div>
+                        <dt>Paid by</dt>
+                        <dd id="receiptPaidBy">Customer</dd>
+                    </div>
+                    <div>
+                        <dt>Account / Customer No.</dt>
+                        <dd id="receiptAccount">-</dd>
+                    </div>
+                    <div>
+                        <dt>Payment For</dt>
+                        <dd id="receiptFor">Internet payment</dd>
+                    </div>
+                    <div>
+                        <dt>Payment Method</dt>
+                        <dd id="receiptMethod">Online Payment</dd>
+                    </div>
+                    <div>
+                        <dt>Reference No.</dt>
+                        <dd id="receiptReference">Processing</dd>
+                    </div>
+                    <div>
+                        <dt>Date &amp; Time</dt>
+                        <dd id="receiptDateTime">-</dd>
+                    </div>
+                </dl>
+
+                <p class="receipt-note">Thank you for your payment. Please keep this receipt for your records.</p>
+
+                <section class="receipt-received">
+                    <span>Received by</span>
+                    <strong id="receiptReceivedBy">Dante Fiber</strong>
+                    <small>This receipt confirms your successful online payment.</small>
+                </section>
+
+                <div class="receipt-actions">
+                    <button type="button" id="receiptDownloadBtn">Download Receipt</button>
+                    <button type="button" class="receipt-secondary" id="receiptPrintBtn">Print Receipt</button>
+                    <a href="/" id="receiptContinueBtn">Done</a>
+                </div>
+            </section>
+        </article>
+    </main>
+
+    <script src="/js/payment-receipt.js?v=1.1"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

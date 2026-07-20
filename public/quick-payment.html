@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quick Payment</title>
+    <link rel="stylesheet" href="css/quick-payment.css?v=1.3">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+<body>
+    <main class="quick-pay-shell">
+        <section class="quick-pay-panel" aria-labelledby="quickPayTitle">
+            <header class="quick-pay-brand">
+                <span class="quick-pay-logo">
+                    <img src="/img/business-logo.svg" alt="" id="quickPayLogo">
+                </span>
+                <div class="quick-pay-brand-copy">
+                    <p id="quickPayBusinessName">Dante Fiber</p>
+                    <h1 id="quickPayTitle">Quick Payment</h1>
+                    <span>Pay your internet balance safely and securely.</span>
+                </div>
+            </header>
+
+            <form class="quick-pay-form" id="quickPayLookupForm">
+                <label for="quickPayAccount">Account number</label>
+                <div class="quick-pay-input" id="quickPayInputWrap">
+                    <i class="ti ti-hash" aria-hidden="true"></i>
+                    <input type="text" id="quickPayAccount" inputmode="numeric" autocomplete="off" required>
+                    <span class="quick-pay-check" aria-hidden="true">
+                        <i class="ti ti-check" aria-hidden="true"></i>
+                    </span>
+                </div>
+                <button type="submit" id="quickPayLookupBtn">
+                    <i class="ti ti-search" aria-hidden="true"></i>
+                    Check Balance
+                </button>
+            </form>
+
+            <p class="quick-pay-status" id="quickPayStatus" hidden></p>
+
+            <section class="quick-pay-result" id="quickPayResult" hidden aria-live="polite">
+                <article class="quick-pay-summary">
+                    <div class="quick-pay-summary-grid">
+                        <span class="quick-pay-avatar">
+                            <i class="ti ti-user" aria-hidden="true"></i>
+                        </span>
+                        <div>
+                            <small>Account Name</small>
+                            <strong id="quickPayCustomerName">Customer</strong>
+                            <small>Account Number</small>
+                            <b id="quickPayAccountLabel">#</b>
+                        </div>
+                        <div class="quick-pay-summary-meta">
+                            <p>
+                                <i class="ti ti-wifi" aria-hidden="true"></i>
+                                <span>
+                                    <small>Plan</small>
+                                    <strong id="quickPayPlanName">Not set</strong>
+                                </span>
+                            </p>
+                            <p>
+                                <i class="ti ti-calendar" aria-hidden="true"></i>
+                                <span>
+                                    <small>Due Date</small>
+                                    <strong class="is-due" id="quickPayDueDate">Not set</strong>
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="quick-pay-divider"></div>
+                    <div class="quick-pay-total">
+                        <span>Outstanding Balance</span>
+                        <strong id="quickPayBalance">PHP 0.00</strong>
+                        <small><i class="ti ti-info-circle" aria-hidden="true"></i> Please pay before the due date to avoid service interruption.</small>
+                    </div>
+                </article>
+
+                <section class="quick-pay-section" aria-labelledby="quickPayMethodTitle">
+                    <h2 id="quickPayMethodTitle">Choose a payment method</h2>
+                    <div class="quick-pay-methods" aria-label="Payment method">
+                        <button type="button" class="quick-pay-method is-selected" data-method="gcash" aria-pressed="true">
+                            <span class="method-mark method-mark--gcash">G</span>
+                            <span>GCash</span>
+                            <i class="ti ti-check" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="quick-pay-method" data-method="paymaya" aria-pressed="false">
+                            <span class="method-mark method-mark--maya">maya</span>
+                            <span>Maya</span>
+                            <i class="ti ti-check" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="quick-pay-method" data-method="grabpay" aria-pressed="false">
+                            <span class="method-mark method-mark--grab">Grab</span>
+                            <span>GrabPay</span>
+                            <i class="ti ti-check" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="quick-pay-method" data-method="shopeepay" aria-pressed="false">
+                            <span class="method-mark method-mark--shopee">S</span>
+                            <span>ShopeePay</span>
+                            <i class="ti ti-check" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </section>
+
+                <section class="quick-pay-section" aria-labelledby="quickPayAmountTitle">
+                    <h2 id="quickPayAmountTitle">Amount to pay</h2>
+                    <div class="quick-pay-amount-options">
+                        <button type="button" class="quick-pay-amount-option is-selected" data-amount-mode="full">
+                            <i class="ti ti-circle-dot" aria-hidden="true"></i>
+                            <span>Pay full balance</span>
+                            <strong id="quickPayFullAmount">PHP 0.00</strong>
+                        </button>
+                        <button type="button" class="quick-pay-amount-option" data-amount-mode="custom">
+                            <i class="ti ti-circle" aria-hidden="true"></i>
+                            <span>Enter custom amount</span>
+                        </button>
+                    </div>
+                    <label class="quick-pay-custom-amount" id="quickPayCustomAmountWrap" for="quickPayCustomAmount" hidden>
+                        <span>Custom amount</span>
+                        <input type="number" id="quickPayCustomAmount" min="1" step="0.01" inputmode="decimal">
+                    </label>
+                </section>
+
+                <button type="button" class="quick-pay-submit" id="quickPaySubmitBtn">
+                    <i class="ti ti-lock" aria-hidden="true"></i>
+                    Pay Balance
+                </button>
+
+                <p class="quick-pay-secure">
+                    <i class="ti ti-shield-half" aria-hidden="true"></i>
+                    Secure payment powered by Dante Fiber
+                    <span>Your payment information is safe with us. No extra charge.</span>
+                </p>
+            </section>
+        </section>
+    </main>
+
+    <script src="js/quick-payment.js?v=1.2"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

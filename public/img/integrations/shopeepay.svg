@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" role="img" aria-labelledby="title">
+  <title id="title">ShopeePay</title>
+  <rect width="240" height="120" rx="18" fill="#f7f7f7"/>
+  <g transform="translate(30 34)">
+    <rect x="0" y="14" width="52" height="42" rx="6" fill="#d85c3d"/>
+    <path d="M14 17c0-12 7-19 16-19s16 7 16 19" fill="none" stroke="#d85c3d" stroke-width="6" stroke-linecap="round"/>
+    <text x="26" y="46" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#fff">S</text>
+  </g>
+  <text x="138" y="57" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#d85c3d">Shopee</text>
+  <text x="138" y="88" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#d85c3d">Pay</text>
+</svg>

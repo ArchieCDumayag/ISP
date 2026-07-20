@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Tickets - Dante Point To Point Pisonet</title>
+  <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="styles.css?v=2.9">
+  <link rel="stylesheet" href="css/technicians.css?v=1.0">
+  <link rel="stylesheet" href="css/tickets.css?v=1.1">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+  <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar"></div>
+    <div class="app-main">
+      <div id="topbar"></div>
+      <main class="page technician-page ticket-page">
+        <section class="page-header">
+          <div class="page-title">
+            <p class="eyebrow">Customer Support</p>
+            <h1>Tickets</h1>
+            <p class="subtitle">Receive customer tickets, assign technicians, and track service issues.</p>
+          </div>
+          <div class="header-actions">
+            <button class="add-btn" id="openTicketModal"><i class="ti ti-plus" aria-hidden="true"></i> New Ticket</button>
+          </div>
+        </section>
+
+        <section class="section-frame elevated">
+          <header class="section-heading">
+            <div class="toolbar-actions">
+              <div class="page-size-control">
+                <label for="ticketPageSize">Show</label>
+                <div class="select-wrapper">
+                  <select id="ticketPageSize" name="ticketPageSize">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                  </select>
+                </div>
+              </div>
+              <div class="filter-chips" role="radiogroup" aria-label="Ticket status filter">
+                <button class="chip active" data-ticket-filter="all" aria-checked="true">All</button>
+                <button class="chip" data-ticket-filter="to-be-assigned" aria-checked="false">To Be Assigned</button>
+                <button class="chip" data-ticket-filter="in-progress" aria-checked="false">In Progress</button>
+              </div>
+            </div>
+          </header>
+          <div class="table-wrapper tech-table-wrapper">
+            <table class="settings-table tech-table ticket-table" aria-label="Support tickets">
+              <thead>
+              <tr>
+                <th>#</th>
+                <th>Ticket Number</th>
+                <th>Subject</th>
+                <th>Customer Name</th>
+                <th>Assigned</th>
+                <th>Created</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+              </thead>
+              <tbody id="ticketTableBody">
+                <tr><td colspan="9" style="text-align:center; padding:14px;">No tickets yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer" id="ticketFooter">
+            <div class="footer-summary" id="ticketFooterSummary">No tickets to display</div>
+            <div class="footer-controls">
+              <button type="button" class="footer-btn" id="ticketPrevPage" aria-label="Previous page" disabled><</button>
+              <span class="footer-page-info" id="ticketPageInfo">Page 1 of 1</span>
+              <button type="button" class="footer-btn" id="ticketNextPage" aria-label="Next page" disabled>></button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast" id="ticketToast" role="status" aria-live="polite"></div>
+
+  <div class="modal-overlay" id="ticketModal" aria-hidden="true">
+    <div class="modal-container">
+      <header class="modal-header">
+        <div>
+          <p class="section-eyebrow" id="ticketModalEyebrow">New Ticket</p>
+          <h3 id="ticketModalTitle">Create a support ticket</h3>
+        </div>
+        <button type="button" class="modal-close" id="ticketModalClose" aria-label="Close ticket modal">&times;</button>
+      </header>
+      <form id="ticketModalForm" class="job-form">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="ticketSubject">Subject</label>
+            <select id="ticketSubject" name="subject" required>
+              <option value="">Select a reason</option>
+              <option value="Blinking LOS">Blinking LOS</option>
+              <option value="No Power Modem">No Power Modem</option>
+              <option value="Reset Modem">Reset Modem</option>
+              <option value="Slow Connection">Slow Connection</option>
+              <option value="Wire Problem">Wire Problem</option>
+              <option value="Wi-Fi Connected, No Internet">Wi-Fi Connected, No Internet</option>
+            </select>
+          </div>
+          <div class="form-field customer-search-field">
+            <label for="ticketCustomerSelect">Customer</label>
+            <input type="text" id="ticketCustomerSelect" name="customerSelect" autocomplete="off" required>
+            <div id="customerSearchList" class="customer-search-list" role="listbox" aria-label="Customer suggestions"></div>
+          </div>
+          <div class="form-field">
+            <label for="ticketTechnician">Assign to</label>
+            <select id="ticketTechnician" name="assignedTo">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+          <div class="form-field full-row">
+            <label for="ticketDescription">Description</label>
+            <textarea id="ticketDescription" name="description" rows="3"></textarea>
+          </div>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="ghost-btn" id="ticketModalCancel">Cancel</button>
+          <button type="submit" class="primary-btn" id="ticketModalSubmit"><i class="ti ti-send" aria-hidden="true"></i> Create Ticket</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="assignModal" aria-hidden="true">
+    <div class="modal-container modal-compact">
+      <header class="modal-header">
+        <div>
+          <p class="section-eyebrow">Assignment</p>
+          <h3>Assign technician</h3>
+          <p class="field-hint" id="assignTicketLabel">Ticket</p>
+        </div>
+        <button type="button" class="modal-close" id="assignModalClose" aria-label="Close assignment modal">&times;</button>
+      </header>
+      <form id="assignModalForm" class="job-form">
+        <div class="form-grid">
+          <div class="form-field full-row">
+            <label for="assignTechnician">Technician</label>
+            <select id="assignTechnician" name="technician">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="ghost-btn" id="assignModalCancel">Cancel</button>
+          <button type="submit" class="primary-btn"><i class="ti ti-user-check" aria-hidden="true"></i> Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="customerDetailModal" aria-hidden="true">
+    <div class="modal-container modal-compact modal-customer-detail">
+      <header class="modal-header">
+        <div>
+          <p class="section-eyebrow">Customer</p>
+          <h3 id="customerDetailName">Customer Name</h3>
+          <p class="field-hint" id="customerDetailAccount">Account #00000000</p>
+        </div>
+        <button type="button" class="modal-close" id="customerDetailClose" aria-label="Close customer details modal">&times;</button>
+      </header>
+      <div class="customer-detail-body">
+        <div class="customer-detail-grid">
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">Status</span>
+            <span class="customer-detail-value" id="customerDetailStatus">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">Plan</span>
+            <span class="customer-detail-value" id="customerDetailPlan">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">Contact</span>
+            <span class="customer-detail-value" id="customerDetailContact">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">Address</span>
+            <span class="customer-detail-value" id="customerDetailAddress">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">Router</span>
+            <span class="customer-detail-value" id="customerDetailRouter">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">PPPoE Username</span>
+            <span class="customer-detail-value" id="customerDetailPppoeUsername">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">PPPoE Password</span>
+            <span class="customer-detail-value" id="customerDetailPppoePassword">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">PPPoE Profile</span>
+            <span class="customer-detail-value" id="customerDetailPppoeProfile">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">NAP Info</span>
+            <span class="customer-detail-value" id="customerDetailNapInfo">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">Optical Info</span>
+            <span class="customer-detail-value" id="customerDetailOpticalInfo">-</span>
+          </div>
+          <div class="customer-detail-field">
+            <span class="customer-detail-label">MikroTik Status</span>
+            <span class="customer-detail-value" id="customerDetailMikrotikStatus">-</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="layout.js?v=3.5"></script>
+  <script src="js/tickets.js?v=1.2"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>
+
+
+
+
+
+

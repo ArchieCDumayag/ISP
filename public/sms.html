@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>SMS - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/sms.css?v=6.5">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page sms-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Communication</p>
+                        <h1>SMS Management</h1>
+                        <p class="subtitle">Send messages, manage templates, and view history.</p>
+                    </div>
+                </section>
+
+                <section class="section-frame sms-container">
+                <div class="sms-tabs">
+                    <button class="sms-tab-link active" data-tab="send-sms"><i class="ti ti-send" aria-hidden="true"></i> Send SMS</button>
+                    <button class="sms-tab-link" data-tab="templates"><i class="ti ti-layers-intersect" aria-hidden="true"></i> Templates</button>
+                    <button class="sms-tab-link" data-tab="scheduler"><i class="ti ti-clock" aria-hidden="true"></i> Scheduler</button>
+                    <button class="sms-tab-link" data-tab="events"><i class="ti ti-list-details" aria-hidden="true"></i> Events</button>
+                </div>
+
+                    <div id="send-sms" class="sms-tab-content active">
+                        <div class="content-header">
+                            <div class="content-heading">
+                                <h3>Compose Message</h3>
+                                <p class="content-subtitle">Reach your subscribers with tailored announcements and reminders.</p>
+                            </div>
+                            <div class="content-meta">
+                                <span class="meta-count" id="header-char-count">0</span>
+                                <span class="meta-label">characters typed</span>
+                            </div>
+                        </div>
+                        <div class="sms-compose-card">
+                            <form class="sms-compose-form">
+                                <div class="compose-table-wrap">
+                                    <table class="compose-table-layout">
+                                        <tbody>
+                                            <tr>
+                                                <td>
+                                                    <div class="recipient-summary">
+                                                        <div class="summary-pill" id="recipient-summary-pill">
+                                                            <i class="ti ti-users-group" aria-hidden="true"></i>
+                                                            <span id="recipient-summary-text">No recipients selected.</span>
+                                                        </div>
+                                                        <button type="button" class="ghost-btn" id="open-recipient-modal">
+                                                            <i class="ti ti-users" aria-hidden="true"></i> Manage Recipients
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <div class="delivery-method-inline" role="group" aria-label="Delivery method">
+                                                        <span class="section-label">Delivery Method</span>
+                                                        <div class="delivery-options">
+                                                            <label class="inline-checkbox">
+                                                                <input type="checkbox" name="deliveryMethod" value="semaphore" checked>
+                                                                <span><i class="ti ti-device-mobile" aria-hidden="true"></i> SMS (Semaphore)</span>
+                                                            </label>
+                                                            <label class="inline-checkbox">
+                                                                <input type="checkbox" name="deliveryMethod" value="mail" checked>
+                                                                <span><i class="ti ti-mail" aria-hidden="true"></i> Email</span>
+                                                            </label>
+                                                        </div>
+                                                        <div class="template-inline">
+                                                            <label for="template-select" class="template-select-label">Use Template</label>
+                                                            <select id="template-select" name="template-select">
+                                                                <option value="">Select a template...</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div class="form-group message-section">
+                                                        <label for="message">Message</label>
+                                                        <textarea id="message" name="message" rows="4"></textarea>
+                                                        <p class="field-hint">Guide: Keep it within 160 characters and use clear details like due date, amount, and contact info.</p>
+                                                        <p class="field-hint">Use placeholders: <code>{customer_name}</code>, <code>{account_number}</code>, <code>{amount}</code>, <code>{amount_due}</code>, <code>{balance}</code>, <code>{due_date}</code>, <code>{payment_date}</code>, <code>{date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{plan_name}</code>, <code>{area_name}</code>, <code>{grace_period}</code>, <code>{appointment_date}</code>, <code>{appointment_window}</code>.</p>
+                                                        <div class="textarea-footer">
+                                                            <div class="char-counter">
+                                                                <span id="char-count">0/160</span>
+                                                                <div class="char-bar">
+                                                                    <div class="char-fill" id="char-fill"></div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="button" class="primary-btn sms-send-btn" id="preview-btn">
+                                        <i class="ti ti-send" aria-hidden="true"></i> Send
+                                    </button>
+                                </div>
+                            </form>
+                    </div>
+                </div>
+
+                    <div id="templates" class="sms-tab-content">
+                        <div class="content-header">
+                            <h3>SMS Templates</h3>
+                            <button class="add-new-btn"><i class="ti ti-plus" aria-hidden="true"></i> New Template</button>
+                        </div>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Template Name</th>
+                                        <th>Content Preview</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Template rows will be dynamically inserted here by sms.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="scheduler" class="sms-tab-content">
+                        <div class="content-header">
+                            <div class="content-heading">
+                                <h3>Scheduled Messages</h3>
+                                <p class="content-subtitle">Queue future broadcasts and manage upcoming deliveries.</p>
+                            </div>
+                            <button class="add-new-btn" id="open-schedule-modal"><i class="ti ti-plus" aria-hidden="true"></i> Schedule Message</button>
+                        </div>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Title</th>
+                                        <th>Scheduled For</th>
+                                        <th>Method</th>
+                                        <th>Recipient</th>
+                                        <th>Message Preview</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Scheduled messages will be dynamically inserted here by sms.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="events" class="sms-tab-content">
+                        <div class="content-header">
+                            <div class="content-heading">
+                                <h3>Event-based SMS</h3>
+                                <p class="content-subtitle">Create automations that watch billing milestones and send the right message automatically.</p>
+                            </div>
+                            <button type="button" class="add-new-btn" id="open-automation-modal">
+                                <i class="ti ti-plus" aria-hidden="true"></i> New Automation
+                            </button>
+                        </div>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Automation</th>
+                                        <th>Trigger</th>
+                                        <th>Timing</th>
+                                        <th>Channel</th>
+                                        <th>Status</th>
+                                        <th>Message Preview</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="automation-list"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </main>
+</div>
+    </div>
+
+    <!-- Automation Modal -->
+    <div id="automationModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="automationModalTitle" aria-hidden="true">
+        <div class="modal-content automation-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="automationModalTitle">New Automation</h2>
+                    <p class="modal-subtitle">Send targeted messages whenever billing events happen.</p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <form id="automationForm" class="modal-form automation-form">
+                <div class="automation-form-grid">
+                    <div class="form-field">
+                        <label for="automationName">Automation name</label>
+                        <input type="text" id="automationName" name="automationName" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="automationTrigger">Trigger event</label>
+                        <select id="automationTrigger" name="automationTrigger" required></select>
+                    </div>
+                    <div class="form-field">
+                        <label for="automationTiming">Send timing</label>
+                        <select id="automationTiming" name="automationTiming" required></select>
+                    </div>
+                    <div class="form-field">
+                        <label for="automationStatus">Status</label>
+                        <select id="automationStatus" name="automationStatus">
+                            <option value="active">Active</option>
+                            <option value="paused">Paused</option>
+                        </select>
+                    </div>
+                    <div class="form-field automation-delivery-field">
+                        <div class="delivery-method-inline automation-delivery-inline" role="group" aria-label="Automation delivery method">
+                            <span class="section-label">Delivery Method</span>
+                            <div class="delivery-options">
+                                <label class="inline-checkbox">
+                                    <input type="checkbox" name="automationChannels" value="sms" checked>
+                                    <span><i class="ti ti-device-mobile" aria-hidden="true"></i> SMS (Semaphore)</span>
+                                </label>
+                            <label class="inline-checkbox">
+                                <input type="checkbox" name="automationChannels" value="email" checked>
+                                <span><i class="ti ti-mail" aria-hidden="true"></i> Email</span>
+                            </label>
+                            </div>
+                            <div class="template-inline">
+                                <label for="automation-template-select" class="template-select-label">Use Template</label>
+                                <select id="automation-template-select" name="automationTemplate">
+                                    <option value="">Select a template...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-field">
+                    <label for="automationMessage">Message template</label>
+                    <textarea id="automationMessage" name="automationMessage" rows="5" required></textarea>
+                    <div class="field-hint" id="automationMessageHint">Use placeholders: <code>{customer_name}</code>, <code>{account_number}</code>, <code>{amount}</code>, <code>{amount_due}</code>, <code>{balance}</code>, <code>{due_date}</code>, <code>{payment_date}</code>, <code>{date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{plan_name}</code>, <code>{area_name}</code>, <code>{grace_period}</code>, <code>{appointment_date}</code>, <code>{appointment_window}</code>.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="ghost-btn" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="primary-btn"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save Automation</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Template Modal -->
+    <div id="templateModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="templateModalTitle" aria-hidden="true">
+        <div class="modal-content template-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="templateModalTitle">New Template</h2>
+                    <p class="modal-subtitle">Create a reusable message template.</p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <form id="templateForm" class="modal-form template-modal-form">
+                <div class="form-field">
+                    <label for="templateName">Template Name</label>
+                    <input type="text" id="templateName" name="templateName" required>
+                </div>
+                <div class="form-field">
+                    <label for="templateContent">Content</label>
+                    <textarea id="templateContent" name="templateContent" rows="5" required></textarea>
+                    <p class="field-hint">Use placeholders: <code>{customer_name}</code>, <code>{account_number}</code>, <code>{amount}</code>, <code>{amount_due}</code>, <code>{balance}</code>, <code>{due_date}</code>, <code>{payment_date}</code>, <code>{date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{plan_name}</code>, <code>{area_name}</code>, <code>{grace_period}</code>, <code>{appointment_date}</code>, <code>{appointment_window}</code>.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="ghost-btn" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="primary-btn">Save Template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Recipient Modal -->
+    <div id="recipientModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="recipientModalTitle" aria-hidden="true">
+        <div class="modal-content recipient-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="recipientModalTitle">Choose Recipients</h2>
+                    <p class="modal-subtitle">Pick subscribers or entire areas for this broadcast.</p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="modal-body recipient-modal-body">
+                <div class="recipient-controls">
+                    <div class="recipient-type-selector">
+                        <label class="radio-label">
+                            <input type="radio" name="recipientType" value="subscriber" checked>
+                            <span><i class="ti ti-user" aria-hidden="true"></i> Per Subscriber</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="recipientType" value="area">
+                            <span><i class="ti ti-map-pin" aria-hidden="true"></i> By Area</span>
+                        </label>
+                    </div>
+                    <div class="recipient-selection">
+                        <div class="recipient-picker" id="recipient-subscriber-group">
+                            <label id="recipient-subscriber-label">Select Subscriber(s)</label>
+                            <div class="subscriber-select-wrapper" role="group" aria-labelledby="recipient-subscriber-label">
+                                <div class="subscriber-select-toolbar">
+                                    <div class="search-input-wrapper">
+                                        <i class="ti ti-search" aria-hidden="true"></i>
+                                        <input type="text" id="subscriber-search" placeholder="Search subscribers...">
+                                    </div>
+                                    <div class="subscriber-select-actions">
+                                        <button type="button" class="ghost-btn ghost-btn-small" id="subscriber-select-all" aria-label="Select all subscribers">Select all</button>
+                                        <button type="button" class="ghost-btn ghost-btn-small" id="subscriber-clear-all" aria-label="Clear all subscriber selections">Clear</button>
+                                    </div>
+                                </div>
+                                <div class="subscriber-scroll" id="recipient-subscriber-list" role="listbox" aria-multiselectable="true"></div>
+                                <div class="subscriber-pagination" aria-live="polite">
+                                    <button type="button" class="ghost-btn ghost-btn-small icon-only" id="subscriber-page-prev" aria-label="Previous subscribers page">
+                                        <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                                    </button>
+                                    <span class="page-info" id="subscriber-page-info">Showing 0 of 0</span>
+                                    <button type="button" class="ghost-btn ghost-btn-small icon-only" id="subscriber-page-next" aria-label="Next subscribers page">
+                                        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                                <div class="selected-count" id="selected-count">0 subscribers selected</div>
+                            </div>
+                        </div>
+                        <div class="recipient-picker" id="recipient-area-group" style="display: none;">
+                            <label id="recipient-area-label">Select Area(s)</label>
+                            <div class="area-card-grid" id="recipient-area-selector" role="listbox" aria-multiselectable="true" aria-labelledby="recipient-area-label"></div>
+                            <input type="hidden" id="recipient-area" name="recipient-area" value="">
+                            <p class="area-hint" id="selected-area-hint">No area selected.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="ghost-btn" data-dismiss="modal">Cancel</button>
+                <button type="button" class="primary-btn" id="apply-recipient-selection">
+                    <i class="ti ti-check" aria-hidden="true"></i> Apply Selection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schedule Modal -->
+    <div id="scheduleModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="scheduleModalTitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="scheduleModalTitle">Schedule Message</h2>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <form id="scheduleForm" class="modal-form">
+                <div class="form-field">
+                    <label for="scheduleTitle">Scheduler Title</label>
+                    <input type="text" id="scheduleTitle" name="scheduleTitle" maxlength="120" required>
+                </div>
+                <div class="form-field">
+                    <label>Recipients</label>
+                    <div class="recipient-summary schedule-recipient-summary">
+                        <div class="summary-pill">
+                            <i class="ti ti-users" aria-hidden="true"></i>
+                            <span id="scheduleRecipientSummaryText">No recipients selected.</span>
+                        </div>
+                        <button type="button" class="ghost-btn" id="open-schedule-recipient-modal">
+                            <i class="ti ti-users" aria-hidden="true"></i> Select Recipients
+                        </button>
+                    </div>
+                </div>
+                <div class="form-field">
+                    <div class="delivery-method-inline schedule-delivery-inline" role="group" aria-label="Schedule delivery method">
+                        <span class="section-label">Delivery Method</span>
+                        <div class="delivery-options">
+                            <label class="inline-checkbox">
+                                <input type="checkbox" name="deliveryMethod" value="semaphore" checked>
+                                <span><i class="ti ti-device-mobile" aria-hidden="true"></i> SMS (Semaphore)</span>
+                            </label>
+                            <label class="inline-checkbox">
+                                <input type="checkbox" name="deliveryMethod" value="mail" checked>
+                                <span><i class="ti ti-mail" aria-hidden="true"></i> Email</span>
+                            </label>
+                        </div>
+                        <div class="template-inline schedule-template-inline">
+                            <label for="schedule-template-select" class="template-select-label">Use Template</label>
+                            <select id="schedule-template-select" name="scheduleTemplate">
+                                <option value="">Select a template...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-field">
+                    <label for="scheduleMessage">Message Content</label>
+                    <textarea id="scheduleMessage" name="scheduleMessage" rows="4" required></textarea>
+                    <p class="field-hint">Use placeholders: <code>{customer_name}</code>, <code>{account_number}</code>, <code>{amount}</code>, <code>{amount_due}</code>, <code>{balance}</code>, <code>{due_date}</code>, <code>{payment_date}</code>, <code>{date}</code>, <code>{start_time}</code>, <code>{end_time}</code>, <code>{plan_name}</code>, <code>{area_name}</code>, <code>{grace_period}</code>, <code>{appointment_date}</code>, <code>{appointment_window}</code>.</p>
+                </div>
+                <div class="form-field schedule-mode-inline">
+                    <label for="scheduleDateMode">Schedule Type</label>
+                    <select id="scheduleDateMode" name="scheduleDateMode">
+                        <option value="custom">Custom</option>
+                        <option value="billing-date">Billing Date</option>
+                        <option value="due-date">Due Date</option>
+                    </select>
+                    <p class="field-hint" id="scheduleDateModeHint" hidden></p>
+                </div>
+                <div class="schedule-two-column">
+                    <div class="schedule-column schedule-column-left">
+                        <div class="form-field schedule-date-inline" id="scheduleDateField">
+                            <label for="scheduleDateTime" id="scheduleDateLabel">Set Date</label>
+                            <input type="date" id="scheduleDateTime" name="scheduleDateTime" required>
+                        </div>
+                        <div class="form-field schedule-time-inline" id="scheduleTimeField">
+                            <label for="scheduleTimeHour" id="scheduleTimeLabel">Set Time</label>
+                            <input type="time" id="scheduleDueTime" name="scheduleDueTime" hidden disabled>
+                            <div class="schedule-time-picker" id="scheduleTimePicker" hidden>
+                                <div class="time-select-group">
+                                    <select id="scheduleTimeHour" aria-label="Schedule hour"></select>
+                                    <span class="time-separator">:</span>
+                                    <select id="scheduleTimeMinute" aria-label="Schedule minute"></select>
+                                    <select id="scheduleTimePeriod" aria-label="AM or PM">
+                                        <option value="AM">AM</option>
+                                        <option value="PM">PM</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="schedule-column schedule-column-right">
+                        <div class="form-field schedule-delay-inline" id="scheduleDelayField">
+                            <label for="scheduleDelayDays">Delay (days)</label>
+                            <input type="number" id="scheduleDelayDays" name="scheduleDelayDays" min="0" step="1" value="0">
+                        </div>
+                        <div class="form-field schedule-repeat-inline">
+                            <label for="scheduleRepeat">Repeat</label>
+                            <select id="scheduleRepeat" name="scheduleRepeat">
+                                <option value="once">Once</option>
+                                <option value="twice">Twice</option>
+                                <option value="more">More</option>
+                                <option value="every-month">Every Month</option>
+                            </select>
+                            <input type="number" id="scheduleRepeatCount" name="scheduleRepeatCount" min="3" step="1" value="3" hidden disabled>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="ghost-btn" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="primary-btn"><i class="ti ti-clock" aria-hidden="true"></i> Confirm Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Schedule Recipient Modal -->
+    <div id="scheduleRecipientModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="scheduleRecipientModalTitle" aria-hidden="true">
+        <div class="modal-content recipient-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="scheduleRecipientModalTitle">Choose Schedule Recipients</h2>
+                    <p class="modal-subtitle">Select customers or areas for this scheduled message.</p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="modal-body recipient-modal-body">
+                <div class="recipient-controls">
+                    <div class="recipient-type-selector schedule-recipient-type">
+                        <label class="radio-label">
+                            <input type="radio" name="scheduleRecipientType" value="subscriber" checked>
+                            <span><i class="ti ti-user" aria-hidden="true"></i> Per Customer</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="scheduleRecipientType" value="area">
+                            <span><i class="ti ti-map-pin" aria-hidden="true"></i> By Area</span>
+                        </label>
+                    </div>
+                    <div class="recipient-picker schedule-recipient-group" id="scheduleRecipientCustomerGroup">
+                        <label id="scheduleRecipientCustomerLabel">Per Customer</label>
+                        <div class="subscriber-select-wrapper" role="group" aria-labelledby="scheduleRecipientCustomerLabel">
+                            <div class="subscriber-select-toolbar">
+                                <div class="search-input-wrapper schedule-recipient-search">
+                                    <i class="ti ti-search" aria-hidden="true"></i>
+                                    <input type="text" id="scheduleRecipientCustomerSearch" placeholder="Search customer...">
+                                </div>
+                                <div class="subscriber-select-actions">
+                                    <button type="button" class="ghost-btn ghost-btn-small" id="scheduleRecipientSelectAll">Select all</button>
+                                    <button type="button" class="ghost-btn ghost-btn-small" id="scheduleRecipientClearAll">Clear</button>
+                                </div>
+                            </div>
+                            <div class="subscriber-scroll" id="scheduleRecipientCustomerList" role="listbox" aria-multiselectable="true"></div>
+                            <div class="selected-count" id="scheduleRecipientCustomerCount">0 customers selected</div>
+                        </div>
+                    </div>
+                    <div class="recipient-picker schedule-recipient-group" id="scheduleRecipientAreaGroup" style="display: none;">
+                        <label id="scheduleRecipientAreaLabel">By Area</label>
+                        <div class="search-input-wrapper schedule-recipient-search">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input type="text" id="scheduleRecipientAreaSearch" placeholder="Search area...">
+                        </div>
+                        <div class="area-card-grid" id="scheduleRecipientAreaSelector" role="listbox" aria-multiselectable="true" aria-labelledby="scheduleRecipientAreaLabel"></div>
+                        <p class="area-hint">Select one or more areas.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="ghost-btn" data-dismiss="modal">Cancel</button>
+                <button type="button" class="primary-btn" id="apply-schedule-recipient-selection">
+                    <i class="ti ti-check" aria-hidden="true"></i> Apply Selection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="previewModalTitle" aria-hidden="true">
+        <div class="modal-content preview-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="previewModalTitle">Message Preview</h2>
+                    <p class="modal-subtitle">Review your message before sending.</p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="preview-content">
+                <div class="preview-recipients">
+                    <h4><i class="ti ti-users" aria-hidden="true"></i> Recipients</h4>
+                    <div id="preview-recipients-list" class="recipients-list"></div>
+                </div>
+                <div class="preview-message">
+                    <h4><i class="ti ti-message" aria-hidden="true"></i> Message</h4>
+                    <div class="message-preview-card">
+                        <div class="message-text" id="preview-message-text"></div>
+                        <div class="message-meta">
+                            <span id="preview-char-count">0/160 characters</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="ghost-btn" data-dismiss="modal">Edit Message</button>
+                <button type="button" class="primary-btn" id="confirm-send-btn"><i class="ti ti-send" aria-hidden="true"></i> Send Now</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="sms.js?v=6.0"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>
+
+
+
+
+
+

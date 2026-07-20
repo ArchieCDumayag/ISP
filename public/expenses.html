@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Expenses - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/finance.css?v=1.6">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page finance-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Finance</p>
+                        <h1>Expenses</h1>
+                        <p class="subtitle">Track operating costs and reimbursements by branch.</p>
+                    </div>
+                </section>
+
+                <section class="section-frame elevated">
+                    <div class="finance-toolbar finance-toolbar--compact">
+                        <div class="search-field">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input id="expensesSearch" type="search" placeholder="Search expenses" aria-label="Search expenses">
+                        </div>
+                        <button class="primary-btn" type="button" id="addExpenseBtn">
+                            <i class="ti ti-plus" aria-hidden="true"></i> Add Expense
+                        </button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="finance-table" aria-label="Expenses table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Category</th>
+                                    <th>Payee</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expensesTableBody">
+                                <tr>
+                                    <td colspan="6" class="finance-empty">Loading expenses...</td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="4" class="finance-total-label">Total Expenses</th>
+                                    <th id="expensesTableTotal" class="amount">PHP 0.00</th>
+                                    <th class="text-center">-</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="section-frame elevated" aria-label="Expenses history">
+                    <header class="finance-history-header">
+                        <h2>Expenses History</h2>
+                        <p>Monthly records. Click a month to open entries in a modal.</p>
+                    </header>
+                    <div id="expensesHistoryList" class="expenses-history-list">
+                        <p class="finance-empty">No expense history yet.</p>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div class="finance-modal" id="expenseModal" aria-hidden="true">
+        <div class="finance-modal__content" role="dialog" aria-modal="true" aria-labelledby="expenseModalTitle">
+            <div class="finance-modal__header">
+                <h2 class="finance-modal__title" id="expenseModalTitle">Add Expense</h2>
+                <button class="ghost-btn" type="button" id="expenseModalClose" aria-label="Close expense form">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="expenseForm">
+                <div class="finance-modal__body">
+                    <input type="hidden" id="expenseEntryId" name="entryId">
+                    <div class="finance-form-grid">
+                        <div class="form-field">
+                            <label for="expenseDate">Date</label>
+                            <input id="expenseDate" name="date" type="date" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="expenseCategory">Category</label>
+                            <input id="expenseCategory" name="category" type="text" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="expensePayee">Payee</label>
+                            <input id="expensePayee" name="payee" type="text">
+                        </div>
+                        <div class="form-field">
+                            <label for="expenseAmount">Amount</label>
+                            <input id="expenseAmount" name="amount" type="number" min="0.01" step="0.01" required>
+                        </div>
+                        <div class="form-field span-2">
+                            <label for="expenseDescription">Description</label>
+                            <textarea id="expenseDescription" name="description" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="finance-modal__footer">
+                    <button class="ghost-btn" type="button" id="expenseModalCancel">Cancel</button>
+                    <button class="primary-btn" type="submit" id="expenseModalSave">
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="finance-modal" id="expenseHistoryModal" aria-hidden="true">
+        <div class="finance-modal__content finance-modal__content--history" role="dialog" aria-modal="true" aria-labelledby="expenseHistoryModalTitle">
+            <div class="finance-modal__header">
+                <h2 class="finance-modal__title" id="expenseHistoryModalTitle">Expense History</h2>
+                <button class="ghost-btn" type="button" id="expenseHistoryModalClose" aria-label="Close expense history">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="finance-modal__body">
+                <p class="expense-history-modal-meta" id="expenseHistoryModalMeta"></p>
+                <div id="expenseHistoryModalBody">
+                    <p class="finance-empty">No expense history to display.</p>
+                </div>
+            </div>
+            <div class="finance-modal__footer">
+                <button class="ghost-btn" type="button" id="expenseHistoryModalDone">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/expenses.js?v=1.4"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "services": [
+    {
+      "app": "customer",
+      "name": "Customer backend",
+      "url": "http://localhost:4001",
+      "loginPath": "/api/auth/login",
+      "timeoutMs": 5000,
+      "isActive": true
+    }
+  ]
+}

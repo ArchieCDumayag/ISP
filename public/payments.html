@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Payments - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/payments.css?v=3.5">
+    <link rel="stylesheet" href="css/account-view-shared.css?v=2.2">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+
+<body class="payments-body">
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main>
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Payment Management</p>
+                        <h1>Payments</h1>
+                        <p class="subtitle">Track balances, collect payments, and print statements for every subscriber.
+                        </p>
+                    </div>
+                    <div class="header-actions">
+                        <button type="button" class="add-btn" id="openCustomerAddBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add customer</button>
+                    </div>
+                </section>
+
+                <section class="section-frame">
+                    <div class="section-toolbar">
+                        <div class="search-field">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input id="paymentsSearchInput" type="search" placeholder="Search payments" aria-label="Search payments">
+                        </div>
+                        <div class="toolbar-inline-filters" aria-label="Payment filters">
+                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
+                                <label for="filterStatus">Status</label>
+                                <div class="select-wrapper">
+                                    <select id="filterStatus" name="filterStatus">
+                                        <option value="">All statuses</option>
+                                        <option value="paid">Paid</option>
+                                        <option value="due">Due</option>
+                                        <option value="overdue">Overdue</option>
+                                        <option value="advance">Advance</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="toolbar-filter-control toolbar-filter-control--area">
+                                <label for="paymentFilterAreaTrigger">Area</label>
+                                <select id="filterArea" name="filterArea" class="filter-multi-select filter-checklist__native" multiple hidden aria-hidden="true"></select>
+                                <div class="filter-checklist" id="paymentFilterAreaPicker">
+                                    <button type="button" class="filter-checklist__trigger" id="paymentFilterAreaTrigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="paymentFilterAreaPanel">
+                                        <span class="filter-checklist__copy">
+                                            <span class="filter-checklist__label">All areas</span>
+                                            <span class="filter-checklist__meta">No area filter applied</span>
+                                        </span>
+                                        <span class="filter-checklist__suffix">
+                                            <span class="filter-checklist__count" hidden>0</span>
+                                            <i class="ti ti-chevron-down" aria-hidden="true"></i>
+                                        </span>
+                                    </button>
+                                    <div class="filter-checklist__panel" id="paymentFilterAreaPanel" hidden>
+                                        <div class="filter-checklist__panel-head">
+                                            <strong>Choose areas</strong>
+                                            <span class="filter-checklist__panel-count">0 selected</span>
+                                        </div>
+                                        <label class="filter-checklist__option filter-checklist__option--select-all" for="paymentFilterAreaSelectAll">
+                                            <input type="checkbox" id="paymentFilterAreaSelectAll">
+                                            <span>Select all areas</span>
+                                        </label>
+                                        <div class="filter-checklist__options" id="paymentFilterAreaOptions" role="group" aria-label="Payment filter areas"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="toolbar-filter-control toolbar-filter-control--due">
+                                <label for="filterDueDate">Due</label>
+                                <div class="due-date-filter">
+                                    <input type="date" id="filterDueDate" name="filterDueDate" aria-label="Filter unpaid customers by billing cycle date">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="toolbar-actions">
+                            <div class="page-size-control">
+                                <label for="paymentsSortSelect">Sort</label>
+                                <div class="select-wrapper">
+                                    <select id="paymentsSortSelect" name="paymentsSortSelect">
+                                        <option value="newOld" selected>New-Old</option>
+                                        <option value="oldNew">Old-New</option>
+                                        <option value="balanceHighLow">Balance High-Low</option>
+                                        <option value="balanceLowHigh">Balance Low-High</option>
+                                        <option value="firstNameAsc">A-Z by First Name</option>
+                                        <option value="lastNameAsc">A-Z by Last Name</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control">
+                                <label for="pageSizeSelect">Show</label>
+                                <div class="select-wrapper">
+                                    <select id="pageSizeSelect" name="pageSize">
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="button" class="add-btn" id="openPaymentModalBtn"><i class="ti ti-plus" aria-hidden="true"></i> Add
+                                Payment</button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper elevated">
+                        <table class="payments-table">
+                            <caption>Customer Payment Overview</caption>
+                            <thead>
+                                <tr>
+                                    <th class="col-account">Account #</th>
+                                    <th class="col-subscriber">Subscriber</th>
+                                    <th class="col-plan">Plan</th>
+                                    <th>Billing Cycle</th>
+                                    <th>MRC</th>
+                                    <th>Last Payment</th>
+                                    <th>Status</th>
+                                    <th>Current Bill</th>
+                                    <th>Statements</th>
+                                    <th class="col-actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Payment rows will be dynamically inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer" id="paymentsFooter">
+                        <div class="footer-summary" id="paymentsSummary"></div>
+                        <div class="footer-controls">
+                            <button type="button" class="footer-btn" id="paymentsPrev" aria-label="Previous page"
+                                disabled><</button>
+                            <span class="footer-page-info" id="paymentsPageInfo">Page 1 of 1</span>
+                            <button type="button" class="footer-btn" id="paymentsNext" aria-label="Next page"
+                                disabled>></button>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <div id="paymentModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="paymentModalTitle"
+        aria-hidden="true" data-modal-type="payment-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="paymentModalTitle">New Transaction</h2>
+                    <p class="modal-subtitle">Record a new financial transaction for a customer.</p>
+                    <p class="modal-subtitle" id="paymentModalRecorder"></p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <form id="paymentForm" class="payment-form" novalidate>
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label for="customerSelect">Customer</label>
+                        <select id="customerSelect" name="accountNumber" required>
+                            <option value="">Select a customer</option>
+                        </select>
+                    </div>
+                    <div class="form-field" id="prepaidPlanField" style="display:none;">
+                        <label for="prepaidPlanSelect">Prepaid Plan</label>
+                        <select id="prepaidPlanSelect" name="prepaidPlan">
+                            <option value="">Select prepaid plan</option>
+                        </select>
+                        <small class="muted" id="prepaidPlanHint"></small>
+                    </div>
+                    <div class="form-field" id="prepaidExpiryField" style="display:none;">
+                        <label for="prepaidExpiryDate">New Expiry Date</label>
+                        <input type="text" id="prepaidExpiryDate" readonly>
+                    </div>
+                    <div class="form-field" id="paymentAmountField">
+                        <label for="paymentAmount">Amount</label>
+                        <div class="input-with-addon">
+                            <span>&#8369;</span>
+                            <input type="number" id="paymentAmount" name="amount" step="0.01" min="0.01" required>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label for="paymentDate">Payment Date</label>
+                        <input type="date" id="paymentDate" name="date" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="paymentKind">Type</label>
+                        <select id="paymentKind" name="kind" required>
+                            <option value="payment" selected>Payment (Credit)</option>
+                            <option value="charge">Debit / Charge</option>
+                            <option value="rebate">Rebate</option>
+                            <option value="discount">Discount</option>
+                        </select>
+                    </div>
+                    <div class="form-field" id="paymentMethodField">
+                        <label for="paymentMethod">Payment Method</label>
+                        <select id="paymentMethod" name="paymentMethod" required>
+                            <option value="Cash" selected>Cash</option>
+                            <option value="GCash">GCash</option>
+                        </select>
+                    </div>
+                    <div class="form-field span-two" id="paymentReferenceField">
+                        <label for="paymentReference">Reference No.</label>
+                        <input type="text" id="paymentReference" name="reference" autocomplete="off" inputmode="text" spellcheck="false" placeholder="e.g. OR-12345">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="ghost-btn" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="primary-btn"><i class="ti ti-check" aria-hidden="true"></i> Record
+                        Payment</button>
+                </div>
+            </form>
+            <!-- Note: The other tabs (refund, credit) will also need their form-actions moved to a modal-footer for consistent styling -->
+        </div>
+    </div>
+
+    <div id="customerAddModal" class="modal customer-add-embed-modal" role="dialog" aria-modal="true"
+        aria-labelledby="customerAddModalTitle" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="customerAddModalTitle" class="sr-only">Add Customer</h2>
+            <iframe id="customerAddFrame" class="customer-add-embed-modal__frame" title="Add customer" src="about:blank" loading="eager"></iframe>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="historyModal" class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="historyModalTitle">Transaction History</h2>
+                    <p class="modal-subtitle">For <span id="selectedCustomerName"></span></p>
+                </div>
+                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="modal-body history-modal-body">
+                <div class="history-bulk-toolbar" id="paymentHistoryBulkToolbar" hidden>
+                    <label class="history-bulk-toolbar__select">
+                        <input type="checkbox" id="paymentHistorySelectAll">
+                        <span>Select all</span>
+                    </label>
+                    <span class="history-bulk-toolbar__count" id="paymentHistorySelectedCount">0 selected</span>
+                    <button type="button" class="ghost-btn history-bulk-toolbar__delete" id="paymentHistoryDeleteSelectedBtn" disabled>
+                        <i class="ti ti-trash" aria-hidden="true"></i> Delete Selected
+                    </button>
+                </div>
+                <div class="history-timeline" id="paymentHistoryTimeline">
+                    <!-- History entries will be dynamically injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Info Modal -->
+    <div id="accountInfoModal" class="modal customer-view-modal payments-view-modal" role="dialog" aria-modal="true" aria-labelledby="accountInfoModalTitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header customer-view-header">
+                <div>
+                    <h2 id="accountInfoModalTitle">View Customer Account</h2>
+                </div>
+                <div class="view-header-actions">
+                    <button type="button" class="ghost-btn ghost-btn--icon" id="accountInfoEditBtn" aria-label="Edit account" title="Edit account">
+                        <i class="ti ti-pencil" aria-hidden="true"></i>
+                    </button>
+                    <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="customer-view">
+                    <div class="view-layout">
+                        <aside class="view-sidebar">
+                            <div class="view-group">
+                                <div class="view-profile-card">
+                                    <div class="view-profile-header">
+                                        <span class="avatar gradient" id="accountInfoInitials">--</span>
+                                        <div>
+                                            <p class="view-name" id="accountInfoFullName">Customer Name</p>
+                                            <p class="view-subtle view-account-number">
+                                                <span id="accountInfoAccountLabel">Not set</span>
+                                                <button type="button" class="copy-btn" data-copy-field="accountNumber" aria-label="Copy account number" title="Copy account number">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="view-contact">
+                                        <span class="view-contact-item"><i class="ti ti-mail" aria-hidden="true"></i><span id="accountInfoEmail">Not set</span></span>
+                                        <span class="view-contact-item"><i class="ti ti-phone" aria-hidden="true"></i><span id="accountInfoMobile">Not set</span></span>
+                                        <span class="view-contact-item view-contact-item--address"><i class="ti ti-map-pin" aria-hidden="true"></i><span id="accountInfoAddress">Not set</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="view-group">
+                                <p class="view-group-label">Financial Status</p>
+                                <div class="view-key-stack">
+                                    <div class="view-key-card view-key-card--balance" id="accountInfoBalanceCard">
+                                        <span class="view-key-icon"><i class="ti ti-wallet" aria-hidden="true"></i></span>
+                                        <div class="view-key-body">
+                                            <p class="view-summary-label">Current Balance</p>
+                                            <div class="view-balance-row">
+                                                <p class="view-balance-value" id="accountInfoCurrentBalance">&#8369;0.00</p>
+                                                <span class="view-balance-tag" id="accountInfoBalanceTag"></span>
+                                            </div>
+                                            <p class="view-balance-helper" id="accountInfoBalanceHelper"></p>
+                                            <div class="view-balance-actions">
+                                                <button type="button" class="view-action-btn view-action-btn--icon-only" id="accountInfoPayNowBtn" aria-label="Pay Now" data-tooltip="Pay Now">
+                                                    <i class="ti ti-wallet" aria-hidden="true"></i>
+                                                </button>
+                                                <button type="button" class="view-action-btn view-action-btn--ghost view-action-btn--icon-only" id="accountInfoSendReminderBtn" aria-label="Send Reminder" data-tooltip="Send Reminder">
+                                                    <i class="ti ti-bell" aria-hidden="true"></i>
+                                                </button>
+                                                <button type="button" class="view-action-btn view-action-btn--wifi view-action-btn--icon-only" id="accountInfoWifiBtn" aria-label="Change WiFi name and password" data-tooltip="Change WiFi">
+                                                    <i class="ti ti-wifi" aria-hidden="true"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="view-key-card view-key-card--status" id="accountInfoStatusCard">
+                                        <span class="view-key-icon"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
+                                        <div>
+                                            <p class="view-summary-label">Status</p>
+                                            <span class="status-pill" id="accountInfoStatusPill" title="Status" aria-label="Status">Status</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="view-group">
+                                <p class="view-group-label">Plan Info</p>
+                                <div class="view-key-stack view-key-stack--compact">
+                                    <div class="view-key-card">
+                                        <span class="view-key-icon"><i class="ti ti-layers-intersect" aria-hidden="true"></i></span>
+                                        <div>
+                                            <p class="view-summary-label">Plan</p>
+                                            <p class="view-plan-text" id="accountInfoSidebarPlan">Plan</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="view-statement-actions">
+                                    <p class="view-summary-label">Statements</p>
+                                    <div class="view-statement-actions-row">
+                                        <button type="button" class="view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--account" id="accountInfoStmtAccount" title="Account Statement" aria-label="Download Account Statement">
+                                            <i class="ti ti-file-text" aria-hidden="true"></i>
+                                            <span class="view-statement-btn-label">Account</span>
+                                        </button>
+                                        <button type="button" class="view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--billing" id="accountInfoStmtBilling" title="Billing Statement" aria-label="Download Billing Statement">
+                                            <i class="ti ti-file-invoice" aria-hidden="true"></i>
+                                            <span class="view-statement-btn-label">Billing</span>
+                                        </button>
+                                        <button type="button" class="view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--thermal" id="accountInfoStmtThermal" title="Thermal Receipt" aria-label="Open Thermal Receipt">
+                                            <i class="ti ti-receipt" aria-hidden="true"></i>
+                                            <span class="view-statement-btn-label">Thermal</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+
+                        <div class="view-content">
+                            <div class="view-panels">
+                                <div class="view-panel">
+                                    <h3 class="view-panel-title">Account Information</h3>
+                                    <div class="view-rows">
+                                        <div class="view-row">
+                                            <span class="view-row-label">Plan Type</span>
+                                            <span class="view-row-value" id="accountInfoPlanType">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Plan Name</span>
+                                            <span class="view-row-value" id="accountInfoPlanName">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Billing Cycle</span>
+                                            <span class="view-row-value" id="accountInfoBillingCycle">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Area / Cluster</span>
+                                            <span class="view-row-value" id="accountInfoArea">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Coordinates</span>
+                                            <span class="view-row-value"><a class="map-pin-link view-value--mono is-disabled" id="accountInfoMapPinLink" href="#" target="_blank" rel="noopener">Not set</a></span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Remarks</span>
+                                            <span class="view-row-value view-value--wrap" id="accountInfoRemarks">None</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Portal Username</span>
+                                            <span class="view-row-value view-value--mono view-copy">
+                                                <span id="accountInfoPortalUsername">Not set</span>
+                                                <button type="button" class="copy-btn" data-copy-field="loginUsername" aria-label="Copy portal username" title="Copy portal username">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Portal Password</span>
+                                            <span class="view-row-value view-value--mono view-copy">
+                                                <span id="accountInfoPortalPassword">Not set</span>
+                                                <button type="button" class="copy-btn" data-copy-field="loginPassword" aria-label="Copy portal password" title="Copy portal password">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="view-panel">
+                                    <div class="view-rows">
+                                        <div class="view-row">
+                                            <span class="view-row-label">Plan Price</span>
+                                            <span class="view-row-value" id="accountInfoPlanPrice">&#8369;0.00</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Plan Billing</span>
+                                            <span class="view-row-value" id="accountInfoPlanBilling">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Activation Date</span>
+                                            <span class="view-row-value" id="accountInfoActivationDate">Not set</span>
+                                        </div>
+                                        <div class="view-row view-row--accent">
+                                            <span class="view-row-label">Next Bill Date</span>
+                                            <span class="view-row-value" id="accountInfoBillDate">Not set</span>
+                                        </div>
+                                        <div class="view-row view-row--highlight" id="accountInfoDueRow">
+                                            <span class="view-row-label">Due Date</span>
+                                            <span class="view-row-value"><span id="accountInfoDueDate">Not set</span> <span class="view-badge" id="accountInfoDueBadge"></span></span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Due After</span>
+                                            <span class="view-row-value" id="accountInfoDueAfter">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Credit Limit</span>
+                                            <span class="view-row-value" id="accountInfoCreditLimit">&#8369;0.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="view-panel view-panel--pppoe-grid" id="accountInfoMikrotikPanel">
+                                    <h3 class="view-panel-title">MikroTik &amp; PPPoE</h3>
+                                    <div class="view-rows">
+                                        <div class="view-row">
+                                            <span class="view-row-label">Router</span>
+                                            <span class="view-row-value" id="accountInfoRouter">Default router</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">PPPoE Username</span>
+                                            <span class="view-row-value view-value--mono view-copy">
+                                                <span id="accountInfoPppoeUsername">Not set</span>
+                                                <button type="button" class="copy-btn" data-copy-field="pppoeUsername" aria-label="Copy PPPoE username" title="Copy PPPoE username">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">PPPoE Password</span>
+                                            <span class="view-row-value view-value--mono view-copy">
+                                                <span id="accountInfoPppoePassword">Not set</span>
+                                                <button type="button" class="copy-btn" data-copy-field="pppoePassword" aria-label="Copy PPPoE password" title="Copy PPPoE password">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">PPPoE Profile</span>
+                                            <span class="view-row-value"><span class="speed-pill" id="accountInfoPppoeProfile">Not set</span></span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">PPPoE Status</span>
+                                            <span class="view-row-value"><span class="pppoe-live-pill" id="accountInfoPppoeLiveStatus" data-view="pppoeLiveStatus">Offline</span></span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Uptime</span>
+                                            <span class="view-row-value" id="accountInfoPppoeUptime" data-view="pppoeUptime">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Assigned IP</span>
+                                            <span class="view-row-value view-value--mono view-copy">
+                                                <button type="button" class="assigned-ip-browser-link" id="accountInfoPppoeAssignedIp" data-view="pppoeAssignedIp" data-browser-player-ip>Not set</button>
+                                                <button type="button" class="copy-btn" data-copy-field="pppoeAssignedIp" aria-label="Copy assigned IP" title="Copy assigned IP">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Live Traffic</span>
+                                            <span class="view-row-value pppoe-live-traffic">
+                                                <span class="pppoe-live-rate pppoe-live-rate--up"><i class="ti ti-arrow-up" aria-hidden="true"></i><span id="accountInfoPppoeUploadRate" data-view="pppoeUploadRate">0 bps</span></span>
+                                                <span class="pppoe-live-rate pppoe-live-rate--down"><i class="ti ti-arrow-down" aria-hidden="true"></i><span id="accountInfoPppoeDownloadRate" data-view="pppoeDownloadRate">0 bps</span></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="view-panel" id="accountInfoNapPanel">
+                                    <h3 class="view-panel-title">NAP Management</h3>
+                                    <div class="view-rows">
+                                        <div class="view-row">
+                                            <span class="view-row-label">NAP Info</span>
+                                            <span class="view-row-value" id="accountInfoNapInfo">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">NAP Port</span>
+                                            <span class="view-row-value" id="accountInfoNapPort">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">Optical Power</span>
+                                            <span class="view-row-value" id="accountInfoOpticalInfo">Not set</span>
+                                        </div>
+                                        <div class="view-row">
+                                            <span class="view-row-label">MikroTik Status</span>
+                                            <span class="view-row-value" id="accountInfoMikrotikStatus">Not set</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="view-panel view-panel--wide view-panel--history">
+                                    <h3 class="view-panel-title">Payment History</h3>
+                                    <div class="view-history-toolbar" id="accountInfoHistoryToolbar" hidden>
+                                        <label class="view-history-toolbar__select">
+                                            <input type="checkbox" id="accountInfoHistorySelectAll">
+                                            <span>Select all</span>
+                                        </label>
+                                        <span class="view-history-toolbar__count" id="accountInfoHistorySelectedCount">0 selected</span>
+                                        <button type="button" class="ghost-btn view-history-toolbar__delete" id="accountInfoHistoryDeleteSelectedBtn" disabled>
+                                            <i class="ti ti-trash" aria-hidden="true"></i> Delete Selected
+                                        </button>
+                                    </div>
+                                    <div class="view-table">
+                                        <table class="view-table__table">
+                                            <thead>
+                                                <tr>
+                                                    <th class="view-history-select-col">
+                                                        <input type="checkbox" id="accountInfoHistoryTableSelectAll" aria-label="Select all history entries">
+                                                    </th>
+                                                    <th>Recorded By</th>
+                                                    <th>Date</th>
+                                                    <th>Reference</th>
+                                                    <th>OR No.</th>
+                                                    <th>Type</th>
+                                                    <th>Amount</th>
+                                                    <th>Direction</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="accountInfoHistoryBody"></tbody>
+                                        </table>
+                                    </div>
+                                    <p class="view-empty" id="accountInfoHistoryEmpty">No payment history yet.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/account-view-shared.js?v=3.3"></script>
+    <script src="payments.js?v=6.3"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+
+</html>

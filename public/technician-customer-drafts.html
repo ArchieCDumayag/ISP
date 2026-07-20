@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Technician Customer Drafts - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/technician-customer-drafts.css?v=1.2">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body class="tech-drafts-body">
+    <main class="tech-drafts-shell">
+        <section class="tech-drafts-hero">
+            <div class="hero-copy">
+                <p class="eyebrow">Field Intake</p>
+                <h1>Technician Customer Bagsakan</h1>
+                <p class="subtitle">Mag-submit ng bagong customer details mula sa field. Dadaan muna ito sa admin review bago maidagdag sa totoong customer page.</p>
+                <div class="hero-points">
+                    <span><i class="ti ti-check" aria-hidden="true"></i> Technician-only login</span>
+                    <span><i class="ti ti-check" aria-hidden="true"></i> Pending admin approval</span>
+                    <span><i class="ti ti-check" aria-hidden="true"></i> May sariling submission history</span>
+                </div>
+            </div>
+            <div class="hero-card">
+                <div class="hero-stat">
+                    <strong id="techHeroPendingCount">0</strong>
+                    <span>Pending review</span>
+                </div>
+                <div class="hero-stat">
+                    <strong id="techHeroApprovedCount">0</strong>
+                    <span>Approved drafts</span>
+                </div>
+                <div class="hero-stat">
+                    <strong id="techHeroRejectedCount">0</strong>
+                    <span>Rejected drafts</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="tech-drafts-panel" id="techAuthPanel">
+            <div class="panel-heading">
+                <h2>Technician Sign In</h2>
+                <p>Gamitin ang technician account para makapag-submit ng customer draft.</p>
+            </div>
+            <form id="techLoginForm" class="tech-auth-form" novalidate>
+                <label class="form-field">
+                    <span>Username</span>
+                    <input type="text" id="techLoginUsername" autocomplete="username" required>
+                </label>
+                <label class="form-field">
+                    <span>Password</span>
+                    <input type="password" id="techLoginPassword" autocomplete="current-password" required>
+                </label>
+                <button type="submit" class="primary-btn tech-auth-btn" id="techLoginSubmitBtn">
+                    <i class="ti ti-login-2" aria-hidden="true"></i> Sign In
+                </button>
+                <p class="auth-error" id="techAuthError" hidden></p>
+            </form>
+        </section>
+
+        <section class="tech-drafts-workspace" id="techWorkspace" hidden>
+            <header class="workspace-header">
+                <div>
+                    <p class="eyebrow">Logged in</p>
+                    <h2 id="techDisplayName">Technician</h2>
+                    <p class="subtitle" id="techBranchLabel">Branch ready.</p>
+                </div>
+                <button type="button" class="ghost-btn" id="techLogoutBtn">
+                    <i class="ti ti-logout" aria-hidden="true"></i> Logout
+                </button>
+            </header>
+
+            <div class="workspace-grid">
+                <section class="workspace-card">
+                    <div class="panel-heading">
+                        <h3>New Customer Draft</h3>
+                        <p>Ilagay ang customer details. Admin pa rin ang final approval bago ito maging totoong customer record.</p>
+                    </div>
+                    <form id="techDraftForm" class="tech-draft-form" novalidate>
+                        <div class="form-grid">
+                            <label class="form-field">
+                                <span>First name</span>
+                                <input type="text" name="firstName" maxlength="100" required>
+                            </label>
+                            <label class="form-field">
+                                <span>Last name</span>
+                                <input type="text" name="lastName" maxlength="100" required>
+                            </label>
+                            <label class="form-field">
+                                <span>Mobile number</span>
+                                <input type="text" name="mobile" maxlength="50" placeholder="09xxxxxxxxx">
+                            </label>
+                            <label class="form-field">
+                                <span>Email</span>
+                                <input type="email" name="email" maxlength="150">
+                            </label>
+                            <label class="form-field form-field--full">
+                                <span>Street / sitio / purok</span>
+                                <input type="text" name="street" maxlength="150">
+                            </label>
+                            <label class="form-field">
+                                <span>Barangay</span>
+                                <input type="text" name="barangay" maxlength="150">
+                            </label>
+                            <label class="form-field">
+                                <span>Municipality / city</span>
+                                <input type="text" name="municipality" maxlength="150">
+                            </label>
+                            <label class="form-field">
+                                <span>Province</span>
+                                <input type="text" name="province" maxlength="150">
+                            </label>
+                            <label class="form-field">
+                                <span>Area</span>
+                                <input type="text" name="area" id="techAreaInput" maxlength="150" list="techAreaOptions" placeholder="Select coverage area">
+                                <datalist id="techAreaOptions"></datalist>
+                            </label>
+                            <label class="form-field">
+                                <span>Coordinates</span>
+                                <input type="text" name="mapPin" id="techMapPinInput" inputmode="text" maxlength="120" placeholder="e.g. 14.599500, 120.984200">
+                            </label>
+                            <label class="form-field">
+                                <span>Plan</span>
+                                <select name="planName" id="techPlanSelect" required>
+                                    <option value="">Select plan</option>
+                                </select>
+                            </label>
+                            <label class="form-field">
+                                <span>Plan category</span>
+                                <select name="planCategory" id="techPlanCategory">
+                                    <option value="">Auto from plan</option>
+                                    <option value="postpaid">Postpaid</option>
+                                    <option value="prepaid">Prepaid</option>
+                                </select>
+                            </label>
+                            <label class="form-field">
+                                <span>Plan amount</span>
+                                <input type="number" name="planAmount" id="techPlanAmount" min="0" step="0.01" placeholder="Auto from plan">
+                            </label>
+                            <label class="form-field">
+                                <span>Activation date</span>
+                                <input type="date" name="activationDate">
+                            </label>
+                            <label class="form-field">
+                                <span>Bill date</span>
+                                <input type="date" name="billDate">
+                            </label>
+                            <label class="form-field">
+                                <span>Due date</span>
+                                <input type="date" name="dueDate">
+                            </label>
+                            <label class="form-field form-field--full">
+                                <span>Remarks</span>
+                                <textarea name="remarks" rows="4" maxlength="2000" placeholder="Installation notes, landmark, contact availability, etc."></textarea>
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="ghost-btn" id="techDraftResetBtn">Clear</button>
+                            <button type="submit" class="primary-btn" id="techDraftSubmitBtn">
+                                <i class="ti ti-send" aria-hidden="true"></i> Submit for Review
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="workspace-card">
+                    <div class="panel-heading">
+                        <div>
+                            <h3>My Draft History</h3>
+                            <p>Makikita rito kung pending, approved, o rejected ang mga ipinasa mo.</p>
+                        </div>
+                    </div>
+                    <div class="history-toolbar">
+                        <label>
+                            <span>Status</span>
+                            <select id="techHistoryStatus">
+                                <option value="all">All</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="history-table-wrap">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Plan</th>
+                                    <th>Area</th>
+                                    <th>Submitted</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="techHistoryTableBody">
+                                <tr>
+                                    <td colspan="5" class="empty-state">Sign in to view your submissions.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="workspace-card workspace-card--full">
+                    <div class="panel-heading">
+                        <h3>Generate PPPoE Account</h3>
+                        <p>Pumili ng customer account o pending draft account. Auto-generated ang PPPoE username, password, at profile base sa account at assigned plan.</p>
+                    </div>
+                    <form id="techPppoeForm" class="tech-draft-form" novalidate>
+                        <div class="form-grid tech-pppoe-grid">
+                            <label class="form-field form-field--full">
+                                <span>Customer or draft account</span>
+                                <select id="techPppoeCustomerSelect" required>
+                                    <option value="">Select customer or draft account</option>
+                                </select>
+                            </label>
+                            <label class="form-field">
+                                <span>Plan</span>
+                                <input type="text" id="techPppoePlan" readonly placeholder="Auto from account">
+                            </label>
+                            <label class="form-field">
+                                <span>Existing PPPoE</span>
+                                <input type="text" id="techPppoeExisting" readonly placeholder="No PPPoE yet">
+                            </label>
+                            <label class="form-field">
+                                <span>Generated username</span>
+                                <input type="text" id="techPppoeUsername" readonly placeholder="Will appear after generate">
+                            </label>
+                            <label class="form-field">
+                                <span>PPPoE password</span>
+                                <input type="text" id="techPppoePassword" readonly placeholder="Existing or generated password">
+                            </label>
+                            <label class="form-field">
+                                <span>Profile</span>
+                                <input type="text" id="techPppoeProfile" readonly placeholder="Auto from customer plan">
+                            </label>
+                            <label class="form-field">
+                                <span>Router</span>
+                                <input type="text" id="techPppoeRouter" readonly placeholder="Default router">
+                            </label>
+                            <p class="history-meta tech-inline-note form-field--full" id="techPppoeNote">
+                                Select a customer or pending draft account, then generate the PPPoE secret in one step.
+                            </p>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="ghost-btn" id="techPppoeRefreshBtn">Refresh Accounts</button>
+                            <button type="submit" class="primary-btn" id="techPppoeGenerateBtn">
+                                <i class="ti ti-network" aria-hidden="true"></i> Generate PPPoE
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="workspace-card workspace-card--full">
+                    <div class="panel-heading">
+                        <div>
+                            <h3>Customer Directory</h3>
+                            <p>Technician-only mabilisang customer reference para sa account, address, NAP, optical, contact, at MikroTik status.</p>
+                        </div>
+                        <p class="history-meta" id="techCustomerCount">0 customers</p>
+                    </div>
+                    <div class="history-toolbar tech-directory-toolbar">
+                        <label class="form-field form-field--full">
+                            <span>Search customer</span>
+                            <input type="search" id="techCustomerSearch" placeholder="Search by account, name, PPPoE, plan, contact, address, NAP">
+                        </label>
+                    </div>
+                    <div class="history-table-wrap">
+                        <table class="history-table tech-directory-table">
+                            <thead>
+                                <tr>
+                                    <th>Account #</th>
+                                    <th>Customer Name</th>
+                                    <th>PPPoE Account</th>
+                                    <th>Plan</th>
+                                    <th>Address / Coordinates</th>
+                                    <th>NAP Info</th>
+                                    <th>Optical Info</th>
+                                    <th>Contact</th>
+                                    <th>MikroTik</th>
+                                </tr>
+                            </thead>
+                            <tbody id="techCustomerTableBody">
+                                <tr>
+                                    <td colspan="9" class="empty-state">Sign in to load customer directory.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <div class="tech-toast" id="techToast" role="status" aria-live="polite"></div>
+
+    <script src="js/technician-customer-drafts.js?v=1.8"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

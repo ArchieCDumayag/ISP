@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Payroll - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/finance.css?v=2.6">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page finance-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Finance</p>
+                        <h1>Payroll</h1>
+                        <p class="subtitle">Track employee attendance and payroll by cutoff.</p>
+                    </div>
+                </section>
+
+                <section class="section-frame elevated">
+                    <div class="finance-toolbar finance-toolbar--compact">
+                        <div class="search-field">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input id="payrollSearch" type="search" placeholder="Search payroll" aria-label="Search payroll">
+                        </div>
+                        <button class="primary-btn" type="button" id="addPayrollBtn">
+                            <i class="ti ti-plus" aria-hidden="true"></i> Add Payroll
+                        </button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="finance-table" aria-label="Payroll table">
+                            <thead>
+                                <tr>
+                                    <th>Pay Date</th>
+                                    <th>Employee</th>
+                                    <th>Period</th>
+                                    <th>Days Present</th>
+                                    <th class="text-right">Rate / Day</th>
+                                    <th class="text-center">Debt</th>
+                                    <th class="text-right">Total Salary</th>
+                                    <th class="text-center">Attendance</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="payrollTableBody">
+                                <tr>
+                                    <td colspan="9" class="finance-empty">Loading payroll entries...</td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="5" class="finance-total-label">Total Salary</th>
+                                    <th class="text-center">-</th>
+                                    <th class="text-right" id="payrollTableTotalSalary">PHP 0.00</th>
+                                    <th class="text-center">-</th>
+                                    <th class="text-center">-</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="section-frame elevated">
+                    <div class="finance-history-header">
+                        <h2>Payroll History</h2>
+                    </div>
+                    <div id="payrollHistoryList" class="payroll-history-list">
+                        <p class="finance-empty">Loading payroll history...</p>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div class="finance-modal" id="payrollModal" aria-hidden="true">
+        <div class="finance-modal__content" role="dialog" aria-modal="true" aria-labelledby="payrollModalTitle">
+            <div class="finance-modal__header">
+                <h2 class="finance-modal__title" id="payrollModalTitle">Add Payroll</h2>
+                <button class="ghost-btn" type="button" id="payrollModalClose" aria-label="Close payroll form">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="payrollForm">
+                <div class="finance-modal__body">
+                    <input type="hidden" id="payrollEntryId" name="entryId">
+                    <div class="finance-form-grid">
+                        <div class="form-field">
+                            <label for="payrollPayDate">Pay Date</label>
+                            <input id="payrollPayDate" name="payDate" type="date" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="payrollEmployeeName">Employee</label>
+                            <input id="payrollEmployeeName" name="employeeName" type="text" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="payrollPeriodStart">Period Start</label>
+                            <input id="payrollPeriodStart" name="periodStart" type="date" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="payrollPeriodEnd">Period End</label>
+                            <input id="payrollPeriodEnd" name="periodEnd" type="date" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="payrollRole">Role</label>
+                            <input id="payrollRole" name="role" type="text">
+                        </div>
+                        <div class="form-field">
+                            <label for="payrollRatePerDay">Rate Per Day</label>
+                            <input id="payrollRatePerDay" name="ratePerDay" type="number" min="0.01" step="0.01" required>
+                        </div>
+                        <div class="form-field span-2">
+                            <label for="payrollNotes">Notes</label>
+                            <textarea id="payrollNotes" name="notes" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="finance-modal__footer">
+                    <button class="ghost-btn" type="button" id="payrollModalCancel">Cancel</button>
+                    <button class="primary-btn" type="submit" id="payrollModalSave">
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="finance-modal" id="payrollAttendanceModal" aria-hidden="true">
+        <div class="finance-modal__content finance-modal__content--attendance" role="dialog" aria-modal="true" aria-labelledby="payrollAttendanceTitle">
+            <div class="finance-modal__header">
+                <h2 class="finance-modal__title" id="payrollAttendanceTitle">Attendance Checklist</h2>
+                <button class="ghost-btn" type="button" id="payrollAttendanceClose" aria-label="Close attendance checklist">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="finance-modal__body">
+                <div class="attendance-checklist" id="payrollAttendanceChecklist"></div>
+            </div>
+            <div class="finance-modal__footer">
+                <button class="ghost-btn" type="button" id="payrollAttendanceCancel">Cancel</button>
+                <button class="primary-btn" type="button" id="payrollAttendanceSave">
+                    <i class="ti ti-device-floppy" aria-hidden="true"></i> Save Attendance
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="finance-modal" id="payrollDebtModal" aria-hidden="true">
+        <div class="finance-modal__content finance-modal__content--debt" role="dialog" aria-modal="true" aria-labelledby="payrollDebtTitle">
+            <div class="finance-modal__header">
+                <h2 class="finance-modal__title" id="payrollDebtTitle">Payroll Debt</h2>
+                <button class="ghost-btn" type="button" id="payrollDebtClose" aria-label="Close debt modal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="finance-modal__body">
+                <div class="payroll-debt-entry-form" id="payrollDebtEntryForm">
+                    <div class="form-field">
+                        <label for="payrollDebtDate">Date</label>
+                        <input id="payrollDebtDate" type="date" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="payrollDebtAmount">Amount</label>
+                        <input id="payrollDebtAmount" type="number" min="0.01" step="0.01" placeholder="0.00" required>
+                    </div>
+                </div>
+            </div>
+            <div class="finance-modal__footer">
+                <button class="ghost-btn" type="button" id="payrollDebtDone">Cancel</button>
+                <button class="primary-btn" type="button" id="payrollDebtAddBtn">
+                    <i class="ti ti-device-floppy" aria-hidden="true"></i> Save Debt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="finance-modal" id="payrollCutoffModal" aria-hidden="true">
+        <div class="finance-modal__content finance-modal__content--history" role="dialog" aria-modal="true" aria-labelledby="payrollCutoffModalTitle">
+            <div class="finance-modal__header">
+                <h2 class="finance-modal__title" id="payrollCutoffModalTitle">Payroll Cutoff</h2>
+                <button class="ghost-btn" type="button" id="payrollCutoffModalClose" aria-label="Close payroll cutoff details">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="finance-modal__body">
+                <p class="expense-history-modal-meta" id="payrollCutoffModalMeta"></p>
+                <div id="payrollCutoffModalBody"></div>
+            </div>
+            <div class="finance-modal__footer">
+                <button class="primary-btn" type="button" id="payrollCutoffModalDone">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/payroll.js?v=1.13"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

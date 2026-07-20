@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Log In</title>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="css/login.css?v=1.6">
+    <script src="theme-init.js?v=2.6"></script>
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+
+<body class="login-body">
+    <main class="login-shell">
+        <section class="login-panel">
+            <header class="login-brand">
+                <span class="brand-logo" aria-hidden="true">
+                    <img src="/img/business-logo.svg" alt="" class="brand-logo-img" loading="lazy">
+                </span>
+                <div>
+                    <p class="brand-lockup"><span data-login-business-name>Dante Fiber</span><em>Billing Console</em></p>
+                    <h1>Welcome back</h1>
+                    <p class="brand-subtitle" id="loginBrandSubtitle">Sign in to manage subscribers, billing, and network health.</p>
+                </div>
+            </header>
+
+            <form class="login-form" autocomplete="on" method="post" action="/api/auth/login">
+                <div class="form-group">
+                    <label for="login-email">Email or username</label>
+                    <div class="input-icon">
+                        <i class="ti ti-user" aria-hidden="true"></i>
+                        <input type="text" id="login-email" name="email" autocomplete="username" placeholder="Enter email or username" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <div class="input-icon password-field">
+                        <i class="ti ti-lock" aria-hidden="true"></i>
+                        <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter your password" required>
+                        <button type="button" class="toggle-password" aria-label="Toggle password visibility">
+                            <i class="ti ti-eye" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="form-meta">
+                        <label class="remember-toggle">
+                            <input type="checkbox" id="remember-me" name="remember" autocomplete="off" checked>
+                            <span>Keep me signed in</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="primary-btn login-btn">
+                    <i class="ti ti-login-2" aria-hidden="true"></i>
+                    Log In
+                </button>
+
+                <div class="login-divider"><span>or</span></div>
+
+                <div class="login-error" id="loginError" role="alert" aria-live="polite" hidden>
+                    <i class="ti ti-alert-circle" aria-hidden="true"></i>
+                    <span id="loginErrorText"></span>
+                </div>
+
+                <div class="access-card" aria-label="Need account access">
+                    <span class="access-card__icon"><i class="ti ti-shield-half" aria-hidden="true"></i></span>
+                    <p><strong>Need access?</strong><span>Contact your system administrator.</span></p>
+                </div>
+            </form>
+        </section>
+
+        <section class="login-hero">
+            <div class="hero-content">
+                <h2>Operate faster with a single console</h2>
+                <p>Everything you need to run and grow your fiber network.</p>
+                <ul>
+                    <li><i class="ti ti-circle-check" aria-hidden="true"></i> Track collections and invoices in one place.</li>
+                    <li><i class="ti ti-circle-check" aria-hidden="true"></i> Schedule SMS updates for outages instantly.</li>
+                    <li><i class="ti ti-circle-check" aria-hidden="true"></i> Monitor subscriber growth and plan performance.</li>
+                </ul>
+            </div>
+            <div class="hero-illustration" aria-hidden="true">
+                <span class="network-line network-line--one"></span>
+                <span class="network-line network-line--two"></span>
+                <span class="network-dot network-dot--one"></span>
+                <span class="network-dot network-dot--two"></span>
+                <span class="network-dot network-dot--three"></span>
+                <span class="pulse"></span>
+                <span class="pulse delayed"></span>
+                <i class="ti ti-wifi" aria-hidden="true"></i>
+            </div>
+        </section>
+    </main>
+
+    <div class="reset-overlay" id="resetOverlay" hidden>
+        <div class="reset-card">
+            <h2>Change default admin credentials</h2>
+            <p>Default admin credentials detected. Please set a new username and password before continuing.</p>
+
+            <div class="reset-field">
+                <label for="resetUsername">New username</label>
+                <input type="text" id="resetUsername">
+            </div>
+            <div class="reset-field">
+                <label for="resetPassword">New password</label>
+                <input type="password" id="resetPassword">
+            </div>
+            <div class="reset-field">
+                <label for="resetPasswordConfirm">Confirm new password</label>
+                <input type="password" id="resetPasswordConfirm">
+            </div>
+
+            <p class="reset-error" id="resetError"></p>
+
+            <div class="reset-actions">
+                <button type="button" class="primary-btn" id="resetSaveBtn">Save and continue</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const togglePasswordBtn = document.querySelector('.toggle-password');
+        const passwordInput = document.getElementById('login-password');
+        const resetOverlay = document.getElementById('resetOverlay');
+        const resetUsername = document.getElementById('resetUsername');
+        const resetPassword = document.getElementById('resetPassword');
+        const resetPasswordConfirm = document.getElementById('resetPasswordConfirm');
+        const resetError = document.getElementById('resetError');
+        const resetSaveBtn = document.getElementById('resetSaveBtn');
+        const brandLogoImg = document.querySelector('.brand-logo-img');
+        const loginBusinessName = document.querySelector('[data-login-business-name]');
+        const loginForm = document.querySelector('.login-form');
+        const loginEmailInput = document.getElementById('login-email');
+        const rememberInput = document.getElementById('remember-me');
+        const loginError = document.getElementById('loginError');
+        const loginErrorText = document.getElementById('loginErrorText');
+        const loginSubmitBtn = document.querySelector('.login-btn');
+
+        const DEFAULT_LOGIN_LOGO = '/img/business-logo.svg';
+        const DEFAULT_LOGIN_NEXT = '/index.html';
+        const SAVED_LOGIN_USERNAME_KEY = 'billing-saved-login-username';
+        const loginBrandSubtitle = document.getElementById('loginBrandSubtitle');
+
+        const applyLoginLogo = (logoUrl) => {
+            if (!brandLogoImg) return;
+            const nextLogo = String(logoUrl || '').trim() || DEFAULT_LOGIN_LOGO;
+            if (brandLogoImg.getAttribute('src') !== nextLogo) {
+                brandLogoImg.setAttribute('src', nextLogo);
+            }
+        };
+
+        const fetchLoginBusinessProfile = async () => {
+            try {
+                const res = await fetch('/api/business-profile', { credentials: 'include', cache: 'no-store' });
+                if (!res.ok) throw new Error(`status ${res.status}`);
+                const data = await res.json();
+                if (data && data.logoUrl) {
+                    applyLoginLogo(data.logoUrl);
+                }
+                const businessName = String(data?.businessName || '').trim();
+                if (businessName) {
+                    document.title = `Log In - ${businessName}`;
+                    if (loginBusinessName) {
+                        loginBusinessName.textContent = businessName;
+                    }
+                    if (loginBrandSubtitle) {
+                        loginBrandSubtitle.textContent = `Sign in to manage ${businessName}.`;
+                    }
+                } else {
+                    document.title = 'Log In';
+                }
+            } catch {
+                // keep default logo
+            }
+        };
+
+        let pendingUser = null;
+
+        applyLoginLogo(DEFAULT_LOGIN_LOGO);
+        fetchLoginBusinessProfile();
+
+        try {
+            const savedUsername = localStorage.getItem(SAVED_LOGIN_USERNAME_KEY) || '';
+            if (savedUsername && loginEmailInput && !loginEmailInput.value) {
+                loginEmailInput.value = savedUsername;
+            }
+            if (rememberInput) {
+                rememberInput.checked = true;
+            }
+        } catch {
+            // Browser password managers will still handle saved passwords.
+        }
+
+        if (togglePasswordBtn && passwordInput) {
+            togglePasswordBtn.addEventListener('click', () => {
+                const isHidden = passwordInput.type === 'password';
+                passwordInput.type = isHidden ? 'text' : 'password';
+                const icon = togglePasswordBtn.querySelector('i');
+                if (icon) {
+                    icon.classList.toggle('ti-eye', !isHidden);
+                    icon.classList.toggle('ti-eye-off', isHidden);
+                }
+            });
+        }
+
+        const keepFocusedFieldVisible = (input) => {
+            if (!input) return;
+            input.addEventListener('focus', () => {
+                if (!window.matchMedia('(max-width: 760px)').matches) return;
+                const centerField = () => input.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+                window.setTimeout(centerField, 80);
+                window.setTimeout(centerField, 320);
+            });
+        };
+
+        keepFocusedFieldVisible(loginEmailInput);
+        keepFocusedFieldVisible(passwordInput);
+
+        const showResetOverlay = (user) => {
+            pendingUser = user;
+            resetError.textContent = '';
+            resetUsername.value = '';
+            resetPassword.value = '';
+            resetPasswordConfirm.value = '';
+            resetOverlay.hidden = false;
+            resetUsername.focus();
+        };
+
+        const forceHideResetOverlay = () => {
+            if (!resetOverlay) return;
+            resetOverlay.hidden = true;
+        };
+
+        forceHideResetOverlay();
+        window.addEventListener('pageshow', forceHideResetOverlay);
+
+        const setResetError = (message) => {
+            resetError.textContent = message || '';
+        };
+
+        const setLoginFieldErrorState = (hasError) => {
+            [loginEmailInput, passwordInput].forEach((input) => {
+                if (!input) return;
+                input.classList.toggle('is-invalid', Boolean(hasError));
+                if (hasError) {
+                    input.setAttribute('aria-invalid', 'true');
+                } else {
+                    input.removeAttribute('aria-invalid');
+                }
+            });
+        };
+
+        const setLoginError = (message) => {
+            const nextMessage = String(message || '').trim();
+            if (!loginError || !loginErrorText) return;
+            loginErrorText.textContent = nextMessage;
+            loginError.hidden = !nextMessage;
+            setLoginFieldErrorState(Boolean(nextMessage));
+        };
+
+        const clearLoginError = () => {
+            setLoginError('');
+        };
+
+        const setLoginSubmitState = (isSubmitting) => {
+            if (!loginSubmitBtn) return;
+            loginSubmitBtn.disabled = Boolean(isSubmitting);
+            loginSubmitBtn.innerHTML = isSubmitting
+                ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Signing in...'
+                : '<i class="ti ti-login-2" aria-hidden="true"></i> Log In';
+        };
+
+        const validateReset = () => {
+            const newUsername = resetUsername.value.trim();
+            const newPassword = resetPassword.value;
+            const confirmPassword = resetPasswordConfirm.value;
+
+            if (!newUsername) return 'Username is required.';
+            if (newUsername.toLowerCase() === 'admin') return 'Please change the default username.';
+            if (!newPassword) return 'Password is required.';
+            if (newPassword !== newPassword.replace(/^\s+|\s+$/g, '')) {
+                return 'Password cannot start or end with spaces.';
+            }
+            if (newPassword.length < 6) return 'Password must be at least 6 characters.';
+            if (newPassword.toLowerCase() === 'admin') return 'Please change the default password.';
+            if (newPassword !== confirmPassword) return 'Passwords do not match.';
+            return '';
+        };
+
+        resetSaveBtn?.addEventListener('click', async () => {
+            const error = validateReset();
+            if (error) {
+                setResetError(error);
+                return;
+            }
+            if (!pendingUser) {
+                setResetError('Missing session. Please log in again.');
+                return;
+            }
+            const payload = {
+                username: resetUsername.value.trim(),
+                password: resetPassword.value
+            };
+            resetSaveBtn.disabled = true;
+            resetSaveBtn.textContent = 'Saving...';
+            try {
+                const res = await fetch(`/api/accounts/${encodeURIComponent(pendingUser.id)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Failed to update credentials.');
+                const next = sessionStorage.getItem('next') || DEFAULT_LOGIN_NEXT;
+                sessionStorage.removeItem('next');
+                location.href = next;
+            } catch (err) {
+                setResetError(err.message || 'Unable to update credentials.');
+            } finally {
+                resetSaveBtn.disabled = false;
+                resetSaveBtn.textContent = 'Save and continue';
+            }
+        });
+
+        // Login submit handler
+        [loginEmailInput, passwordInput].forEach((input) => {
+            input?.addEventListener('input', clearLoginError);
+        });
+
+        loginForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearLoginError();
+            const email = loginEmailInput.value.trim();
+            const password = passwordInput.value; // do not trim password
+            // Client-side guard: reject passwords with leading/trailing spaces
+            if (password !== password.replace(/^\s+|\s+$/g, '')) {
+                setLoginError('Password cannot start or end with spaces.');
+                passwordInput.focus();
+                return;
+            }
+            const remember = Boolean(rememberInput?.checked);
+            const payload = { email, password, remember };
+            setLoginSubmitState(true);
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Login failed');
+                try {
+                    if (remember) {
+                        localStorage.setItem(SAVED_LOGIN_USERNAME_KEY, email);
+                    } else {
+                        localStorage.removeItem(SAVED_LOGIN_USERNAME_KEY);
+                    }
+                } catch {
+                    // Password is intentionally left to the browser's secure password manager.
+                }
+                const isBackupAdmin = data?.user?.id === 'backup-admin';
+                const needsBackupReset = Boolean(data.mustChangePassword && data.mustChangeUsername);
+                if (isBackupAdmin && needsBackupReset) {
+                    sessionStorage.setItem('backup-reset-required', 'true');
+                    sessionStorage.setItem('backup-reset-user-id', data.user?.id || 'backup-admin');
+                    const next = sessionStorage.getItem('next') || DEFAULT_LOGIN_NEXT;
+                    sessionStorage.removeItem('next');
+                    location.href = next;
+                    return;
+                }
+                // redirect to dashboard (index page) or last page
+                const next = sessionStorage.getItem('next') || DEFAULT_LOGIN_NEXT;
+                sessionStorage.removeItem('next');
+                location.href = next;
+            } catch (err) {
+                setLoginError(err.message || 'Unable to login');
+            } finally {
+                setLoginSubmitState(false);
+            }
+        });
+    </script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+
+</html>
+
+
+
+
+

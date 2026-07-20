@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <title>Assign Collector - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/plans.css?v=2.0">
+    <link rel="stylesheet" href="css/collectors.css?v=2.1">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page collectors-page">
+                <section class="collector-assignment-shell collectors-board" aria-labelledby="collectorAssignmentTitle">
+                    <div class="collector-assignment-header">
+                        <div class="collector-assignment-heading">
+                            <h1 id="collectorAssignmentTitle">Collector Area Assignment</h1>
+                            <p class="subtitle">Manage collector coverage and monthly collection performance.</p>
+                        </div>
+                        <button class="primary-btn collector-assign-btn" type="button" id="newAssignmentBtn">
+                            <i class="ti ti-plus" aria-hidden="true"></i>
+                            <span>Assign Areas</span>
+                        </button>
+                    </div>
+
+                    <div class="collector-assignment-stats" aria-label="Collector assignment summary">
+                        <article class="collector-stat-card collector-stat-card--collectors">
+                            <span class="collector-stat-card__icon" aria-hidden="true">
+                                <i class="ti ti-users" aria-hidden="true"></i>
+                            </span>
+                            <div class="collector-stat-card__body">
+                                <span>Collectors</span>
+                                <strong id="collectorStatsCollectors">0</strong>
+                            </div>
+                        </article>
+                        <article class="collector-stat-card collector-stat-card--areas">
+                            <span class="collector-stat-card__icon" aria-hidden="true">
+                                <i class="ti ti-map-pin" aria-hidden="true"></i>
+                            </span>
+                            <div class="collector-stat-card__body">
+                                <span>Assigned Areas</span>
+                                <strong id="collectorStatsAreas">0</strong>
+                            </div>
+                        </article>
+                        <article class="collector-stat-card collector-stat-card--month">
+                            <span class="collector-stat-card__icon" aria-hidden="true">
+                                <i class="ti ti-chart-line" aria-hidden="true"></i>
+                            </span>
+                            <div class="collector-stat-card__body">
+                                <span>This Month</span>
+                                <strong id="collectorStatsCollected">PHP 0.00</strong>
+                            </div>
+                        </article>
+                    </div>
+
+                    <div id="assignMessage" class="assignment-toast"></div>
+
+                    <div class="plans-table-wrapper elevated assignment-table-wrapper">
+                        <table class="plans-table collectors-table collector-assignment-table">
+                            <thead>
+                                <tr>
+                                    <th>Collector</th>
+                                    <th class="col-clients">Assigned Areas</th>
+                                    <th class="col-balance">Current Month Collected</th>
+                                    <th class="col-actions text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assignmentList"></tbody>
+                        </table>
+                        <div class="empty-state" id="assignmentsEmptyState" style="display:none;">
+                            <i class="ti ti-map" aria-hidden="true"></i>
+                            <p>No areas assigned yet.</p>
+                        </div>
+                        <div class="table-footer assignment-footer" id="assignmentsFooter" style="display:none;">
+                            <div class="footer-summary assignment-footer__summary" id="assignmentsSummary">No assignments to display</div>
+                            <div class="footer-controls assignment-footer__controls">
+                                <span class="assignment-footer__collected">
+                                    <strong id="assignmentsFooterCollected">PHP 0.00</strong>
+                                    <span>collected this month</span>
+                                </span>
+                                <span class="assignment-footer__separator" aria-hidden="true"></span>
+                                <span class="assignment-footer__live">
+                                    <span class="assignment-footer__live-dot" aria-hidden="true"></span>
+                                    Live data
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- Collector Areas Modal -->
+    <div id="collectorAreasModal" class="modal collector-areas-modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-content collector-areas-modal__content">
+            <div class="modal-header collector-areas-modal__header">
+                <span class="assignment-modal__icon" aria-hidden="true">
+                    <i class="ti ti-list-check" aria-hidden="true"></i>
+                </span>
+                <div class="assignment-modal__title">
+                    <h2 id="collectorAreasModalTitle">Assigned Areas</h2>
+                    <p class="modal-subtitle" id="collectorAreasModalSubtitle">Current month collection per area.</p>
+                </div>
+                <button class="close-modal" type="button" id="closeCollectorAreasModal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="collector-areas-modal__body" id="collectorAreasModalBody"></div>
+            <div class="collector-areas-modal__actions">
+                <button type="button" class="ghost-btn" id="collectorAreasEditBtn">
+                    <i class="ti ti-edit" aria-hidden="true"></i> Edit Areas
+                </button>
+                <button type="button" class="primary-btn" id="collectorAreasDoneBtn">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assignment Modal -->
+    <div id="assignmentModal" class="modal assignment-modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-content assignment-modal__content">
+            <div class="modal-header assignment-modal__header">
+                <span class="assignment-modal__icon" aria-hidden="true">
+                    <i class="ti ti-map-pin" aria-hidden="true"></i>
+                </span>
+                <div class="assignment-modal__title">
+                    <h2 id="assignmentModalTitle">Assign Areas</h2>
+                    <p class="modal-subtitle" id="assignmentModalSubtitle">Select a collector, then choose the areas they can collect.</p>
+                </div>
+                <button class="close-modal" type="button" id="closeAssignmentModal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form class="plan-form assignment-modal__form" id="assignmentForm">
+                <div class="form-field assignment-modal__collector">
+                    <label for="modalCollectorSelect">Collector</label>
+                    <select id="modalCollectorSelect" name="collectorId" required>
+                        <option value="">Select collector</option>
+                    </select>
+                </div>
+                <div class="form-field assignment-area-picker">
+                    <div class="assignment-area-picker__header">
+                        <label>Coverage areas</label>
+                        <span id="assignmentAreaCount">0 selected</span>
+                    </div>
+                    <div class="assignment-search">
+                        <i class="ti ti-search" aria-hidden="true"></i>
+                        <input type="search" id="assignmentAreaSearch" placeholder="Search province, municipality, or area" autocomplete="off">
+                    </div>
+                    <div class="assignment-area-tools">
+                        <div class="assignment-filter-tabs" id="assignmentFilterTabs" role="tablist" aria-label="Area filters">
+                            <button type="button" class="assignment-filter-tab is-active" data-assignment-filter="all">All</button>
+                            <button type="button" class="assignment-filter-tab" data-assignment-filter="selected">Selected</button>
+                            <button type="button" class="assignment-filter-tab" data-assignment-filter="unassigned">Unassigned</button>
+                            <button type="button" class="assignment-filter-tab" data-assignment-filter="assigned">Assigned</button>
+                        </div>
+                        <div class="assignment-bulk-actions">
+                            <button type="button" class="assignment-bulk-btn" id="assignmentSelectAllVisible">
+                                <i class="ti ti-circle-check" aria-hidden="true"></i> Select all visible
+                            </button>
+                            <span class="assignment-bulk-divider" aria-hidden="true"></span>
+                            <button type="button" class="assignment-bulk-btn assignment-bulk-btn--muted" id="assignmentClearSelected">
+                                <i class="ti ti-trash" aria-hidden="true"></i> Clear selected
+                            </button>
+                        </div>
+                    </div>
+                    <div class="assignment-area-list" id="assignmentAreaList"></div>
+                </div>
+                <div id="assignmentModalMessage" class="modal-message"></div>
+                <div class="form-actions assignment-modal__actions">
+                    <button type="button" class="ghost-btn" id="cancelAssignmentModal">Cancel</button>
+                    <button type="submit" class="primary-btn" id="assignmentSaveBtn"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save 0 assignments</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="js/collectors-page.js?v=2.0"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>
+
+
+
+
+

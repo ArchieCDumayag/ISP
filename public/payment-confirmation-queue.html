@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Payment Confirmation Queue - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=3.2">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page queue-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <h1>Payment Confirmation Queue</h1>
+                    </div>
+                </section>
+
+                <section class="section-frame queue-panel">
+                    <div class="section-toolbar queue-toolbar">
+                        <div class="queue-controls">
+                            <input
+                                type="search"
+                                id="queueAccountFilter"
+                                placeholder="Search account by name and account number"
+                                aria-label="Search account by name and account number"
+                            >
+                            <div class="page-size-control">
+                                <label for="queuePageSize">Show</label>
+                                <div class="select-wrapper">
+                                    <select id="queuePageSize" name="queuePageSize">
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper queue-table-wrap">
+                        <table class="queue-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Submitted (Date &amp; Time)</th>
+                                    <th>Amount</th>
+                                    <th>Proof (Image)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueTableBody">
+                                <tr>
+                                    <td colspan="5" class="queue-empty">Loading requests...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer" id="queueTableFooter">
+                        <div class="footer-summary" id="queueTableSummary">Showing 0 of 0 requests</div>
+                        <div class="footer-controls">
+                            <button type="button" class="footer-btn" id="queueTablePrev" aria-label="Previous page" disabled>&#8249;</button>
+                            <span class="footer-page-info" id="queueTablePageInfo">Page 1 of 1</span>
+                            <button type="button" class="footer-btn" id="queueTableNext" aria-label="Next page" disabled>&#8250;</button>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div id="queueCreateModal" class="modal queue-create-modal" role="dialog" aria-modal="true" aria-labelledby="queueCreateModalTitle" aria-hidden="true">
+        <div class="modal-content queue-create-modal__content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="queueCreateModalTitle">Add Payment Queue Request</h2>
+                    <p class="modal-subtitle">Create a payment confirmation request for review.</p>
+                </div>
+                <button class="close-modal" type="button" data-dismiss="queue-create-modal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="queueCreateForm" class="queue-create-form" novalidate>
+                <div class="queue-create-grid">
+                    <div class="form-field">
+                        <label for="queueCreateAccountNumber">Account #</label>
+                        <input type="text" id="queueCreateAccountNumber" maxlength="20" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="queueCreateCustomerName">Customer Name</label>
+                        <input type="text" id="queueCreateCustomerName" maxlength="200">
+                    </div>
+                    <div class="form-field">
+                        <label for="queueCreateAmount">Amount</label>
+                        <input type="number" id="queueCreateAmount" min="0.01" step="0.01" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="queueCreateReference">Ref. #</label>
+                        <input type="text" id="queueCreateReference" maxlength="64">
+                    </div>
+                    <div class="form-field">
+                        <label for="queueCreatePaymentMethod">Payment Method</label>
+                        <input type="text" id="queueCreatePaymentMethod" maxlength="40">
+                    </div>
+                    <div class="form-field queue-create-field--full">
+                        <label for="queueCreateProofFile">Proof Image</label>
+                        <input type="file" id="queueCreateProofFile" accept="image/jpeg,image/png,image/webp" required>
+                    </div>
+                    <div class="form-field queue-create-field--full">
+                        <label for="queueCreateNotes">Notes</label>
+                        <textarea id="queueCreateNotes" rows="2" maxlength="2000"></textarea>
+                    </div>
+                </div>
+                <div class="queue-create-modal__footer">
+                    <button type="button" class="ghost-btn" data-dismiss="queue-create-modal">Cancel</button>
+                    <button type="submit" class="primary-btn" id="queueCreateSubmitBtn">
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Add to Queue
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="queueApproveModal" class="modal queue-approve-modal" role="dialog" aria-modal="true" aria-labelledby="queueApproveModalTitle" aria-hidden="true">
+        <div class="modal-content queue-approve-modal__content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="queueApproveModalTitle">Approve Payment Proof</h2>
+                    <p class="modal-subtitle">Review the proof, adjust the amount if needed, and enter Ref. # before approving.</p>
+                    <p class="queue-approve-meta" id="queueApproveMeta"></p>
+                </div>
+                <button class="close-modal" type="button" data-dismiss="queue-approve-modal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="queue-approve-modal__body">
+                <div id="queueApproveProofViewer" class="queue-approve-proof-viewer">
+                    <div id="queueApproveProofToolbar" class="queue-approve-proof-toolbar" aria-label="Payment proof zoom controls">
+                        <div class="queue-approve-proof-zoom-controls">
+                            <button type="button" class="queue-proof-zoom-btn" data-proof-zoom="out" aria-label="Zoom out proof image" title="Zoom out">
+                                <i class="ti ti-zoom-out" aria-hidden="true"></i>
+                            </button>
+                            <span id="queueApproveProofZoomLevel" class="queue-approve-proof-zoom-level">100%</span>
+                            <button type="button" class="queue-proof-zoom-btn" data-proof-zoom="in" aria-label="Zoom in proof image" title="Zoom in">
+                                <i class="ti ti-zoom-in" aria-hidden="true"></i>
+                            </button>
+                            <button type="button" class="queue-proof-zoom-btn" data-proof-zoom="reset" aria-label="Reset proof image zoom" title="Reset zoom">
+                                <i class="ti ti-arrow-back-up" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <a id="queueApproveProofLink" class="queue-approve-proof-link" href="#" target="_blank" rel="noopener" aria-label="Open proof image in a new tab" title="Open image">
+                            <i class="ti ti-external-link" aria-hidden="true"></i>
+                        </a>
+                    </div>
+                    <div id="queueApproveProofViewport" class="queue-approve-proof-viewport" tabindex="0">
+                        <img id="queueApproveProofImage" class="queue-approve-proof-image" alt="Payment proof preview">
+                    </div>
+                </div>
+                <p class="queue-approve-proof-empty" id="queueApproveProofEmpty" hidden>No proof image available for this request.</p>
+
+                <div class="form-field queue-approve-field">
+                    <label for="queueApproveAmountInput">Amount</label>
+                    <input type="number" id="queueApproveAmountInput" min="0.01" step="0.01" inputmode="decimal" autocomplete="off">
+                </div>
+
+                <div class="form-field queue-approve-field">
+                    <label for="queueApproveReferenceInput">Ref. #</label>
+                    <input type="text" id="queueApproveReferenceInput" maxlength="64" autocomplete="off">
+                </div>
+            </div>
+            <div class="queue-approve-modal__footer">
+                <button type="button" class="ghost-btn" data-dismiss="queue-approve-modal">Cancel</button>
+                <button type="button" class="primary-btn" id="queueApproveSubmitBtn">
+                    <i class="ti ti-check" aria-hidden="true"></i> Approve
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="queueDuplicatePaymentModal" class="modal queue-duplicate-modal" role="dialog" aria-modal="true" aria-labelledby="queueDuplicatePaymentTitle" aria-hidden="true">
+        <div class="modal-content queue-duplicate-modal__content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="queueDuplicatePaymentTitle">Payment has been recorded</h2>
+                    <p class="modal-subtitle">This reference number is already attached to an approved payment.</p>
+                    <p class="queue-duplicate-meta" id="queueDuplicatePaymentMeta"></p>
+                </div>
+                <button class="close-modal" type="button" data-dismiss="queue-duplicate-modal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="queue-duplicate-modal__body">
+                <dl class="queue-duplicate-details">
+                    <div>
+                        <dt>Customer</dt>
+                        <dd id="queueDuplicateCustomer">-</dd>
+                    </div>
+                    <div>
+                        <dt>Account #</dt>
+                        <dd id="queueDuplicateAccount">-</dd>
+                    </div>
+                    <div>
+                        <dt>Reference</dt>
+                        <dd id="queueDuplicateReference">-</dd>
+                    </div>
+                    <div>
+                        <dt>Amount</dt>
+                        <dd id="queueDuplicateAmount">-</dd>
+                    </div>
+                    <div>
+                        <dt>Date</dt>
+                        <dd id="queueDuplicateDate">-</dd>
+                    </div>
+                    <div>
+                        <dt>Recorded By</dt>
+                        <dd id="queueDuplicateRecordedBy">-</dd>
+                    </div>
+                </dl>
+            </div>
+            <div class="queue-duplicate-modal__footer">
+                <button type="button" class="primary-btn" data-dismiss="queue-duplicate-modal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="queueRejectEntryModal" class="modal queue-reject-entry-modal" role="dialog" aria-modal="true" aria-labelledby="queueRejectEntryModalTitle" aria-hidden="true">
+        <div class="modal-content queue-reject-entry-modal__content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="queueRejectEntryModalTitle">Reject Payment Proof</h2>
+                    <p class="queue-reject-entry-meta" id="queueRejectEntryMeta"></p>
+                </div>
+                <button class="close-modal" type="button" data-dismiss="queue-reject-entry-modal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="queue-reject-entry-modal__body">
+                <div class="form-field queue-reject-entry-field">
+                    <label for="queueRejectReasonInput">Rejection Reason</label>
+                    <textarea id="queueRejectReasonInput" rows="4" maxlength="2000"></textarea>
+                </div>
+            </div>
+            <div class="queue-reject-entry-modal__footer">
+                <button type="button" class="ghost-btn" data-dismiss="queue-reject-entry-modal">Cancel</button>
+                <button type="button" class="primary-btn" id="queueRejectSubmitBtn">
+                    <i class="ti ti-x" aria-hidden="true"></i> Reject
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="queueRejectInfoModal" class="modal queue-reject-modal" role="dialog" aria-modal="true" aria-labelledby="queueRejectModalTitle" aria-hidden="true">
+        <div class="modal-content queue-reject-modal__content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="queueRejectModalTitle">Rejected Payment Proof</h2>
+                    <p class="modal-subtitle">Reason provided for this rejected request.</p>
+                    <p class="queue-reject-meta" id="queueRejectMeta"></p>
+                </div>
+                <button class="close-modal" type="button" data-dismiss="queue-reject-modal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="queue-reject-modal__body">
+                <p class="queue-reject-reason" id="queueRejectReasonText">No reason provided.</p>
+            </div>
+            <div class="queue-reject-modal__footer">
+                <button type="button" class="primary-btn" data-dismiss="queue-reject-modal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.5"></script>
+    <script src="payment-confirmation-queue.js?v=3.9"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+</html>

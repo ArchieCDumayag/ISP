@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Customer Portal</title>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="css/customer-portal.css?v=2.6">
+    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+</head>
+
+<body class="customer-portal-body">
+    <main class="customer-portal-shell" id="top">
+        <header class="customer-portal-header">
+            <div class="portal-header-main">
+                <button type="button" class="portal-avatar-button" id="portalAccountBtn" aria-label="Open account menu" aria-expanded="false" aria-controls="portalAccountMenu">
+                    <i class="ti ti-user" aria-hidden="true"></i>
+                    <span class="portal-online-dot" aria-hidden="true"></span>
+                    <span id="portalAvatarInitials">DF</span>
+                </button>
+                <div class="portal-greeting">
+                    <p>Hello,</p>
+                    <h1 id="portalCustomerName">Loading account...</h1>
+                </div>
+            </div>
+            <div class="portal-header-actions">
+                <button type="button" class="portal-header-action" id="portalNotificationsBtn" aria-label="Notifications">
+                    <span class="portal-nav-badge" id="portalNotificationBadge" hidden></span>
+                    <i class="ti ti-bell" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="portal-header-action" id="portalLogoutBtn" aria-label="Logout">
+                    <i class="ti ti-logout" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="portal-account-menu" id="portalAccountMenu" hidden>
+                <div class="portal-account-menu__brand">
+                    <span class="customer-login-logo"><img src="/img/business-logo.svg" alt="" id="portalLogo"></span>
+                    <div>
+                        <p class="customer-login-eyebrow" id="portalBusinessName">Customer Portal</p>
+                        <strong id="portalGreetingName">Customer</strong>
+                        <span id="portalAccountMeta">Please wait while we load your billing details.</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <section class="portal-alert" id="portalAlert" hidden></section>
+
+        <section class="portal-account-card" id="portalConnectionCard" aria-label="Account overview">
+            <div class="portal-account-card__top">
+                <div>
+                    <p>Account No.</p>
+                    <strong id="portalAccountNumber">--</strong>
+                </div>
+                <span class="portal-status-pill" id="portalStatus">ACTIVE <i></i></span>
+            </div>
+            <div class="portal-account-card__details">
+                <div class="portal-account-detail">
+                    <span class="portal-detail-icon portal-detail-icon--blue"><i class="ti ti-wifi" aria-hidden="true"></i></span>
+                    <div>
+                        <p>Current Plan</p>
+                        <strong id="portalPlanName">--</strong>
+                        <span id="portalPlanAmount">--</span>
+                    </div>
+                </div>
+                <div class="portal-account-detail">
+                    <span class="portal-detail-icon portal-detail-icon--amber"><i class="ti ti-calendar" aria-hidden="true"></i></span>
+                    <div>
+                        <p>Next Billing</p>
+                        <strong id="portalNextDue">--</strong>
+                        <span id="portalDueCountdown">Loading due date</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="portal-balance-card" id="portalBalanceCard" aria-label="Outstanding balance">
+            <div>
+                <p>Outstanding Balance</p>
+                <strong id="portalAmountDue">--</strong>
+                <span id="portalBalanceHelper">Checking account balance</span>
+            </div>
+            <button type="button" class="portal-pay-now" id="portalPayBillAction">
+                Pay Now
+                <i class="ti ti-chevron-right" aria-hidden="true"></i>
+            </button>
+        </section>
+
+        <section class="portal-payment-modal" id="portalPaymentModal" role="dialog" aria-modal="true" aria-labelledby="portalPaymentTitle" hidden>
+            <div class="portal-payment-backdrop" data-payment-close></div>
+            <form class="portal-payment-dialog" id="portalPaymentForm">
+                <h2 id="portalPaymentTitle">Bill Payment</h2>
+                <fieldset class="portal-payment-methods">
+                    <legend>Select Payment Method:</legend>
+                    <div class="portal-payment-method-grid" id="portalPaymentMethodGrid">
+                        <button type="button" class="portal-payment-method is-selected" data-method="gcash" aria-pressed="true">
+                            <span class="portal-method-logo portal-method-logo--gcash"><img src="/img/integrations/gcash.png" alt="GCash"></span>
+                            <span class="portal-method-name">GCash</span>
+                        </button>
+                        <button type="button" class="portal-payment-method" data-method="paymaya" aria-pressed="false">
+                            <span class="portal-method-logo portal-method-logo--paymaya"><img src="/img/integrations/paymaya.svg" alt="PayMaya"></span>
+                            <span class="portal-method-name">PayMaya</span>
+                        </button>
+                        <button type="button" class="portal-payment-method" data-method="grabpay" aria-pressed="false">
+                            <span class="portal-method-logo portal-method-logo--grabpay"><img src="/img/integrations/grabpay.svg" alt="GrabPay"></span>
+                            <span class="portal-method-name">GrabPay</span>
+                        </button>
+                        <button type="button" class="portal-payment-method" data-method="shopeepay" aria-pressed="false">
+                            <span class="portal-method-logo portal-method-logo--shopeepay"><img src="/img/integrations/shopeepay.svg" alt="ShopeePay"></span>
+                            <span class="portal-method-name">ShopeePay</span>
+                        </button>
+                    </div>
+                </fieldset>
+                <label class="portal-payment-amount-field" for="portalPaymentAmount">
+                    <span>Enter Amount:</span>
+                    <span class="portal-payment-input-wrap">
+                        <span>₱</span>
+                        <input type="text" id="portalPaymentAmount" inputmode="decimal" autocomplete="off" required>
+                    </span>
+                </label>
+                <p class="portal-payment-error" id="portalPaymentError" hidden></p>
+                <div class="portal-payment-actions">
+                    <button type="button" class="portal-payment-cancel" data-payment-close>Cancel</button>
+                    <button type="submit" class="portal-payment-submit" id="portalPaymentSubmit">Pay Now</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="portal-statement-modal" id="portalStatementModal" role="dialog" aria-modal="true" aria-labelledby="portalStatementTitle" hidden>
+            <div class="portal-statement-backdrop" data-statement-close></div>
+            <div class="portal-statement-dialog">
+                <h2 id="portalStatementTitle">Electronic Statements</h2>
+                <p>Select the statement you want to view or download:</p>
+                <div class="portal-statement-options">
+                    <a class="portal-statement-option portal-statement-option--account" id="portalOpenAccountStatement" href="#" download>
+                        <i class="ti ti-file-text" aria-hidden="true"></i>
+                        Account Statement
+                    </a>
+                    <a class="portal-statement-option portal-statement-option--billing" id="portalOpenBillingStatement" href="#" download>
+                        <i class="ti ti-receipt" aria-hidden="true"></i>
+                        Billing Statement
+                    </a>
+                </div>
+                <button type="button" class="portal-statement-cancel" data-statement-close>Cancel</button>
+            </div>
+        </section>
+
+        <section class="portal-quick-actions" aria-labelledby="portalQuickActionsTitle">
+            <h2 id="portalQuickActionsTitle">Quick Services</h2>
+            <div class="portal-action-grid">
+                <button type="button" class="portal-action-tile" id="portalPaymentsAction">
+                    <i class="ti ti-receipt" aria-hidden="true"></i>
+                    <span>Payments</span>
+                </button>
+                <button type="button" class="portal-action-tile" id="portalSupportAction">
+                    <i class="ti ti-headset" aria-hidden="true"></i>
+                    <span>Support</span>
+                </button>
+                <button type="button" class="portal-action-tile" id="portalUsageAction">
+                    <i class="ti ti-wifi" aria-hidden="true"></i>
+                    <span>WiFi Settings</span>
+                </button>
+                <button type="button" class="portal-action-tile" id="portalBillingStatement">
+                    <i class="ti ti-file-text" aria-hidden="true"></i>
+                    <span>E-Statements</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="portal-hidden-details" id="portalPlanDetails" aria-hidden="true">
+            <span id="portalStatusHeadline">Internet is Active</span>
+            <span id="portalStatusHint">Everything looks good.</span>
+            <span id="portalPlanType">--</span>
+            <span id="portalPlanNameDetail">--</span>
+            <span id="portalPlanSpeed">--</span>
+            <span id="portalBillingCycle">--</span>
+            <span id="portalArea">--</span>
+            <a id="portalAccountStatement" href="#">Account Statement</a>
+            <div id="portalHistory"></div>
+            <button type="button" id="portalRecentToggle">View All</button>
+            <button type="button" id="portalBottomNotifications"></button>
+            <button type="button" id="portalBottomAccount"></button>
+            <a id="portalBottomBilling" href="#"></a>
+        </section>
+
+        <section class="portal-transaction-screen" id="portalTransactionScreen" aria-labelledby="portalTransactionTitle" hidden>
+            <header class="portal-transaction-header">
+                <button type="button" class="portal-transaction-back" id="portalTransactionBack" aria-label="Back to portal home">
+                    <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                </button>
+                <h2 id="portalTransactionTitle">Transaction History</h2>
+            </header>
+            <div class="portal-transaction-list" id="portalTransactionList"></div>
+        </section>
+
+        <section class="portal-wifi-screen" id="portalWifiScreen" aria-labelledby="portalWifiTitle" hidden>
+            <header class="portal-wifi-header">
+                <button type="button" class="portal-wifi-back" id="portalWifiBack" aria-label="Back to portal home">
+                    <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                </button>
+                <h2 id="portalWifiTitle">WiFi Settings</h2>
+            </header>
+            <div class="portal-wifi-content">
+                <div class="portal-wifi-loading" id="portalWifiLoading">
+                    <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i>
+                    <strong>Loading WiFi settings</strong>
+                    <span>Please wait while we check your modem.</span>
+                </div>
+
+                <div class="portal-wifi-supported" id="portalWifiSupported" hidden>
+                    <section class="portal-wifi-card portal-wifi-modem-card">
+                        <div class="portal-wifi-card-title">
+                            <span class="portal-wifi-title-icon portal-wifi-title-icon--purple">
+                                <i class="ti ti-server" aria-hidden="true"></i>
+                            </span>
+                            <h3>Modem Information</h3>
+                        </div>
+                        <dl class="portal-wifi-info-list">
+                            <div>
+                                <dt>Manufacturer</dt>
+                                <dd id="portalWifiManufacturer">--</dd>
+                            </div>
+                            <div>
+                                <dt>Model</dt>
+                                <dd id="portalWifiModel">--</dd>
+                            </div>
+                            <div>
+                                <dt>Serial Number</dt>
+                                <dd id="portalWifiSerial">--</dd>
+                            </div>
+                        </dl>
+                    </section>
+
+                    <section class="portal-wifi-card portal-wifi-config-card">
+                        <div class="portal-wifi-card-title">
+                            <span class="portal-wifi-title-icon portal-wifi-title-icon--blue">
+                                <i class="ti ti-wifi" aria-hidden="true"></i>
+                            </span>
+                            <h3>WiFi Configuration</h3>
+                        </div>
+                        <div class="portal-wifi-network-list">
+                            <div class="portal-wifi-network-row">
+                                <span class="portal-wifi-network-icon portal-wifi-network-icon--blue">
+                                    <i class="ti ti-wifi" aria-hidden="true"></i>
+                                </span>
+                                <div>
+                                    <small>2.4GHz Network</small>
+                                    <strong id="portalWifi24Name">Not available</strong>
+                                </div>
+                            </div>
+                            <div class="portal-wifi-network-row">
+                                <span class="portal-wifi-network-icon portal-wifi-network-icon--green">
+                                    <i class="ti ti-wifi" aria-hidden="true"></i>
+                                </span>
+                                <div>
+                                    <small>5GHz Network</small>
+                                    <strong id="portalWifi5Name">Not available</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="portal-wifi-change" id="portalWifiChangeBtn">
+                            <i class="ti ti-pencil" aria-hidden="true"></i>
+                            Change WiFi Settings
+                        </button>
+                    </section>
+
+                    <section class="portal-wifi-devices" aria-labelledby="portalWifiDevicesTitle">
+                        <h3 id="portalWifiDevicesTitle">Connected Devices (0 Online / 0 Total)</h3>
+                        <div class="portal-wifi-device-list" id="portalWifiDeviceList"></div>
+                    </section>
+                </div>
+
+                <div class="portal-wifi-unsupported" id="portalWifiUnsupported" hidden>
+                    <div class="portal-wifi-warning">
+                        <span><i class="ti ti-info-circle" aria-hidden="true"></i></span>
+                        <p id="portalWifiUnsupportedMessage">Your ONU is not yet registered or bound to our system. Please contact your administrator or technical support for proper ONU configuration and activation.</p>
+                    </div>
+                    <p>Need help? Contact our technical support:</p>
+                    <button type="button" id="portalWifiContactSupport">Contact Us</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="portal-wifi-modal" id="portalWifiModal" role="dialog" aria-modal="true" aria-labelledby="portalWifiModalTitle" hidden>
+            <div class="portal-wifi-modal-backdrop" data-wifi-close></div>
+            <form class="portal-wifi-dialog" id="portalWifiForm">
+                <h2 id="portalWifiModalTitle">Change WiFi Settings</h2>
+                <label class="portal-wifi-field" for="portalWifi24Ssid">
+                    <span>2.4GHz WiFi Name</span>
+                    <input type="text" id="portalWifi24Ssid" autocomplete="off">
+                </label>
+                <label class="portal-wifi-field" for="portalWifi24Password">
+                    <span>2.4GHz New Password</span>
+                    <input type="password" id="portalWifi24Password" autocomplete="new-password" placeholder="Leave blank to keep password">
+                </label>
+                <label class="portal-wifi-field" for="portalWifi5Ssid">
+                    <span>5GHz WiFi Name</span>
+                    <input type="text" id="portalWifi5Ssid" autocomplete="off">
+                </label>
+                <label class="portal-wifi-field" for="portalWifi5Password">
+                    <span>5GHz New Password</span>
+                    <input type="password" id="portalWifi5Password" autocomplete="new-password" placeholder="Leave blank to keep password">
+                </label>
+                <p class="portal-wifi-error" id="portalWifiError" hidden></p>
+                <div class="portal-wifi-actions">
+                    <button type="button" class="portal-wifi-cancel" data-wifi-close>Cancel</button>
+                    <button type="submit" class="portal-wifi-submit" id="portalWifiSubmit">Save Changes</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="portal-support-screen" id="portalSupportScreen" aria-labelledby="portalSupportTitle" hidden>
+            <header class="portal-support-header">
+                <button type="button" class="portal-support-back" id="portalSupportBack" aria-label="Back to portal home">
+                    <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                </button>
+                <h2 id="portalSupportTitle">Support &amp; Tickets</h2>
+            </header>
+            <div class="portal-support-content">
+                <form class="portal-support-card" id="portalSupportForm">
+                    <h3>Submit a New Ticket</h3>
+                    <label class="portal-support-field portal-support-select-field" for="portalSupportIssue">
+                        <span>What is the issue?</span>
+                        <select id="portalSupportIssue" required>
+                            <option value="Blinking LOS">Blinking LOS</option>
+                            <option value="No Power Modem">No Power Modem</option>
+                            <option value="Reset Modem">Reset Modem</option>
+                            <option value="Slow Connection">Slow Connection</option>
+                            <option value="Wire Problem">Wire Problem</option>
+                            <option value="Wi-Fi Connected, No Internet">Wi-Fi Connected, No Internet</option>
+                        </select>
+                        <i class="ti ti-caret-down" aria-hidden="true"></i>
+                    </label>
+                    <label class="portal-support-field" for="portalSupportDescription">
+                        <span>Details / Description</span>
+                        <textarea id="portalSupportDescription" rows="4"></textarea>
+                    </label>
+                    <p class="portal-support-message" id="portalSupportMessage" hidden></p>
+                    <button type="submit" class="portal-support-submit" id="portalSupportSubmit">
+                        <i class="ti ti-send" aria-hidden="true"></i>
+                        Submit Ticket
+                    </button>
+                </form>
+                <section class="portal-support-recent" aria-labelledby="portalRecentTicketsTitle">
+                    <h3 id="portalRecentTicketsTitle">My Recent Tickets</h3>
+                    <div class="portal-ticket-list" id="portalTicketList">
+                        <div class="portal-ticket-empty">
+                            <i class="ti ti-ticket" aria-hidden="true"></i>
+                            <span>No active tickets</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section class="portal-notification-screen" id="portalNotificationScreen" aria-labelledby="portalNotificationTitle" hidden>
+            <header class="portal-notification-header">
+                <button type="button" class="portal-notification-back" id="portalNotificationBack" aria-label="Back to portal home">
+                    <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                </button>
+                <h2 id="portalNotificationTitle">Notifications</h2>
+                <button type="button" class="portal-notification-read-all" id="portalNotificationReadAll">
+                    Read All
+                </button>
+            </header>
+            <div class="portal-notification-list" id="portalNotificationList">
+                <div class="portal-notification-empty">
+                    <i class="ti ti-bell" aria-hidden="true"></i>
+                    <strong>No notifications yet</strong>
+                    <span>Billing updates and reminders will appear here.</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/customer-portal.js?v=2.4"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.4"></script>
+</body>
+
+</html>

@@ -2378,3 +2378,613 @@ body.layout-fluid-vertical .profile-edit-form {
     min-height: 2rem !important;
   }
 }
+
+/* Compact Tabler density layer for the admin console. */
+body.layout-fluid-vertical {
+  --sidebar-width: 13.25rem;
+  --topbar-height: 3rem;
+  --content-padding: clamp(.75rem, 1.35vw, 1.25rem);
+  --tblr-body-font-size: .8125rem;
+  --tblr-body-line-height: 1.35;
+  --tblr-border-radius: 4px;
+  --tblr-border-radius-lg: 6px;
+  font-size: var(--tblr-body-font-size) !important;
+  line-height: var(--tblr-body-line-height) !important;
+}
+
+body.layout-fluid-vertical .app-main > main,
+body.layout-fluid-vertical .app-main main,
+body.layout-fluid-vertical .page,
+body.layout-fluid-vertical .dashboard-main {
+  padding: 1rem var(--content-padding) 1.25rem !important;
+}
+
+body.layout-fluid-vertical .page,
+body.layout-fluid-vertical .dashboard-main,
+body.layout-fluid-vertical .tabler-form,
+body.layout-fluid-vertical .panel-grid,
+body.layout-fluid-vertical .metrics-grid,
+body.layout-fluid-vertical .trend-kpis,
+body.layout-fluid-vertical .cards-grid,
+body.layout-fluid-vertical .settings-grid,
+body.layout-fluid-vertical .plans-grid,
+body.layout-fluid-vertical .finance-grid {
+  gap: .75rem !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-brand {
+  min-height: var(--topbar-height);
+  padding: 0 .5rem;
+}
+
+body.layout-fluid-vertical .app-sidebar-brand .topbar-left.navbar-brand {
+  min-height: var(--topbar-height);
+  gap: .5rem !important;
+  padding: .4375rem .375rem !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-brand .logo-chip {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+  flex-basis: 1.75rem;
+}
+
+body.layout-fluid-vertical .app-sidebar-brand .topbar-title {
+  font-size: .875rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-brand .topbar-eyebrow,
+body.layout-fluid-vertical .app-sidebar-brand .topbar-tagline {
+  font-size: .625rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .sidebar.navbar-vertical .sidebar-scroll {
+  gap: .125rem !important;
+  padding: .5rem !important;
+}
+
+body.layout-fluid-vertical .sidebar.navbar-vertical .sidebar-menu + .sidebar-menu {
+  margin-top: .125rem !important;
+}
+
+body.layout-fluid-vertical .sidebar.navbar-vertical .menu-toggle {
+  min-height: 1.75rem !important;
+  padding: .25rem .5rem !important;
+  font-size: .625rem !important;
+}
+
+body.layout-fluid-vertical .sidebar.navbar-vertical .sidebar-menu .nav-link {
+  min-height: 2rem !important;
+  gap: .5rem !important;
+  padding: .375rem .5rem !important;
+  font-size: .8125rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .sidebar.navbar-vertical .sidebar-menu .nav-link .nav-link-icon {
+  width: 1rem !important;
+  min-width: 1rem !important;
+  font-size: 1rem !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-actions {
+  padding: .5rem !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-actions .topbar-right {
+  gap: .25rem !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-actions .topbar-profile {
+  min-height: 2.25rem !important;
+  gap: .5rem !important;
+  padding: .25rem .375rem !important;
+}
+
+body.layout-fluid-vertical .app-sidebar-actions .topbar-btn,
+body.layout-fluid-vertical .topbar-btn,
+body.layout-fluid-vertical .ghost-icon,
+body.layout-fluid-vertical .footer-btn,
+body.layout-fluid-vertical .copy-btn,
+body.layout-fluid-vertical .btn-icon {
+  width: 2rem !important;
+  min-width: 2rem !important;
+  height: 2rem !important;
+  min-height: 2rem !important;
+  padding: 0 !important;
+}
+
+body.layout-fluid-vertical .profile-avatar,
+body.layout-fluid-vertical .profile-avatar__icon {
+  width: 1.75rem !important;
+  min-width: 1.75rem !important;
+  height: 1.75rem !important;
+}
+
+body.layout-fluid-vertical .profile-name,
+body.layout-fluid-vertical .profile-role {
+  font-size: .75rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .page-header,
+body.layout-fluid-vertical .section-header,
+body.layout-fluid-vertical .trend-header,
+body.layout-fluid-vertical .panel-header {
+  gap: .75rem !important;
+  margin-bottom: .75rem !important;
+}
+
+body.layout-fluid-vertical .page-title,
+body.layout-fluid-vertical .section-header,
+body.layout-fluid-vertical .panel-header,
+body.layout-fluid-vertical .trend-header {
+  gap: .375rem !important;
+}
+
+body.layout-fluid-vertical .page-title h1,
+body.layout-fluid-vertical .section-header h2,
+body.layout-fluid-vertical .panel-header h2,
+body.layout-fluid-vertical .trend-header h2 {
+  font-size: 1.125rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .subtitle,
+body.layout-fluid-vertical .page-title .subtitle,
+body.layout-fluid-vertical .section-header .subtitle,
+body.layout-fluid-vertical .panel-header p,
+body.layout-fluid-vertical .card-meta,
+body.layout-fluid-vertical .metric-meta,
+body.layout-fluid-vertical .form-hint,
+body.layout-fluid-vertical .hint {
+  font-size: .75rem !important;
+  line-height: 1.35 !important;
+}
+
+body.layout-fluid-vertical .eyebrow,
+body.layout-fluid-vertical .card-top,
+body.layout-fluid-vertical .metric-top,
+body.layout-fluid-vertical .table thead th,
+body.layout-fluid-vertical thead th,
+body.layout-fluid-vertical .settings-table thead th,
+body.layout-fluid-vertical .plans-table thead th,
+body.layout-fluid-vertical .payments-table thead th,
+body.layout-fluid-vertical .customer-table thead th,
+body.layout-fluid-vertical .archive-table thead th,
+body.layout-fluid-vertical .finance-table thead th {
+  font-size: .6875rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .panel,
+body.layout-fluid-vertical .metric-card,
+body.layout-fluid-vertical .trend-summary,
+body.layout-fluid-vertical .trend-card,
+body.layout-fluid-vertical .trend-panel,
+body.layout-fluid-vertical .card-table,
+body.layout-fluid-vertical .settings-panel,
+body.layout-fluid-vertical .settings-card,
+body.layout-fluid-vertical .finance-panel,
+body.layout-fluid-vertical .archive-panel,
+body.layout-fluid-vertical .plans-panel,
+body.layout-fluid-vertical .coverage-panel,
+body.layout-fluid-vertical .integration-card,
+body.layout-fluid-vertical .section-frame,
+body.layout-fluid-vertical .access-card,
+body.layout-fluid-vertical .profile-modal__item {
+  border-radius: var(--tblr-border-radius-lg) !important;
+}
+
+body.layout-fluid-vertical .panel-header,
+body.layout-fluid-vertical .logs-modal__header,
+body.layout-fluid-vertical .profile-modal__header,
+body.layout-fluid-vertical .profile-edit-modal__header,
+body.layout-fluid-vertical .modal-header {
+  padding: .625rem .875rem !important;
+}
+
+body.layout-fluid-vertical .panel-body,
+body.layout-fluid-vertical .logs-modal__body,
+body.layout-fluid-vertical .profile-modal__body,
+body.layout-fluid-vertical .profile-edit-form,
+body.layout-fluid-vertical .modal-body,
+body.layout-fluid-vertical .trend-summary,
+body.layout-fluid-vertical .trend-card,
+body.layout-fluid-vertical .metric-card,
+body.layout-fluid-vertical .section-frame,
+body.layout-fluid-vertical .settings-panel,
+body.layout-fluid-vertical .settings-card,
+body.layout-fluid-vertical .finance-panel,
+body.layout-fluid-vertical .archive-panel,
+body.layout-fluid-vertical .plans-panel,
+body.layout-fluid-vertical .coverage-panel,
+body.layout-fluid-vertical .integration-card {
+  padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .panel-footer,
+body.layout-fluid-vertical .logs-modal__footer,
+body.layout-fluid-vertical .profile-modal__footer,
+body.layout-fluid-vertical .profile-edit-modal__footer,
+body.layout-fluid-vertical .modal-footer,
+body.layout-fluid-vertical .form-actions {
+  padding: .625rem .875rem !important;
+}
+
+body.layout-fluid-vertical .card-value,
+body.layout-fluid-vertical .metric-value {
+  font-size: 1.25rem !important;
+  line-height: 1.15 !important;
+}
+
+body.layout-fluid-vertical .card-icon,
+body.layout-fluid-vertical .metric-top i {
+  width: 1.875rem !important;
+  height: 1.875rem !important;
+  min-width: 1.875rem !important;
+  font-size: .95rem !important;
+}
+
+body.layout-fluid-vertical .table-wrapper,
+body.layout-fluid-vertical .table-responsive,
+body.layout-fluid-vertical .settings-table-wrapper,
+body.layout-fluid-vertical .plans-table-wrapper,
+body.layout-fluid-vertical .finance-table-wrapper,
+body.layout-fluid-vertical .archive-table-wrapper {
+  border-radius: var(--tblr-border-radius-lg) !important;
+}
+
+body.layout-fluid-vertical .table > :not(caption) > * > *,
+body.layout-fluid-vertical thead th,
+body.layout-fluid-vertical tbody td,
+body.layout-fluid-vertical .settings-table thead th,
+body.layout-fluid-vertical .settings-table tbody td,
+body.layout-fluid-vertical .plans-table thead th,
+body.layout-fluid-vertical .plans-table tbody td,
+body.layout-fluid-vertical .payments-table thead th,
+body.layout-fluid-vertical .payments-table tbody td,
+body.layout-fluid-vertical .customer-table thead th,
+body.layout-fluid-vertical .customer-table tbody td,
+body.layout-fluid-vertical .archive-table thead th,
+body.layout-fluid-vertical .archive-table tbody td,
+body.layout-fluid-vertical .finance-table thead th,
+body.layout-fluid-vertical .finance-table tbody td,
+body.layout-fluid-vertical .collection-history-table th,
+body.layout-fluid-vertical .collection-history-table td {
+  padding: .5rem .625rem !important;
+  font-size: .8125rem !important;
+  line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .row-actions,
+body.layout-fluid-vertical .toolbar-actions,
+body.layout-fluid-vertical .section-toolbar,
+body.layout-fluid-vertical .filter-chips,
+body.layout-fluid-vertical .payment-actions,
+body.layout-fluid-vertical .modal-actions,
+body.layout-fluid-vertical .form-actions {
+  gap: .5rem !important;
+}
+
+body.layout-fluid-vertical .primary-btn,
+body.layout-fluid-vertical .add-btn,
+body.layout-fluid-vertical .save-btn,
+body.layout-fluid-vertical .ghost-btn,
+body.layout-fluid-vertical .secondary-btn,
+body.layout-fluid-vertical .assignment-bulk-btn,
+body.layout-fluid-vertical .assignment-filter-tab,
+body.layout-fluid-vertical .btn,
+body.layout-fluid-vertical button[type="submit"].primary-btn,
+body.layout-fluid-vertical input[type="submit"] {
+  min-height: 2rem !important;
+  padding: .3125rem .625rem !important;
+  border-radius: var(--tblr-border-radius) !important;
+  font-size: .8125rem !important;
+  line-height: 1.25 !important;
+  gap: .375rem !important;
+}
+
+body.layout-fluid-vertical .btn-sm {
+  min-height: 1.75rem !important;
+  padding: .1875rem .5rem !important;
+  font-size: .75rem !important;
+}
+
+body.layout-fluid-vertical .btn .ti {
+  font-size: 1rem !important;
+}
+
+body.layout-fluid-vertical .form-label,
+body.layout-fluid-vertical label,
+body.layout-fluid-vertical .tabler-form-modal .form-label {
+  margin-bottom: .25rem !important;
+  font-size: .75rem !important;
+  line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .form-field,
+body.layout-fluid-vertical .form-group,
+body.layout-fluid-vertical .reset-field,
+body.layout-fluid-vertical .tabler-form-modal .form-field,
+body.layout-fluid-vertical .tabler-form-modal .form-group,
+body.layout-fluid-vertical .tabler-form-modal .reset-field {
+  margin-bottom: .625rem !important;
+}
+
+body.layout-fluid-vertical .form-control,
+body.layout-fluid-vertical .form-select,
+body.layout-fluid-vertical input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.layout-fluid-vertical select,
+body.layout-fluid-vertical textarea {
+  min-height: 2rem !important;
+  padding: .3125rem .5rem !important;
+  border-radius: var(--tblr-border-radius) !important;
+  font-size: .8125rem !important;
+  line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical textarea,
+body.layout-fluid-vertical textarea.form-control {
+  min-height: 4.5rem !important;
+}
+
+body.layout-fluid-vertical .input-icon-addon {
+  width: 2rem !important;
+  font-size: .875rem !important;
+}
+
+body.layout-fluid-vertical .tabler-search-bar,
+body.layout-fluid-vertical .search-field,
+body.layout-fluid-vertical .assignment-search,
+body.layout-fluid-vertical .customer-search-field,
+body.layout-fluid-vertical .payment-history-search,
+body.layout-fluid-vertical .genieacs-search-field,
+body.layout-fluid-vertical .pppoe-customer-search-field {
+  gap: .375rem !important;
+  padding: .3125rem .5rem !important;
+  border-radius: var(--tblr-border-radius-lg) !important;
+}
+
+body.layout-fluid-vertical .tabler-input-icon > .form-control,
+body.layout-fluid-vertical .tabler-input-icon > input,
+body.layout-fluid-vertical .tabler-search-bar .tabler-search-input,
+body.layout-fluid-vertical .tabler-search-bar .form-control {
+  padding-left: 2.75rem !important;
+}
+
+body.layout-fluid-vertical .tabler-input-icon > input.form-control:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.layout-fluid-vertical .tabler-search-bar > input.form-control.tabler-search-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+  padding-left: 2.75rem !important;
+}
+
+body.layout-fluid-vertical .badge,
+body.layout-fluid-vertical .status,
+body.layout-fluid-vertical .status-pill,
+body.layout-fluid-vertical .plan-pill,
+body.layout-fluid-vertical .note,
+body.layout-fluid-vertical .target-pill,
+body.layout-fluid-vertical .metric-pill,
+body.layout-fluid-vertical .chip,
+body.layout-fluid-vertical .account-tag {
+  padding: .1875rem .5rem !important;
+  font-size: .6875rem !important;
+  line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .list-group-item,
+body.layout-fluid-vertical .tabler-list .list-group-item,
+body.layout-fluid-vertical .profile-menu__action,
+body.layout-fluid-vertical .logs-modal__item {
+  padding: .5rem .625rem !important;
+  font-size: .8125rem !important;
+  line-height: 1.3 !important;
+}
+
+body.layout-fluid-vertical .nav-tabs,
+body.layout-fluid-vertical .tabs,
+body.layout-fluid-vertical .sms-tabs,
+body.layout-fluid-vertical .assignment-filter-tabs {
+  gap: .25rem !important;
+}
+
+body.layout-fluid-vertical .nav-link,
+body.layout-fluid-vertical .tab-btn,
+body.layout-fluid-vertical .filter-tab,
+body.layout-fluid-vertical .sms-tab-link {
+  min-height: 2rem !important;
+  padding: .375rem .625rem !important;
+  font-size: .8125rem !important;
+  line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .modal,
+body.layout-fluid-vertical .profile-modal,
+body.layout-fluid-vertical .profile-edit-modal,
+body.layout-fluid-vertical .logs-modal,
+body.layout-fluid-vertical .reset-overlay {
+  padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .modal-dialog {
+  margin: .75rem auto !important;
+}
+
+body.layout-fluid-vertical .modal-content,
+body.layout-fluid-vertical .profile-modal__content,
+body.layout-fluid-vertical .profile-edit-modal__content,
+body.layout-fluid-vertical .logs-modal__content {
+  border-radius: var(--tblr-border-radius-lg) !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-body,
+body.layout-fluid-vertical .tabler-form-modal .profile-edit-form,
+body.layout-fluid-vertical .tabler-form-modal .modal-footer,
+body.layout-fluid-vertical .tabler-form-modal .form-actions.modal-footer {
+  padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-header {
+  padding: .625rem .75rem !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .form-grid,
+body.layout-fluid-vertical .tabler-form-modal .automation-form-grid {
+  gap: .75rem !important;
+}
+
+/* Compact page-specific subscriber/payment tables that define their own larger density. */
+body.layout-fluid-vertical .customer-table tbody td,
+body.layout-fluid-vertical .payments-table tbody td,
+body.layout-fluid-vertical .payment-history-table tbody td,
+body.layout-fluid-vertical .draft-table tbody td,
+body.layout-fluid-vertical .archive-table tbody td {
+  vertical-align: middle !important;
+}
+
+body.layout-fluid-vertical .customer-table .subscriber,
+body.layout-fluid-vertical .payments-table .subscriber,
+body.layout-fluid-vertical .payment-history-table .subscriber,
+body.layout-fluid-vertical .draft-table .subscriber,
+body.layout-fluid-vertical .archive-subscriber {
+  gap: .5rem !important;
+}
+
+body.layout-fluid-vertical .customer-table .avatar,
+body.layout-fluid-vertical .payments-table .avatar,
+body.layout-fluid-vertical .payment-history-table .avatar,
+body.layout-fluid-vertical .draft-table .avatar,
+body.layout-fluid-vertical .archive-subscriber .avatar {
+  width: 2rem !important;
+  height: 2rem !important;
+  min-width: 2rem !important;
+  flex-basis: 2rem !important;
+  border-radius: .625rem !important;
+  font-size: .75rem !important;
+  line-height: 1 !important;
+}
+
+body.layout-fluid-vertical .payment-history-table .avatar,
+body.layout-fluid-vertical .payments-table .avatar {
+  border-radius: 50% !important;
+}
+
+body.layout-fluid-vertical .customer-table .subscriber-details,
+body.layout-fluid-vertical .payments-table .subscriber-details,
+body.layout-fluid-vertical .payment-history-table .subscriber-details,
+body.layout-fluid-vertical .draft-table .subscriber-details {
+  gap: .125rem !important;
+}
+
+body.layout-fluid-vertical .customer-table .subscriber-name,
+body.layout-fluid-vertical .payments-table .subscriber-name,
+body.layout-fluid-vertical .payment-history-table .subscriber-name,
+body.layout-fluid-vertical .archive-subscriber .subscriber-name,
+body.layout-fluid-vertical .draft-table .subscriber-name,
+body.layout-fluid-vertical .payment-history-primary {
+  font-size: .8125rem !important;
+  line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .customer-table .subscriber-meta,
+body.layout-fluid-vertical .payments-table .subscriber-meta,
+body.layout-fluid-vertical .payment-history-table .subscriber-meta,
+body.layout-fluid-vertical .archive-subscriber .subscriber-meta,
+body.layout-fluid-vertical .draft-table .subscriber-meta,
+body.layout-fluid-vertical .payment-history-secondary,
+body.layout-fluid-vertical .customer-table .plan-meta,
+body.layout-fluid-vertical .customer-table .cycle,
+body.layout-fluid-vertical .customer-table .contact-line,
+body.layout-fluid-vertical .customer-table .address {
+  font-size: .75rem !important;
+  line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .customer-table .contact-line {
+  gap: .25rem !important;
+}
+
+body.layout-fluid-vertical .customer-table .contact-line + .contact-line {
+  margin-top: .25rem !important;
+}
+
+body.layout-fluid-vertical .customer-table .plan-meta,
+body.layout-fluid-vertical .customer-table .subscriber-meta {
+  margin-top: .125rem !important;
+}
+
+body.layout-fluid-vertical .payment-history-stack {
+  gap: .125rem !important;
+}
+
+body.layout-fluid-vertical .customer-table .note,
+body.layout-fluid-vertical .customer-table .address,
+body.layout-fluid-vertical .payment-history-note {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 3;
+  overflow: hidden !important;
+  max-height: 3.75em !important;
+}
+
+body.layout-fluid-vertical .payment-history-note {
+  max-width: 16rem !important;
+}
+
+body.layout-fluid-vertical .customer-table .account-tag-wrap,
+body.layout-fluid-vertical .payments-table .account-tag-wrap,
+body.layout-fluid-vertical .customer-table .row-actions,
+body.layout-fluid-vertical .payments-table .row-actions,
+body.layout-fluid-vertical .payment-history-action-row {
+  gap: .375rem !important;
+}
+
+body.layout-fluid-vertical .customer-table #selectAllCustomers,
+body.layout-fluid-vertical .customer-table .row-select-checkbox,
+body.layout-fluid-vertical .archive-table #archiveSelectAll,
+body.layout-fluid-vertical .archive-table .archive-row-select,
+body.layout-fluid-vertical .draft-table .draft-row-select {
+  width: .875rem !important;
+  height: .875rem !important;
+}
+
+body.layout-fluid-vertical .customer-table tbody tr.row-status-active td:first-child::before,
+body.layout-fluid-vertical .customer-table tbody tr.row-status-inactive td:first-child::before,
+body.layout-fluid-vertical .payments-table tbody tr.row-status-active td:first-child::before,
+body.layout-fluid-vertical .payments-table tbody tr.row-status-inactive td:first-child::before {
+  top: .375rem !important;
+  bottom: .375rem !important;
+  width: .1875rem !important;
+}
+
+@media (max-width: 991.98px) {
+  body.layout-fluid-vertical {
+    --topbar-height: 2.875rem;
+    --content-padding: .75rem;
+  }
+
+  body.layout-fluid-vertical .sidebar.navbar-vertical > .container-fluid {
+    min-height: var(--topbar-height);
+    padding: 0 .5rem !important;
+  }
+
+  body.layout-fluid-vertical .app-sidebar-toggle .topbar-menu-toggle.navbar-toggler,
+  body.layout-fluid-vertical .app-sidebar-actions .topbar-profile,
+  body.layout-fluid-vertical .app-sidebar-actions .topbar-btn {
+    width: 2rem !important;
+    height: 2rem !important;
+    min-height: 2rem !important;
+  }
+
+  body.layout-fluid-vertical .app-main > main {
+    padding: .875rem var(--content-padding) 1.25rem !important;
+  }
+}
+
+@media (max-width: 420px) {
+  body.layout-fluid-vertical .app-sidebar-brand .topbar-title {
+    font-size: .75rem !important;
+  }
+}

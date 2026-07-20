@@ -451,12 +451,51 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebarHost = document.getElementById('sidebar');
     const HIDE_TOPBAR_MENU_ICON = false;
     const currentPath = window.location.pathname.split('/').pop() || 'index.html';
-    const MOBILE_SIDEBAR_BREAKPOINT = 860;
+    const MOBILE_SIDEBAR_BREAKPOINT = 991.98;
     const SIDEBAR_OPEN_CLASS = 'sidebar-mobile-open';
     const SIDEBAR_WORK_BADGE_REFRESH_MS = 30000;
     let sidebarOverlay = null;
     let sidebarWorkBadgeTimer = null;
     let sidebarWorkBadgeWarned = false;
+
+    document.body.classList.add('layout-fluid', 'layout-fluid-vertical');
+    document.querySelector('.app-shell')?.classList.add('tabler-fluid-vertical');
+    document.querySelector('.app-main')?.classList.add('page-wrapper');
+    sidebarHost?.classList.add('app-sidebar-host');
+    topbarHost?.classList.add('app-topbar-host');
+
+    const dockTopbarIntoSidebar = () => {
+        const topbar = topbarHost?.querySelector('.topbar');
+        const sidebar = sidebarHost?.querySelector('.navbar-vertical');
+        if (!topbar || !sidebar) return false;
+
+        const toggleSlot = sidebar.querySelector('[data-sidebar-toggle]');
+        const brandSlot = sidebar.querySelector('[data-sidebar-brand]');
+        const actionsSlot = sidebar.querySelector('[data-sidebar-actions]');
+        if (!toggleSlot || !brandSlot || !actionsSlot) return false;
+
+        const menuToggle = topbar.querySelector('#topbarMenuToggle');
+        const brand = topbar.querySelector('.topbar-left');
+        const actions = topbar.querySelector('.topbar-right');
+
+        if (menuToggle) {
+            menuToggle.classList.add('navbar-toggler');
+            menuToggle.setAttribute('aria-controls', 'sidebar-menu');
+            toggleSlot.replaceChildren(menuToggle);
+        }
+        if (brand) {
+            brand.classList.add('navbar-brand', 'navbar-brand-autodark');
+            brandSlot.replaceChildren(brand);
+        }
+        if (actions) {
+            actions.classList.add('navbar-nav', 'flex-row');
+            actionsSlot.replaceChildren(actions);
+        }
+
+        topbar.remove();
+        topbarHost.classList.add('app-topbar-host--docked');
+        return true;
+    };
 
     const isMobileSidebarViewport = () => window.matchMedia(`(max-width: ${MOBILE_SIDEBAR_BREAKPOINT}px)`).matches;
 
@@ -1023,6 +1062,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const syncShellTheme = () => {
         const isDark = document.body.classList.contains('theme-dark');
         document.querySelectorAll('.sidebar').forEach((el) => {
+            if (el.classList.contains('navbar-vertical')) {
+                el.classList.add('sidebar-dark');
+                el.classList.remove('sidebar-light');
+                el.dataset.bsTheme = 'dark';
+                return;
+            }
             el.classList.toggle('sidebar-dark', isDark);
             el.classList.toggle('sidebar-light', !isDark);
         });
@@ -2248,11 +2293,13 @@ document.addEventListener('DOMContentLoaded', () => {
         bindThemeToggle(host);
         bindGlobalSearch(host);
         initTopbarInteractions(host);
+        dockTopbarIntoSidebar();
         syncShellTheme();
         syncMobileSidebarViewport();
     });
 
     loadPartial(sidebarHost, 'sidebar.html', async (root) => {
+        dockTopbarIntoSidebar();
         try {
             const response = await fetch('/api/flavor/features', { credentials: 'include', cache: 'no-store' });
             const payload = await response.json().catch(() => ({}));
@@ -2268,6 +2315,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'index.html'
             : (currentPath.includes('.') ? currentPath : `${currentPath}.html`);
         const links = root.querySelectorAll('.sidebar-menu a');
+        root.querySelectorAll('.sidebar-menu li').forEach((item) => item.classList.add('nav-item'));
+        links.forEach((link) => {
+            link.classList.add('nav-link');
+            link.querySelector('i')?.classList.add('nav-link-icon');
+        });
         const currentHash = window.location.hash || '';
         let matched = false;
         links.forEach((link) => {
@@ -2287,6 +2339,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const homeLink = root.querySelector('.sidebar-menu a[href="index.html"]');
             if (homeLink) homeLink.classList.add('active');
         }
+        links.forEach((link) => {
+            const isActive = link.classList.contains('active');
+            link.closest('li')?.classList.toggle('active', isActive);
+            if (isActive) {
+                link.setAttribute('aria-current', 'page');
+            } else {
+                link.removeAttribute('aria-current');
+            }
+        });
 
         const sidebarMenus = Array.from(root.querySelectorAll('.sidebar-menu'));
         const accordionMenus = [];

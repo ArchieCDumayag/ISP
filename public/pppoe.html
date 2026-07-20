@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/accounts.css?v=4.6">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.0">
-    <link rel="stylesheet" href="css/tabler-app.css?v=1.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=2.0">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body>
@@ -18,8 +18,8 @@
         <div id="sidebar"></div>
         <div class="app-main">
             <div id="topbar"></div>
-            <main>
-                <div id="pppoe-disabled-notice" class="mikrotik-disabled-message" style="display:none;">
+            <main class="page pppoe-page">
+                <div id="pppoe-disabled-notice" class="alert alert-warning mikrotik-disabled-message" style="display:none;">
                     <p>MikroTik integration is disabled or missing credentials. Configure the router settings under Control Center to access PPPoE management.</p>
                 </div>
                 <div id="pppoe-workbench">
@@ -29,15 +29,15 @@
                         <p class="subtitle">Manage PPPoE users, monitor status and usage.</p>
                     </div>
                     <div class="pppoe-header-actions">
-                        <div class="pppoe-sync-status">
+                        <div class="pppoe-sync-status badge bg-white text-secondary border">
                             <span>Last Sync: <strong id="pppoe-last-sync-time">--</strong></span>
                             <span class="pppoe-sync-status__state" id="pppoe-last-sync-state"><i class="ti ti-circle" aria-hidden="true"></i> Waiting</span>
                         </div>
-                        <button class="ghost-btn" id="pppoe-sync-btn" type="button"><i class="ti ti-refresh" aria-hidden="true"></i> Sync from MikroTik</button>
+                        <button class="btn btn-outline-primary" id="pppoe-sync-btn" type="button"><i class="ti ti-refresh" aria-hidden="true"></i> Sync from MikroTik</button>
                     </div>
                 </section>
 
-                <section class="mikrotik-status-card" id="mikrotik-status-card">
+                <section class="card mikrotik-status-card" id="mikrotik-status-card">
                 <div class="status-card-header">
                         <div class="status-card-left">
                             <span class="status-dot" id="mt-status-dot"></span>
@@ -55,7 +55,7 @@
                                 </select>
                             </div>
                         </div>
-                        <button class="icon-btn ghost" id="mt-info-refresh" title="Refresh info" type="button"><i class="ti ti-refresh" aria-hidden="true"></i></button>
+                        <button class="btn btn-icon btn-outline-secondary" id="mt-info-refresh" title="Refresh info" type="button"><i class="ti ti-refresh" aria-hidden="true"></i></button>
                         <span class="status-time" id="mt-connection-timer">--</span>
                     </div>
                 </div>
@@ -119,43 +119,43 @@
             </section>
 
                 <section class="pppoe-summary-strip" aria-label="PPPoE summary">
-                    <article class="pppoe-summary-card pppoe-summary-card--total">
+                    <article class="card card-sm pppoe-summary-card pppoe-summary-card--total">
                         <span class="pppoe-summary-card__icon"><i class="ti ti-users" aria-hidden="true"></i></span>
                         <p class="pppoe-summary-card__label">Total Users</p>
                         <p class="pppoe-summary-card__value" id="pppoe-summary-total">0</p>
                     </article>
-                    <article class="pppoe-summary-card pppoe-summary-card--online">
+                    <article class="card card-sm pppoe-summary-card pppoe-summary-card--online">
                         <span class="pppoe-summary-card__icon"><i class="ti ti-user-check" aria-hidden="true"></i></span>
                         <p class="pppoe-summary-card__label">Active Sessions</p>
                         <p class="pppoe-summary-card__value pppoe-summary-card__value--good" id="pppoe-summary-online">0</p>
                     </article>
-                    <article class="pppoe-summary-card pppoe-summary-card--offline">
+                    <article class="card card-sm pppoe-summary-card pppoe-summary-card--offline">
                         <span class="pppoe-summary-card__icon"><i class="ti ti-user-clock" aria-hidden="true"></i></span>
                         <p class="pppoe-summary-card__label">Offline</p>
                         <p class="pppoe-summary-card__value pppoe-summary-card__value--neutral" id="pppoe-summary-offline">0</p>
                     </article>
-                    <article class="pppoe-summary-card pppoe-summary-card--disabled">
+                    <article class="card card-sm pppoe-summary-card pppoe-summary-card--disabled">
                         <span class="pppoe-summary-card__icon"><i class="ti ti-user-x" aria-hidden="true"></i></span>
                         <p class="pppoe-summary-card__label">Disabled</p>
                         <p class="pppoe-summary-card__value pppoe-summary-card__value--alert" id="pppoe-summary-disabled">0</p>
                     </article>
-                    <article class="pppoe-summary-card pppoe-summary-card--usage">
+                    <article class="card card-sm pppoe-summary-card pppoe-summary-card--usage">
                         <span class="pppoe-summary-card__icon"><i class="ti ti-chart-pie" aria-hidden="true"></i></span>
                         <p class="pppoe-summary-card__label">Total Usage</p>
                         <p class="pppoe-summary-card__value" id="pppoe-summary-usage">0.00 GB</p>
                     </article>
                 </section>
 
-                <section class="settings-panel">
-                    <header class="panel-header">
+                <section class="card settings-panel pppoe-accounts-card">
+                    <header class="card-header panel-header">
                         <div>
-                            <h2>PPPoE Accounts</h2>
+                            <h2 class="card-title">PPPoE Accounts</h2>
                         </div>
                         <div class="panel-actions">
-                            <button class="primary-btn" id="pppoe-generate-open-btn" type="button" hidden style="display:none;"><i class="ti ti-wand" aria-hidden="true"></i> Generate PPPoE</button>
+                            <button class="btn btn-primary" id="pppoe-generate-open-btn" type="button" hidden style="display:none;"><i class="ti ti-wand" aria-hidden="true"></i> Generate PPPoE</button>
                         </div>
                     </header>
-                    <section class="section-toolbar pppoe-toolbar">
+                    <section class="card-body section-toolbar pppoe-toolbar">
                         <div class="search-field">
                             <i class="ti ti-search" aria-hidden="true"></i>
                             <input type="search" id="pppoe-search" placeholder="Search by username, customer, router, profile, or status" aria-label="Search PPPoE accounts">
@@ -186,8 +186,8 @@
                             </div>
                         </div>
                     </section>
-                    <div class="table-wrapper pppoe-table-wrapper">
-                        <table class="settings-table pppoe-table" aria-label="PPPoE accounts">
+                    <div class="table-responsive table-wrapper pppoe-table-wrapper">
+                        <table class="settings-table pppoe-table table table-vcenter table-hover card-table" aria-label="PPPoE accounts">
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -206,14 +206,14 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="table-footer" id="pppoe-footer">
+                    <div class="card-footer table-footer" id="pppoe-footer">
                         <div class="table-footer__left">
                             <span id="pppoe-count-label">Showing 0 of 0</span>
                         </div>
                         <div class="table-footer__right pagination-pill">
-                            <button class="ghost-btn pill-btn" id="pppoe-prev" type="button" aria-label="Previous page"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+                            <button class="btn btn-icon btn-outline-secondary btn-sm pill-btn" id="pppoe-prev" type="button" aria-label="Previous page"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
                             <span class="page-indicator" id="pppoe-page-indicator">Page 1 of 1</span>
-                            <button class="ghost-btn pill-btn" id="pppoe-next" type="button" aria-label="Next page"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+                            <button class="btn btn-icon btn-outline-secondary btn-sm pill-btn" id="pppoe-next" type="button" aria-label="Next page"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
                         </div>
                     </div>
                 </section>
@@ -226,7 +226,7 @@
         <div class="modal-container">
             <header class="modal-header">
                 <h3>Edit PPPoE Entry</h3>
-                <button type="button" class="modal-close" id="pppoe-edit-close" aria-label="Close edit modal">&times;</button>
+                <button type="button" class="btn-close modal-close" id="pppoe-edit-close" aria-label="Close edit modal"></button>
             </header>
             <form class="modal-form" id="pppoe-edit-form">
                 <div class="form-field">
@@ -237,7 +237,7 @@
                     <label for="pppoe-edit-password">Password</label>
                     <div class="secure-input-wrap">
                         <input type="password" id="pppoe-edit-password" name="password" required />
-                        <button class="icon-btn ghost secure-input-toggle" id="pppoe-edit-password-toggle" type="button" aria-label="Show password" title="Show password">
+                        <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-edit-password-toggle" type="button" aria-label="Show password" title="Show password">
                             <i class="ti ti-eye" aria-hidden="true"></i>
                         </button>
                     </div>
@@ -249,8 +249,8 @@
                     </select>
                 </div>
                 <footer class="modal-footer">
-                    <button type="button" class="ghost-btn" id="pppoe-edit-cancel">Cancel</button>
-                    <button type="submit" class="primary-btn" id="pppoe-edit-save">Save changes</button>
+                    <button type="button" class="btn" id="pppoe-edit-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="pppoe-edit-save">Save changes</button>
                 </footer>
             </form>
         </div>
@@ -260,7 +260,7 @@
         <div class="modal-container">
             <header class="modal-header">
                 <h3 id="pppoe-assign-title">Assign PPPoE to Customer</h3>
-                <button type="button" class="modal-close" id="pppoe-assign-close" aria-label="Close assign modal">&times;</button>
+                <button type="button" class="btn-close modal-close" id="pppoe-assign-close" aria-label="Close assign modal"></button>
             </header>
             <form class="modal-form" id="pppoe-assign-form">
                 <div class="form-field">
@@ -278,7 +278,7 @@
                     <label for="pppoe-assign-username">PPPoE Username</label>
                     <div class="secure-input-wrap">
                         <input type="text" id="pppoe-assign-username" readonly>
-                        <button class="icon-btn ghost secure-input-toggle" id="pppoe-assign-username-copy" type="button" aria-label="Copy PPPoE username" title="Copy username">
+                        <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-assign-username-copy" type="button" aria-label="Copy PPPoE username" title="Copy username">
                             <i class="ti ti-copy" aria-hidden="true"></i>
                         </button>
                     </div>
@@ -287,7 +287,7 @@
                     <label for="pppoe-assign-password">PPPoE Password</label>
                     <div class="secure-input-wrap">
                         <input type="text" id="pppoe-assign-password" readonly>
-                        <button class="icon-btn ghost secure-input-toggle" id="pppoe-assign-password-copy" type="button" aria-label="Copy PPPoE password" title="Copy password">
+                        <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-assign-password-copy" type="button" aria-label="Copy PPPoE password" title="Copy password">
                             <i class="ti ti-copy" aria-hidden="true"></i>
                         </button>
                     </div>
@@ -297,9 +297,9 @@
                     <input type="text" id="pppoe-assign-profile" readonly>
                 </div>
                 <footer class="modal-footer">
-                    <button type="button" class="ghost-btn" id="pppoe-assign-unassign">Unassign</button>
-                    <button type="button" class="ghost-btn" id="pppoe-assign-cancel">Cancel</button>
-                    <button type="submit" class="primary-btn" id="pppoe-assign-save">Assign</button>
+                    <button type="button" class="btn btn-outline-danger me-auto" id="pppoe-assign-unassign">Unassign</button>
+                    <button type="button" class="btn" id="pppoe-assign-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="pppoe-assign-save">Assign</button>
                 </footer>
             </form>
         </div>
@@ -309,7 +309,7 @@
         <div class="modal-container">
             <header class="modal-header">
                 <h3>Generate PPPoE</h3>
-                <button type="button" class="modal-close" id="pppoe-generate-close" aria-label="Close generate modal">&times;</button>
+                <button type="button" class="btn-close modal-close" id="pppoe-generate-close" aria-label="Close generate modal"></button>
             </header>
             <form class="modal-form" id="pppoe-generate-form">
                 <div class="form-field">
@@ -335,8 +335,8 @@
                     <small class="muted" id="pppoe-generate-note">Username format: NAPCODE-NAPNO-FIRST-LAST (or FIRST-LAST if no NAP). If the customer already has PPPoE assigned, the existing username/password will be shown.</small>
                 </div>
                 <footer class="modal-footer">
-                    <button type="button" class="ghost-btn" id="pppoe-generate-cancel">Cancel</button>
-                    <button type="submit" class="primary-btn" id="pppoe-generate-save">Generate &amp; Save</button>
+                    <button type="button" class="btn" id="pppoe-generate-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="pppoe-generate-save">Generate &amp; Save</button>
                 </footer>
             </form>
         </div>
@@ -346,7 +346,7 @@
         <div class="modal-container modal-container--traffic">
             <header class="modal-header">
                 <h3 id="pppoe-traffic-title">PPPoE Traffic</h3>
-                <button type="button" class="modal-close" id="pppoe-traffic-close" aria-label="Close traffic modal">&times;</button>
+                <button type="button" class="btn-close modal-close" id="pppoe-traffic-close" aria-label="Close traffic modal"></button>
             </header>
             <div class="pppoe-traffic-modal">
                 <p class="pppoe-traffic-modal__sub" id="pppoe-traffic-subtitle">Select a PPPoE row to monitor live traffic.</p>
@@ -426,11 +426,11 @@
                     <h3 id="pppoe-session-history-title">Session History</h3>
                     <p class="pppoe-traffic-modal__sub" id="pppoe-session-history-subtitle">PPPoE login and logout records.</p>
                 </div>
-                <button type="button" class="modal-close" id="pppoe-session-history-close" aria-label="Close session history modal">&times;</button>
+                <button type="button" class="btn-close modal-close" id="pppoe-session-history-close" aria-label="Close session history modal"></button>
             </header>
             <div class="pppoe-session-history">
-                <div class="table-wrapper">
-                    <table class="settings-table pppoe-session-history__table" aria-label="PPPoE session history">
+                <div class="table-responsive table-wrapper">
+                    <table class="settings-table pppoe-session-history__table table table-vcenter card-table" aria-label="PPPoE session history">
                         <thead>
                             <tr>
                                 <th>#</th>
@@ -447,13 +447,13 @@
                 </div>
             </div>
             <footer class="modal-footer">
-                <button type="button" class="ghost-btn" id="pppoe-session-history-cancel">Close</button>
+                <button type="button" class="btn" id="pppoe-session-history-cancel">Close</button>
             </footer>
         </div>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="layout.js?v=3.5"></script>
+    <script src="layout.js?v=3.6"></script>
     <script src="js/account-view-shared.js?v=3.2"></script>
     <script src="js/pppoe.js?v=7.3"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>

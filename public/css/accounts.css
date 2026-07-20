@@ -4914,3 +4914,528 @@ body.theme-dark .pppoe-toolbar .chip.active[data-pppoe-status-chip="disabled"] {
         grid-column: auto;
     }
 }
+
+/* Tabler-aligned PPPoE page polish */
+.pppoe-page #pppoe-workbench {
+    gap: 1rem;
+}
+
+.pppoe-page .pppoe-header {
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 1rem !important;
+    margin: 0 0 1rem !important;
+}
+
+.pppoe-page .pppoe-header .page-title {
+    min-height: 0 !important;
+    flex: 0 1 auto !important;
+    display: block !important;
+}
+
+.pppoe-page .pppoe-header .page-title h1 {
+    margin: 0;
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+    line-height: 1.25;
+}
+
+.pppoe-page .pppoe-header .subtitle {
+    display: block !important;
+    margin: .25rem 0 0;
+    font-size: .875rem;
+}
+
+.pppoe-page .pppoe-header-actions {
+    flex: 0 0 auto;
+    align-items: center;
+    gap: .5rem;
+}
+
+.pppoe-page .pppoe-sync-status {
+    min-height: 2.25rem;
+    padding: .375rem .75rem;
+    border-color: var(--app-border, #dce3ed) !important;
+    border-radius: var(--app-radius, 8px) !important;
+    box-shadow: none;
+    font-size: .8125rem;
+    font-weight: 500 !important;
+    letter-spacing: 0;
+}
+
+.pppoe-page .pppoe-sync-status__state {
+    font-weight: 700;
+}
+
+.pppoe-page #pppoe-sync-btn {
+    min-height: 2.25rem;
+}
+
+.pppoe-page .mikrotik-status-card,
+.pppoe-page .pppoe-summary-card,
+.pppoe-page .pppoe-accounts-card {
+    border-color: var(--app-border, #dce3ed);
+    border-radius: var(--app-radius, 8px);
+    background: var(--app-surface, #ffffff);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+
+.pppoe-page .mikrotik-status-card {
+    margin: 0;
+    padding: 0;
+}
+
+.pppoe-page .mikrotik-status-card .status-card-header {
+    min-height: 4.25rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--app-border, #dce3ed);
+}
+
+.pppoe-page .status-card-left::before {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--app-radius, 8px);
+    background: rgba(32, 107, 196, .1);
+    color: var(--app-primary, #206bc4);
+    font-size: 1rem;
+}
+
+.pppoe-page .status-title {
+    font-size: .9375rem;
+    font-weight: 700;
+}
+
+.pppoe-page .status-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    padding: 0;
+}
+
+.pppoe-page .status-item {
+    min-height: 5.25rem;
+    padding: 1rem 1.125rem;
+    border: 0;
+    border-left: 1px solid var(--app-border, #dce3ed);
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.pppoe-page .status-item:first-child {
+    border-left: 0;
+}
+
+.pppoe-page .status-meta .label,
+.pppoe-page .pppoe-summary-card__label,
+.pppoe-page .settings-table.pppoe-table thead th {
+    color: var(--app-muted, #667085);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+}
+
+.pppoe-page .status-meta .value {
+    font-size: .95rem;
+    font-weight: 700;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.pppoe-page .pppoe-summary-strip {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .75rem;
+}
+
+.pppoe-page .pppoe-summary-card {
+    min-height: 5rem;
+    padding: .875rem 1rem;
+}
+
+.pppoe-page .pppoe-summary-card__icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--app-radius, 8px);
+}
+
+.pppoe-page .pppoe-summary-card__value {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.pppoe-page .pppoe-accounts-card {
+    padding: 0 !important;
+}
+
+.pppoe-page .pppoe-accounts-card > .panel-header {
+    min-height: 3.75rem;
+    margin: 0 !important;
+    padding: .875rem 1.25rem !important;
+    border-bottom: 1px solid var(--app-border, #dce3ed) !important;
+}
+
+.pppoe-page .pppoe-accounts-card .card-title {
+    margin: 0;
+    font-size: 1rem !important;
+}
+
+.pppoe-page .pppoe-toolbar {
+    display: grid;
+    grid-template-columns: minmax(18rem, 1fr) auto auto auto;
+    align-items: center;
+    gap: .75rem;
+    padding: .875rem 1.25rem !important;
+    border-bottom: 1px solid var(--app-border, #dce3ed);
+    background: var(--app-surface, #ffffff);
+}
+
+.pppoe-page .pppoe-toolbar .search-field,
+.pppoe-page .pppoe-toolbar .select-wrapper select {
+    min-height: 2.25rem;
+    border-color: var(--app-border, #dce3ed);
+    border-radius: var(--app-radius, 8px);
+    box-shadow: none;
+}
+
+.pppoe-page .pppoe-toolbar .filter-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: .375rem;
+}
+
+.pppoe-page .pppoe-toolbar .chip {
+    min-height: 2rem;
+    padding: 0 .75rem;
+    border-radius: var(--app-radius, 8px);
+    box-shadow: none !important;
+    outline: 0;
+    font-size: .8125rem;
+}
+
+.pppoe-page .pppoe-toolbar .chip.active {
+    outline: 0;
+    box-shadow: inset 0 0 0 1px currentColor !important;
+}
+
+.pppoe-page .pppoe-table-wrapper {
+    border-top: 0;
+    background: var(--app-surface, #ffffff);
+}
+
+.pppoe-page .settings-table.pppoe-table {
+    min-width: 1088px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.pppoe-page .settings-table.pppoe-table th,
+.pppoe-page .settings-table.pppoe-table td {
+    padding: .75rem .875rem;
+    border-color: var(--app-border, #dce3ed);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.pppoe-page .settings-table.pppoe-table thead th {
+    background: #f8fafc;
+    text-transform: none;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(1),
+.pppoe-page .settings-table.pppoe-table td:nth-child(1) {
+    width: 3rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(2),
+.pppoe-page .settings-table.pppoe-table td:nth-child(2) {
+    width: 9.25rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(3),
+.pppoe-page .settings-table.pppoe-table td:nth-child(3) {
+    width: 10rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(4),
+.pppoe-page .settings-table.pppoe-table td:nth-child(4) {
+    width: 8.25rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(5),
+.pppoe-page .settings-table.pppoe-table td:nth-child(5) {
+    width: 8rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(6),
+.pppoe-page .settings-table.pppoe-table td:nth-child(6) {
+    width: 6.5rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(7),
+.pppoe-page .settings-table.pppoe-table td:nth-child(7) {
+    width: 8rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(8),
+.pppoe-page .settings-table.pppoe-table td:nth-child(8) {
+    width: 8.5rem;
+}
+
+.pppoe-page .settings-table.pppoe-table th:nth-child(9),
+.pppoe-page .settings-table.pppoe-table td:nth-child(9) {
+    width: 6.5rem;
+}
+
+.pppoe-page .pppoe-customer,
+.pppoe-page .pppoe-customer-meta,
+.pppoe-page .usage-cell,
+.pppoe-page .last-seen-stack {
+    min-width: 0;
+}
+
+.pppoe-page .pppoe-table td > .pppoe-name,
+.pppoe-page .pppoe-ip-browser-link {
+    display: block;
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-align: left;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+}
+
+.pppoe-page .pppoe-customer-meta .pppoe-name,
+.pppoe-page .pppoe-customer-meta .pppoe-subtext {
+    display: block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pppoe-page .pppoe-avatar {
+    border-radius: var(--app-radius, 8px);
+    box-shadow: none;
+}
+
+.pppoe-page .pppoe-table .table-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+}
+
+.pppoe-page .pppoe-table .icon-btn.btn {
+    width: 1.875rem;
+    height: 1.875rem;
+    min-height: 1.875rem;
+    padding: 0;
+    border-radius: var(--app-radius, 8px);
+    background: var(--app-surface, #ffffff);
+    box-shadow: none;
+}
+
+.pppoe-page .pppoe-table .icon-btn.danger {
+    color: #d63939;
+}
+
+.pppoe-page .table-footer {
+    min-height: 3.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .75rem 1.25rem !important;
+}
+
+.pppoe-page .pagination-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.pppoe-page .page-indicator,
+.pppoe-page #pppoe-count-label {
+    color: var(--app-muted, #667085);
+    font-size: .8125rem;
+    font-weight: 600;
+}
+
+#pppoe-edit-modal .modal-container,
+#pppoe-assign-modal .modal-container,
+#pppoe-generate-modal .modal-container,
+#pppoe-session-history-modal .modal-container {
+    padding: 0;
+    border: 1px solid var(--app-border, #dce3ed);
+    border-radius: var(--app-radius, 8px);
+    background: var(--app-surface, #ffffff);
+    box-shadow: 0 1rem 3rem rgba(15, 23, 42, .22);
+}
+
+#pppoe-edit-modal .modal-header,
+#pppoe-assign-modal .modal-header,
+#pppoe-generate-modal .modal-header,
+#pppoe-session-history-modal .modal-header {
+    min-height: 3.75rem;
+    padding: 1rem 1.25rem !important;
+    border-bottom: 1px solid var(--app-border, #dce3ed) !important;
+    background: transparent !important;
+}
+
+#pppoe-edit-modal .modal-header h3,
+#pppoe-assign-modal .modal-header h3,
+#pppoe-generate-modal .modal-header h3,
+#pppoe-session-history-modal .modal-header h3 {
+    margin: 0;
+    color: var(--app-text, #182433);
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+#pppoe-edit-modal .modal-form,
+#pppoe-assign-modal .modal-form,
+#pppoe-generate-modal .modal-form {
+    display: grid;
+    gap: 1rem;
+    padding: 1.25rem;
+}
+
+#pppoe-edit-modal .modal-form .modal-footer,
+#pppoe-assign-modal .modal-form .modal-footer,
+#pppoe-generate-modal .modal-form .modal-footer {
+    margin: .25rem -1.25rem -1.25rem;
+}
+
+#pppoe-edit-modal .modal-close.btn-close,
+#pppoe-assign-modal .modal-close.btn-close,
+#pppoe-generate-modal .modal-close.btn-close,
+#pppoe-traffic-modal .modal-close.btn-close,
+#pppoe-session-history-modal .modal-close.btn-close {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    border: 0 !important;
+    border-radius: var(--app-radius, 8px);
+    background-color: transparent !important;
+    box-shadow: none !important;
+    color: var(--app-muted, #667085) !important;
+}
+
+#pppoe-edit-modal .secure-input-toggle,
+#pppoe-assign-modal .secure-input-toggle {
+    width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    border-radius: var(--app-radius, 8px);
+}
+
+#pppoe-session-history-modal .pppoe-session-history {
+    padding: 0;
+}
+
+#pppoe-session-history-modal .pppoe-session-history .table-wrapper {
+    border: 0;
+}
+
+#pppoe-session-history-modal .modal-footer {
+    justify-content: flex-end;
+}
+
+#pppoe-traffic-modal .modal-container--traffic {
+    border-radius: var(--app-radius, 8px);
+}
+
+#pppoe-traffic-modal .modal-container--traffic .modal-header {
+    min-height: 3.75rem;
+    padding: 1rem 1.25rem !important;
+    border-bottom: 1px solid var(--app-border, #dce3ed) !important;
+}
+
+#pppoe-traffic-modal .modal-container--traffic .modal-header h3 {
+    font-size: 1rem;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-modal {
+    padding: 1.25rem;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-summary,
+#pppoe-traffic-modal .pppoe-traffic-panel,
+#pppoe-traffic-modal .pppoe-traffic-footerbar {
+    border-radius: var(--app-radius, 8px);
+    box-shadow: none;
+}
+
+body.theme-dark .pppoe-page .pppoe-sync-status,
+body.theme-dark .pppoe-page .mikrotik-status-card,
+body.theme-dark .pppoe-page .pppoe-summary-card,
+body.theme-dark .pppoe-page .pppoe-accounts-card,
+body.theme-dark .pppoe-page .pppoe-toolbar,
+body.theme-dark .pppoe-page .pppoe-table-wrapper,
+body.theme-dark .pppoe-page .table-footer,
+body.theme-dark #pppoe-edit-modal .modal-container,
+body.theme-dark #pppoe-assign-modal .modal-container,
+body.theme-dark #pppoe-generate-modal .modal-container,
+body.theme-dark #pppoe-session-history-modal .modal-container {
+    border-color: var(--app-border, #2f3b4a);
+    background: var(--app-surface, #182433);
+    color: var(--app-text, #f4f6fa);
+}
+
+body.theme-dark .pppoe-page .status-item,
+body.theme-dark .pppoe-page .mikrotik-status-card .status-card-header,
+body.theme-dark .pppoe-page .pppoe-accounts-card > .panel-header,
+body.theme-dark .pppoe-page .pppoe-toolbar,
+body.theme-dark .pppoe-page .settings-table.pppoe-table th,
+body.theme-dark .pppoe-page .settings-table.pppoe-table td {
+    border-color: var(--app-border, #2f3b4a);
+}
+
+body.theme-dark .pppoe-page .settings-table.pppoe-table thead th,
+body.theme-dark .pppoe-page .pppoe-toolbar .search-field,
+body.theme-dark .pppoe-page .pppoe-toolbar .select-wrapper select,
+body.theme-dark .pppoe-page .pppoe-table .icon-btn.btn {
+    background: #151f2c;
+    color: var(--app-text, #f4f6fa);
+}
+
+@media (max-width: 1180px) {
+    .pppoe-page .status-grid,
+    .pppoe-page .pppoe-summary-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .pppoe-page .status-item:nth-child(odd) {
+        border-left: 0;
+    }
+
+    .pppoe-page .pppoe-toolbar {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .pppoe-page .pppoe-header,
+    .pppoe-page .pppoe-header-actions {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    .pppoe-page .status-grid,
+    .pppoe-page .pppoe-summary-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .pppoe-page .status-item {
+        border-left: 0;
+        border-top: 1px solid var(--app-border, #dce3ed);
+    }
+
+    .pppoe-page .status-item:first-child {
+        border-top: 0;
+    }
+
+    .pppoe-page .table-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

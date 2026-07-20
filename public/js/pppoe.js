@@ -3843,15 +3843,15 @@
             <td>
               ${isLiveOnly
                 ? `<div class="table-actions">
-                <button class="icon-btn" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-chart-line"></i></button>
-                <button class="icon-btn" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-chart-line"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="fa-solid fa-clock-rotate-left"></i></button>
               </div>
               <span class="pppoe-subtext">Live only</span>`
                 : `<div class="table-actions">
-                <button class="icon-btn" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"${isDisabled ? ' disabled title="Traffic unavailable for disabled PPPoE"' : ''}><i class="fa-solid fa-chart-line"></i></button>
-                <button class="icon-btn" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                <button class="icon-btn" type="button" data-pppoe-action="edit" aria-label="Edit ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-pen-to-square"></i></button>
-                <button class="icon-btn danger" type="button" data-pppoe-action="delete" aria-label="Delete ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-trash"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"${isDisabled ? ' disabled title="Traffic unavailable for disabled PPPoE"' : ''}><i class="fa-solid fa-chart-line"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="edit" aria-label="Edit ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-pen-to-square"></i></button>
+                <button class="icon-btn danger btn btn-icon btn-sm btn-outline-danger" type="button" data-pppoe-action="delete" aria-label="Delete ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-trash"></i></button>
               </div>`}
             </td>
           </tr>

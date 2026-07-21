@@ -136,6 +136,13 @@ const statusForSource = (status) => {
   return 'active';
 };
 
+const planCategoryForSource = (sourceType, fallback = 'postpaid') => {
+  const normalized = key(sourceType);
+  if (normalized.includes('prepaid')) return 'prepaid';
+  if (normalized.includes('postpaid')) return 'postpaid';
+  return key(fallback) === 'prepaid' ? 'prepaid' : 'postpaid';
+};
+
 const findHeaderRow = (sheet) => {
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
   for (let row = range.s.r; row <= range.e.r; row += 1) {
@@ -197,6 +204,7 @@ const loadSourceRows = async () => {
     const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue) ? emailValue : '';
     const sourceType = cellText(sheet, row, 2);
     const sourceStatus = cellText(sheet, row, 3);
+    const sourcePlanCategory = planCategoryForSource(sourceType, plan?.category);
     const area = cellText(sheet, row, 5);
     const zone = cellText(sheet, row, 6);
     const facebookUsername = cellText(sheet, row, 9);
@@ -216,6 +224,7 @@ const loadSourceRows = async () => {
       accountNumber,
       activationDate,
       sourceType,
+      sourcePlanCategory,
       sourceStatus,
       status: statusForSource(sourceStatus),
       planPrice,
@@ -324,8 +333,8 @@ const prepareImport = async () => {
         activationDate: row.activationDate || undefined,
         planId: row.plan.id,
         planName: row.plan.name,
-        planCategory: 'postpaid',
-        planBilling: 'Monthly',
+        planCategory: row.sourcePlanCategory,
+        planBilling: row.sourcePlanCategory === 'prepaid' ? 'Prepaid' : 'Monthly',
         status: row.status,
         mikrotikId: row.routerId,
         pppoeMode: pppoeUsername ? 'manual' : '',

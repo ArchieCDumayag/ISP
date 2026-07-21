@@ -147,8 +147,8 @@
         if (deleteSelectedBtn) {
             deleteSelectedBtn.disabled = selectedCount === 0 || state.loading || state.bulkDeleteInProgress;
             deleteSelectedBtn.innerHTML = state.bulkDeleteInProgress
-                ? '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...'
-                : `<i class="fa-solid fa-trash"></i> Delete selected${selectedCount ? ` (${selectedCount})` : ''}`;
+                ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Deleting...'
+                : `<i class="ti ti-trash" aria-hidden="true"></i> Delete selected${selectedCount ? ` (${selectedCount})` : ''}`;
         }
     };
 
@@ -223,7 +223,7 @@
                     </td>
                     <td>
                         <span class="${countdownClass}">
-                            <i class="fa-regular fa-clock" aria-hidden="true"></i>
+                            <i class="ti ti-clock" aria-hidden="true"></i>
                             ${escapeHtml(formatCountdown(daysRemaining))}
                         </span>
                         <p class="archive-countdown-note">
@@ -243,7 +243,7 @@
                                 title="${escapeHtml(restoreConfig.title)}"
                                 aria-label="${escapeHtml(restoreConfig.title)}"
                             >
-                                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                                <i class="ti ti-arrow-back-up" aria-hidden="true"></i>
                             </button>
                             <button
                                 type="button"
@@ -256,7 +256,7 @@
                                 title="Delete permanently"
                                 aria-label="Delete permanently"
                             >
-                                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                                <i class="ti ti-trash" aria-hidden="true"></i>
                             </button>
                         </div>
                     </td>

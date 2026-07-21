@@ -16,18 +16,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const pendingPaymentAccounts = new Set();
     const customerSelect = document.getElementById('customerSelect');
     const paymentAmountInput = document.getElementById('paymentAmount');
-    const paymentDateInput = document.getElementById('paymentDate');
     const paymentKindSelect = document.getElementById('paymentKind');
     const paymentMethodField = document.getElementById('paymentMethodField');
     const paymentMethodSelect = document.getElementById('paymentMethod');
     const paymentReferenceField = document.getElementById('paymentReferenceField');
     const paymentReferenceInput = document.getElementById('paymentReference');
     const paymentAmountField = document.getElementById('paymentAmountField');
-    const prepaidPlanField = document.getElementById('prepaidPlanField');
-    const prepaidPlanSelect = document.getElementById('prepaidPlanSelect');
-    const prepaidPlanHint = document.getElementById('prepaidPlanHint');
-    const prepaidExpiryField = document.getElementById('prepaidExpiryField');
-    const prepaidExpiryDate = document.getElementById('prepaidExpiryDate');
     const paymentsTableBody = document.querySelector('.payments-table tbody');
     const searchInput = document.querySelector('.search-field input[type="search"]');
     const toast = document.getElementById('toast');
@@ -126,7 +120,6 @@ document.addEventListener('DOMContentLoaded', function () {
     let lastFocusedElement = null;
     let currentUser = null;
     let selectedCustomer = null;
-    let prepaidAutoAmount = null;
     let activeAccountInfoAccount = '';
     let mikrotikEnabled = Boolean(window.mikrotikEnabled);
     let accountInfoCopyValues = Object.create(null);
@@ -628,10 +621,6 @@ document.addEventListener('DOMContentLoaded', function () {
             [...(plansCatalog.prepaid || []), ...(plansCatalog.postpaid || [])].forEach(plan => {
                 planByName.set(normalizePlanName(plan.name), plan);
             });
-            if (selectedCustomer && resolvePlanCategory(selectedCustomer) === 'prepaid') {
-                populatePrepaidPlanOptions(selectedCustomer.planName || '');
-                updatePrepaidPreview(selectedCustomer);
-            }
         } catch (e) {
             // fallback: empty
             plansCatalog = { prepaid: [], postpaid: [] };
@@ -761,13 +750,6 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!parsed) return null;
         parsed.setHours(0, 0, 0, 0);
         return parsed;
-    };
-    const computeExpiryDate = (baseDate, validityDays) => {
-        const days = Number(validityDays);
-        if (!(baseDate instanceof Date) || isNaN(baseDate) || !Number.isFinite(days) || days <= 0) return '';
-        const expiry = new Date(baseDate);
-        expiry.setDate(expiry.getDate() + days);
-        return formatDateISO(expiry);
     };
     const formatRecorderLabel = (recorder, kind) => {
         if (recorder && (recorder.name || recorder.username || recorder.id)) {
@@ -1165,9 +1147,6 @@ document.addEventListener('DOMContentLoaded', function () {
             skipInitialCharge: false
         };
     };
-    const resolveProratedPrepaidAmount = (customer = {}, fullPlanAmount = 0, cycleDate = new Date()) => {
-        return resolveFirstBillingAmount(customer, fullPlanAmount, cycleDate).amount;
-    };
     const isExistingCustomerStart = (customer = {}) => {
         const raw = String(
             customer?.customerStartType
@@ -1274,100 +1253,21 @@ document.addEventListener('DOMContentLoaded', function () {
         return Number.isInteger(cycleDay) && cycleDay === targetDate.getDate();
     };
 
-    function setPrepaidFieldsVisible(visible) {
-        const display = visible ? '' : 'none';
-        if (prepaidPlanField) prepaidPlanField.style.display = display;
-        if (prepaidExpiryField) prepaidExpiryField.style.display = display;
-        if (paymentAmountField) paymentAmountField.style.display = visible ? 'none' : '';
+    function ensureTransactionAmountFieldVisible() {
+        if (paymentAmountField) paymentAmountField.style.display = '';
         if (paymentAmountInput) {
-            paymentAmountInput.required = !visible;
-            paymentAmountInput.readOnly = visible;
-        }
-        if (!visible) {
-            if (prepaidPlanSelect) prepaidPlanSelect.value = '';
-            if (prepaidExpiryDate) prepaidExpiryDate.value = '';
-            if (prepaidPlanHint) prepaidPlanHint.textContent = '';
+            paymentAmountInput.required = true;
+            paymentAmountInput.readOnly = false;
         }
     }
 
-    function populatePrepaidPlanOptions(selectedName = '') {
-        if (!prepaidPlanSelect) return;
-        const plans = Array.isArray(plansCatalog.prepaid) ? plansCatalog.prepaid : [];
-        prepaidPlanSelect.innerHTML = '<option value="">Select prepaid plan</option>';
-        if (!plans.length) {
-            prepaidPlanSelect.add(new Option('No prepaid plans available', ''));
-            return;
-        }
-        plans
-            .slice()
-            .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
-            .forEach((plan) => {
-                if (!plan?.name) return;
-                prepaidPlanSelect.add(new Option(plan.name, plan.name));
-            });
-        if (selectedName && plans.some((plan) => plan.name === selectedName)) {
-            prepaidPlanSelect.value = selectedName;
-        }
-    }
-
-    function getSelectedPrepaidPlan() {
-        const name = prepaidPlanSelect?.value || '';
-        if (!name) return null;
-        const plan = planByName.get(normalizePlanName(name));
-        if (plan && String(plan.category || '').toLowerCase() === 'prepaid') return plan;
-        return null;
-    }
-
-    function derivePrepaidBaseDate(customer, paymentDateStr) {
-        const paymentDate = parseDateOnly(paymentDateStr) || new Date();
-        const dueDate = parseDateOnly(customer?.dueDate);
-        if (dueDate && dueDate > paymentDate) return dueDate;
-        return paymentDate;
-    }
-
-    function maybeAutofillAmount(plan, customer = selectedCustomer) {
-        if (!paymentAmountInput || !plan) return;
-        const paymentDate = parseDateOnly(paymentDateInput?.value) || new Date();
-        const rawPlanAmount = Number(plan.price || 0);
-        const amount = customer && resolvePlanCategory(customer) === 'prepaid'
-            ? resolveProratedPrepaidAmount(customer, rawPlanAmount, paymentDate)
-            : rawPlanAmount;
-        const nextValue = Number(amount || 0).toFixed(2);
-        if (!paymentAmountInput.value || paymentAmountInput.value === prepaidAutoAmount) {
-            paymentAmountInput.value = nextValue;
-            prepaidAutoAmount = nextValue;
-        }
-    }
-
-    function updatePrepaidPreview(customer) {
-        if (!customer) return;
-        const plan = getSelectedPrepaidPlan();
-        if (!plan) {
-            if (prepaidExpiryDate) prepaidExpiryDate.value = '';
-            if (prepaidPlanHint) prepaidPlanHint.textContent = '';
-            return;
-        }
-        if (prepaidPlanHint) {
-            prepaidPlanHint.textContent = plan.validity ? `Validity: ${plan.validity} day(s)` : '';
-        }
-        const baseDate = derivePrepaidBaseDate(customer, paymentDateInput?.value);
-        const expiry = computeExpiryDate(baseDate, plan.validity);
-        if (prepaidExpiryDate) prepaidExpiryDate.value = expiry || '';
-        maybeAutofillAmount(plan, customer);
-    }
-
-    function isPaymentTransactionKind() {
-        return String(paymentKindSelect?.value || 'payment').trim().toLowerCase() === 'payment';
-    }
-
-    function syncPrepaidFieldsForSelectedCustomer() {
-        if (!selectedCustomer || resolvePlanCategory(selectedCustomer) !== 'prepaid' || !isPaymentTransactionKind()) {
-            setPrepaidFieldsVisible(false);
-            return;
-        }
-        setPrepaidFieldsVisible(true);
-        populatePrepaidPlanOptions(selectedCustomer?.planName || '');
-        updatePrepaidPreview(selectedCustomer);
+    function autofillTransactionAmount(customer) {
+        ensureTransactionAmountFieldVisible();
+        if (!paymentAmountInput) return;
+        const currentBillAmount = customer ? resolveCurrentBillState(customer).amount : 0;
+        paymentAmountInput.value = customer && currentBillAmount > 0
+            ? currentBillAmount.toFixed(2)
+            : '';
     }
 
     function showToast(message) {
@@ -1500,8 +1400,7 @@ document.addEventListener('DOMContentLoaded', function () {
         paymentForm.reset();
         document.getElementById('paymentDate').valueAsDate = new Date();
         selectedCustomer = null;
-        prepaidAutoAmount = null;
-        setPrepaidFieldsVisible(false);
+        ensureTransactionAmountFieldVisible();
         syncPaymentMethodVisibility();
         // no payer input anymore; server will set payer from req.user
         lastFocusedElement = document.activeElement;
@@ -1991,7 +1890,6 @@ document.addEventListener('DOMContentLoaded', function () {
     openPaymentModalBtn.addEventListener('click', openModal);
     paymentKindSelect?.addEventListener('change', () => {
         syncPaymentMethodVisibility();
-        syncPrepaidFieldsForSelectedCustomer();
     });
     openCustomerAddBtn?.addEventListener('click', () => {
         openCustomerAddModal();
@@ -2341,40 +2239,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!accountNumber) {
             if (paymentAmountInput) paymentAmountInput.value = '';
             selectedCustomer = null;
-            setPrepaidFieldsVisible(false);
+            ensureTransactionAmountFieldVisible();
             return;
         }
 
         const customer = findCustomerByAccount(allCustomers, accountNumber);
         selectedCustomer = customer || null;
-        const planCategory = resolvePlanCategory(customer);
-        if (planCategory === 'prepaid') {
-            syncPrepaidFieldsForSelectedCustomer();
-        } else {
-            setPrepaidFieldsVisible(false);
-            const currentBillAmount = customer ? resolveCurrentBillState(customer).amount : 0;
-            if (customer && currentBillAmount > 0) {
-                if (paymentAmountInput) paymentAmountInput.value = currentBillAmount.toFixed(2);
-            } else if (paymentAmountInput) {
-                paymentAmountInput.value = '';
-            }
-        }
+        autofillTransactionAmount(customer);
 
     });
-
-    if (prepaidPlanSelect) {
-        prepaidPlanSelect.addEventListener('change', () => {
-            if (selectedCustomer) updatePrepaidPreview(selectedCustomer);
-        });
-    }
-
-    if (paymentDateInput) {
-        paymentDateInput.addEventListener('change', () => {
-            if (selectedCustomer && resolvePlanCategory(selectedCustomer) === 'prepaid') {
-                updatePrepaidPreview(selectedCustomer);
-            }
-        });
-    }
 
     async function loadPaymentRecords() {
         try {
@@ -2515,41 +2388,11 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const planCategory = resolvePlanCategory(customer);
         const selectedKind = String(formData.get('kind') || '').trim().toLowerCase();
         const isPaymentKind = selectedKind === 'payment';
-        let prepaidUpdate = null;
-        let prepaidAmount = null;
-        if (planCategory === 'prepaid' && isPaymentKind) {
-            const plan = getSelectedPrepaidPlan();
-            if (!plan) {
-                showToast('Select a prepaid plan for this renewal.');
-                finishSubmit();
-                return;
-            }
-            const paymentDate = parseDateOnly(formData.get('date')) || new Date();
-            const baseDate = derivePrepaidBaseDate(customer, formData.get('date'));
-            const expiryDate = computeExpiryDate(baseDate, plan.validity);
-            if (!expiryDate) {
-                showToast('Selected plan has no validity days.');
-                finishSubmit();
-                return;
-            }
-            prepaidAmount = resolveProratedPrepaidAmount(customer, Number(plan.price || 0), paymentDate);
-            prepaidUpdate = {
-                planId: plan.id || '',
-                planName: plan.name,
-                planCategory: 'prepaid',
-                planAmount: plan.price,
-                prepaidRenewalDate: formatDateISO(paymentDate),
-                billDate: formatDateISO(baseDate),
-                dueDate: expiryDate,
-                prepaidExpirationAt: `${expiryDate} 23:59:59`
-            };
-        }
 
         const payload = {
-            amount: planCategory === 'prepaid' && isPaymentKind ? prepaidAmount : parseFloat(formData.get('amount')),
+            amount: parseFloat(formData.get('amount')),
             date: formData.get('date'),
             kind: selectedKind,
             paymentMethod: isPaymentKind ? (String(formData.get('paymentMethod') || 'Cash').trim() || 'Cash') : '',
@@ -2580,20 +2423,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
                 const responseData = await response.json();
                 if (!response.ok) throw new Error(responseData.message || `Failed to add transaction`);
-                if (prepaidUpdate) {
-                    try {
-                        const updateRes = await fetch(`/api/customers/${accountNumber}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(prepaidUpdate)
-                        });
-                        if (!updateRes.ok) {
-                            showToast('Payment recorded, but prepaid renewal update failed.');
-                        }
-                    } catch (err) {
-                        showToast('Payment recorded, but prepaid renewal update failed.');
-                    }
-                }
                 showToast(`Transaction added successfully!`);
                 closeModal({ force: true });
                 // Reload all data to reflect changes

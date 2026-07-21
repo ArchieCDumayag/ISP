@@ -29,7 +29,6 @@
                         </p>
                     </div>
                     <div class="header-actions">
-                        <button type="button" class="add-btn" id="openCustomerAddBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add customer</button>
                     </div>
                 </section>
 
@@ -269,7 +268,7 @@
             <div class="modal-header customer-view-header">
                 <div class="d-flex align-items-center gap-3 min-w-0">
                     <span class="avatar avatar-sm bg-primary-lt text-primary flex-shrink-0"><i class="ti ti-user-circle" aria-hidden="true"></i></span>
-                    <h2 id="accountInfoModalTitle" class="modal-title text-truncate">View Customer Account</h2>
+                    <h2 id="accountInfoModalTitle" class="modal-title text-truncate">Payment History</h2>
                 </div>
                 <div class="view-header-actions">
                     <button type="button" class="btn btn-icon btn-ghost-primary" id="accountInfoEditBtn" aria-label="Edit account" title="Edit account">
@@ -370,87 +369,6 @@
 
                         <div class="view-content">
                             <div class="view-panels">
-                                <div class="view-panel">
-                                    <h3 class="view-panel-title">Account Information</h3>
-                                    <div class="view-rows">
-                                        <div class="view-row">
-                                            <span class="view-row-label">Plan Type</span>
-                                            <span class="view-row-value" id="accountInfoPlanType">Not set</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Plan Name</span>
-                                            <span class="view-row-value" id="accountInfoPlanName">Not set</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Billing Cycle</span>
-                                            <span class="view-row-value" id="accountInfoBillingCycle">Not set</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Area / Cluster</span>
-                                            <span class="view-row-value" id="accountInfoArea">Not set</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Coordinates</span>
-                                            <span class="view-row-value"><a class="map-pin-link view-value--mono is-disabled" id="accountInfoMapPinLink" href="#" target="_blank" rel="noopener">Not set</a></span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Remarks</span>
-                                            <span class="view-row-value view-value--wrap" id="accountInfoRemarks">None</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Portal Username</span>
-                                            <span class="view-row-value view-value--mono view-copy">
-                                                <span id="accountInfoPortalUsername">Not set</span>
-                                                <button type="button" class="copy-btn" data-copy-field="loginUsername" aria-label="Copy portal username" title="Copy portal username">
-                                                    <i class="ti ti-copy" aria-hidden="true"></i>
-                                                </button>
-                                            </span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Portal Password</span>
-                                            <span class="view-row-value view-value--mono view-copy">
-                                                <span id="accountInfoPortalPassword">Not set</span>
-                                                <button type="button" class="copy-btn" data-copy-field="loginPassword" aria-label="Copy portal password" title="Copy portal password">
-                                                    <i class="ti ti-copy" aria-hidden="true"></i>
-                                                </button>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="view-panel">
-                                    <div class="view-rows">
-                                        <div class="view-row">
-                                            <span class="view-row-label">Plan Price</span>
-                                            <span class="view-row-value" id="accountInfoPlanPrice">&#8369;0.00</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Plan Billing</span>
-                                            <span class="view-row-value" id="accountInfoPlanBilling">Not set</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Activation Date</span>
-                                            <span class="view-row-value" id="accountInfoActivationDate">Not set</span>
-                                        </div>
-                                        <div class="view-row view-row--accent">
-                                            <span class="view-row-label">Next Bill Date</span>
-                                            <span class="view-row-value" id="accountInfoBillDate">Not set</span>
-                                        </div>
-                                        <div class="view-row view-row--highlight" id="accountInfoDueRow">
-                                            <span class="view-row-label">Due Date</span>
-                                            <span class="view-row-value"><span id="accountInfoDueDate">Not set</span> <span class="view-badge" id="accountInfoDueBadge"></span></span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Due After</span>
-                                            <span class="view-row-value" id="accountInfoDueAfter">Not set</span>
-                                        </div>
-                                        <div class="view-row">
-                                            <span class="view-row-label">Credit Limit</span>
-                                            <span class="view-row-value" id="accountInfoCreditLimit">&#8369;0.00</span>
-                                        </div>
-                                    </div>
-                                </div>
-
                                 <div class="view-panel view-panel--pppoe-grid" id="accountInfoMikrotikPanel">
                                     <h3 class="view-panel-title">MikroTik &amp; PPPoE</h3>
                                     <div class="view-rows">

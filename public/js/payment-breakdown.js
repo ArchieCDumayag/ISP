@@ -145,9 +145,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.floor((endUtc - startUtc) / 86400000) + 1;
     };
 
+    const isExistingCustomerStart = (record = {}) => {
+        const raw = normalizeText(
+            record.customerStartType
+            || record.subscriberStartType
+            || record.customerOrigin
+            || ''
+        );
+        return raw === 'existing';
+    };
+
     const resolveFirstMonthProration = (record = {}, billDate = null, fullPlanAmount = 0) => {
         const activationDate = safeDate(record.activationDate || record.activation_date);
         const planAmount = Number(fullPlanAmount) || 0;
+        if (isExistingCustomerStart(record) && activationDate && billDate && isSameBillingMonth(activationDate, billDate)) {
+            return {
+                amount: 0,
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
         if (!activationDate || !billDate || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
             return {
                 amount: roundMoney(planAmount),
@@ -222,11 +240,42 @@ document.addEventListener('DOMContentLoaded', () => {
         return resolveDirection(entry) === 'debit' ? 'charge' : 'payment';
     };
 
+    const isOpeningPreviousBalanceRaw = (entry = {}) => {
+        const reference = normalizeText(entry?.reference || entry?.orNumber || entry?.or_number);
+        const description = normalizeText([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' '));
+        return reference.startsWith('obb-')
+            || reference.startsWith('opening-bal-')
+            || description.includes('previous balance bill')
+            || description.includes('opening previous balance');
+    };
+
+    const isPrepaidAutoChargeRaw = (entry = {}) => {
+        const description = normalizeText(entry?.description || entry?.notes || entry?.remarks);
+        return description.includes('prepaid renewal charge');
+    };
+
+    const isOpeningAdvanceRaw = (entry = {}) => {
+        const reference = normalizeText(entry?.reference || entry?.orNumber || entry?.or_number);
+        const description = normalizeText([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' '));
+        return reference.startsWith('oba-')
+            || reference.startsWith('opening-adv-')
+            || description.includes('opening advance payment');
+    };
+
     const normalizeEntry = (entry, index) => {
         const amount = toAmount(entry?.amount);
         if (!amount) return null;
-        const direction = resolveDirection(entry);
-        const kind = resolveKind(entry);
+        const openingPreviousBalance = isOpeningPreviousBalanceRaw(entry);
+        const direction = openingPreviousBalance ? 'debit' : resolveDirection(entry);
+        const kind = openingPreviousBalance ? 'bill' : resolveKind(entry);
         const dateObj = safeDate(entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at);
         return {
             raw: entry || {},
@@ -236,7 +285,10 @@ document.addEventListener('DOMContentLoaded', () => {
             direction,
             kind,
             dateObj,
-            time: dateObj ? dateObj.getTime() : index
+            time: dateObj ? dateObj.getTime() : index,
+            isOpeningPreviousBalance: openingPreviousBalance,
+            isOpeningAdvance: isOpeningAdvanceRaw(entry),
+            isPrepaidAutoCharge: isPrepaidAutoChargeRaw(entry)
         };
     };
 
@@ -499,6 +551,57 @@ document.addEventListener('DOMContentLoaded', () => {
         return roundMoney(balance);
     };
 
+    const isOpeningPreviousBalanceEntry = (entry = {}) => Boolean(
+        entry?.isOpeningPreviousBalance || isOpeningPreviousBalanceRaw(entry?.raw || entry)
+    );
+
+    const isPrepaidAutoChargeEntry = (entry = {}) => Boolean(
+        entry?.isPrepaidAutoCharge || isPrepaidAutoChargeRaw(entry?.raw || entry)
+    );
+
+    const isOpeningAdvanceEntry = (entry = {}) => Boolean(
+        entry?.isOpeningAdvance || isOpeningAdvanceRaw(entry?.raw || entry)
+    );
+
+    const getEntryDateKey = (entry = {}) => {
+        const parts = getZonedDateParts(entry?.dateObj);
+        if (!parts) return '';
+        return [
+            parts.year,
+            String(parts.month).padStart(2, '0'),
+            String(parts.day).padStart(2, '0')
+        ].join('-');
+    };
+
+    const findIgnoredOpeningAutoChargeOrders = (entries = []) => {
+        const openingAdjustments = entries.filter((entry) => (
+            (
+                entry.direction === 'debit'
+                && isOpeningPreviousBalanceEntry(entry)
+            )
+            || (
+                entry.direction === 'credit'
+                && isOpeningAdvanceEntry(entry)
+            )
+        ));
+        if (!openingAdjustments.length) return new Set();
+
+        const ignored = new Set();
+        entries.forEach((entry) => {
+            if (entry.direction !== 'debit' || !isPrepaidAutoChargeEntry(entry)) return;
+            const entryDateKey = getEntryDateKey(entry);
+            const matchedOpeningAdjustment = openingAdjustments.some((opening) => {
+                const amountMatches = Math.abs((Number(opening.amount) || 0) - (Number(entry.amount) || 0)) <= EPSILON;
+                const dateMatches = entryDateKey && entryDateKey === getEntryDateKey(opening);
+                const timeDiff = Math.abs((Number(entry.time) || 0) - (Number(opening.time) || 0));
+                return amountMatches && dateMatches && timeDiff <= 30000;
+            });
+            if (matchedOpeningAdjustment) ignored.add(entry.sortOrder);
+        });
+
+        return ignored;
+    };
+
     const createReferralContext = (record, entries, customers) => {
         const planAmount = resolvePlanAmount(record);
         const referredCustomers = findReferredCustomers(record, customers);
@@ -536,11 +639,25 @@ document.addEventListener('DOMContentLoaded', () => {
         runningBalance,
         context,
         sourceType,
-        proration = null
+        proration = null,
+        previousBalanceOverride = null,
+        advanceOverride = null,
+        openingPreviousBalance = false,
+        openingAdvance = false,
+        paymentModeOverride = '',
+        paymentDateOverride = null,
+        billLabelOverride = '',
+        billMetaOverride = ''
     }) => {
         const planLabel = resolvePlanLabel(record);
-        const previousBalance = roundMoney(Math.max(0, Number(runningBalance) || 0));
-        const advance = roundMoney(Math.max(0, -(Number(runningBalance) || 0)));
+        const hasPreviousBalanceOverride = Number.isFinite(Number(previousBalanceOverride));
+        const hasAdvanceOverride = Number.isFinite(Number(advanceOverride));
+        const previousBalance = hasPreviousBalanceOverride
+            ? roundMoney(Math.max(0, Number(previousBalanceOverride) || 0))
+            : roundMoney(Math.max(0, Number(runningBalance) || 0));
+        const advance = hasAdvanceOverride
+            ? roundMoney(Math.max(0, Number(advanceOverride) || 0))
+            : roundMoney(Math.max(0, -(Number(runningBalance) || 0)));
         const referralCredits = (Array.isArray(credits) ? credits : []).filter(isReferralCredit);
         const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
         const explicitReferral = sumEntries(referralCredits);
@@ -552,22 +669,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const rawDue = roundMoney(planAmount - advance + previousBalance - referral);
         const due = roundMoney(Math.max(0, rawDue));
         const amountPaid = sumEntries(paymentCredits);
-        const paymentMode = amountPaid > EPSILON ? resolvePaymentModeSummary(paymentCredits) : '-';
-        const paymentDate = amountPaid > EPSILON ? resolveLatestPaymentDate(paymentCredits) : null;
+        const paymentMode = paymentModeOverride || (amountPaid > EPSILON ? resolvePaymentModeSummary(paymentCredits) : '-');
+        const paymentDate = paymentDateOverride || (amountPaid > EPSILON ? resolveLatestPaymentDate(paymentCredits) : null);
         const balanceAfterPayment = roundMoney(rawDue - amountPaid);
         const paymentStatus = balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid';
-        const billLabel = formatMonth(billDate, 'Bill');
+        const billLabel = billLabelOverride || (openingPreviousBalance ? 'Previous Balance' : (openingAdvance ? 'Opening Advance' : formatMonth(billDate, 'Bill')));
         const planType = resolvePlanType(record);
         const planTypeLabel = toTitleCase(planType);
         const billingCycle = resolveBillingCycleLabel(record, billDate);
-        const billMetaParts = [
-            planLabel,
-            formatCurrency(planAmount),
-            sourceType === 'posted' ? 'posted bill' : 'monthly plan',
-            proration?.isProrated
-                ? `prorated ${formatDate(proration.periodStart, '')} to ${formatDate(proration.periodEnd, '')}`
-                : ''
-        ].filter(Boolean);
+        const billMetaParts = billMetaOverride
+            ? [billMetaOverride]
+            : openingPreviousBalance
+            ? [
+                'Opening previous balance',
+                formatCurrency(previousBalance),
+                'current bill'
+            ]
+            : openingAdvance
+            ? [
+                'Opening advance payment',
+                formatCurrency(advance)
+            ]
+            : [
+                planLabel,
+                formatCurrency(planAmount),
+                sourceType === 'posted' ? 'posted bill' : 'monthly plan',
+                proration?.isProrated
+                    ? `prorated ${formatDate(proration.periodStart, '')} to ${formatDate(proration.periodEnd, '')}`
+                    : ''
+            ].filter(Boolean);
 
         return {
             row: {
@@ -608,11 +738,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const buildRowsFromPostedDebits = (record, entries, context) => {
         const rows = [];
-        const debitEntries = entries.filter((entry) => entry.direction === 'debit');
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(entries);
+        const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
+        const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
 
         let runningBalance = 0;
-        entries
+        effectiveEntries
             .filter((entry) => entry.sortOrder < debitEntries[0].sortOrder)
             .forEach((entry) => {
                 runningBalance = applyEntryToBalance(runningBalance, entry);
@@ -620,12 +752,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         debitEntries.forEach((debit, index) => {
             const nextDebit = debitEntries[index + 1] || null;
-            const cycleCredits = entries.filter((entry) => (
+            const cycleCredits = effectiveEntries.filter((entry) => (
                 entry.direction === 'credit'
                 && entry.sortOrder > debit.sortOrder
                 && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
             ));
-            const planAmount = resolvePlanAmount(record, debit.amount || context.planAmount);
+            const openingPreviousBalance = isOpeningPreviousBalanceEntry(debit);
+            const planAmount = openingPreviousBalance ? 0 : resolvePlanAmount(record, debit.amount || context.planAmount);
             const result = createBreakdownRow({
                 record,
                 billDate: debit.dateObj,
@@ -633,13 +766,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 credits: cycleCredits,
                 runningBalance,
                 context,
-                sourceType: 'posted'
+                sourceType: openingPreviousBalance ? 'opening' : 'posted',
+                previousBalanceOverride: openingPreviousBalance ? debit.amount : null,
+                openingPreviousBalance
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;
         });
 
         return rows;
+    };
+
+    const buildRowsFromOpeningAdvanceOnly = (record, entries, context) => {
+        if (!isExistingCustomerStart(record)) return [];
+        const openingAdvanceEntries = (Array.isArray(entries) ? entries : []).filter((entry) => (
+            entry.direction === 'credit'
+            && isOpeningAdvanceEntry(entry)
+        ));
+        if (!openingAdvanceEntries.length) return [];
+
+        const totalAdvance = sumEntries(openingAdvanceEntries);
+        if (totalAdvance <= EPSILON) return [];
+
+        const billDate = resolveLatestPaymentDate(openingAdvanceEntries)
+            || safeDate(record.activationDate)
+            || safeDate(record.billDate)
+            || safeDate(record.dueDate)
+            || new Date();
+        const result = createBreakdownRow({
+            record,
+            billDate,
+            planAmount: 0,
+            credits: [],
+            runningBalance: 0,
+            context,
+            sourceType: 'opening',
+            advanceOverride: totalAdvance,
+            openingAdvance: true,
+            paymentModeOverride: resolvePaymentModeSummary(openingAdvanceEntries),
+            paymentDateOverride: resolveLatestPaymentDate(openingAdvanceEntries),
+            billLabelOverride: 'Opening Advance',
+            billMetaOverride: `Opening advance payment · ${formatCurrency(totalAdvance)}`
+        });
+        return [result.row];
     };
 
     const buildRowsFromMonthlyPlan = (record, entries, context) => {
@@ -729,9 +898,16 @@ document.addEventListener('DOMContentLoaded', () => {
             .sort(compareEntries)
             .map((entry, sortOrder) => ({ ...entry, sortOrder }));
         const context = createReferralContext(record, entries, customers);
-        const rows = entries.some((entry) => entry.direction === 'debit')
-            ? buildRowsFromPostedDebits(record, entries, context)
-            : buildRowsFromMonthlyPlan(record, entries, context);
+        let rows = [];
+        if (entries.some((entry) => entry.direction === 'debit')) {
+            rows = buildRowsFromPostedDebits(record, entries, context);
+        }
+        if (!rows.length) {
+            rows = buildRowsFromOpeningAdvanceOnly(record, entries, context);
+        }
+        if (!rows.length) {
+            rows = buildRowsFromMonthlyPlan(record, entries, context);
+        }
 
         return { rows, context };
     };

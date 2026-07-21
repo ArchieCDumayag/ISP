@@ -13,7 +13,7 @@ const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = req
 const { isRelationalReady } = require('./db-relational');
 const customersModule = require('./customers');
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
-const { normalizePaymentEntry } = require('./payment-entry-normalizer');
+const { getEffectivePaymentEntries, normalizePaymentEntry } = require('./payment-entry-normalizer');
 const { auditMikrotikPppoeCommand } = require('./mikrotik-audit-log');
 const { accountHasRole } = require('./role-utils');
 
@@ -926,12 +926,12 @@ const maybeExtendPrepaidExpiryOnPayment = async (accountNumber, paymentEntry, br
 const computeBalance = (history = []) => {
     if (!Array.isArray(history)) return 0;
     let balance = 0;
-    history.forEach((p) => {
+    getEffectivePaymentEntries(history).forEach((p) => {
         const amt = Number(p.amount);
         if (!Number.isFinite(amt)) return;
         const kind = String(p.kind || '').toLowerCase();
         const direction = String(p.direction || '').toLowerCase();
-        const isDebit = direction === 'debit' || kind === 'charge';
+        const isDebit = direction === 'debit' || ['charge', 'bill', 'debit'].includes(kind);
         const isCredit = direction === 'credit' || ['payment', 'rebate', 'discount'].includes(kind);
         if (isDebit) balance += amt;
         else if (isCredit) balance -= amt;
@@ -1362,13 +1362,19 @@ router.post('/:accountNumber', async (req, res, next) => {
     try {
         const { accountNumber } = req.params;
         const paymentEntry = req.body;
-        const allowedKinds = new Set(['payment', 'rebate', 'discount', 'charge']);
-        const requestedKind = typeof paymentEntry.kind === 'string' ? paymentEntry.kind.toLowerCase().trim() : 'payment';
+        const normalizedPaymentEntry = normalizePaymentEntry(paymentEntry || {});
+        const allowedKinds = new Set(['payment', 'rebate', 'discount', 'charge', 'bill']);
+        const requestedKind = typeof normalizedPaymentEntry.kind === 'string'
+            ? normalizedPaymentEntry.kind.toLowerCase().trim()
+            : 'payment';
         const amountValue = Number(paymentEntry?.amount);
+        const skipPrepaidAutoCharge = paymentEntry?.skipPrepaidAutoCharge === true
+            || paymentEntry?.skipAutoCharge === true
+            || String(paymentEntry?.skipPrepaidAutoCharge || paymentEntry?.skipAutoCharge || '').trim().toLowerCase() === 'true';
 
         // Ensure 'kind' is one of the allowed values, default to 'payment' if not.
         const kind = allowedKinds.has(requestedKind) ? requestedKind : 'payment';
-        const direction = (kind === 'charge') ? 'debit' : 'credit';
+        const direction = (kind === 'charge' || kind === 'bill') ? 'debit' : 'credit';
         if (!Number.isFinite(amountValue) || amountValue <= 0) {
             return next(createError(400, 'Amount must be greater than 0.'));
         }
@@ -1462,8 +1468,10 @@ router.post('/:accountNumber', async (req, res, next) => {
             recordedBy: recorder,
             payer: recorderLabel || paymentEntry.payer || null
         };
+        delete newEntry.skipPrepaidAutoCharge;
+        delete newEntry.skipAutoCharge;
 
-        const shouldAutoCharge = isPrepaid && kind === 'payment';
+        const shouldAutoCharge = isPrepaid && kind === 'payment' && !skipPrepaidAutoCharge;
         const chargeEntry = shouldAutoCharge ? {
             id: `charge-${accountNumber}-${entryStamp}`,
             amount: amountValue,

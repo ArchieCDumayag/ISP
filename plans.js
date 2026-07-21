@@ -481,4 +481,7 @@ router.delete('/:id', async (req, res, next) => {
     }
 });
 
+router.loadPlans = loadPlans;
+router.categorizePlans = categorizePlans;
+
 module.exports = router;

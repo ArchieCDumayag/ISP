@@ -44,6 +44,7 @@ const {
     deleteCustomerArchivePermanently,
     purgeExpiredCustomerArchives
 } = require('./customer-archive-store');
+const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
 
 const router = express.Router();
 const publicRouter = express.Router();
@@ -2293,6 +2294,18 @@ const computePaymentSummary = (history = []) => {
     let balance = 0;
     let totalCredits = 0;
     let lastPayment = null;
+    const isOpeningPreviousBalanceEntry = (entry = {}) => {
+        const reference = String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim().toLowerCase();
+        const description = String([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return reference.startsWith('obb-')
+            || reference.startsWith('opening-bal-')
+            || description.includes('previous balance bill')
+            || description.includes('opening previous balance');
+    };
     const resolveEntryPaymentTimestamp = (entry) => {
         const paymentDate = parseDateOnly(entry?.date);
         if (paymentDate) return paymentDate.getTime();
@@ -2300,13 +2313,14 @@ const computePaymentSummary = (history = []) => {
         return recordedAt ? recordedAt.getTime() : 0;
     };
     const normKindDir = (entry) => {
+        if (isOpeningPreviousBalanceEntry(entry)) return 'debit';
         const kind = String(entry.kind || '').toLowerCase();
         const direction = String(entry.direction || '').toLowerCase();
         if (direction) return direction;
         if (kind === 'charge' || kind === 'debit' || kind === 'bill') return 'debit';
         return 'credit';
     };
-    history.forEach((entry) => {
+    getEffectivePaymentEntries(history).forEach((entry) => {
         const amount = Number(entry.amount);
         if (!Number.isFinite(amount)) return;
         const dir = normKindDir(entry);

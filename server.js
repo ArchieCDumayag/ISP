@@ -4603,33 +4603,20 @@ app.get('/api/public/philippines/barangays', (req, res) => {
 });
 app.get('/api/public/plans', requireFeature('plans'), async (_req, res) => {
     try {
-        const [branchRows] = await query('SELECT id FROM branches ORDER BY id LIMIT 1');
-        const branchId = branchRows && branchRows.length ? branchRows[0].id : null;
-        if (!branchId) {
+        const relational = await isRelationalReady();
+        let branchId = null;
+        if (relational) {
+            const [branchRows] = await query('SELECT id FROM branches ORDER BY id LIMIT 1');
+            branchId = branchRows && branchRows.length ? branchRows[0].id : null;
+        }
+
+        if (relational && !branchId) {
             return res.json({ ok: true, plans: { postpaid: [], prepaid: [] } });
         }
 
-        const [rows] = await query(
-            `SELECT
-                plan_id AS id,
-                category,
-                label,
-                name,
-                description,
-                profile,
-                price,
-                price_suffix AS priceSuffix,
-                validity
-             FROM plans
-             WHERE branch_id = ?
-             ORDER BY
-                CASE WHEN LOWER(COALESCE(category, '')) = 'postpaid' THEN 0 ELSE 1 END,
-                CASE WHEN price IS NULL THEN 1 ELSE 0 END,
-                price ASC,
-                name ASC,
-                label ASC`,
-            [branchId]
-        );
+        const rows = typeof plansRouter.loadPlans === 'function'
+            ? await plansRouter.loadPlans(branchId)
+            : [];
 
         const plans = { postpaid: [], prepaid: [] };
         (rows || []).forEach((row) => {
@@ -4667,8 +4654,12 @@ app.get('/api/public/plans', requireFeature('plans'), async (_req, res) => {
 });
 app.get('/api/public/coverage-areas', requireFeature('coverageTable'), async (_req, res) => {
     try {
-        const [branchRows] = await query('SELECT id FROM branches ORDER BY id LIMIT 1');
-        const branchId = branchRows && branchRows.length ? branchRows[0].id : null;
+        const relational = await isRelationalReady();
+        let branchId = null;
+        if (relational) {
+            const [branchRows] = await query('SELECT id FROM branches ORDER BY id LIMIT 1');
+            branchId = branchRows && branchRows.length ? branchRows[0].id : null;
+        }
         const coverageAreas = typeof coverageRouter.readCoverage === 'function'
             ? await coverageRouter.readCoverage(branchId)
             : [];

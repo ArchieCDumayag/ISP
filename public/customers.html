@@ -303,6 +303,51 @@
 
                 <fieldset class="form-section form-section--billing">
                     <div class="form-grid">
+                    <div class="form-field" id="customerStartTypeField" style="grid-column: 1 / -1;">
+                        <label>Customer Type</label>
+                        <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column flex-md-row gap-2">
+                            <label class="form-selectgroup-item flex-fill">
+                                <input type="radio" name="customerStartType" value="new" class="form-selectgroup-input" checked>
+                                <span class="form-selectgroup-label d-flex align-items-center gap-2">
+                                    <span class="avatar avatar-sm bg-primary-lt text-primary">
+                                        <i class="ti ti-user-plus" aria-hidden="true"></i>
+                                    </span>
+                                    <span>
+                                        <span class="fw-semibold">New customer</span>
+                                        <span class="d-block text-secondary small">Use prorated first-bill computation.</span>
+                                    </span>
+                                </span>
+                            </label>
+                            <label class="form-selectgroup-item flex-fill">
+                                <input type="radio" name="customerStartType" value="existing" class="form-selectgroup-input">
+                                <span class="form-selectgroup-label d-flex align-items-center gap-2">
+                                    <span class="avatar avatar-sm bg-orange-lt text-orange">
+                                        <i class="ti ti-user-check" aria-hidden="true"></i>
+                                    </span>
+                                    <span>
+                                        <span class="fw-semibold">Existing customer</span>
+                                        <span class="d-block text-secondary small">Use opening balance/advance only; no prorated first bill.</span>
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-field" id="existingCustomerOpeningField" style="grid-column: 1 / -1; display: none;">
+                        <label>Current Month Opening Amount</label>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label" for="openingPreviousBalance">Previous Balance</label>
+                                <input type="number" class="form-control" id="openingPreviousBalance" name="openingPreviousBalance" min="0" step="0.01" placeholder="0.00" disabled>
+                                <small class="text-secondary">Adds an opening debit.</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="openingAdvancePayment">Advance Payment</label>
+                                <input type="number" class="form-control" id="openingAdvancePayment" name="openingAdvancePayment" min="0" step="0.01" placeholder="0.00" disabled>
+                                <small class="text-secondary">Adds an opening credit.</small>
+                            </div>
+                        </div>
+                        <small class="muted">Use only one. Current due is based on this opening amount; no prorated bill is added.</small>
+                    </div>
                     <div class="form-field" id="activationDateField">
                         <label for="activationDate">Activation Date</label>
                         <input type="date" id="activationDate" name="activationDate">
@@ -790,7 +835,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="layout.js?v=3.7"></script>
+    <script src="layout.js?v=3.8"></script>
     <script src="js/account-view-shared.js?v=3.3"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -1035,6 +1080,11 @@
             const loginPassToggleBtn = document.getElementById('loginPasswordToggleBtn');
             const planSelect = document.getElementById('plan');
             const planField = document.getElementById('planField');
+            const customerStartTypeField = document.getElementById('customerStartTypeField');
+            const customerStartTypeInputs = Array.from(document.querySelectorAll('input[name="customerStartType"]'));
+            const existingCustomerOpeningField = document.getElementById('existingCustomerOpeningField');
+            const openingPreviousBalanceInput = document.getElementById('openingPreviousBalance');
+            const openingAdvancePaymentInput = document.getElementById('openingAdvancePayment');
             const billDateInput = document.getElementById('billDate');
             const dueDateInput = document.getElementById('dueDate');
             const dueOffsetInput = document.getElementById('dueOffset');
@@ -1801,6 +1851,46 @@
                 const amount = Number(selectedPlan?.price ?? selectedPlan?.amount ?? selectedPlan?.planAmount);
                 return Number.isFinite(amount) && amount > 0 ? amount : 0;
             };
+            const parseOpeningAmount = (value) => {
+                const amount = Number(value);
+                return Number.isFinite(amount) && amount > 0 ? roundMoney(amount) : 0;
+            };
+            const getCustomerStartType = () => {
+                const checked = customerStartTypeInputs.find((input) => input.checked);
+                return String(checked?.value || 'new').trim().toLowerCase() === 'existing' ? 'existing' : 'new';
+            };
+            const setCustomerStartType = (value = 'new') => {
+                const normalized = String(value || '').trim().toLowerCase() === 'existing' ? 'existing' : 'new';
+                customerStartTypeInputs.forEach((input) => {
+                    input.checked = input.value === normalized;
+                });
+            };
+            const isExistingCustomerStart = () => !isEditMode() && getCustomerStartType() === 'existing';
+            const getOpeningAmounts = () => ({
+                previousBalance: parseOpeningAmount(openingPreviousBalanceInput?.value),
+                advancePayment: parseOpeningAmount(openingAdvancePaymentInput?.value)
+            });
+            const resetOpeningAmounts = () => {
+                if (openingPreviousBalanceInput) openingPreviousBalanceInput.value = '';
+                if (openingAdvancePaymentInput) openingAdvancePaymentInput.value = '';
+            };
+            const syncCustomerStartTypeUi = () => {
+                const showStartType = !isEditMode();
+                const isExistingStart = showStartType && getCustomerStartType() === 'existing';
+                if (customerStartTypeField) customerStartTypeField.style.display = showStartType ? '' : 'none';
+                if (existingCustomerOpeningField) existingCustomerOpeningField.style.display = isExistingStart ? '' : 'none';
+                [openingPreviousBalanceInput, openingAdvancePaymentInput].forEach((input) => {
+                    if (!input) return;
+                    input.disabled = !isExistingStart;
+                    if (!isExistingStart) input.value = '';
+                });
+                if (firstBillPeriodField && isExistingStart) {
+                    firstBillPeriodField.style.display = 'none';
+                }
+                if (firstBillPeriodDisplay && isExistingStart) {
+                    firstBillPeriodDisplay.value = '';
+                }
+            };
             const getMinimumNextBillDateInputValue = () => getTodayDateInputValue();
 
             let allCustomers = []; // In-memory store for customers
@@ -2529,9 +2619,9 @@
             function updateFirstBillPeriodDisplay() {
                 if (!firstBillPeriodDisplay) return;
                 if (firstBillPeriodField) {
-                    firstBillPeriodField.style.display = isEditMode() ? 'none' : '';
+                    firstBillPeriodField.style.display = (isEditMode() || isExistingCustomerStart()) ? 'none' : '';
                 }
-                if (isEditMode()) {
+                if (isEditMode() || isExistingCustomerStart()) {
                     firstBillPeriodDisplay.value = '';
                     return;
                 }
@@ -2544,7 +2634,7 @@
                 const proratedAmount = daysInMonth > 0 && selectedPlanAmount > 0
                     ? roundMoney((selectedPlanAmount / daysInMonth) * activeDays)
                     : 0;
-                const amountText = proratedAmount > 0 ? ` — ${formatPeso(proratedAmount)}` : '';
+                const amountText = proratedAmount > 0 ? ` - ${formatPeso(proratedAmount)}` : '';
                 firstBillPeriodDisplay.value = `${formatPeriodDate(activationValue)} to ${formatPeriodDate(periodEndValue)}${amountText}`;
             }
 
@@ -2650,7 +2740,7 @@
                     dueOffsetInput.readOnly = !isEditMode();
                 }
                 if (firstBillPeriodField) {
-                    firstBillPeriodField.style.display = isEditMode() ? 'none' : '';
+                    firstBillPeriodField.style.display = (isEditMode() || isExistingCustomerStart()) ? 'none' : '';
                 }
                 if (prepaidExpirationInput) {
                     prepaidExpirationInput.required = false;
@@ -2679,6 +2769,7 @@
                     syncBillDateInputMin();
                 }
                 recomputeDueDate();
+                syncCustomerStartTypeUi();
                 applyServiceStatus();
             }
 
@@ -4361,6 +4452,8 @@
                 if (planCategorySelect) {
                     planCategorySelect.value = 'postpaid';
                 }
+                setCustomerStartType('new');
+                resetOpeningAmounts();
                 populatePlanDropdown(plansCatalog, 'postpaid');
                 if (planSelect) {
                     planSelect.value = '';
@@ -4410,6 +4503,7 @@
                 if (dueOffsetInput) dueOffsetInput.value = DEFAULT_DUE_OFFSET;
                 syncBillDateInputMin();
                 recomputeDueDate();
+                syncCustomerStartTypeUi();
 
                 modal.classList.add('show');
                 modal.setAttribute('aria-hidden', 'false');
@@ -4465,6 +4559,60 @@
                 toastTimer = setTimeout(() => {
                     toast.classList.remove('show');
                 }, 3000);
+            }
+
+            async function postOpeningPaymentEntries(accountNumber, amounts = {}, effectiveDate = '') {
+                const normalizedAccount = String(accountNumber || '').trim();
+                if (!normalizedAccount) return [];
+                const previousBalance = parseOpeningAmount(amounts.previousBalance);
+                const advancePayment = parseOpeningAmount(amounts.advancePayment);
+                if (previousBalance <= 0 && advancePayment <= 0) return [];
+
+                const entryDate = formatDateISO(parseDateOnly(effectiveDate || '')) || getTodayDateInputValue();
+                const referenceStamp = Date.now().toString(36).slice(-10).toUpperCase();
+                const accountReference = normalizedAccount.replace(/[^A-Za-z0-9]/g, '').slice(-8).toUpperCase() || 'ACCT';
+                const entries = [];
+                if (previousBalance > 0) {
+                    entries.push({
+                        kind: 'charge',
+                        type: 'charge',
+                        direction: 'debit',
+                        amount: previousBalance,
+                        date: entryDate,
+                        recordedAt: entryDate,
+                        reference: `OBB-${accountReference}-${referenceStamp}`,
+                        description: 'Previous Balance Bill - Current Bill'
+                    });
+                }
+                if (advancePayment > 0) {
+                    entries.push({
+                        kind: 'payment',
+                        type: 'payment',
+                        direction: 'credit',
+                        amount: advancePayment,
+                        date: entryDate,
+                        recordedAt: entryDate,
+                        reference: `OBA-${accountReference}-${referenceStamp}`,
+                        description: 'Opening advance payment for current month',
+                        paymentMethod: 'Opening Balance',
+                        skipPrepaidAutoCharge: true
+                    });
+                }
+
+                const savedEntries = [];
+                for (const entry of entries) {
+                    const response = await fetch(`/api/payments/${encodeURIComponent(normalizedAccount)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(entry)
+                    });
+                    const responseBody = await response.json().catch(() => null);
+                    if (!response.ok) {
+                        throw new Error(responseBody?.message || responseBody?.error || `opening payment entry failed (${response.status})`);
+                    }
+                    savedEntries.push(responseBody);
+                }
+                return savedEntries;
             }
 
             const focusEmbeddedField = (fieldName = 'firstName') => {
@@ -5068,6 +5216,26 @@
                     applyPlanCategoryUI(nextCategory);
                 });
             }
+            customerStartTypeInputs.forEach((input) => {
+                input.addEventListener('change', () => {
+                    syncCustomerStartTypeUi();
+                    updateFirstBillPeriodDisplay();
+                });
+            });
+            if (openingPreviousBalanceInput) {
+                openingPreviousBalanceInput.addEventListener('input', () => {
+                    if (parseOpeningAmount(openingPreviousBalanceInput.value) > 0 && openingAdvancePaymentInput) {
+                        openingAdvancePaymentInput.value = '';
+                    }
+                });
+            }
+            if (openingAdvancePaymentInput) {
+                openingAdvancePaymentInput.addEventListener('input', () => {
+                    if (parseOpeningAmount(openingAdvancePaymentInput.value) > 0 && openingPreviousBalanceInput) {
+                        openingPreviousBalanceInput.value = '';
+                    }
+                });
+            }
             if (planSelect) {
                 planSelect.addEventListener('change', () => {
                     recomputeDueDate();
@@ -5593,6 +5761,23 @@
                 const creditRaw = Number(formData.get('creditLimit'));
                 const creditLimit = Number.isFinite(creditRaw) && creditRaw >= 0 ? Math.floor(creditRaw) : '';
                 const planCategory = normalizePlanCategory(formData.get('planCategory'));
+                const customerStartType = isEditing ? '' : getCustomerStartType();
+                const openingAmounts = customerStartType === 'existing'
+                    ? getOpeningAmounts()
+                    : { previousBalance: 0, advancePayment: 0 };
+                if (!isEditing && customerStartType === 'existing') {
+                    if (openingAmounts.previousBalance > 0 && openingAmounts.advancePayment > 0) {
+                        showToast('Use only one opening amount: previous balance or advance payment.');
+                        setCustomerSubmitState(false);
+                        return;
+                    }
+                    if (openingAmounts.previousBalance <= 0 && openingAmounts.advancePayment <= 0) {
+                        showToast('Enter previous balance or advance payment for the existing customer.');
+                        openingPreviousBalanceInput?.focus();
+                        setCustomerSubmitState(false);
+                        return;
+                    }
+                }
 
                 // Ensure due date computed before payload
                 recomputeDueDate();
@@ -5652,6 +5837,10 @@
                 };
                 if (rawLoginPassword) {
                     payload.loginPassword = rawLoginPassword;
+                }
+                if (!isEditing) {
+                    payload.customerStartType = customerStartType;
+                    payload.subscriberStartType = customerStartType;
                 }
                 if (planCategory === 'prepaid') {
                     payload.billDate = formData.get('billDate');
@@ -5736,13 +5925,29 @@
                     if (!response.ok) {
                         throw new Error(responseBody?.message || responseBody?.error || `Server responded with ${response.status}`);
                     }
+                    let openingEntryWarning = '';
+                    let openingEntriesSaved = 0;
+                    const createdAccountNumber = String(
+                        responseBody?.accountNumber || payload.accountNumber || customerId || ''
+                    ).trim();
+                    if (!isEditing && customerStartType === 'existing' && createdAccountNumber) {
+                        try {
+                            const openingEntries = await postOpeningPaymentEntries(
+                                createdAccountNumber,
+                                openingAmounts,
+                                payload.activationDate || payload.billDate || getTodayDateInputValue()
+                            );
+                            openingEntriesSaved = openingEntries.length;
+                        } catch (openingError) {
+                            openingEntryWarning = openingError?.message || 'opening payment entry failed';
+                        }
+                    }
                     if (!isEditing && embeddedContext === 'payments') {
-                        const createdAccountNumber = String(
-                            responseBody?.accountNumber || payload.accountNumber || customerId || ''
-                        ).trim();
                         notifyEmbeddedParent('created', {
                             accountNumber: createdAccountNumber,
-                            customer: responseBody || null
+                            customer: responseBody || null,
+                            openingEntryWarning,
+                            openingEntriesSaved
                         });
                         return;
                     }
@@ -5766,6 +5971,10 @@
                     }
                     if (responseBody?.pppoeProfileSyncWarning) {
                         showToast(`Customer saved, but PPPoE speed was not updated: ${responseBody.pppoeProfileSyncWarning}`, 'warning');
+                    } else if (openingEntryWarning) {
+                        showToast(`Customer added, but opening amount was not recorded: ${openingEntryWarning}`);
+                    } else if (openingEntriesSaved > 0) {
+                        showToast('Existing customer added with opening amount.');
                     } else {
                         showToast(isEditing ? 'Customer updated successfully!' : 'Customer added successfully!');
                     }

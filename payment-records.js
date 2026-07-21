@@ -2,6 +2,7 @@
 const createError = require('http-errors');
 const { readJson } = require('./data-store');
 const customersModule = require('./customers');
+const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -39,6 +40,7 @@ const ENTRY_KIND_DIRECTIONS = {
     rebate: 'credit',
     discount: 'credit',
     charge: 'debit',
+    bill: 'debit',
     debit: 'debit'
 };
 
@@ -47,8 +49,22 @@ const normalizeKind = (value) => {
     return ENTRY_KIND_DIRECTIONS[key] ? key : 'payment';
 };
 
+const isOpeningPreviousBalanceEntry = (entry = {}) => {
+    const reference = String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim().toLowerCase();
+    const description = String([
+        entry?.description,
+        entry?.notes,
+        entry?.remarks
+    ].filter(Boolean).join(' ')).trim().toLowerCase();
+    return reference.startsWith('obb-')
+        || reference.startsWith('opening-bal-')
+        || description.includes('previous balance bill')
+        || description.includes('opening previous balance');
+};
+
 const resolveDirection = (entry) => {
     if (!entry) return 'credit';
+    if (isOpeningPreviousBalanceEntry(entry)) return 'debit';
     const normalizedKind = normalizeKind(entry.kind);
     const fallbackDirection = ENTRY_KIND_DIRECTIONS[normalizedKind] || 'credit';
     return (entry.direction || entry.nature || fallbackDirection).toLowerCase();
@@ -106,7 +122,7 @@ function calculatePaymentSummary(history = [], creditLimit, planAmount) {
     let totalDebits = 0;         // charges/bills/debits
     let lastPayment = null;
 
-    history.forEach(entry => {
+    getEffectivePaymentEntries(history).forEach(entry => {
         const amount = Math.abs(Number(entry.amount) || 0);
         const direction = resolveDirection(entry);
 

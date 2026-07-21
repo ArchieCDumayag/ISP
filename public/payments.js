@@ -921,7 +921,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (/^bill-[^-]+-\d{4}-\d{2}$/i.test(entryId)) return true;
         return (kind === 'charge' || kind === 'debit')
             && (direction === 'debit' || !direction)
-            && description === 'monthly recurring charge';
+            && /^monthly recurring charge\b/.test(description);
     };
     const getEntryDateKey = (entry = {}) => {
         const parsed = parseDateOnly(entry?.date || entry?.recordedAt || entry?.recorded_at || '');
@@ -936,9 +936,41 @@ document.addEventListener('DOMContentLoaded', function () {
         const history = Array.isArray(customer?.history) ? customer.history : [];
         return history.some((entry) => isMonthlyChargeEntry(entry));
     };
+    const isOpeningPreviousBalanceEntry = (entry = {}) => {
+        const reference = String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim().toLowerCase();
+        const description = String([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return reference.startsWith('obb-')
+            || reference.startsWith('opening-bal-')
+            || description.includes('previous balance bill')
+            || description.includes('opening previous balance');
+    };
+    const isPrepaidAutoChargeEntry = (entry = {}) => {
+        const description = String([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return description.includes('prepaid renewal charge');
+    };
+    const isOpeningAdvancePaymentEntry = (entry = {}) => {
+        const reference = String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim().toLowerCase();
+        const description = String([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return reference.startsWith('oba-')
+            || reference.startsWith('opening-adv-')
+            || description.includes('opening advance payment');
+    };
     const resolveEntryDirection = (entry = {}) => {
         const kind = String(entry?.kind || '').trim().toLowerCase();
         const direction = String(entry?.direction || entry?.nature || '').trim().toLowerCase();
+        if (isOpeningPreviousBalanceEntry(entry)) return 'debit';
         if (direction === 'debit' || direction === 'credit') return direction;
         if (kind === 'charge' || kind === 'debit' || kind === 'bill') return 'debit';
         if (kind === 'payment' || kind === 'rebate' || kind === 'discount' || kind === 'credit') return 'credit';
@@ -948,9 +980,44 @@ document.addEventListener('DOMContentLoaded', function () {
         const parsed = parseTimestampValue(entry?.recordedAt || entry?.recorded_at || entry?.date || '');
         return parsed ? parsed.getTime() : 0;
     };
+    const getEffectivePaymentHistory = (history = []) => {
+        const entries = (Array.isArray(history) ? history : [])
+            .map((entry, index) => ({
+                entry,
+                amount: Math.abs(Number(entry?.amount) || 0),
+                direction: resolveEntryDirection(entry),
+                dateKey: getEntryDateKey(entry),
+                time: getEntryComparableTime(entry) || index,
+                index
+            }));
+        const openingAdjustments = entries.filter((row) => (
+            row.amount > 0
+            && (
+                (row.direction === 'debit' && isOpeningPreviousBalanceEntry(row.entry))
+                || (row.direction === 'credit' && isOpeningAdvancePaymentEntry(row.entry))
+            )
+        ));
+        if (!openingAdjustments.length) return Array.isArray(history) ? history : [];
+
+        const ignoredIndexes = new Set();
+        entries.forEach((row) => {
+            if (row.direction !== 'debit' || !row.amount || !isPrepaidAutoChargeEntry(row.entry)) return;
+            const matchedOpening = openingAdjustments.some((opening) => {
+                const amountMatches = Math.abs(opening.amount - row.amount) <= 0.005;
+                const dateMatches = row.dateKey && row.dateKey === opening.dateKey;
+                const timeMatches = Math.abs(row.time - opening.time) <= 30000;
+                return amountMatches && dateMatches && timeMatches;
+            });
+            if (matchedOpening) ignoredIndexes.add(row.index);
+        });
+
+        return entries
+            .filter((row) => !ignoredIndexes.has(row.index))
+            .map((row) => row.entry);
+    };
     const hasOutstandingMonthlyChargeOnDate = (customer = {}, targetDateKey = '') => {
         if (!targetDateKey) return false;
-        const history = Array.isArray(customer?.history) ? customer.history : [];
+        const history = getEffectivePaymentHistory(Array.isArray(customer?.history) ? customer.history : []);
         const ledger = history
             .map((entry, index) => {
                 const amount = Math.abs(Number(entry?.amount) || 0);
@@ -1015,6 +1082,169 @@ document.addEventListener('DOMContentLoaded', function () {
             && debit.remaining > epsilon
         ));
     };
+    const roundMoney = (value) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return 0;
+        return Math.round((amount + Number.EPSILON) * 100) / 100;
+    };
+    const getPlanAmountForCustomer = (customer = {}) => {
+        const matchedPlan = customer.planName ? planByName.get(normalizePlanName(customer.planName)) : null;
+        const candidates = [
+            matchedPlan?.price,
+            customer?.planAmount,
+            customer?.planPrice,
+            customer?.monthlyFee,
+            customer?.price
+        ];
+        for (const candidate of candidates) {
+            const amount = Number(candidate);
+            if (Number.isFinite(amount) && amount > 0) return roundMoney(amount);
+        }
+        return 0;
+    };
+    const isSameMonth = (left, right) => Boolean(
+        left instanceof Date
+        && right instanceof Date
+        && !Number.isNaN(left.getTime())
+        && !Number.isNaN(right.getTime())
+        && left.getFullYear() === right.getFullYear()
+        && left.getMonth() === right.getMonth()
+    );
+    const getMonthEndDate = (date) => {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+        return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    };
+    const getInclusiveDayCount = (startDate, endDate) => {
+        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime()) || !(endDate instanceof Date) || Number.isNaN(endDate.getTime())) {
+            return 0;
+        }
+        const startUtc = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+        const endUtc = Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+        if (endUtc < startUtc) return 0;
+        return Math.floor((endUtc - startUtc) / 86400000) + 1;
+    };
+    const resolveFirstBillingAmount = (customer = {}, fullPlanAmount = 0, cycleDate = new Date()) => {
+        const planAmount = Number(fullPlanAmount) || 0;
+        const activationDate = parseDateOnly(customer?.activationDate || customer?.activation_date);
+        if (isExistingCustomerStart(customer) && activationDate && isSameMonth(activationDate, cycleDate)) {
+            return {
+                amount: 0,
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null,
+                skipInitialCharge: true
+            };
+        }
+        if (!activationDate || planAmount <= 0 || !isSameMonth(activationDate, cycleDate)) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null,
+                skipInitialCharge: false
+            };
+        }
+        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+        const monthEnd = getMonthEndDate(activationDate);
+        const activeDays = getInclusiveDayCount(activationDate, monthEnd);
+        const totalDays = getInclusiveDayCount(monthStart, monthEnd);
+        if (!activeDays || !totalDays || activeDays >= totalDays) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null,
+                skipInitialCharge: false
+            };
+        }
+        return {
+            amount: roundMoney((planAmount / totalDays) * activeDays),
+            isProrated: true,
+            periodStart: activationDate,
+            periodEnd: monthEnd,
+            skipInitialCharge: false
+        };
+    };
+    const resolveProratedPrepaidAmount = (customer = {}, fullPlanAmount = 0, cycleDate = new Date()) => {
+        return resolveFirstBillingAmount(customer, fullPlanAmount, cycleDate).amount;
+    };
+    const isExistingCustomerStart = (customer = {}) => {
+        const raw = String(
+            customer?.customerStartType
+            || customer?.subscriberStartType
+            || customer?.customerOrigin
+            || ''
+        ).trim().toLowerCase();
+        return raw === 'existing';
+    };
+    const isExistingCustomerOpeningCycle = (customer = {}, cycleDate = new Date()) => {
+        if (!isExistingCustomerStart(customer)) return false;
+        const activationDate = parseDateOnly(customer?.activationDate || customer?.activation_date);
+        return Boolean(activationDate && isSameMonth(activationDate, cycleDate));
+    };
+    const getLedgerBalance = (customer = {}) => {
+        const history = Array.isArray(customer?.history) ? customer.history : [];
+        if (!history.length) {
+            const directBalance = Number(customer?.balance);
+            return Number.isFinite(directBalance) ? roundMoney(directBalance) : 0;
+        }
+        return roundMoney(getEffectivePaymentHistory(history).reduce((sum, entry) => {
+            const amount = Math.abs(Number(entry?.amount) || 0);
+            const direction = resolveEntryDirection(entry);
+            if (direction === 'debit') return sum + amount;
+            if (direction === 'credit') return sum - amount;
+            return sum;
+        }, 0));
+    };
+    const getEntryDate = (entry = {}) => parseDateOnly(entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || '');
+    const isPrepaidBillChargeEntry = (entry = {}) => {
+        if (resolveEntryDirection(entry) !== 'debit') return false;
+        if (isOpeningPreviousBalanceEntry(entry)) return false;
+        const description = String(entry?.description || '').trim().toLowerCase();
+        return description.includes('prepaid renewal charge') || isMonthlyChargeEntry(entry);
+    };
+    const hasCurrentMonthBillCharge = (customer = {}, planCategory = 'postpaid', cycleDate = new Date()) => {
+        const history = getEffectivePaymentHistory(Array.isArray(customer?.history) ? customer.history : []);
+        return history.some((entry) => {
+            const entryDate = getEntryDate(entry);
+            if (!entryDate || !isSameMonth(entryDate, cycleDate)) return false;
+            return planCategory === 'prepaid'
+                ? isPrepaidBillChargeEntry(entry)
+                : isMonthlyChargeEntry(entry);
+        });
+    };
+    const resolveCurrentBillState = (customer = {}) => {
+        const planCategory = resolvePlanCategory(customer);
+        const planAmount = getPlanAmountForCustomer(customer);
+        const ledgerBalance = getLedgerBalance(customer);
+        const cycleDate = new Date();
+        const existingCustomerStart = isExistingCustomerOpeningCycle(customer, cycleDate);
+        const hasPostedCurrentBill = hasCurrentMonthBillCharge(customer, planCategory, cycleDate);
+        const firstBilling = resolveFirstBillingAmount(customer, planAmount, cycleDate);
+        const currentBillAmount = firstBilling.amount;
+        const amount = hasPostedCurrentBill
+            ? ledgerBalance
+            : roundMoney(ledgerBalance + currentBillAmount);
+        const displayAmount = Math.abs(amount);
+        const billClass = amount > 0
+            ? 'has-balance'
+            : (amount < 0 ? 'advance-balance' : 'zero-balance');
+
+        return {
+            amount,
+            displayAmount,
+            billClass,
+            planCategory,
+            planAmount,
+            currentBillAmount,
+            existingCustomerStart,
+            hasPostedCurrentBill,
+            isProrated: firstBilling.isProrated,
+            periodStart: firstBilling.periodStart,
+            periodEnd: firstBilling.periodEnd,
+            skipInitialCharge: firstBilling.skipInitialCharge
+        };
+    };
     const getCustomerCycleDay = (customer = {}) => {
         const billDate = parseDateOnly(customer?.billDate);
         if (billDate) return billDate.getDate();
@@ -1026,7 +1256,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!targetDateKey) return true;
         const targetDate = parseDateOnly(targetDateKey);
         if (!targetDate) return true;
-        const balance = Number(customer?.balance);
+        const balance = resolveCurrentBillState(customer).amount;
         if (!Number.isFinite(balance) || balance <= 0) return false;
 
         const planCategory = resolvePlanCategory(customer);
@@ -1095,9 +1325,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return paymentDate;
     }
 
-    function maybeAutofillAmount(plan) {
+    function maybeAutofillAmount(plan, customer = selectedCustomer) {
         if (!paymentAmountInput || !plan) return;
-        const nextValue = Number(plan.price || 0).toFixed(2);
+        const paymentDate = parseDateOnly(paymentDateInput?.value) || new Date();
+        const rawPlanAmount = Number(plan.price || 0);
+        const amount = customer && resolvePlanCategory(customer) === 'prepaid'
+            ? resolveProratedPrepaidAmount(customer, rawPlanAmount, paymentDate)
+            : rawPlanAmount;
+        const nextValue = Number(amount || 0).toFixed(2);
         if (!paymentAmountInput.value || paymentAmountInput.value === prepaidAutoAmount) {
             paymentAmountInput.value = nextValue;
             prepaidAutoAmount = nextValue;
@@ -1118,7 +1353,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const baseDate = derivePrepaidBaseDate(customer, paymentDateInput?.value);
         const expiry = computeExpiryDate(baseDate, plan.validity);
         if (prepaidExpiryDate) prepaidExpiryDate.value = expiry || '';
-        maybeAutofillAmount(plan);
+        maybeAutofillAmount(plan, customer);
     }
 
     function isPaymentTransactionKind() {
@@ -2117,8 +2352,9 @@ document.addEventListener('DOMContentLoaded', function () {
             syncPrepaidFieldsForSelectedCustomer();
         } else {
             setPrepaidFieldsVisible(false);
-            if (customer && customer.balance > 0) {
-                if (paymentAmountInput) paymentAmountInput.value = customer.balance.toFixed(2);
+            const currentBillAmount = customer ? resolveCurrentBillState(customer).amount : 0;
+            if (customer && currentBillAmount > 0) {
+                if (paymentAmountInput) paymentAmountInput.value = currentBillAmount.toFixed(2);
             } else if (paymentAmountInput) {
                 paymentAmountInput.value = '';
             }
@@ -2193,13 +2429,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (!outstandingReceivablesEl || !paymentsCollectedEl || !accountsPastDueEl) return;
 
-        const totalReceivables = customers
-            .filter(c => c.balance > 0)
-            .reduce((sum, c) => sum + c.balance, 0);
+        const totalReceivables = customers.reduce((sum, customer) => {
+            const currentBillAmount = resolveCurrentBillState(customer).amount;
+            return sum + Math.max(0, currentBillAmount);
+        }, 0);
 
         const totalCollected = customers.reduce((sum, c) => sum + (c.totalCredits || 0), 0);
 
-        const pastDueCount = customers.filter(c => c.status === 'Overdue').length;
+        const pastDueCount = customers.filter(c => deriveStatus(c) === 'overdue').length;
 
         outstandingReceivablesEl.textContent = formatCurrency(totalReceivables);
         paymentsCollectedEl.textContent = formatCurrency(totalCollected);
@@ -2298,7 +2535,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 finishSubmit();
                 return;
             }
-            prepaidAmount = Number(plan.price || 0);
+            prepaidAmount = resolveProratedPrepaidAmount(customer, Number(plan.price || 0), paymentDate);
             prepaidUpdate = {
                 planId: plan.id || '',
                 planName: plan.name,
@@ -2377,9 +2614,9 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     const deriveStatus = (customer) => {
-        const balance = Number(customer.balance) || 0;
+        const balance = resolveCurrentBillState(customer).amount;
         const limitRaw = Number(customer.creditLimit);
-        const planAmt = Number(customer.planAmount) || 0;
+        const planAmt = getPlanAmountForCustomer(customer);
         const creditLimit = Number.isFinite(limitRaw) && limitRaw >= 0 ? limitRaw : planAmt;
         if (balance < 0) return 'advance';
         if (balance <= 0) return 'paid';
@@ -2442,7 +2679,8 @@ document.addEventListener('DOMContentLoaded', function () {
             let billingCycleMeta = 'No cycle recorded';
             const planCategory = resolvePlanCategory(customer);
             const dueStatus = getDueStatus(customer?.dueDate);
-            const balanceNumber = Number(customer?.balance);
+            const currentBillState = resolveCurrentBillState(customer);
+            const balanceNumber = currentBillState.amount;
             const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < 0;
             const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > 0;
 
@@ -2474,23 +2712,24 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (customer.lastPaymentDirection === 'credit' && customer.lastPaymentAmount === 0) {
                 lastPaymentClass = 'zero-balance';
             }
-            let balanceClass = '';
-            if (customer.balance > 0) {
-                balanceClass = 'has-balance';
-            } else if (customer.balance < 0) {
-                balanceClass = 'advance-balance';
-            } else {
-                balanceClass = 'zero-balance';
-            }
+            const balanceClass = currentBillState.billClass;
 
             // Use Math.abs to prevent negative sign, color coding will indicate the status
-            const balanceAmount = formatCurrency(Math.abs(customer.balance));
+            const balanceAmount = formatCurrency(currentBillState.displayAmount);
             const dueForDisplay = planCategory === 'postpaid'
                 ? getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })
                 : formatDate(customer.dueDate);
+            const prepaidBillMeta = currentBillState.amount < -0.005
+                ? 'Advance'
+                : (currentBillState.amount <= 0.005
+                    ? 'Paid'
+                    : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : (currentBillState.isProrated ? 'Prorated bill' : 'Current bill'))));
+            const postpaidBillMeta = currentBillState.amount < -0.005
+                ? (currentBillState.existingCustomerStart ? 'Opening advance' : 'Advance after current bill')
+                : (currentBillState.amount <= 0.005 ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.isProrated ? 'Prorated bill' : `Due ${dueForDisplay}`)));
             const currentBill = planCategory === 'prepaid'
-                ? `${balanceAmount}<br>Expires ${formatDate(customer.dueDate)}`
-                : `${balanceAmount}<br>Due ${dueForDisplay}`;
+                ? `${balanceAmount}<br>${prepaidBillMeta}`
+                : `${balanceAmount}<br>${postpaidBillMeta}`;
             
             // Plan catalog usage for display
             const matchedPlan = customer.planName ? planByName.get(normalizePlanName(customer.planName)) : undefined;
@@ -2627,13 +2866,14 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         } else if (sortFilter === 'balanceHighLow' || sortFilter === 'balanceLowHigh') {
             const direction = sortFilter === 'balanceHighLow' ? -1 : 1;
-            const getComparableBalance = (customer) => Math.abs(Number(customer?.balance) || 0);
+            const getComparableBalance = (customer) => Math.abs(resolveCurrentBillState(customer).amount);
+            const getSignedBalance = (customer) => resolveCurrentBillState(customer).amount;
 
             results.sort((a, b) => {
                 const balanceDiff = getComparableBalance(a) - getComparableBalance(b);
                 if (balanceDiff !== 0) return balanceDiff * direction;
 
-                const signedBalanceDiff = (Number(a?.balance) || 0) - (Number(b?.balance) || 0);
+                const signedBalanceDiff = getSignedBalance(a) - getSignedBalance(b);
                 if (signedBalanceDiff !== 0) return signedBalanceDiff * direction;
 
                 return compareText(a?.accountNumber, b?.accountNumber);

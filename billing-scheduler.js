@@ -696,9 +696,28 @@ function getInclusiveDayCount(startDate, endDate) {
   return Math.floor((endUtc - startUtc) / 86400000) + 1;
 }
 
+function isExistingCustomerStart(customer = {}) {
+  const raw = String(
+    customer?.customerStartType
+    || customer?.subscriberStartType
+    || customer?.customerOrigin
+    || ''
+  ).trim().toLowerCase();
+  return raw === 'existing';
+}
+
 function resolveFirstBillingCharge(customer = {}, billDate, fullPlanAmount = 0) {
   const planAmount = Number(fullPlanAmount) || 0;
   const activationDate = parseDateOnly(customer?.activationDate);
+  if (isExistingCustomerStart(customer) && activationDate && (billDate instanceof Date) && !isNaN(billDate) && isSameBillingMonth(activationDate, billDate)) {
+    return {
+      amount: 0,
+      prorated: false,
+      periodStart: null,
+      periodEnd: null,
+      skipInitialCharge: true
+    };
+  }
   if (!activationDate || !(billDate instanceof Date) || isNaN(billDate) || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
     return {
       amount: roundMoney(planAmount),
@@ -1618,6 +1637,18 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
 
     const isoDate = formatDateOnly(billDate);
     const firstBillingCharge = resolveFirstBillingCharge(customer, billDate, planAmount);
+    if ((Number(firstBillingCharge.amount) || 0) <= 0 || firstBillingCharge.skipInitialCharge) {
+      if (nextCycleState) {
+        customers[index] = {
+          ...customer,
+          billDate: nextCycleState.billDate,
+          dueDate: nextCycleState.dueDate
+        };
+        customerDatesChanged = true;
+        changed = true;
+      }
+      continue;
+    }
     const chargeDescription = firstBillingCharge.prorated
       ? `Monthly Recurring Charge (Prorated ${formatDateOnly(firstBillingCharge.periodStart)} to ${formatDateOnly(firstBillingCharge.periodEnd)})`
       : 'Monthly Recurring Charge';

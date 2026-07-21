@@ -224,23 +224,25 @@
         <h2 id="credentialResetTitle">Change default admin credentials</h2>
         <p>Default backup admin credentials detected. Please set a new username and password before continuing.</p>
 
-        <div class="reset-field">
-            <label class="form-label" for="credentialResetUsername">New username</label>
-            <input class="form-control" type="text" id="credentialResetUsername" autocomplete="username">
-        </div>
-        <div class="reset-field">
-            <label class="form-label" for="credentialResetPassword">New password</label>
-            <input class="form-control" type="password" id="credentialResetPassword" autocomplete="new-password">
-        </div>
-        <div class="reset-field">
-            <label class="form-label" for="credentialResetPasswordConfirm">Confirm new password</label>
-            <input class="form-control" type="password" id="credentialResetPasswordConfirm" autocomplete="new-password">
-        </div>
+        <form id="credentialResetForm" autocomplete="on">
+            <div class="reset-field">
+                <label class="form-label" for="credentialResetUsername">New username</label>
+                <input class="form-control" type="text" id="credentialResetUsername" name="username" autocomplete="username" required>
+            </div>
+            <div class="reset-field">
+                <label class="form-label" for="credentialResetPassword">New password</label>
+                <input class="form-control" type="password" id="credentialResetPassword" name="password" autocomplete="new-password" required>
+            </div>
+            <div class="reset-field">
+                <label class="form-label" for="credentialResetPasswordConfirm">Confirm new password</label>
+                <input class="form-control" type="password" id="credentialResetPasswordConfirm" name="passwordConfirm" autocomplete="new-password" required>
+            </div>
 
-        <p class="reset-error invalid-feedback" id="credentialResetError"></p>
+            <p class="reset-error invalid-feedback" id="credentialResetError"></p>
 
-        <div class="reset-actions">
-            <button type="button" class="primary-btn" id="credentialResetSaveBtn">Save and continue</button>
-        </div>
+            <div class="reset-actions">
+                <button type="submit" class="primary-btn" id="credentialResetSaveBtn">Save and continue</button>
+            </div>
+        </form>
     </div>
 </div>

@@ -1143,6 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const exportBtn = root.querySelector('[data-action="export"]');
         const logoutBtn = root.querySelector('[data-action="logout"]');
         const credentialResetOverlay = document.getElementById('credentialResetOverlay');
+        const credentialResetForm = credentialResetOverlay ? credentialResetOverlay.querySelector('#credentialResetForm') : null;
         const credentialResetUsername = credentialResetOverlay ? credentialResetOverlay.querySelector('#credentialResetUsername') : null;
         const credentialResetPassword = credentialResetOverlay ? credentialResetOverlay.querySelector('#credentialResetPassword') : null;
         const credentialResetPasswordConfirm = credentialResetOverlay ? credentialResetOverlay.querySelector('#credentialResetPasswordConfirm') : null;
@@ -1864,7 +1865,10 @@ document.addEventListener('DOMContentLoaded', () => {
         addListener(profileEditForm, 'submit', handleProfileEditSubmit);
         addListener(profileEditLogoInput, 'change', handleLogoFileChange);
         addListener(profileEditNameInput, 'input', () => updateLogoPreview());
-        addListener(credentialResetSaveBtn, 'click', handleCredentialResetSave);
+        addListener(credentialResetForm, 'submit', (event) => {
+            event.preventDefault();
+            handleCredentialResetSave();
+        });
         addListener(importBtn, 'click', () => handleTopbarDataAction('import'));
         addListener(exportBtn, 'click', () => handleTopbarDataAction('export'));
         addListener(logoutBtn, 'click', handleLogout);

@@ -390,6 +390,18 @@ body.modal-open {
     text-align: left;
 }
 
+.subscriber-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.subscriber-link:hover .subscriber-name,
+.subscriber-link:focus-visible .subscriber-name {
+    color: #2563eb;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 .avatar {
     width: 42px;
     height: 42px;

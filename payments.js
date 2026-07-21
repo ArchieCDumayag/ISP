@@ -22,6 +22,7 @@ const STORE_KEYS = {
     payments: 'payments',
     customers: 'customers'
 };
+const PAYMENT_BACKUP_DIR = path.join(__dirname, 'data', 'payment-backups');
 const readCustomers = async (branchId = null) => {
     if (typeof customersModule.readVisibleCustomers === 'function') {
         return customersModule.readVisibleCustomers(branchId);
@@ -609,6 +610,62 @@ const readPaymentsForAccount = async (accountNumber, branchId = null) => {
 
 const writePayments = async (payments) => {
     await writeJson(STORE_KEYS.payments, payments);
+};
+
+const countPaymentEntries = (payments = {}) => Object.values(payments || {}).reduce((sum, record) => (
+    sum + (Array.isArray(record?.history) ? record.history.length : 0)
+), 0);
+
+const countPaymentAccounts = (payments = {}) => Object.values(payments || {}).filter((record) => (
+    Array.isArray(record?.history) && record.history.length > 0
+)).length;
+
+const safeBackupToken = (value, fallback = 'all') => {
+    const token = String(value || fallback).trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '');
+    return token || fallback;
+};
+
+const createPaymentRecordsBackup = async (payments, { branchId = null, user = null, reason = 'manual' } = {}) => {
+    const relational = await isRelationalReady();
+    const createdAt = new Date().toISOString();
+    const stamp = createdAt.replace(/[:.]/g, '-');
+    const branchToken = safeBackupToken(branchId || 'all');
+    const filename = `payment-records-${branchToken}-${stamp}.json`;
+    const filePath = path.join(PAYMENT_BACKUP_DIR, filename);
+    const payload = {
+        ok: true,
+        createdAt,
+        reason,
+        storage: relational ? 'mysql' : 'json',
+        branchId: branchId || null,
+        createdBy: user ? {
+            id: user.id || null,
+            username: user.username || null,
+            role: user.role || null
+        } : null,
+        accountCount: countPaymentAccounts(payments),
+        entryCount: countPaymentEntries(payments),
+        payments: payments && typeof payments === 'object' ? payments : {}
+    };
+
+    await fs.promises.mkdir(PAYMENT_BACKUP_DIR, { recursive: true });
+    await fs.promises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+
+    return {
+        filename,
+        path: filePath,
+        createdAt,
+        accountCount: payload.accountCount,
+        entryCount: payload.entryCount
+    };
+};
+
+const assertAdminUser = async (req) => {
+    const user = req.user || await getUserFromSession(req);
+    if (!user || !accountHasRole(user, 'Admin')) {
+        throw createError(403, 'Admin access is required.');
+    }
+    return user;
 };
 
 const toMysqlDateTime = (value) => {
@@ -1236,6 +1293,55 @@ router.get('/', async (req, res, next) => {
         res.json(payments);
     } catch (error) {
         next(createError(500, 'Failed to retrieve payment records.'));
+    }
+});
+
+// POST /api/payments/backup - Save a local backup of payment records
+router.post('/backup', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const payments = await readPayments(branchId);
+        const backup = await createPaymentRecordsBackup(payments, {
+            branchId,
+            user,
+            reason: 'manual-payment-history-backup'
+        });
+        res.json({ ok: true, backup });
+    } catch (error) {
+        next(error.status ? error : createError(500, 'Failed to back up payment records.'));
+    }
+});
+
+// DELETE /api/payments/clear - Back up, then clear payment records
+router.delete('/clear', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const payments = await readPayments(branchId);
+        const backup = await createPaymentRecordsBackup(payments, {
+            branchId,
+            user,
+            reason: 'before-clear-payment-history'
+        });
+        const removedCount = countPaymentEntries(payments);
+        const relational = await isRelationalReady();
+
+        if (relational) {
+            if (!branchId) {
+                throw createError(400, 'Branch is required to clear relational payment records.');
+            }
+            await withTransaction(async (connection) => {
+                await connection.query('DELETE FROM payment_entries WHERE branch_id = ?', [branchId]);
+            });
+        } else {
+            await writePayments({});
+        }
+
+        triggerBranchServiceRefresh(branchId, 'payments-clear');
+        res.json({ ok: true, removedCount, backup });
+    } catch (error) {
+        next(error.status ? error : createError(500, 'Failed to clear payment records.'));
     }
 });
 

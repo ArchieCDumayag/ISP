@@ -200,6 +200,59 @@ body:has(.payment-history-page) .app-main main {
     max-width: 88px;
 }
 
+.payment-history-admin-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.payment-history-small-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 7px 11px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 10px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.payment-history-small-btn:hover,
+.payment-history-small-btn:focus-visible {
+    border-color: rgba(37, 99, 235, 0.38);
+    background: rgba(37, 99, 235, 0.14);
+    color: #1e40af;
+    transform: translateY(-1px);
+}
+
+.payment-history-small-btn:disabled,
+.payment-history-small-btn[aria-busy="true"] {
+    cursor: wait;
+    opacity: 0.65;
+    transform: none;
+}
+
+.payment-history-small-btn--danger {
+    border-color: rgba(220, 38, 38, 0.24);
+    background: rgba(220, 38, 38, 0.08);
+    color: #b91c1c;
+}
+
+.payment-history-small-btn--danger:hover,
+.payment-history-small-btn--danger:focus-visible {
+    border-color: rgba(220, 38, 38, 0.4);
+    background: rgba(220, 38, 38, 0.14);
+    color: #991b1b;
+}
+
 .payment-history-table {
     width: 100%;
     min-width: 980px;
@@ -394,6 +447,18 @@ body.theme-dark .payment-history-inline-filters .toolbar-filter-control--date in
     border-color: rgba(96, 165, 250, 0.6);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.24);
     background: rgba(15, 23, 42, 0.92);
+}
+
+body.theme-dark .payment-history-small-btn {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: rgba(96, 165, 250, 0.12);
+    color: #bfdbfe;
+}
+
+body.theme-dark .payment-history-small-btn--danger {
+    border-color: rgba(248, 113, 113, 0.24);
+    background: rgba(248, 113, 113, 0.12);
+    color: #fecaca;
 }
 
 body.theme-dark .payment-history-table thead th {

@@ -599,6 +599,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const target = normalizeAccountNumber(accountNumber);
         return (Array.isArray(list) ? list : []).find(c => normalizeAccountNumber(c.accountNumber) === target);
     };
+    const buildPaymentBreakdownUrl = (accountNumber) => {
+        const target = normalizeAccountNumber(accountNumber);
+        return target ? `payment-breakdown.html?account=${encodeURIComponent(target)}` : '#';
+    };
     const getCustomerArea = (customer) => String(
         customer?.area
         || customer?.coverageArea
@@ -2500,6 +2504,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 : `${amountDisplay}${priceSuffix ? ` &middot; ${priceSuffix}` : ''}`;
 
             const accountNumber = normalizeAccountNumber(customer.accountNumber || '');
+            const paymentBreakdownUrl = buildPaymentBreakdownUrl(accountNumber);
 
             const rowStatusClass = subscriberStatusClass === 'success' ? 'row-status-active' : 'row-status-inactive';
 
@@ -2522,13 +2527,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         </span>
                     </td>
                     <td>
-                        <div class="subscriber">
+                        <a class="subscriber subscriber-link" href="${paymentBreakdownUrl}" aria-label="Open payment breakdown for ${escapeHtml(displayName)}">
                             <span class="avatar">${displayInitials}</span>
                             <div>
                                 <p class="subscriber-name">${displayName}</p>
                                 <p class="subscriber-meta">Joined ${customer.since || customer.joinDate || 'N/A'} &middot; <span class="status-pill status-pill--indicator ${subscriberStatusClass}" title="${escapeHtml(subscriberStatusLabel)}" aria-label="${escapeHtml(subscriberStatusLabel)}"></span></p>
                             </div>
-                        </div>
+                        </a>
                     </td>
                     <td>
                         <div class="${planPillClass}">${customer.planName || 'N/A'}</div>
@@ -2765,9 +2770,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!row) return;
         const accountNumber = normalizeAccountNumber(row.dataset.accountNumber);
         if (!accountNumber) return;
-        if (!openAccountInfoModal(accountNumber, row)) {
-            showToast('Unable to load account information.');
-        }
+        window.location.assign(buildPaymentBreakdownUrl(accountNumber));
     });
 
     // Add event listener for deleting entries within the history modal

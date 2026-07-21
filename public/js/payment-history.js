@@ -18,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageInfoEl = document.getElementById('paymentHistoryPageInfo');
     const prevBtn = document.getElementById('paymentHistoryPrev');
     const nextBtn = document.getElementById('paymentHistoryNext');
+    const backupBtn = document.getElementById('paymentHistoryBackupBtn');
+    const clearBtn = document.getElementById('paymentHistoryClearBtn');
     const metricEntriesEl = document.getElementById('historyMetricEntries');
     const metricPaymentsEl = document.getElementById('historyMetricPayments');
     const metricReferencesEl = document.getElementById('historyMetricReferences');
@@ -224,14 +226,72 @@ document.addEventListener('DOMContentLoaded', () => {
         return hasTime ? dateTimeFormatter.format(dateObj) : dateFormatter.format(dateObj);
     };
 
-    async function fetchJSON(url) {
-        const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    async function fetchJSON(url, options = {}) {
+        const response = await fetch(url, { credentials: 'include', cache: 'no-store', ...options });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(payload?.error || payload?.message || `Request failed: ${response.status}`);
+            const error = new Error(payload?.error || payload?.message || `Request failed: ${response.status}`);
+            error.status = response.status;
+            error.payload = payload;
+            throw error;
         }
         return payload;
     }
+
+    const setButtonBusy = (button, busy) => {
+        if (!button) return;
+        button.disabled = Boolean(busy);
+        if (busy) {
+            button.setAttribute('aria-busy', 'true');
+        } else {
+            button.removeAttribute('aria-busy');
+        }
+    };
+
+    const describeBackup = (backup = {}) => {
+        const filename = String(backup.filename || '').trim();
+        const entryCount = Number(backup.entryCount) || 0;
+        const accountCount = Number(backup.accountCount) || 0;
+        const countText = `${formatCount(entryCount)} ${entryCount === 1 ? 'entry' : 'entries'}`;
+        const accountText = `${formatCount(accountCount)} ${accountCount === 1 ? 'account' : 'accounts'}`;
+        return filename
+            ? `${filename} (${countText}, ${accountText})`
+            : `${countText}, ${accountText}`;
+    };
+    const countEntriesInPayments = (payments = {}) => Object.values(payments || {}).reduce((sum, record) => (
+        sum + (Array.isArray(record?.history) ? record.history.length : 0)
+    ), 0);
+    const countAccountsInPayments = (payments = {}) => Object.values(payments || {}).filter((record) => (
+        Array.isArray(record?.history) && record.history.length > 0
+    )).length;
+    const makeBackupFilename = () => `payment-records-browser-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    const buildBrowserBackupPayload = (payments = {}, reason = 'manual-browser-backup') => ({
+        ok: true,
+        createdAt: new Date().toISOString(),
+        reason,
+        storage: 'browser-download',
+        accountCount: countAccountsInPayments(payments),
+        entryCount: countEntriesInPayments(payments),
+        payments
+    });
+    const downloadJsonBackup = (payload) => {
+        const filename = makeBackupFilename();
+        const blob = new Blob([JSON.stringify({ ...payload, filename }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        return {
+            filename,
+            accountCount: payload.accountCount,
+            entryCount: payload.entryCount
+        };
+    };
+    const canUseBrowserFallback = (error) => ![401, 403].includes(Number(error?.status));
 
     function populateAreaFilter(rows) {
         if (!areaFilter) return;
@@ -508,6 +568,87 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    async function backupPaymentRecords() {
+        setButtonBusy(backupBtn, true);
+        try {
+            try {
+                const payload = await fetchJSON('/api/payments/backup', { method: 'POST' });
+                showToast(`Backup saved: ${describeBackup(payload?.backup)}`, 'success');
+                return;
+            } catch (serverError) {
+                if (!canUseBrowserFallback(serverError)) throw serverError;
+                const payments = await fetchJSON('/api/payments');
+                const backup = downloadJsonBackup(buildBrowserBackupPayload(payments));
+                showToast(`Backup downloaded: ${describeBackup(backup)}`, 'success');
+            }
+        } catch (error) {
+            showToast(error.message || 'Failed to back up payment records.', 'error');
+        } finally {
+            setButtonBusy(backupBtn, false);
+        }
+    }
+
+    async function deleteEntriesFromPayments(payments = {}) {
+        const entries = [];
+        Object.entries(payments || {}).forEach(([accountNumber, record]) => {
+            (Array.isArray(record?.history) ? record.history : []).forEach((entry) => {
+                const entryId = String(entry?.id || '').trim();
+                if (!entryId) return;
+                entries.push({ accountNumber: String(accountNumber || '').trim(), entryId });
+            });
+        });
+
+        let deletedCount = 0;
+        for (const entry of entries) {
+            const response = await fetch(`/api/payments/${encodeURIComponent(entry.accountNumber)}/${encodeURIComponent(entry.entryId)}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload?.error || payload?.message || `Failed after deleting ${formatCount(deletedCount)} ${deletedCount === 1 ? 'entry' : 'entries'}.`);
+            }
+            deletedCount += 1;
+        }
+
+        return deletedCount;
+    }
+
+    async function clearPaymentRecords() {
+        const currentCount = state.allRows.length;
+        const confirmed = typeof window.appConfirm === 'function'
+            ? await window.appConfirm(
+                `Clear all payment records? A backup will be created first. This removes the stored payment records for this branch. Currently listed payment entries: ${formatCount(currentCount)}.`,
+                { title: 'Clear Payment Records' }
+            )
+            : window.confirm(`Clear all payment records? A backup will be created first. This removes the stored payment records for this branch. Currently listed payment entries: ${formatCount(currentCount)}.`);
+        if (!confirmed) return;
+
+        setButtonBusy(clearBtn, true);
+        setButtonBusy(backupBtn, true);
+        try {
+            const payments = await fetchJSON('/api/payments');
+            try {
+                const payload = await fetchJSON('/api/payments/clear', { method: 'DELETE' });
+                await loadHistory();
+                const removedCount = Number(payload?.removedCount) || countEntriesInPayments(payments);
+                showToast(`Cleared ${formatCount(removedCount)} payment ${removedCount === 1 ? 'entry' : 'entries'}. Backup saved: ${describeBackup(payload?.backup)}`, 'success');
+                return;
+            } catch (serverError) {
+                if (!canUseBrowserFallback(serverError)) throw serverError;
+                const backup = downloadJsonBackup(buildBrowserBackupPayload(payments, 'before-clear-browser-backup'));
+                const removedCount = await deleteEntriesFromPayments(payments);
+                await loadHistory();
+                showToast(`Cleared ${formatCount(removedCount)} payment ${removedCount === 1 ? 'entry' : 'entries'}. Backup downloaded: ${describeBackup(backup)}`, 'success');
+            }
+        } catch (error) {
+            showToast(error.message || 'Failed to clear payment records.', 'error');
+        } finally {
+            setButtonBusy(clearBtn, false);
+            setButtonBusy(backupBtn, false);
+        }
+    }
+
     function applyFilters({ resetPage = true } = {}) {
         const searchValue = normalizeText(searchInput?.value);
         const areaValue = String(areaFilter?.value || '').trim();
@@ -571,6 +712,8 @@ document.addEventListener('DOMContentLoaded', () => {
     endDateInput?.addEventListener('change', () => applyFilters({ resetPage: true }));
     sortSelect?.addEventListener('change', () => applyFilters({ resetPage: true }));
     pageSizeSelect?.addEventListener('change', () => applyFilters({ resetPage: true }));
+    backupBtn?.addEventListener('click', backupPaymentRecords);
+    clearBtn?.addEventListener('click', clearPaymentRecords);
     tableBody?.addEventListener('click', async (event) => {
         const printBtn = event.target.closest('.payment-history-print');
         if (printBtn) {

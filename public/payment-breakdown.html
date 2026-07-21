@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Payment Breakdown - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/payment-breakdown.css?v=1.3">
+    <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body class="payment-breakdown-body">
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page payment-breakdown-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Payment Management</p>
+                        <h1 id="breakdownTitle">Payment Breakdown</h1>
+                        <p class="subtitle" id="breakdownSubtitle">Loading account payment breakdown...</p>
+                    </div>
+                    <div class="header-actions">
+                        <a class="ghost-btn" href="payments.html">
+                            <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                            Back to Payments
+                        </a>
+                    </div>
+                </section>
+
+                <section class="page-insights">
+                    <div class="payment-breakdown-metrics" aria-label="Payment breakdown summary">
+                        <article class="payment-breakdown-metric">
+                            <span class="payment-breakdown-metric__icon">
+                                <i class="ti ti-calendar-dollar" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-breakdown-metric__body">
+                                <p class="payment-breakdown-metric__label">Bills</p>
+                                <strong class="payment-breakdown-metric__value" id="breakdownMetricBills">0</strong>
+                                <p class="payment-breakdown-metric__meta">Billing rows shown</p>
+                            </div>
+                        </article>
+                        <article class="payment-breakdown-metric payment-breakdown-metric--success">
+                            <span class="payment-breakdown-metric__icon">
+                                <i class="ti ti-circle-check" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-breakdown-metric__body">
+                                <p class="payment-breakdown-metric__label">Paid Bills</p>
+                                <strong class="payment-breakdown-metric__value" id="breakdownMetricPaid">0</strong>
+                                <p class="payment-breakdown-metric__meta">Rows marked paid</p>
+                            </div>
+                        </article>
+                        <article class="payment-breakdown-metric payment-breakdown-metric--info">
+                            <span class="payment-breakdown-metric__icon">
+                                <i class="ti ti-users-plus" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-breakdown-metric__body">
+                                <p class="payment-breakdown-metric__label">Referral Discount</p>
+                                <strong class="payment-breakdown-metric__value" id="breakdownMetricReferral">&#8369;0.00</strong>
+                                <p class="payment-breakdown-metric__meta">2 referrals = 1 free month</p>
+                            </div>
+                        </article>
+                        <article class="payment-breakdown-metric payment-breakdown-metric--warning">
+                            <span class="payment-breakdown-metric__icon">
+                                <i class="ti ti-scale" aria-hidden="true"></i>
+                            </span>
+                            <div class="payment-breakdown-metric__body">
+                                <p class="payment-breakdown-metric__label">Ending Balance</p>
+                                <strong class="payment-breakdown-metric__value" id="breakdownMetricBalance">&#8369;0.00</strong>
+                                <p class="payment-breakdown-metric__meta">After latest row</p>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="section-frame">
+                    <div class="section-toolbar payment-breakdown-toolbar">
+                        <div>
+                            <h2 class="section-title">Payment Breakdown</h2>
+                            <p class="section-subtitle">Due = (Plan - Advance from previous bill) + Previous Balance - Referral.</p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper elevated">
+                        <table class="payment-breakdown-table" aria-label="Payment breakdown table">
+                            <caption>Payment breakdown records</caption>
+                            <thead>
+                                <tr>
+                                    <th>Bill</th>
+                                    <th>Type</th>
+                                    <th>Billing Cycle</th>
+                                    <th class="is-num">Previous Balance</th>
+                                    <th class="is-num">Advance</th>
+                                    <th class="is-num">Referral</th>
+                                    <th class="is-num">Due</th>
+                                    <th class="is-num">Amount Paid</th>
+                                    <th>Payment Mode</th>
+                                    <th>Payment Date</th>
+                                    <th>Payment Status</th>
+                                    <th class="is-num">Balance After Payment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="breakdownTableBody">
+                                <tr class="payment-breakdown-empty-row">
+                                    <td colspan="12" class="payment-breakdown-empty-cell">
+                                        <span class="payment-breakdown-empty-message">Loading payment breakdown...</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="table-footer">
+                        <div class="footer-summary" id="breakdownSummary">Loading payment breakdown...</div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.7"></script>
+    <script src="js/payment-breakdown.js?v=1.3"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.6"></script>
+</body>
+</html>

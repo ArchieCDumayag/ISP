@@ -2387,8 +2387,6 @@
 
             function enforceActivationSafeBillDateSelection({ silent = false } = {}) {
                 if (!billDateInput) return true;
-                const category = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
-                if (category === 'prepaid') return true;
 
                 const currentValue = formatDateISO(parseDateOnly(billDateInput.value || ''));
                 const alignedValue = alignBillDateOnOrAfterActivationDate(
@@ -2477,12 +2475,6 @@
             }
 
             function recomputeDueDate() {
-                const category = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
-                if (category === 'prepaid') {
-                    if (dueDateInput) dueDateInput.value = '';
-                    if (dueDateDisplay) dueDateDisplay.value = '';
-                    return;
-                }
                 const bill = billDateInput?.value || '';
                 const offset = dueOffsetInput?.value || DEFAULT_DUE_OFFSET;
                 const due = computeDueDate(bill, offset);
@@ -2519,35 +2511,33 @@
             }
 
             function applyPlanCategoryUI(category) {
-                const normalized = normalizePlanCategory(category);
-                const isPrepaid = normalized === 'prepaid';
                 if (billDateLabel) billDateLabel.textContent = 'Next Bill Date';
                 if (dueDateLabel) dueDateLabel.textContent = 'Computed Due Date';
                 if (planField) planField.style.display = '';
                 if (planSelect) {
                     planSelect.required = true;
                 }
-                if (activationDateField) activationDateField.style.display = isPrepaid ? 'none' : '';
-                if (dueOffsetField) dueOffsetField.style.display = isPrepaid ? 'none' : '';
-                if (dueDateField) dueDateField.style.display = isPrepaid ? 'none' : '';
+                if (activationDateField) activationDateField.style.display = '';
+                if (dueOffsetField) dueOffsetField.style.display = '';
+                if (dueDateField) dueDateField.style.display = '';
                 if (prepaidExpirationField) prepaidExpirationField.style.display = 'none';
-                if (creditLimitField) creditLimitField.style.display = isPrepaid ? 'none' : '';
+                if (creditLimitField) creditLimitField.style.display = '';
                 if (dueOffsetHelp) {
                     dueOffsetHelp.textContent = '';
                 }
-                if (billDateField) billDateField.style.display = isPrepaid ? 'none' : '';
-                if (billDateInput) billDateInput.required = !isPrepaid;
-                if (dueDateInput) dueDateInput.required = !isPrepaid;
-                if (dueOffsetInput) dueOffsetInput.required = !isPrepaid;
+                if (billDateField) billDateField.style.display = '';
+                if (billDateInput) billDateInput.required = true;
+                if (dueDateInput) dueDateInput.required = true;
+                if (dueOffsetInput) dueOffsetInput.required = true;
                 if (prepaidExpirationInput) {
                     prepaidExpirationInput.required = false;
                     prepaidExpirationInput.value = '';
                 }
                 if (activationDateInput) activationDateInput.required = false;
-                if (!isPrepaid && activationDateInput && !activationDateInput.value) {
+                if (activationDateInput && !activationDateInput.value) {
                     activationDateInput.value = getTodayDateInputValue();
                 }
-                if (!isPrepaid && billDateInput && !billDateInput.value) {
+                if (billDateInput && !billDateInput.value) {
                     billDateInput.value = isEditMode()
                         ? getTodayDateInputValue()
                         : getSuggestedNextBillDateInputValue();
@@ -5415,7 +5405,7 @@
                 if (form?.dataset.submitting === 'true') return;
                 setCustomerSubmitState(true);
                 const activePlanCategory = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
-                if (activePlanCategory !== 'prepaid' && !enforceNonPastBillDateSelection()) {
+                if (!enforceNonPastBillDateSelection()) {
                     recomputeDueDate();
                     applyServiceStatus();
                     setCustomerSubmitState(false);
@@ -5530,10 +5520,14 @@
                     payload.loginPassword = rawLoginPassword;
                 }
                 if (planCategory === 'prepaid') {
-                    payload.billDate = '';
-                    payload.dueDate = '';
-                    payload.activationDate = '';
+                    payload.billDate = formData.get('billDate');
+                    payload.dueDate = formData.get('dueDate');
+                    payload.activationDate = formData.get('activationDate');
                     payload.prepaidExpirationAt = '';
+                    payload.dueOffset = formData.get('dueOffset');
+                    if (creditLimit !== '') {
+                        payload.creditLimit = creditLimit;
+                    }
                 } else {
                     payload.billDate = formData.get('billDate');
                     payload.dueDate = formData.get('dueDate');

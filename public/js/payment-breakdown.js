@@ -118,6 +118,66 @@ document.addEventListener('DOMContentLoaded', () => {
         return buildStableDate(year, month, Math.min(Math.max(Number(billingDay) || 1, 1), lastDay));
     };
 
+    const getMonthEndDate = (date) => {
+        const parts = getZonedDateParts(date);
+        if (!parts) return null;
+        return buildStableDate(parts.year, parts.month, new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate());
+    };
+
+    const isSameBillingMonth = (left, right) => {
+        const leftParts = getZonedDateParts(left);
+        const rightParts = getZonedDateParts(right);
+        return Boolean(
+            leftParts
+            && rightParts
+            && leftParts.year === rightParts.year
+            && leftParts.month === rightParts.month
+        );
+    };
+
+    const getInclusiveDayCount = (startDate, endDate) => {
+        const startParts = getZonedDateParts(startDate);
+        const endParts = getZonedDateParts(endDate);
+        if (!startParts || !endParts) return 0;
+        const startUtc = Date.UTC(startParts.year, startParts.month - 1, startParts.day);
+        const endUtc = Date.UTC(endParts.year, endParts.month - 1, endParts.day);
+        if (endUtc < startUtc) return 0;
+        return Math.floor((endUtc - startUtc) / 86400000) + 1;
+    };
+
+    const resolveFirstMonthProration = (record = {}, billDate = null, fullPlanAmount = 0) => {
+        const activationDate = safeDate(record.activationDate || record.activation_date);
+        const planAmount = Number(fullPlanAmount) || 0;
+        if (!activationDate || !billDate || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+        const periodEnd = getMonthEndDate(activationDate);
+        const monthStartParts = getZonedDateParts(activationDate);
+        const periodStart = activationDate;
+        const monthStart = monthStartParts ? buildStableDate(monthStartParts.year, monthStartParts.month, 1) : null;
+        const activeDays = getInclusiveDayCount(periodStart, periodEnd);
+        const totalDays = getInclusiveDayCount(monthStart, periodEnd);
+        if (!activeDays || !totalDays || activeDays >= totalDays) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+        return {
+            amount: roundMoney((planAmount / totalDays) * activeDays),
+            isProrated: true,
+            periodStart,
+            periodEnd
+        };
+    };
+
     const getNextMonthParts = (year, month) => (
         month >= 12
             ? { year: year + 1, month: 1 }
@@ -475,7 +535,8 @@ document.addEventListener('DOMContentLoaded', () => {
         credits,
         runningBalance,
         context,
-        sourceType
+        sourceType,
+        proration = null
     }) => {
         const planLabel = resolvePlanLabel(record);
         const previousBalance = roundMoney(Math.max(0, Number(runningBalance) || 0));
@@ -502,7 +563,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const billMetaParts = [
             planLabel,
             formatCurrency(planAmount),
-            sourceType === 'posted' ? 'posted bill' : 'monthly plan'
+            sourceType === 'posted' ? 'posted bill' : 'monthly plan',
+            proration?.isProrated
+                ? `prorated ${formatDate(proration.periodStart, '')} to ${formatDate(proration.periodEnd, '')}`
+                : ''
         ].filter(Boolean);
 
         return {
@@ -635,14 +699,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 cursor += 1;
             }
 
+            const proration = resolveFirstMonthProration(record, billDate, planAmount);
             const result = createBreakdownRow({
                 record,
                 billDate,
-                planAmount,
+                planAmount: proration.amount,
                 credits: cycleCredits,
                 runningBalance,
                 context,
-                sourceType: 'monthly'
+                sourceType: 'monthly',
+                proration: proration.isProrated ? proration : null
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;

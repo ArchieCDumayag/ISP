@@ -2627,6 +2627,9 @@ const resolveCurrentPrepaidCycleBoundary = (customer = {}) => {
 };
 const hasAssignedPlan = (customer) => Boolean(String(customer?.planName || '').trim());
 const isPrepaidActive = (customer = {}, now = new Date()) => {
+    const explicitExpiry = parseDateTimeValue(customer?.prepaidExpirationAt);
+    if (explicitExpiry) return explicitExpiry.getTime() >= now.getTime();
+    if (hasAssignedPlan(customer) && String(customer?.billDate || '').trim()) return true;
     const expiry = resolvePrepaidExpirationDate(customer);
     if (!expiry) return hasAssignedPlan(customer);
     return expiry.getTime() >= now.getTime();
@@ -3908,10 +3911,12 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         payload?.activationDate ?? payload?.activation_date
     );
     const requestedBillDate = normalizeDateOnly(payload?.billDate);
-    const initialBillDate = allowPastBillingDates
+    const initialBillDate = incomingCategory === 'prepaid' || allowPastBillingDates
         ? requestedBillDate
         : resolveInitialNextBillDate(requestedBillDate, now);
-    const incomingBillDate = alignBillDateOnOrAfterActivationDate(initialBillDate, incomingActivationDate);
+    const incomingBillDate = incomingCategory === 'prepaid'
+        ? initialBillDate
+        : alignBillDateOnOrAfterActivationDate(initialBillDate, incomingActivationDate);
     const planBilling = incomingCategory === 'prepaid'
         ? 'Prepaid'
         : (incomingCategory === 'postpaid' ? 'Monthly' : (payload?.planBilling || 'Monthly'));
@@ -3931,15 +3936,22 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         || formatDateOnly(parseDateTimeValue(incomingPrepaidExpirationAt))
         || '';
     const effectiveDueOffset = dueOffset ?? deriveDueOffset({ billDate: requestedBillDate, dueDate: baseIncomingDueDate });
-    const incomingDueDate = computeNextDueDate(incomingBillDate, effectiveDueOffset, baseIncomingDueDate);
-    if (!allowPastBillingDates) {
+    const incomingDueDate = incomingCategory === 'prepaid'
+        ? (baseIncomingDueDate || incomingBillDate)
+        : computeNextDueDate(incomingBillDate, effectiveDueOffset, baseIncomingDueDate);
+    if (incomingCategory !== 'prepaid' && !allowPastBillingDates) {
         assertDateNotBeforeToday(incomingBillDate, 'Next bill date');
         assertDateNotBeforeToday(incomingDueDate, 'Next due date');
     }
     const planReady = Boolean(incomingPlanName);
     const prepaidReady = incomingCategory === 'prepaid'
         ? isPrepaidActive(
-            { planName: incomingPlanName, dueDate: incomingDueDate, prepaidExpirationAt: incomingPrepaidExpirationAt },
+            {
+                planName: incomingPlanName,
+                billDate: incomingBillDate,
+                dueDate: incomingDueDate,
+                prepaidExpirationAt: incomingPrepaidExpirationAt
+            },
             now
         )
         : true;
@@ -4131,7 +4143,9 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         ? String(payload?.billDate || '').trim()
         : String(existing?.billDate || '').trim();
     const normalizedNextBillDate = normalizeDateOnly(nextBillDateRaw);
-    const nextBillDate = alignBillDateOnOrAfterActivationDate(normalizedNextBillDate, normalizedActivationDate);
+    const nextBillDate = incomingCategory === 'prepaid'
+        ? normalizedNextBillDate
+        : alignBillDateOnOrAfterActivationDate(normalizedNextBillDate, normalizedActivationDate);
     const hasIncomingDueDate = Object.prototype.hasOwnProperty.call(payload || {}, 'dueDate');
     const nextDueDateRaw = hasIncomingDueDate
         ? String(payload?.dueDate || '').trim()
@@ -4151,10 +4165,11 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         )
         : existing?.prepaidExpirationAt;
     const normalizedPrepaidExpirationAt = normalizePrepaidExpirationAt(incomingPrepaidExpirationRaw);
-    let nextDueDate = normalizeDateOnly(nextDueDateRaw)
+    const normalizedIncomingDueDate = normalizeDateOnly(nextDueDateRaw)
         || formatDateOnly(parseDateTimeValue(normalizedPrepaidExpirationAt))
         || nextBillDate;
-    if (nextBillDate && normalizedNextBillDate && nextBillDate !== normalizedNextBillDate) {
+    let nextDueDate = normalizedIncomingDueDate;
+    if (incomingCategory !== 'prepaid' && nextBillDate && normalizedNextBillDate && nextBillDate !== normalizedNextBillDate) {
         const alignedDueOffset = deriveDueOffset({
             billDate: normalizedNextBillDate,
             dueDate: nextDueDate,
@@ -4162,7 +4177,7 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         });
         nextDueDate = computeNextDueDate(nextBillDate, alignedDueOffset, nextDueDate);
     }
-    if (!allowPastBillingDates) {
+    if (incomingCategory !== 'prepaid' && !allowPastBillingDates) {
         assertDateNotBeforeToday(nextBillDate, 'Next bill date', { allowValue: existing?.billDate });
         assertDateNotBeforeToday(nextDueDate, 'Next due date', { allowValue: existing?.dueDate });
     }
@@ -4227,6 +4242,7 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         ? isPrepaidActive(
             {
                 planName: activePlanName || nextPlanName,
+                billDate: nextBillDate,
                 dueDate: nextDueDate,
                 prepaidExpirationAt: incomingCategory === 'prepaid' ? normalizedPrepaidExpirationAt : ''
             },

@@ -321,6 +321,11 @@
                         <input type="text" id="dueDateDisplay" readonly>
                         <input type="hidden" id="dueDate" name="dueDate" required>
                     </div>
+                    <div class="form-field" id="firstBillPeriodField">
+                        <label for="firstBillPeriodDisplay">First Bill (Prorated)</label>
+                        <input type="text" id="firstBillPeriodDisplay" readonly>
+                        <small class="muted">First month is billed from activation date until month-end.</small>
+                    </div>
                     <div class="form-field" id="creditLimitField">
                         <label for="creditLimit">Credit Limit (amount)</label>
                         <input type="number" id="creditLimit" name="creditLimit" min="0" step="1">
@@ -1034,6 +1039,8 @@
             const dueDateInput = document.getElementById('dueDate');
             const dueOffsetInput = document.getElementById('dueOffset');
             const dueDateDisplay = document.getElementById('dueDateDisplay');
+            const firstBillPeriodDisplay = document.getElementById('firstBillPeriodDisplay');
+            const firstBillPeriodField = document.getElementById('firstBillPeriodField');
             const prepaidExpirationInput = document.getElementById('prepaidExpirationAt');
             const activationDateInput = document.getElementById('activationDate');
             const billDateField = document.getElementById('billDateField');
@@ -1748,20 +1755,53 @@
             const getTodayDateInputValue = () => {
                 return formatDateInputValue(new Date());
             };
-            const getTomorrowDateInputValue = () => {
-                const next = new Date();
-                next.setDate(next.getDate() + 1);
-                return formatDateInputValue(next);
+            const getMonthStartDateInputValue = (value = new Date()) => {
+                const base = parseDateOnly(value) || (value instanceof Date ? value : new Date());
+                return formatDateInputValue(new Date(base.getFullYear(), base.getMonth(), 1));
             };
-            const getSuggestedNextBillDateInputValue = () => {
-                const now = new Date();
-                const targetMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-                const lastDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
-                return formatDateInputValue(
-                    new Date(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(now.getDate(), lastDay))
-                );
+            const getMonthEndDateInputValue = (value = new Date()) => {
+                const base = parseDateOnly(value) || (value instanceof Date ? value : new Date());
+                return formatDateInputValue(new Date(base.getFullYear(), base.getMonth() + 1, 0));
             };
-            const getMinimumNextBillDateInputValue = () => (isEditMode() ? getTodayDateInputValue() : getTomorrowDateInputValue());
+            const getPlanTypeDueDateInputValue = (category, value = new Date()) => (
+                normalizePlanCategory(category) === 'prepaid'
+                    ? getMonthStartDateInputValue(value)
+                    : getMonthEndDateInputValue(value)
+            );
+            const getSuggestedNextBillDateInputValue = () => (
+                getPlanTypeDueDateInputValue(planCategorySelect?.value || 'postpaid', activationDateInput?.value || getTodayDateInputValue())
+            );
+            const formatPeriodDate = (value) => {
+                const parsed = value instanceof Date ? value : parseDateOnly(value);
+                if (!parsed || Number.isNaN(parsed.getTime())) return '';
+                return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            };
+            const getInclusiveDayCount = (startValue, endValue) => {
+                const start = startValue instanceof Date ? startValue : parseDateOnly(startValue);
+                const end = endValue instanceof Date ? endValue : parseDateOnly(endValue);
+                if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+                    return 0;
+                }
+                const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+                const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+                return Math.floor((endUtc - startUtc) / 86400000) + 1;
+            };
+            const roundMoney = (value) => {
+                const amount = Number(value);
+                if (!Number.isFinite(amount)) return 0;
+                return Math.round((amount + Number.EPSILON) * 100) / 100;
+            };
+            const getSelectedPlanAmount = () => {
+                const selectedPlanName = String(planSelect?.value || '').trim();
+                if (!selectedPlanName) return 0;
+                const selectedPlan = findCatalogPlanForCategory({
+                    planName: selectedPlanName,
+                    category: planCategorySelect?.value || 'postpaid'
+                });
+                const amount = Number(selectedPlan?.price ?? selectedPlan?.amount ?? selectedPlan?.planAmount);
+                return Number.isFinite(amount) && amount > 0 ? amount : 0;
+            };
+            const getMinimumNextBillDateInputValue = () => getTodayDateInputValue();
 
             let allCustomers = []; // In-memory store for customers
             let selectedCustomerIds = new Set();
@@ -2387,6 +2427,9 @@
 
             function enforceActivationSafeBillDateSelection({ silent = false } = {}) {
                 if (!billDateInput) return true;
+                if (normalizePlanCategory(planCategorySelect?.value || 'postpaid') === 'prepaid') {
+                    return true;
+                }
 
                 const currentValue = formatDateISO(parseDateOnly(billDateInput.value || ''));
                 const alignedValue = alignBillDateOnOrAfterActivationDate(
@@ -2405,6 +2448,10 @@
 
             function syncBillDateInputMin() {
                 if (!billDateInput) return;
+                if (normalizePlanCategory(planCategorySelect?.value || 'postpaid') === 'prepaid') {
+                    billDateInput.removeAttribute('min');
+                    return;
+                }
                 const baseMinimumValue = getMinimumNextBillDateInputValue();
                 const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || ''));
                 const minimumValue = activationValue && activationValue > baseMinimumValue
@@ -2418,10 +2465,15 @@
 
             function enforceNonPastBillDateSelection() {
                 if (!billDateInput) return true;
+                if (normalizePlanCategory(planCategorySelect?.value || 'postpaid') === 'prepaid') {
+                    syncBillDateInputMin();
+                    return true;
+                }
                 const minimumValue = getMinimumNextBillDateInputValue();
                 const originalValue = formatDateISO(parseDateOnly(billDateInput.dataset.originalValue || ''));
                 const currentValue = formatDateISO(parseDateOnly(billDateInput.value || ''));
-                if (!currentValue || currentValue >= minimumValue || (originalValue && currentValue === originalValue)) {
+                const canKeepOriginalValue = isEditMode() && originalValue && currentValue === originalValue;
+                if (!currentValue || currentValue >= minimumValue || canKeepOriginalValue) {
                     syncBillDateInputMin();
                     return true;
                 }
@@ -2429,7 +2481,7 @@
                 syncBillDateInputMin();
                 showToast(isEditMode()
                     ? 'Next bill date cannot be earlier than today.'
-                    : 'First bill date for a new customer must be after today.');
+                    : 'First bill date for a new customer cannot be earlier than today.');
                 return false;
             }
 
@@ -2474,12 +2526,63 @@
                 return formatDateISO(due);
             }
 
+            function updateFirstBillPeriodDisplay() {
+                if (!firstBillPeriodDisplay) return;
+                if (firstBillPeriodField) {
+                    firstBillPeriodField.style.display = isEditMode() ? 'none' : '';
+                }
+                if (isEditMode()) {
+                    firstBillPeriodDisplay.value = '';
+                    return;
+                }
+
+                const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || '')) || getTodayDateInputValue();
+                const periodEndValue = getMonthEndDateInputValue(activationValue);
+                const activeDays = getInclusiveDayCount(activationValue, periodEndValue);
+                const daysInMonth = getInclusiveDayCount(getMonthStartDateInputValue(activationValue), periodEndValue);
+                const selectedPlanAmount = getSelectedPlanAmount();
+                const proratedAmount = daysInMonth > 0 && selectedPlanAmount > 0
+                    ? roundMoney((selectedPlanAmount / daysInMonth) * activeDays)
+                    : 0;
+                const amountText = proratedAmount > 0 ? ` — ${formatPeso(proratedAmount)}` : '';
+                firstBillPeriodDisplay.value = `${formatPeriodDate(activationValue)} to ${formatPeriodDate(periodEndValue)}${amountText}`;
+            }
+
+            function applyPlanTypeBillingDefaults({ force = false } = {}) {
+                if (isEditMode() && !force) {
+                    updateFirstBillPeriodDisplay();
+                    return;
+                }
+                const category = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
+                const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || '')) || getTodayDateInputValue();
+                if (activationDateInput && !activationDateInput.value) {
+                    activationDateInput.value = activationValue;
+                }
+                const dueValue = getPlanTypeDueDateInputValue(category, activationValue);
+                if (billDateInput) {
+                    billDateInput.value = dueValue;
+                    billDateInput.dataset.originalValue = dueValue;
+                }
+                if (dueOffsetInput) {
+                    dueOffsetInput.value = DEFAULT_DUE_OFFSET;
+                }
+                if (dueDateInput) dueDateInput.value = dueValue;
+                if (dueDateDisplay) dueDateDisplay.value = dueValue;
+                syncBillDateInputMin();
+                updateFirstBillPeriodDisplay();
+            }
+
             function recomputeDueDate() {
+                if (!isEditMode()) {
+                    applyPlanTypeBillingDefaults({ force: true });
+                    return;
+                }
                 const bill = billDateInput?.value || '';
                 const offset = dueOffsetInput?.value || DEFAULT_DUE_OFFSET;
                 const due = computeDueDate(bill, offset);
                 if (dueDateInput) dueDateInput.value = due || '';
                 if (dueDateDisplay) dueDateDisplay.value = due || '';
+                updateFirstBillPeriodDisplay();
             }
 
             function isServiceReady() {
@@ -2511,8 +2614,13 @@
             }
 
             function applyPlanCategoryUI(category) {
-                if (billDateLabel) billDateLabel.textContent = 'Next Bill Date';
-                if (dueDateLabel) dueDateLabel.textContent = 'Computed Due Date';
+                const normalizedCategory = normalizePlanCategory(category || planCategorySelect?.value || 'postpaid');
+                if (billDateLabel) {
+                    billDateLabel.textContent = normalizedCategory === 'prepaid'
+                        ? 'Billing Date (1st day)'
+                        : 'Billing Date (month-end)';
+                }
+                if (dueDateLabel) dueDateLabel.textContent = 'Due Date';
                 if (planField) planField.style.display = '';
                 if (planSelect) {
                     planSelect.required = true;
@@ -2523,17 +2631,39 @@
                 if (prepaidExpirationField) prepaidExpirationField.style.display = 'none';
                 if (creditLimitField) creditLimitField.style.display = '';
                 if (dueOffsetHelp) {
-                    dueOffsetHelp.textContent = '';
+                    dueOffsetHelp.textContent = isEditMode()
+                        ? ''
+                        : (
+                            normalizedCategory === 'prepaid'
+                                ? 'Prepaid due date is auto-set to the 1st day of the activation month.'
+                                : 'Postpaid due date is auto-set to the last day of the activation month.'
+                        );
                 }
                 if (billDateField) billDateField.style.display = '';
-                if (billDateInput) billDateInput.required = true;
+                if (billDateInput) {
+                    billDateInput.required = true;
+                    billDateInput.readOnly = !isEditMode();
+                }
                 if (dueDateInput) dueDateInput.required = true;
-                if (dueOffsetInput) dueOffsetInput.required = true;
+                if (dueOffsetInput) {
+                    dueOffsetInput.required = true;
+                    dueOffsetInput.readOnly = !isEditMode();
+                }
+                if (firstBillPeriodField) {
+                    firstBillPeriodField.style.display = isEditMode() ? 'none' : '';
+                }
                 if (prepaidExpirationInput) {
                     prepaidExpirationInput.required = false;
                     prepaidExpirationInput.value = '';
                 }
-                if (activationDateInput) activationDateInput.required = false;
+                if (activationDateInput) {
+                    activationDateInput.required = false;
+                    if (isEditMode()) {
+                        activationDateInput.removeAttribute('min');
+                    } else {
+                        activationDateInput.min = getTodayDateInputValue();
+                    }
+                }
                 if (activationDateInput && !activationDateInput.value) {
                     activationDateInput.value = getTodayDateInputValue();
                 }
@@ -2542,8 +2672,12 @@
                         ? getTodayDateInputValue()
                         : getSuggestedNextBillDateInputValue();
                 }
-                enforceActivationSafeBillDateSelection({ silent: true });
-                syncBillDateInputMin();
+                if (!isEditMode()) {
+                    applyPlanTypeBillingDefaults({ force: true });
+                } else {
+                    enforceActivationSafeBillDateSelection({ silent: true });
+                    syncBillDateInputMin();
+                }
                 recomputeDueDate();
                 applyServiceStatus();
             }
@@ -5839,11 +5973,11 @@
 
                     if (planCategory === 'prepaid') {
                         billingCycleDisplay = 'Prepaid';
-                        const prepaidExpiry = customer.prepaidExpirationAt || customer.dueDate;
-                        if (prepaidExpiry) {
-                            billingCycleMeta = `Expires: ${formatViewDateTime(prepaidExpiry, 'Not set')}`;
+                        const prepaidDue = customer.dueDate || customer.billDate;
+                        if (prepaidDue) {
+                            billingCycleMeta = `Due: ${formatViewDate(prepaidDue, 'Not set')}`;
                         } else {
-                            billingCycleMeta = 'No expiry set';
+                            billingCycleMeta = 'No due date set';
                         }
                     } else if (billDate && !isNaN(billDate)) {
                         const day = billDate.getDate();

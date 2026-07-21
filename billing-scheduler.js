@@ -671,6 +671,64 @@ function advanceMonthlyCycleDate(baseDate, months = 1) {
   return new Date(year, month, clampDay(year, month, day));
 }
 
+function roundMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+function isSameBillingMonth(left, right) {
+  return Boolean(
+    left instanceof Date
+    && right instanceof Date
+    && !isNaN(left)
+    && !isNaN(right)
+    && left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+  );
+}
+
+function getInclusiveDayCount(startDate, endDate) {
+  if (!(startDate instanceof Date) || isNaN(startDate) || !(endDate instanceof Date) || isNaN(endDate)) return 0;
+  const startUtc = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const endUtc = Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  if (endUtc < startUtc) return 0;
+  return Math.floor((endUtc - startUtc) / 86400000) + 1;
+}
+
+function resolveFirstBillingCharge(customer = {}, billDate, fullPlanAmount = 0) {
+  const planAmount = Number(fullPlanAmount) || 0;
+  const activationDate = parseDateOnly(customer?.activationDate);
+  if (!activationDate || !(billDate instanceof Date) || isNaN(billDate) || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
+    return {
+      amount: roundMoney(planAmount),
+      prorated: false,
+      periodStart: null,
+      periodEnd: null
+    };
+  }
+
+  const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+  const periodEnd = new Date(activationDate.getFullYear(), activationDate.getMonth() + 1, 0);
+  const activeDays = getInclusiveDayCount(activationDate, periodEnd);
+  const totalDays = getInclusiveDayCount(monthStart, periodEnd);
+  if (!activeDays || !totalDays || activeDays >= totalDays) {
+    return {
+      amount: roundMoney(planAmount),
+      prorated: false,
+      periodStart: null,
+      periodEnd: null
+    };
+  }
+
+  return {
+    amount: roundMoney((planAmount / totalDays) * activeDays),
+    prorated: true,
+    periodStart: activationDate,
+    periodEnd
+  };
+}
+
 function alignBillDateOnOrAfterActivationDate(billDate, activationDateValue) {
   if (!(billDate instanceof Date) || isNaN(billDate)) return null;
   const activationDate = parseDateOnly(activationDateValue);
@@ -771,6 +829,9 @@ function hasAssignedPlan(customer) {
 }
 
 function isPrepaidActive(customer, now = new Date()) {
+  const explicitExpiry = parseDateTime(customer?.prepaidExpirationAt);
+  if (explicitExpiry) return explicitExpiry.getTime() >= now.getTime();
+  if (hasAssignedPlan(customer) && String(customer?.billDate || '').trim()) return true;
   const expiry = resolvePrepaidExpirationDate(customer);
   if (!expiry) return false;
   return expiry.getTime() >= now.getTime();
@@ -1556,13 +1617,17 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
     }
 
     const isoDate = formatDateOnly(billDate);
+    const firstBillingCharge = resolveFirstBillingCharge(customer, billDate, planAmount);
+    const chargeDescription = firstBillingCharge.prorated
+      ? `Monthly Recurring Charge (Prorated ${formatDateOnly(firstBillingCharge.periodStart)} to ${formatDateOnly(firstBillingCharge.periodEnd)})`
+      : 'Monthly Recurring Charge';
     const entry = {
       id: billId,
-      amount: planAmount,
+      amount: firstBillingCharge.amount,
       date: isoDate,
       kind: 'charge',
       reference: undefined,
-      description: 'Monthly Recurring Charge',
+      description: chargeDescription,
       type: 'charge',
       direction: 'debit',
       recordedAt: formatManilaDateTime(now) || new Date().toISOString(),

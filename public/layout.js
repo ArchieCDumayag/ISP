@@ -69,79 +69,28 @@ applyFlavorMetadata({
                 display: none;
                 align-items: center;
                 justify-content: center;
-                background: rgba(15, 23, 42, 0.52);
-                backdrop-filter: blur(4px);
+                background: rgba(15, 23, 42, 0.48);
+                backdrop-filter: blur(2px);
                 z-index: 20000;
                 padding: 18px;
             }
             #appConfirmOverlay.show { display: flex; }
             #appConfirmDialog {
                 width: min(460px, 96vw);
-                border-radius: 14px;
-                border: 1px solid rgba(148, 163, 184, 0.35);
-                background: #ffffff;
-                color: #0f172a;
-                box-shadow: 0 24px 44px rgba(2, 6, 23, 0.28);
-                overflow: hidden;
+                margin: auto;
+                pointer-events: auto;
             }
             #appConfirmHead {
-                padding: 16px 18px 10px;
-                font-size: 0.95rem;
-                font-weight: 700;
-                letter-spacing: 0.02em;
+                margin: 0;
             }
             #appConfirmBody {
-                padding: 4px 18px 16px;
-                font-size: 0.95rem;
-                line-height: 1.45;
                 white-space: pre-wrap;
             }
             #appConfirmActions {
-                display: flex;
                 justify-content: flex-end;
-                gap: 10px;
-                padding: 12px 18px 16px;
-                border-top: 1px solid rgba(148, 163, 184, 0.22);
-                background: rgba(248, 250, 252, 0.82);
-            }
-            #appConfirmActions .app-confirm-btn {
-                border: 1px solid rgba(148, 163, 184, 0.45);
-                border-radius: 10px;
-                padding: 9px 14px;
-                font-size: 0.9rem;
-                font-weight: 600;
-                cursor: pointer;
-                background: #ffffff;
-                color: #334155;
-            }
-            #appConfirmActions .app-confirm-btn.confirm {
-                border-color: rgba(37, 99, 235, 0.3);
-                background: linear-gradient(135deg, #00a6d6, #007bff);
-                color: #ffffff;
-            }
-            #appConfirmActions .app-confirm-btn:focus-visible {
-                outline: 2px solid rgba(37, 99, 235, 0.5);
-                outline-offset: 2px;
             }
             body.theme-dark #appConfirmDialog {
-                background: #0f172a;
                 color: #e2e8f0;
-                border-color: rgba(71, 85, 105, 0.7);
-                box-shadow: 0 24px 44px rgba(2, 6, 23, 0.6);
-            }
-            body.theme-dark #appConfirmActions {
-                background: rgba(15, 23, 42, 0.9);
-                border-top-color: rgba(71, 85, 105, 0.55);
-            }
-            body.theme-dark #appConfirmActions .app-confirm-btn {
-                background: rgba(30, 41, 59, 0.9);
-                color: #e2e8f0;
-                border-color: rgba(100, 116, 139, 0.7);
-            }
-            body.theme-dark #appConfirmActions .app-confirm-btn.confirm {
-                border-color: rgba(59, 130, 246, 0.45);
-                background: linear-gradient(135deg, #0ea5e9, #2563eb);
-                color: #ffffff;
             }
         `;
         document.head.appendChild(style);
@@ -155,13 +104,18 @@ applyFlavorMetadata({
         overlay.setAttribute('role', 'dialog');
         overlay.setAttribute('aria-modal', 'true');
         overlay.setAttribute('aria-hidden', 'true');
+        overlay.className = 'modal modal-blur app-confirm-modal';
         overlay.innerHTML = `
-            <div id="appConfirmDialog">
-                <div id="appConfirmHead">Please confirm</div>
-                <div id="appConfirmBody"></div>
-                <div id="appConfirmActions">
-                    <button type="button" class="app-confirm-btn cancel" id="appConfirmCancel">Cancel</button>
-                    <button type="button" class="app-confirm-btn confirm" id="appConfirmOk">OK</button>
+            <div id="appConfirmDialog" class="modal-dialog modal-sm modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="appConfirmHead" class="modal-title">Please confirm</h3>
+                    </div>
+                    <div id="appConfirmBody" class="modal-body"></div>
+                    <div id="appConfirmActions" class="modal-footer">
+                        <button type="button" class="app-confirm-btn cancel btn btn-outline-secondary" id="appConfirmCancel">Cancel</button>
+                        <button type="button" class="app-confirm-btn confirm btn btn-primary" id="appConfirmOk">OK</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -265,45 +219,25 @@ applyFlavorMetadata({
                 gap: 10px;
                 pointer-events: none;
             }
-            #appToastHost .app-toast {
+            #appToastHost .app-toast.toast {
                 pointer-events: auto;
                 max-width: min(420px, calc(100vw - 36px));
-                border-radius: 14px;
-                border: 1px solid rgba(255, 255, 255, 0.14);
-                box-shadow: 0 18px 40px rgba(37, 99, 235, 0.32);
-                padding: 13px 16px;
-                font-size: 0.93rem;
-                font-weight: 600;
-                line-height: 1.4;
-                color: #ffffff;
+                border-radius: var(--tblr-border-radius-lg, 10px);
+                box-shadow: var(--tblr-shadow-dropdown, 0 18px 40px rgba(15, 23, 42, 0.18));
                 opacity: 0;
                 transform: translateY(10px);
                 transition: opacity 180ms ease, transform 180ms ease;
-                cursor: pointer;
                 word-break: break-word;
-                backdrop-filter: blur(8px);
             }
-            #appToastHost .app-toast.show {
+            #appToastHost .app-toast.toast.show {
                 opacity: 1;
                 transform: translateY(0);
             }
-            #appToastHost .app-toast.info {
-                background: linear-gradient(135deg, #0ea5e9, #2563eb);
+            #appToastHost .app-toast .toast-body {
+                font-weight: 600;
+                line-height: 1.35;
             }
-            #appToastHost .app-toast.success {
-                background: linear-gradient(135deg, #22c55e, #16a34a);
-                box-shadow: 0 18px 40px rgba(22, 163, 74, 0.32);
-            }
-            #appToastHost .app-toast.warning {
-                background: linear-gradient(135deg, #f59e0b, #d97706);
-                box-shadow: 0 18px 40px rgba(217, 119, 6, 0.34);
-            }
-            #appToastHost .app-toast.error {
-                background: linear-gradient(135deg, #ef4444, #dc2626);
-                box-shadow: 0 18px 40px rgba(220, 38, 38, 0.34);
-            }
-            body.theme-dark #appToastHost .app-toast {
-                border-color: rgba(255, 255, 255, 0.12);
+            body.theme-dark #appToastHost .app-toast.toast {
                 box-shadow: 0 20px 42px rgba(2, 6, 23, 0.55);
             }
             @media (max-width: 768px) {
@@ -313,12 +247,12 @@ applyFlavorMetadata({
                     bottom: 16px;
                     align-items: stretch;
                 }
-                #appToastHost .app-toast {
+                #appToastHost .app-toast.toast {
                     max-width: none;
                 }
             }
             @media (prefers-reduced-motion: reduce) {
-                #appToastHost .app-toast {
+                #appToastHost .app-toast.toast {
                     transition: none;
                     transform: none;
                 }
@@ -362,9 +296,29 @@ applyFlavorMetadata({
 
         const host = ensureToastHost();
         const toast = document.createElement('div');
-        toast.className = `app-toast ${type}`;
+        const toneClass = type === 'success'
+            ? 'text-bg-success'
+            : type === 'warning'
+                ? 'text-bg-warning'
+                : type === 'error'
+                    ? 'text-bg-danger'
+                    : 'text-bg-primary';
+        toast.className = `toast app-toast ${type} ${toneClass} border-0`;
         toast.setAttribute('role', 'status');
-        toast.textContent = text;
+        toast.setAttribute('aria-live', 'polite');
+        toast.setAttribute('aria-atomic', 'true');
+        const toastRow = document.createElement('div');
+        toastRow.className = 'd-flex align-items-center';
+        const toastBody = document.createElement('div');
+        toastBody.className = 'toast-body';
+        toastBody.textContent = text;
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = `btn-close ${type === 'warning' ? '' : 'btn-close-white'} me-2 m-auto`;
+        closeButton.setAttribute('aria-label', 'Close notification');
+        toastRow.appendChild(toastBody);
+        toastRow.appendChild(closeButton);
+        toast.appendChild(toastRow);
         host.appendChild(toast);
 
         let closed = false;
@@ -376,6 +330,11 @@ applyFlavorMetadata({
         };
 
         const timerId = duration > 0 ? setTimeout(close, duration) : null;
+        closeButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (timerId) clearTimeout(timerId);
+            close();
+        });
         toast.addEventListener('click', () => {
             if (timerId) clearTimeout(timerId);
             close();

@@ -2053,3 +2053,298 @@ body.theme-dark #customerViewModal.tabler-customer-view .view-table__table tbody
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
+
+/* Payments account view: Tabler dialog version.
+   The legacy full-screen fixed panel sat underneath the vertical sidebar; keep this
+   modal above the app chrome and use a centered Tabler-style dialog. */
+#accountInfoModal.tabler-customer-view.modal {
+    width: 100vw !important;
+    max-width: none !important;
+    z-index: 1065 !important;
+    background: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(3px);
+}
+
+#accountInfoModal.tabler-customer-view.modal.show {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 1rem !important;
+}
+
+#accountInfoModal.tabler-customer-view .customer-view-dialog {
+    width: min(1180px, calc(100vw - 2rem)) !important;
+    max-width: min(1180px, calc(100vw - 2rem)) !important;
+    height: auto !important;
+    max-height: calc(100vh - 2rem) !important;
+    margin: auto !important;
+    pointer-events: none;
+}
+
+#accountInfoModal.tabler-customer-view .customer-view-dialog .modal-content {
+    position: relative !important;
+    inset: auto !important;
+    top: auto !important;
+    left: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: calc(100vh - 2rem) !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    pointer-events: auto;
+    border: 1px solid var(--app-border, #dce3ed) !important;
+    border-radius: var(--tblr-border-radius-lg, 8px) !important;
+    background: var(--app-surface, #ffffff) !important;
+    box-shadow: var(--tblr-box-shadow-lg, 0 1rem 3rem rgba(15, 23, 42, 0.18)) !important;
+    overflow: hidden !important;
+}
+
+#accountInfoModal.tabler-customer-view .modal-header {
+    min-height: auto !important;
+    padding: .75rem 1rem !important;
+    background: var(--app-surface, #ffffff) !important;
+    border-bottom: 1px solid var(--app-border, #dce3ed) !important;
+}
+
+#accountInfoModal.tabler-customer-view.modal.customer-view-modal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+    padding: .875rem !important;
+    background: var(--app-bg, #f6f8fb) !important;
+}
+
+#accountInfoModal.tabler-customer-view #accountInfoModalTitle {
+    margin: 0;
+    color: var(--app-text, #182433);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+#accountInfoModal.tabler-customer-view .view-layout {
+    grid-template-columns: minmax(260px, .82fr) minmax(0, 1.6fr);
+    gap: .875rem;
+}
+
+#accountInfoModal.tabler-customer-view .view-sidebar {
+    top: 0;
+    max-height: none;
+    padding-top: 0;
+}
+
+#accountInfoModal.tabler-customer-view .view-group {
+    gap: .5rem;
+}
+
+#accountInfoModal.tabler-customer-view .view-group-label,
+#accountInfoModal.tabler-customer-view .view-summary-label,
+#accountInfoModal.tabler-customer-view .view-row-label {
+    color: var(--app-muted, #667085);
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+#accountInfoModal.tabler-customer-view .view-profile-card,
+#accountInfoModal.tabler-customer-view .view-key-card,
+#accountInfoModal.tabler-customer-view .view-panel {
+    border: 1px solid var(--app-border, #dce3ed) !important;
+    border-radius: var(--tblr-border-radius-lg, 8px) !important;
+    background: var(--app-surface, #ffffff) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+#accountInfoModal.tabler-customer-view .view-profile-card::after,
+#accountInfoModal.tabler-customer-view .view-panel::before,
+#accountInfoModal.tabler-customer-view .view-panel-title::before {
+    display: none;
+}
+
+#accountInfoModal.tabler-customer-view .view-profile-card,
+#accountInfoModal.tabler-customer-view .view-panel {
+    padding: 1rem;
+}
+
+#accountInfoModal.tabler-customer-view .view-key-card {
+    padding: .75rem;
+}
+
+#accountInfoModal.tabler-customer-view .view-profile-header .avatar {
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--tblr-border-radius, 6px);
+    border: 0;
+    box-shadow: none;
+}
+
+#accountInfoModal.tabler-customer-view .view-name {
+    color: var(--app-text, #182433);
+    font-size: 1rem;
+    line-height: 1.25;
+}
+
+#accountInfoModal.tabler-customer-view .view-contact {
+    margin-top: .75rem;
+    padding-inline: 0;
+    gap: .375rem;
+}
+
+#accountInfoModal.tabler-customer-view .view-contact-item {
+    min-height: 2rem;
+    border: 1px solid var(--app-border, #dce3ed);
+    background: var(--app-bg, #f6f8fb);
+}
+
+#accountInfoModal.tabler-customer-view .view-panels {
+    gap: .875rem;
+    margin-top: 0;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel-title {
+    margin-bottom: .75rem;
+    color: var(--app-text, #182433);
+    font-size: .95rem;
+    letter-spacing: 0;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid {
+    grid-column: 1 / -1;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-rows {
+    grid-template-columns: minmax(112px, .8fr) minmax(0, 1.2fr) !important;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-rows::before {
+    display: none;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row > *,
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row:nth-child(n+5) .view-row-label,
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row:nth-child(n+5) .view-row-value {
+    grid-row: auto;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row .view-row-label,
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row:nth-child(n+5) .view-row-label {
+    grid-column: 1;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row .view-row-value,
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row:nth-child(n+5) .view-row-value {
+    grid-column: 2;
+}
+
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row:nth-child(-n+4) .view-row-value,
+#accountInfoModal.tabler-customer-view .view-panel--pppoe-grid .view-row:nth-child(n+5) .view-row-label {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+#accountInfoModal.tabler-customer-view .view-row {
+    min-height: 2.125rem;
+    padding: .4375rem 0;
+    border: 0;
+    border-bottom: 1px solid var(--app-border, #dce3ed);
+    border-radius: 0;
+    background: transparent;
+}
+
+#accountInfoModal.tabler-customer-view .view-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+#accountInfoModal.tabler-customer-view .view-table {
+    border-color: var(--app-border, #dce3ed);
+    border-radius: var(--tblr-border-radius-lg, 8px);
+    box-shadow: none;
+}
+
+#accountInfoModal.tabler-customer-view .view-table__table {
+    min-width: 760px;
+    font-size: .8125rem;
+}
+
+#accountInfoModal.tabler-customer-view .view-table__table thead th {
+    background: var(--app-bg, #f6f8fb);
+    border-bottom-color: var(--app-border, #dce3ed);
+    color: var(--app-muted, #667085);
+    font-size: .75rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+body.theme-dark #accountInfoModal.tabler-customer-view .customer-view-dialog .modal-content,
+body.theme-dark #accountInfoModal.tabler-customer-view .modal-header,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-profile-card,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-key-card,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-panel {
+    background: var(--app-surface, #182433) !important;
+    border-color: var(--app-border, #2f3b4a) !important;
+    color: var(--app-text, #f4f6fa);
+}
+
+body.theme-dark #accountInfoModal.tabler-customer-view.modal.customer-view-modal .modal-body,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-contact-item,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-table__table thead th {
+    background: var(--app-bg, #0f1720) !important;
+}
+
+body.theme-dark #accountInfoModal.tabler-customer-view #accountInfoModalTitle,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-name,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-account-number,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-panel-title,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-row-value,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-balance-value {
+    color: var(--app-text, #f4f6fa);
+}
+
+body.theme-dark #accountInfoModal.tabler-customer-view .view-group-label,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-summary-label,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-row-label,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-contact-item,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-table__table thead th {
+    color: var(--app-muted, #9aa6b2);
+}
+
+body.theme-dark #accountInfoModal.tabler-customer-view .view-row,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-table,
+body.theme-dark #accountInfoModal.tabler-customer-view .view-table__table tbody td {
+    border-color: var(--app-border, #2f3b4a);
+}
+
+@media (max-width: 960px) {
+    #accountInfoModal.tabler-customer-view .customer-view-dialog {
+        width: calc(100vw - 1rem) !important;
+        max-width: calc(100vw - 1rem) !important;
+        max-height: calc(100vh - 1rem) !important;
+    }
+
+    #accountInfoModal.tabler-customer-view .customer-view-dialog .modal-content {
+        max-height: calc(100vh - 1rem) !important;
+    }
+
+    #accountInfoModal.tabler-customer-view .view-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    #accountInfoModal.tabler-customer-view.modal.show {
+        align-items: flex-end !important;
+        padding: .5rem !important;
+    }
+
+    #accountInfoModal.tabler-customer-view .modal-body {
+        padding: .75rem !important;
+    }
+
+    #accountInfoModal.tabler-customer-view .view-panel,
+    #accountInfoModal.tabler-customer-view .view-profile-card {
+        padding: .875rem;
+    }
+}

@@ -185,21 +185,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const getTrendDailyChartPalette = () => {
         if (isDarkThemeActive()) {
             return {
-                backdropStops: ['rgba(255, 255, 255, 0.02)', 'rgba(148, 163, 184, 0.04)', 'rgba(8, 15, 28, 0.08)'],
-                goldGlow: 'rgba(245, 158, 11, 0.08)',
-                emeraldGlow: 'rgba(20, 184, 166, 0.08)',
-                frameColor: 'rgba(148, 163, 184, 0.14)',
-                balanceStops: ['rgba(254, 240, 138, 0.7)', 'rgba(217, 119, 6, 0.78)', 'rgba(120, 53, 15, 0.66)'],
-                balanceHighlightStops: ['rgba(255, 247, 214, 0.86)', 'rgba(234, 179, 8, 0.84)', 'rgba(120, 53, 15, 0.72)'],
-                balanceBorder: 'rgba(245, 158, 11, 0.38)',
-                balanceHighlightBorder: 'rgba(255, 243, 199, 0.62)',
-                collectedStops: ['rgba(153, 246, 228, 0.68)', 'rgba(13, 148, 136, 0.78)', 'rgba(17, 94, 89, 0.66)'],
-                collectedHighlightStops: ['rgba(204, 251, 241, 0.82)', 'rgba(20, 184, 166, 0.84)', 'rgba(17, 94, 89, 0.72)'],
-                collectedBorder: 'rgba(45, 212, 191, 0.34)',
-                collectedHighlightBorder: 'rgba(153, 246, 228, 0.56)',
-                legendColor: '#f8ebcf',
+                backdropStops: ['rgba(15, 23, 42, 0.96)', 'rgba(15, 23, 42, 0.92)', 'rgba(15, 23, 42, 0.88)'],
+                frameColor: 'rgba(71, 85, 105, 0.5)',
+                balanceStops: ['rgba(96, 165, 250, 0.82)', 'rgba(32, 107, 196, 0.74)', 'rgba(29, 78, 216, 0.62)'],
+                balanceHighlightStops: ['rgba(191, 219, 254, 0.9)', 'rgba(64, 137, 232, 0.86)', 'rgba(32, 107, 196, 0.74)'],
+                balanceBorder: 'rgba(96, 165, 250, 0.42)',
+                balanceHighlightBorder: 'rgba(191, 219, 254, 0.66)',
+                collectedStops: ['rgba(134, 239, 172, 0.78)', 'rgba(47, 179, 68, 0.74)', 'rgba(22, 163, 74, 0.62)'],
+                collectedHighlightStops: ['rgba(187, 247, 208, 0.9)', 'rgba(74, 222, 128, 0.82)', 'rgba(34, 197, 94, 0.7)'],
+                collectedBorder: 'rgba(74, 222, 128, 0.38)',
+                collectedHighlightBorder: 'rgba(187, 247, 208, 0.6)',
+                legendColor: '#cbd5e1',
                 tooltipBackground: 'rgba(7, 12, 24, 0.96)',
-                tooltipTitle: '#f6d28b',
+                tooltipTitle: '#bfdbfe',
                 tooltipBody: '#f8fafc',
                 tooltipBorder: 'rgba(148, 163, 184, 0.22)',
                 xTickColor: 'rgba(248, 250, 252, 0.78)',
@@ -209,21 +207,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         return {
-            backdropStops: ['rgba(255, 255, 255, 0.98)', 'rgba(248, 250, 252, 0.92)', 'rgba(241, 245, 249, 0.9)'],
-            goldGlow: 'rgba(245, 158, 11, 0.08)',
-            emeraldGlow: 'rgba(20, 184, 166, 0.06)',
-            frameColor: 'rgba(203, 213, 225, 0.72)',
-            balanceStops: ['rgba(254, 240, 138, 0.7)', 'rgba(217, 119, 6, 0.76)', 'rgba(146, 64, 14, 0.62)'],
-            balanceHighlightStops: ['rgba(255, 248, 220, 0.88)', 'rgba(245, 158, 11, 0.84)', 'rgba(180, 83, 9, 0.7)'],
-            balanceBorder: 'rgba(217, 119, 6, 0.34)',
-            balanceHighlightBorder: 'rgba(251, 191, 36, 0.5)',
-            collectedStops: ['rgba(167, 243, 208, 0.64)', 'rgba(13, 148, 136, 0.72)', 'rgba(15, 118, 110, 0.58)'],
-            collectedHighlightStops: ['rgba(204, 251, 241, 0.82)', 'rgba(20, 184, 166, 0.82)', 'rgba(15, 118, 110, 0.68)'],
-            collectedBorder: 'rgba(13, 148, 136, 0.3)',
-            collectedHighlightBorder: 'rgba(94, 234, 212, 0.48)',
+            backdropStops: ['rgba(255, 255, 255, 1)', 'rgba(248, 250, 252, 0.96)', 'rgba(241, 245, 249, 0.92)'],
+            frameColor: 'rgba(203, 213, 225, 0.8)',
+            balanceStops: ['rgba(96, 165, 250, 0.76)', 'rgba(32, 107, 196, 0.72)', 'rgba(29, 78, 216, 0.58)'],
+            balanceHighlightStops: ['rgba(191, 219, 254, 0.9)', 'rgba(64, 137, 232, 0.86)', 'rgba(32, 107, 196, 0.72)'],
+            balanceBorder: 'rgba(32, 107, 196, 0.34)',
+            balanceHighlightBorder: 'rgba(96, 165, 250, 0.52)',
+            collectedStops: ['rgba(134, 239, 172, 0.7)', 'rgba(47, 179, 68, 0.72)', 'rgba(22, 163, 74, 0.56)'],
+            collectedHighlightStops: ['rgba(187, 247, 208, 0.86)', 'rgba(74, 222, 128, 0.82)', 'rgba(34, 197, 94, 0.68)'],
+            collectedBorder: 'rgba(47, 179, 68, 0.32)',
+            collectedHighlightBorder: 'rgba(74, 222, 128, 0.48)',
             legendColor: '#334155',
             tooltipBackground: 'rgba(255, 255, 255, 0.98)',
-            tooltipTitle: '#9a6700',
+            tooltipTitle: '#206bc4',
             tooltipBody: '#0f172a',
             tooltipBorder: 'rgba(148, 163, 184, 0.24)',
             xTickColor: 'rgba(51, 65, 85, 0.86)',
@@ -1488,8 +1484,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             return gradient;
         };
-        const luxuryBackdropPlugin = {
-            id: 'luxuryBackdrop',
+        const tablerBackdropPlugin = {
+            id: 'tablerBackdrop',
             beforeDraw(chart) {
                 const chartArea = chart?.chartArea;
                 if (!chartArea) return;
@@ -1504,18 +1500,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.fillStyle = baseGradient;
                 ctx.fillRect(left, top, width, height);
 
-                const goldGlow = ctx.createRadialGradient(left + width * 0.16, top + height * 0.08, 0, left + width * 0.16, top + height * 0.08, width * 0.56);
-                goldGlow.addColorStop(0, palette.goldGlow);
-                goldGlow.addColorStop(1, 'rgba(234, 179, 8, 0)');
-                ctx.fillStyle = goldGlow;
-                ctx.fillRect(left, top, width, height);
-
-                const emeraldGlow = ctx.createRadialGradient(right - width * 0.12, bottom - height * 0.1, 0, right - width * 0.12, bottom - height * 0.1, width * 0.46);
-                emeraldGlow.addColorStop(0, palette.emeraldGlow);
-                emeraldGlow.addColorStop(1, 'rgba(16, 185, 129, 0)');
-                ctx.fillStyle = emeraldGlow;
-                ctx.fillRect(left, top, width, height);
-
                 ctx.strokeStyle = palette.frameColor;
                 ctx.lineWidth = 1;
                 ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
@@ -1525,7 +1509,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         trendState.charts.daily = new Chart(dailyChartCanvas, {
             type: 'bar',
-            plugins: [luxuryBackdropPlugin],
+            plugins: [tablerBackdropPlugin],
             data: {
                 labels,
                 datasets: [

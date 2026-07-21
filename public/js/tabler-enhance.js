@@ -291,18 +291,72 @@
     '.page-checklist',
     '.download-page-checklist'
   ].join(',');
+  const tablerCardSelector = [
+    '.section-frame',
+    '.metric',
+    '.metric-card',
+    '.payment-history-metric',
+    '.stat-card',
+    '.stats-card',
+    '.summary-card',
+    '.dashboard-card',
+    '.trend-card',
+    '.settings-card',
+    '.integration-card',
+    '.access-card',
+    '.finance-card',
+    '.collector-card',
+    '.collector-stat',
+    '.report-card',
+    '.coverage-card',
+    '.plan-card',
+    '.portal-card',
+    '.public-card',
+    '.login-panel',
+    '.login-card',
+    '.reset-card',
+    '.card-table',
+    '.chart-wrapper--tabler',
+    '.chart-wrapper--luxury'
+  ].join(',');
+  const tablerToolbarSelector = [
+    '.section-toolbar',
+    '.header-actions',
+    '.toolbar-actions',
+    '.table-footer',
+    '.payment-history-toolbar',
+    '.payment-history-inline-filters',
+    '.finance-toolbar',
+    '.collector-toolbar',
+    '.assignment-toolbar',
+    '.filter-row',
+    '.filters-row',
+    '.map-tools',
+    '.modal-actions',
+    '.form-actions'
+  ].join(',');
+  const tablerAlertSelector = [
+    '.alert',
+    '.notice',
+    '.banner',
+    '.status-message',
+    '.success-message',
+    '.warning-message',
+    '.error-banner',
+    '.empty-state'
+  ].join(',');
 
   const addClasses = (element, classes) => {
     if (!element || !classes) return;
     String(classes).split(/\s+/).filter(Boolean).forEach((className) => {
-      element.classList.add(className);
+      if (!element.classList.contains(className)) element.classList.add(className);
     });
   };
 
   const removeClasses = (element, classes) => {
     if (!element || !classes) return;
     String(classes).split(/\s+/).filter(Boolean).forEach((className) => {
-      element.classList.remove(className);
+      if (element.classList.contains(className)) element.classList.remove(className);
     });
   };
 
@@ -350,7 +404,7 @@
       }
     });
     addClasses(element, `ti ti-${iconName}`);
-    if (shouldSpin) element.classList.add('ti-spin');
+    if (shouldSpin) addClasses(element, 'ti-spin');
     element.setAttribute('aria-hidden', element.getAttribute('aria-hidden') || 'true');
   };
 
@@ -404,6 +458,11 @@
       button.matches('button[type="submit"]:not(.ghost-btn):not(.secondary-btn)')
     ) {
       addClasses(button, 'btn-primary');
+    } else if (
+      button.classList.contains('chip') ||
+      button.classList.contains('filter-chip')
+    ) {
+      addClasses(button, button.classList.contains('active') || button.classList.contains('is-active') ? 'btn-primary' : 'btn-outline-secondary');
     } else if (
       button.classList.contains('ghost-btn--danger') ||
       button.classList.contains('delete-btn') ||
@@ -842,10 +901,10 @@
       modal.classList.contains('modal-compact') ||
       modal.classList.contains('modal-sm');
     if (compact) {
-      dialog.classList.add('modal-sm');
-      dialog.classList.remove('modal-lg');
+      addClasses(dialog, 'modal-sm');
+      removeClasses(dialog, 'modal-lg');
     } else {
-      dialog.classList.add('modal-lg');
+      addClasses(dialog, 'modal-lg');
     }
     return dialog;
   };
@@ -908,7 +967,7 @@
       if (title) addClasses(title, 'modal-title');
       header.querySelectorAll('.modal-close, .close-modal, .close-btn, [data-modal-close]').forEach((button) => {
         addClasses(button, 'btn-close');
-        button.classList.remove('btn', 'btn-icon', 'btn-ghost-secondary', 'btn-outline-secondary');
+        removeClasses(button, 'btn btn-icon btn-ghost-secondary btn-outline-secondary');
         button.setAttribute('aria-label', button.getAttribute('aria-label') || 'Close');
         if (!button.textContent.trim() || button.querySelector('.ti')) {
           button.innerHTML = '';
@@ -952,8 +1011,118 @@
         tab.classList.contains('is-active') ||
         tab.getAttribute('aria-selected') === 'true'
       ) {
-        tab.classList.add('active');
+        addClasses(tab, 'active');
       }
+    });
+  };
+
+  const inferTone = (element) => {
+    const tokens = getElementTokenText(element);
+    const text = String(element?.textContent || '').toLowerCase();
+    const combined = `${tokens} ${text}`;
+    if (/(danger|error|failed|fail|reject|rejected|inactive|unpaid|overdue|offline|disabled|delete|remove)/.test(combined)) return 'danger';
+    if (/(warning|warn|pending|partial|review|attention|queued|draft|hold)/.test(combined)) return 'warning';
+    if (/(success|active|paid|online|complete|completed|approved|connected|ok|valid)/.test(combined)) return 'success';
+    if (/(info|notice|neutral|basic|standard|reference|sync|import)/.test(combined)) return 'info';
+    return 'primary';
+  };
+
+  const applyBadgeTone = (element) => {
+    if (!element) return;
+    const tone = element.classList.contains('note') &&
+      !element.classList.contains('warning') &&
+      !element.classList.contains('danger') &&
+      !element.classList.contains('error') &&
+      !element.classList.contains('success') &&
+      !element.classList.contains('accent')
+      ? 'secondary'
+      : inferTone(element);
+    addClasses(element, 'badge rounded-pill tabler-badge');
+    const desiredVariant = tone === 'secondary'
+      ? 'bg-secondary-lt text-secondary'
+      : tone === 'danger'
+        ? 'text-bg-danger'
+        : tone === 'warning'
+          ? 'text-bg-warning'
+          : tone === 'success'
+            ? 'text-bg-success'
+            : tone === 'info'
+              ? 'text-bg-info'
+              : 'text-bg-primary';
+    const hasDesiredVariant = desiredVariant.split(/\s+/).every((className) => element.classList.contains(className));
+    if (element.dataset.tablerTone !== tone || !hasDesiredVariant) {
+      removeClasses(element, 'text-bg-primary text-bg-secondary text-bg-success text-bg-danger text-bg-warning text-bg-info text-secondary bg-primary-lt bg-secondary-lt bg-success-lt bg-danger-lt bg-warning-lt bg-info-lt');
+      addClasses(element, desiredVariant);
+      element.dataset.tablerTone = tone;
+    }
+  };
+
+  const enhanceCards = (root) => {
+    queryAll(root, tablerCardSelector).forEach((card) => {
+      if (!card || card.closest('.sidebar, .topbar, .dropdown-menu')) return;
+      addClasses(card, 'card tabler-card');
+      if (card.matches('.metric, .metric-card, .payment-history-metric, .stat-card, .stats-card, .summary-card, .collector-stat')) {
+        addClasses(card, 'tabler-metric-card');
+      }
+      if (card.matches('.section-frame')) addClasses(card, 'tabler-section-card');
+      if (card.matches('.chart-wrapper--tabler, .chart-wrapper--luxury')) addClasses(card, 'tabler-chart-card');
+      if (card.matches('.login-panel, .login-card, .reset-card')) addClasses(card, 'tabler-auth-card');
+    });
+  };
+
+  const enhanceToolbars = (root) => {
+    queryAll(root, tablerToolbarSelector).forEach((toolbar) => {
+      if (!toolbar || toolbar.closest('.sidebar, .topbar')) return;
+      addClasses(toolbar, 'tabler-toolbar');
+    });
+  };
+
+  const enhanceChips = (root) => {
+    queryAll(root, '.chip, .filter-chip, .status-pill, .plan-pill, .note, .target-pill, .metric-pill, .sidebar-badge').forEach((chip) => {
+      if (!chip) return;
+      const isInteractive = chip.matches('button, a, [role="button"], [role="radio"], [role="tab"]');
+      if (isInteractive) {
+        addClasses(chip, 'btn btn-sm rounded-pill tabler-chip');
+        const isActive = chip.classList.contains('active') ||
+          chip.classList.contains('is-active') ||
+          chip.getAttribute('aria-checked') === 'true' ||
+          chip.getAttribute('aria-selected') === 'true' ||
+          chip.getAttribute('aria-pressed') === 'true';
+        const desiredVariant = isActive ? 'btn-primary' : 'btn-outline-secondary';
+        if (chip.dataset.tablerChipVariant !== desiredVariant || !chip.classList.contains(desiredVariant)) {
+          removeClasses(chip, 'btn-primary btn-outline-primary btn-outline-secondary text-bg-primary text-bg-secondary text-bg-success text-bg-danger text-bg-warning text-bg-info');
+          addClasses(chip, desiredVariant);
+          chip.dataset.tablerChipVariant = desiredVariant;
+        }
+        if (chip.matches('button') && !chip.hasAttribute('aria-checked') && !chip.hasAttribute('aria-selected')) {
+          const nextPressed = isActive ? 'true' : 'false';
+          if (chip.getAttribute('aria-pressed') !== nextPressed) chip.setAttribute('aria-pressed', nextPressed);
+        }
+      } else {
+        applyBadgeTone(chip);
+      }
+    });
+  };
+
+  const enhanceAlerts = (root) => {
+    queryAll(root, tablerAlertSelector).forEach((alert) => {
+      if (!alert || alert.closest('.sidebar, .topbar, table')) return;
+      addClasses(alert, 'alert tabler-alert');
+      const tone = inferTone(alert);
+      const alertTone = tone === 'primary' ? 'info' : tone;
+      const desiredVariant = `alert-${alertTone}`;
+      if (alert.dataset.tablerAlertTone !== alertTone || !alert.classList.contains(desiredVariant)) {
+        removeClasses(alert, 'alert-primary alert-secondary alert-success alert-danger alert-warning alert-info');
+        addClasses(alert, desiredVariant);
+        alert.dataset.tablerAlertTone = alertTone;
+      }
+    });
+  };
+
+  const enhanceEmptyStates = (root) => {
+    queryAll(root, '.empty, .empty-state, .archive-empty, .draft-empty, .payments-empty-cell, .finance-empty, .genieacs-table-empty, .collection-history-empty').forEach((empty) => {
+      if (!empty || empty.closest('table')) return;
+      addClasses(empty, 'empty tabler-empty');
     });
   };
 
@@ -969,7 +1138,7 @@
 
   const enhanceBadges = (root) => {
     root.querySelectorAll('.status, .status-pill, .plan-pill, .note, .target-pill, .metric-pill, .sidebar-badge').forEach((badge) => {
-      addClasses(badge, 'badge');
+      applyBadgeTone(badge);
     });
   };
 
@@ -978,11 +1147,16 @@
     root.querySelectorAll('iconify-icon').forEach(replaceIconify);
     root.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a.button, a[class*="-button"], a.public-nav__link--accent, a.public-nav__link--login, .receipt-actions a, [role="button"]').forEach(enhanceButton);
     root.querySelectorAll('table').forEach(enhanceTable);
+    enhanceCards(root);
+    enhanceToolbars(root);
     enhanceForms(root);
     enhanceLists(root);
     fitFloatingLists(root);
     enhanceFormModals(root);
     enhanceTabs(root);
+    enhanceChips(root);
+    enhanceAlerts(root);
+    enhanceEmptyStates(root);
     enhanceSidebarToggles(root);
     enhanceBadges(root);
   };

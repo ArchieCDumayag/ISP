@@ -10,8 +10,8 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/payments.css?v=3.5">
-    <link rel="stylesheet" href="css/account-view-shared.css?v=2.2">
-    <link rel="stylesheet" href="css/tabler-app.css?v=2.1">
+    <link rel="stylesheet" href="css/account-view-shared.css?v=2.3">
+    <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 
@@ -104,9 +104,9 @@
                                 <label for="pageSizeSelect">Show</label>
                                 <div class="select-wrapper">
                                     <select id="pageSizeSelect" name="pageSize">
-                                        <option value="10" selected>10</option>
+                                        <option value="10">10</option>
                                         <option value="25">25</option>
-                                        <option value="50">50</option>
+                                        <option value="50" selected>50</option>
                                         <option value="100">100</option>
                                     </select>
                                 </div>
@@ -263,17 +263,19 @@
     </div>
 
     <!-- Account Info Modal -->
-    <div id="accountInfoModal" class="modal customer-view-modal payments-view-modal" role="dialog" aria-modal="true" aria-labelledby="accountInfoModalTitle" aria-hidden="true">
+    <div id="accountInfoModal" class="modal modal-blur customer-view-modal payments-view-modal tabler-customer-view" role="dialog" aria-modal="true" aria-labelledby="accountInfoModalTitle" aria-hidden="true" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable customer-view-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header customer-view-header">
-                <div>
-                    <h2 id="accountInfoModalTitle">View Customer Account</h2>
+                <div class="d-flex align-items-center gap-3 min-w-0">
+                    <span class="avatar avatar-sm bg-primary-lt text-primary flex-shrink-0"><i class="ti ti-user-circle" aria-hidden="true"></i></span>
+                    <h2 id="accountInfoModalTitle" class="modal-title text-truncate">View Customer Account</h2>
                 </div>
                 <div class="view-header-actions">
-                    <button type="button" class="ghost-btn ghost-btn--icon" id="accountInfoEditBtn" aria-label="Edit account" title="Edit account">
+                    <button type="button" class="btn btn-icon btn-ghost-primary" id="accountInfoEditBtn" aria-label="Edit account" title="Edit account">
                         <i class="ti ti-pencil" aria-hidden="true"></i>
                     </button>
-                    <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                    <button type="button" class="btn-close close-modal" data-dismiss="modal" aria-label="Close"></button>
                 </div>
             </div>
             <div class="modal-body">
@@ -567,15 +569,16 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="layout.js?v=3.6"></script>
+    <script src="layout.js?v=3.7"></script>
     <script src="js/account-view-shared.js?v=3.3"></script>
-    <script src="payments.js?v=6.3"></script>
+    <script src="payments.js?v=6.4"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
-    <script src="js/tabler-enhance.js?v=1.4"></script>
+    <script src="js/tabler-enhance.js?v=1.6"></script>
 </body>
 
 </html>

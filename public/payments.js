@@ -635,8 +635,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    const DEFAULT_PAYMENTS_PAGE_SIZE = 50;
+    const getValidPageSize = (value, fallback = DEFAULT_PAYMENTS_PAGE_SIZE) => {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+        const hasMatchingOption = Array.from(pageSizeSelect?.options || [])
+            .some((option) => parseInt(option.value, 10) === parsed);
+        return hasMatchingOption ? parsed : fallback;
+    };
     const savedPageSize = localStorage.getItem('paymentsPageSize');
-    const initialPageSize = savedPageSize ? parseInt(savedPageSize, 10) : 2;
+    const initialPageSize = getValidPageSize(savedPageSize);
 
     const paymentsPagination = { page: 1, pageSize: initialPageSize };
     const paymentsFooter = document.getElementById('paymentsFooter');
@@ -2687,7 +2695,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (pageSizeSelect) {
         pageSizeSelect.addEventListener('change', () => {
-            const newSize = parseInt(pageSizeSelect.value, 10);
+            const newSize = getValidPageSize(pageSizeSelect.value);
             paymentsPagination.pageSize = newSize;
             localStorage.setItem('paymentsPageSize', newSize);
             renderPaymentsPage();
@@ -3050,11 +3058,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const renderPaymentsPage = () => {
         // For now, we render customers instead of payments
-        const parsedSize = parseInt(pageSizeSelect?.value, 10);
+        const parsedSize = getValidPageSize(pageSizeSelect?.value, paymentsPagination.pageSize || DEFAULT_PAYMENTS_PAGE_SIZE);
         if (Number.isFinite(parsedSize) && parsedSize > 0) {
             paymentsPagination.pageSize = parsedSize;
         } else if (!Number.isFinite(paymentsPagination.pageSize) || paymentsPagination.pageSize <= 0) {
-            paymentsPagination.pageSize = 10; // safe default
+            paymentsPagination.pageSize = DEFAULT_PAYMENTS_PAGE_SIZE;
         }
         const total = Array.isArray(filteredPaymentsState) ? filteredPaymentsState.length : 0;
         const pageCount = Math.ceil(total / paymentsPagination.pageSize) || 1;

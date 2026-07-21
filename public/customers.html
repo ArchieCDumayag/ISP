@@ -4216,8 +4216,16 @@
                 if (areaSelectField) ensureAreaOption(customerData?.area || '');
                 if (form.elements.mapPin) form.elements.mapPin.value = customerData?.mapPin || '';
                 if (form.elements.remarks) form.elements.remarks.value = customerData?.remarks || '';
-                const existingNapId = normalizeNapValue(customerData?.napAssignment?.napId);
-                const existingNapPort = parsePositiveInt(customerData?.napAssignment?.port ?? customerData?.napPort);
+                const existingNapId = normalizeNapValue(
+                    customerData?.napAssignment?.napId
+                    || customerData?.napId
+                    || customerData?.nap_id
+                );
+                const existingNapPort = parsePositiveInt(
+                    customerData?.napAssignment?.port
+                    ?? customerData?.napPort
+                    ?? customerData?.nap_port
+                );
                 const existingOpticalInfo = String(
                     customerData?.napAssignment?.opticalInfo
                     || customerData?.napAssignment?.opticalPower

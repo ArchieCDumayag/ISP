@@ -6,6 +6,7 @@ const { readJson, writeJson } = require('./data-store');
 const { requireAuth } = require('./auth');
 const { getPool, query } = require('./db');
 const { isRelationalReady } = require('./db-relational');
+const { isJsonStorageMode } = require('./storage-mode');
 const https = require('https');
 const createError = require('http-errors');
 const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter } = require('./integration-settings');
@@ -53,6 +54,7 @@ const STORE_KEYS = {
     payments: 'payments',
     plans: 'plans'
 };
+const PON_STATE_STORE_KEY = 'pon-state';
 const ACCOUNT_NUMBER_SETTINGS_KEY = 'account_number_settings';
 const ACCOUNT_TOTAL_DIGITS = 9;
 const ACCOUNT_PREFIX_DIGITS = 3;
@@ -2933,6 +2935,235 @@ const buildCustomerDisplayName = (customer = {}) => {
     return `${firstName} ${lastName}`.trim();
 };
 
+const parseJsonNapSplitterCapacity = (splitter) => {
+    const match = String(splitter || '').trim().match(/^1\s*[:/]\s*(\d+)$/);
+    if (!match) return 0;
+    return toPositiveInt(match[1]) || 0;
+};
+
+const getJsonPonBranchState = (allState = {}, branchId = null) => {
+    const state = allState && typeof allState === 'object' && !Array.isArray(allState)
+        ? allState
+        : {};
+    const branchKey = String(branchId || 'default');
+    state.branches = state.branches && typeof state.branches === 'object' && !Array.isArray(state.branches)
+        ? state.branches
+        : {};
+
+    if (!state.branches[branchKey]) {
+        const fallback = state.default && typeof state.default === 'object' && !Array.isArray(state.default)
+            ? state.default
+            : {};
+        state.branches[branchKey] = {
+            olts: Array.isArray(fallback.olts) ? fallback.olts : [],
+            naps: Array.isArray(fallback.naps) ? fallback.naps : []
+        };
+    }
+
+    const branchState = state.branches[branchKey];
+    branchState.olts = Array.isArray(branchState.olts) ? branchState.olts : [];
+    branchState.naps = Array.isArray(branchState.naps) ? branchState.naps : [];
+    return branchState;
+};
+
+const getJsonNapConnectionAccount = (entry = {}) => String(
+    entry?.customerId
+    || entry?.accountNumber
+    || entry?.customerAccountNumber
+    || entry?.customer_account_number
+    || entry?.customerRef
+    || entry?.id
+    || ''
+).trim();
+
+const getJsonNapConnectionName = (entry = {}) => String(
+    entry?.customerName
+    || entry?.name
+    || entry?.customer
+    || ''
+).trim();
+
+const getJsonNapAssignmentFromConnection = (nap = {}, entry = {}, accountNumber = '') => {
+    const opticalInfo = String(
+        entry?.opticalInfo
+        || entry?.opticalPower
+        || entry?.optical
+        || entry?.signal
+        || entry?.rxPower
+        || nap?.opticalPower
+        || ''
+    ).trim();
+    return {
+        accountNumber: String(accountNumber || getJsonNapConnectionAccount(entry)).trim(),
+        napId: String(nap?.id || '').trim(),
+        port: toPositiveInt(entry?.port),
+        opticalInfo,
+        opticalPower: opticalInfo,
+        napCode: String(nap?.code || '').trim(),
+        location: String(nap?.location || nap?.area || '').trim(),
+        coordinate: String(nap?.coordinate || nap?.coordinates || nap?.coords || '').trim(),
+        linkedOlt: String(nap?.linkedOlt || '').trim(),
+        ponRef: String(nap?.ponRef || '').trim()
+    };
+};
+
+const recomputeJsonNapUsed = (nap = {}) => {
+    const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+    const capacity = Math.max(
+        toPositiveInt(nap?.capacity) || 0,
+        toPositiveInt(nap?.totalPorts) || 0,
+        parseJsonNapSplitterCapacity(nap?.splitter),
+        connections.reduce((max, entry) => Math.max(max, toPositiveInt(entry?.port) || 0), 0)
+    );
+    nap.used = capacity ? Math.min(connections.length, capacity) : connections.length;
+    return nap.used;
+};
+
+const loadJsonNapAssignmentsByAccount = async (branchId, accountNumbers = []) => {
+    const normalizedAccounts = new Set(
+        (Array.isArray(accountNumbers) ? accountNumbers : [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    );
+    if (!normalizedAccounts.size) return new Map();
+
+    const allState = await readJson(PON_STATE_STORE_KEY, {});
+    const branchState = getJsonPonBranchState(allState, branchId);
+    const byAccount = new Map();
+    branchState.naps.forEach((nap) => {
+        const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+        connections.forEach((entry) => {
+            const accountNumber = getJsonNapConnectionAccount(entry);
+            if (!accountNumber || !normalizedAccounts.has(accountNumber) || byAccount.has(accountNumber)) return;
+            byAccount.set(accountNumber, getJsonNapAssignmentFromConnection(nap, entry, accountNumber));
+        });
+    });
+    return byAccount;
+};
+
+const syncJsonCustomerNapAssignment = async ({
+    branchId,
+    accountNumber,
+    customerName = '',
+    napId = '',
+    port = null,
+    opticalInfo = undefined
+} = {}) => {
+    const targetAccountNumber = String(accountNumber || '').trim();
+    const targetNapId = String(napId || '').trim();
+    const targetPort = toPositiveInt(port);
+    const hasExplicitOpticalInfo = opticalInfo !== undefined;
+
+    if (!targetAccountNumber) return null;
+
+    if ((targetNapId && !targetPort) || (!targetNapId && targetPort)) {
+        throw createError(400, 'NAP pin and NAP port must be selected together.');
+    }
+
+    const allState = await readJson(PON_STATE_STORE_KEY, {});
+    const state = allState && typeof allState === 'object' && !Array.isArray(allState)
+        ? allState
+        : {};
+    const branchState = getJsonPonBranchState(state, branchId);
+    let preservedOpticalInfo = '';
+
+    branchState.naps = branchState.naps.map((nap) => {
+        const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+        let removedExistingAssignment = false;
+        const remainingConnections = connections.filter((entry) => {
+            const entryAccount = getJsonNapConnectionAccount(entry);
+            const belongsToTarget = entryAccount === targetAccountNumber;
+            if (belongsToTarget && !preservedOpticalInfo) {
+                preservedOpticalInfo = String(
+                    entry?.opticalInfo
+                    || entry?.opticalPower
+                    || entry?.optical
+                    || entry?.signal
+                    || entry?.rxPower
+                    || ''
+                ).trim();
+            }
+            if (belongsToTarget) {
+                removedExistingAssignment = true;
+            }
+            return !belongsToTarget;
+        });
+        if (!removedExistingAssignment) {
+            return nap;
+        }
+        const nextNap = {
+            ...nap,
+            connections: remainingConnections
+        };
+        recomputeJsonNapUsed(nextNap);
+        return nextNap;
+    });
+
+    const nextOpticalInfo = hasExplicitOpticalInfo
+        ? String(opticalInfo || '').trim()
+        : preservedOpticalInfo;
+
+    let assignedNap = null;
+    if (targetNapId && targetPort) {
+        const napIndex = branchState.naps.findIndex((nap) => String(nap?.id || '').trim() === targetNapId);
+        if (napIndex === -1) {
+            throw createError(400, 'Selected NAP pin no longer exists.');
+        }
+
+        const targetNap = {
+            ...branchState.naps[napIndex],
+            connections: Array.isArray(branchState.naps[napIndex]?.connections)
+                ? [...branchState.naps[napIndex].connections]
+                : []
+        };
+        const capacity = Math.max(
+            toPositiveInt(targetNap?.capacity) || 0,
+            toPositiveInt(targetNap?.totalPorts) || 0,
+            parseJsonNapSplitterCapacity(targetNap?.splitter),
+            targetNap.connections.reduce((max, entry) => Math.max(max, toPositiveInt(entry?.port) || 0), 0)
+        );
+        if (capacity && targetPort > capacity) {
+            throw createError(400, `Selected NAP port exceeds ${String(targetNap?.code || 'the selected NAP').trim()} capacity.`);
+        }
+
+        const occupiedEntry = targetNap.connections.find((entry) => toPositiveInt(entry?.port) === targetPort);
+        if (occupiedEntry) {
+            const occupiedAccount = getJsonNapConnectionAccount(occupiedEntry);
+            const occupiedName = getJsonNapConnectionName(occupiedEntry);
+            if (occupiedAccount && occupiedAccount !== targetAccountNumber) {
+                throw createError(409, 'Selected NAP port is already assigned to another customer.');
+            }
+            if (!occupiedAccount && occupiedName) {
+                throw createError(409, 'Selected NAP port is already assigned to another customer.');
+            }
+        }
+
+        targetNap.connections.push({
+            customerId: targetAccountNumber,
+            customerName: String(customerName || '').trim(),
+            customerRef: targetAccountNumber,
+            port: targetPort,
+            opticalInfo: nextOpticalInfo
+        });
+        targetNap.connections.sort((left, right) => (toPositiveInt(left?.port) || 0) - (toPositiveInt(right?.port) || 0));
+        recomputeJsonNapUsed(targetNap);
+        branchState.naps[napIndex] = targetNap;
+        assignedNap = targetNap;
+    }
+
+    branchState.updatedAt = new Date().toISOString();
+    await writeJson(PON_STATE_STORE_KEY, state);
+
+    return {
+        accountNumber: targetAccountNumber,
+        napId: targetNapId || null,
+        port: targetPort,
+        opticalInfo: targetNapId ? nextOpticalInfo : null,
+        napCode: assignedNap ? String(assignedNap?.code || '').trim() : '',
+        cleared: !targetNapId
+    };
+};
+
 const syncCustomerNapAssignment = async ({
     branchId,
     accountNumber,
@@ -2956,6 +3187,16 @@ const syncCustomerNapAssignment = async ({
     }
 
     if (!(await isRelationalReady())) {
+        if (isJsonStorageMode()) {
+            return syncJsonCustomerNapAssignment({
+                branchId: scopedBranchId,
+                accountNumber: targetAccountNumber,
+                customerName,
+                napId: targetNapId,
+                port: targetPort,
+                opticalInfo
+            });
+        }
         return null;
     }
 
@@ -3161,8 +3402,13 @@ const loadNapAssignmentsByAccount = async (branchId, accountNumbers = []) => {
                 .filter(Boolean)
         )
     );
-    if (!normalizedAccounts.length || !branchId || !(await isRelationalReady())) {
+    if (!normalizedAccounts.length || !branchId) {
         return new Map();
+    }
+    if (!(await isRelationalReady())) {
+        return isJsonStorageMode()
+            ? loadJsonNapAssignmentsByAccount(branchId, normalizedAccounts)
+            : new Map();
     }
     try {
         const [rows] = await query(

@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="coverage.css?v=1.5">
+    <link rel="stylesheet" href="coverage.css?v=1.7">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
@@ -343,35 +343,46 @@
 
         <div class="section-frame map-frame elevated" style="padding:0;">
           <div id="mapView" style="display:block; padding: 16px;">
-            <div class="map-tools" role="region" aria-label="Coverage map tools">
-              <div class="map-tools__search">
-                <input id="mapSearchInput" type="search" placeholder="Search account, customer, or NAP code">
-                <button class="ghost-btn" id="mapSearchBtn" type="button" aria-label="Search map">
-                  <i class="ti ti-search" aria-hidden="true"></i>
-                </button>
-              </div>
-              <div class="map-tools__filters">
-                <label class="map-tools__check"><input id="filterCustomers" type="checkbox" checked> Customers</label>
-                <label class="map-tools__check"><input id="filterNaps" type="checkbox" checked> NAP</label>
-                <label class="map-tools__check"><input id="filterLinks" type="checkbox" checked> Links</label>
-                <label class="map-tools__status">
-                  <span>Status</span>
-                  <select id="filterStatus">
-                    <option value="all">All</option>
-                    <option value="active">Active</option>
-                    <option value="planned">Planned</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </label>
-              </div>
-              <div class="map-tools__actions">
-                <button class="ghost-btn" id="mapFitBtn" type="button">
-                  <i class="ti ti-arrows-maximize" aria-hidden="true"></i> Fit
-                </button>
-                <button class="ghost-btn" id="mapRefreshBtn" type="button">
-                  <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
-                </button>
-                <span class="map-last-updated" id="mapLastUpdated">Last updated: --</span>
+            <div class="map-tools card" role="region" aria-label="Coverage map tools">
+              <div class="card-body map-tools__body">
+                <div class="map-tools__search input-group input-group-flat">
+                  <input id="mapSearchInput" class="form-control form-control-sm" type="search" placeholder="Search account, customer, or NAP code">
+                  <button class="btn btn-icon btn-sm" id="mapSearchBtn" type="button" aria-label="Search map">
+                    <i class="ti ti-search" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="map-tools__filters">
+                  <label class="form-check map-tools__check">
+                    <input id="filterCustomers" class="form-check-input" type="checkbox" checked>
+                    <span class="form-check-label">Customers</span>
+                  </label>
+                  <label class="form-check map-tools__check">
+                    <input id="filterNaps" class="form-check-input" type="checkbox" checked>
+                    <span class="form-check-label">NAP</span>
+                  </label>
+                  <label class="form-check map-tools__check">
+                    <input id="filterLinks" class="form-check-input" type="checkbox" checked>
+                    <span class="form-check-label">Links</span>
+                  </label>
+                  <label class="map-tools__status">
+                    <span class="form-label mb-0">Status</span>
+                    <select id="filterStatus" class="form-select form-select-sm">
+                      <option value="all">All</option>
+                      <option value="active">Active</option>
+                      <option value="planned">Planned</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="map-tools__actions">
+                  <button class="btn btn-outline-secondary btn-sm" id="mapFitBtn" type="button">
+                    <i class="ti ti-arrows-maximize" aria-hidden="true"></i> Fit
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="mapRefreshBtn" type="button">
+                    <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
+                  </button>
+                  <span class="map-last-updated text-secondary small" id="mapLastUpdated">Last updated: --</span>
+                </div>
               </div>
             </div>
             <div class="map-canvas-wrap">
@@ -383,21 +394,26 @@
                 <span class="map-legend__item"><span class="map-legend__dot is-unknown"></span> Customer Unknown</span>
                 <span class="map-legend__item"><span class="map-legend__dot is-nap"></span> NAP</span>
               </div>
-              <button class="primary-btn map-layers-fab" id="fabMapLayers" type="button" aria-label="Toggle Map Layers">
+              <button class="btn btn-primary btn-icon map-layers-fab" id="fabMapLayers" type="button" aria-label="Toggle Map Layers">
                 <i class="ti ti-layers-intersect" aria-hidden="true"></i>
               </button>
-              <div id="mapLayersPanel" class="map-layers-panel" style="display:none;">
-                <strong style="font-size:1.1em;">Map Layers</strong>
-                <div style="margin:14px 0 0;">
-                  <label style="display:block;margin-bottom:8px;cursor:pointer;">
-                    <input type="radio" name="mapLayer" value="streets" checked> Streets
-                  </label>
-                  <label style="display:block;margin-bottom:8px;cursor:pointer;">
-                    <input type="radio" name="mapLayer" value="satellite"> Satellite
-                  </label>
-                  <label style="display:block;cursor:pointer;">
-                    <input type="radio" name="mapLayer" value="terrain"> Terrain
-                  </label>
+              <div id="mapLayersPanel" class="map-layers-panel card" style="display:none;">
+                <div class="card-body">
+                  <div class="card-title mb-3">Map Layers</div>
+                  <div class="map-layers-panel__options">
+                    <label class="form-check">
+                      <input class="form-check-input" type="radio" name="mapLayer" value="streets" checked>
+                      <span class="form-check-label">Streets</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input" type="radio" name="mapLayer" value="satellite">
+                      <span class="form-check-label">Satellite</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input" type="radio" name="mapLayer" value="terrain">
+                      <span class="form-check-label">Terrain</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

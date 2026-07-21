@@ -2625,12 +2625,12 @@ const resolveCurrentPrepaidCycleBoundary = (customer = {}) => {
     if (scheduledApplyAt) return scheduledApplyAt;
     return resolvePrepaidExpirationDate(customer);
 };
+const hasAssignedPlan = (customer) => Boolean(String(customer?.planName || '').trim());
 const isPrepaidActive = (customer = {}, now = new Date()) => {
     const expiry = resolvePrepaidExpirationDate(customer);
-    if (!expiry) return false;
+    if (!expiry) return hasAssignedPlan(customer);
     return expiry.getTime() >= now.getTime();
 };
-const hasAssignedPlan = (customer) => Boolean(String(customer?.planName || '').trim());
 const normalizeStatusReason = (value) => {
     const raw = String(value || '').trim().toLowerCase();
     if (!raw) return '';
@@ -3903,7 +3903,7 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         planName: payload?.planName,
         allowMissingPlan: requestedPlanCategory === 'prepaid'
     });
-    const incomingCategory = normalizePlanCategory(planSnapshot.planCategory || requestedPlanCategory);
+    const incomingCategory = normalizePlanCategory(requestedPlanCategory || planSnapshot.planCategory);
     const incomingActivationDate = normalizeDateOnly(
         payload?.activationDate ?? payload?.activation_date
     );
@@ -3921,7 +3921,7 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         : (incomingCategory === 'postpaid' ? 'Monthly' : (payload?.planBilling || 'Monthly'));
     const incomingPlanName = String(planSnapshot.planName || '').trim();
     const incomingMikrotikId = resolveCustomerRouterId(payload);
-    if (incomingCategory !== 'prepaid' && !incomingPlanName) {
+    if (!incomingPlanName) {
         throw createError(400, 'Plan is required.');
     }
     const incomingPrepaidExpirationAt = normalizePrepaidExpirationAt(
@@ -3944,10 +3944,10 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         assertDateNotBeforeToday(incomingBillDate, 'Next bill date');
         assertDateNotBeforeToday(incomingDueDate, 'Next due date');
     }
-    const planReady = incomingCategory === 'prepaid' ? true : Boolean(incomingPlanName);
+    const planReady = Boolean(incomingPlanName);
     const prepaidReady = incomingCategory === 'prepaid'
         ? isPrepaidActive(
-            { dueDate: incomingDueDate, prepaidExpirationAt: incomingPrepaidExpirationAt },
+            { planName: incomingPlanName, dueDate: incomingDueDate, prepaidExpirationAt: incomingPrepaidExpirationAt },
             now
         )
         : true;
@@ -4117,7 +4117,7 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
     const nextPlanProfile = resolvePlanProfileForRouter(matchedPlan, nextRouterId)
         || String(matchedPlan?.profile || '').trim();
     const incomingCategory = normalizePlanCategory(
-        planSnapshot.planCategory || requestedPlanCategory
+        requestedPlanCategory || planSnapshot.planCategory
     );
     const hasIncomingActivationDate = [
         'activationDate',
@@ -4131,7 +4131,7 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         ? 'Prepaid'
         : (incomingCategory === 'postpaid' ? 'Monthly' : (payload?.planBilling ?? existing.planBilling));
     const nextPlanName = String(planSnapshot.planName || '').trim();
-    if (incomingCategory !== 'prepaid' && !nextPlanName) {
+    if (!nextPlanName) {
         throw createError(400, 'Plan is required.');
     }
     const hasIncomingBillDate = Object.prototype.hasOwnProperty.call(payload || {}, 'billDate');
@@ -4239,10 +4239,11 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
     const activePlanAmount = shouldQueuePrepaidPlanChange
         ? (existing?.planAmount != null ? Number(existing.planAmount) : null)
         : planSnapshot.planAmount;
-    const planReady = incomingCategory === 'prepaid' ? true : Boolean(nextPlanName);
+    const planReady = Boolean(activePlanName || nextPlanName);
     const prepaidReady = incomingCategory === 'prepaid'
         ? isPrepaidActive(
             {
+                planName: activePlanName || nextPlanName,
                 dueDate: nextDueDate,
                 prepaidExpirationAt: incomingCategory === 'prepaid' ? normalizedPrepaidExpirationAt : ''
             },

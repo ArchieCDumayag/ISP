@@ -193,10 +193,6 @@
                                 <option value="prepaid">Prepaid</option>
                             </select>
                         </div>
-                        <div class="form-field" id="prepaidExpirationField" style="display:none;">
-                            <label for="prepaidExpirationAt">Expiration Date &amp; Time</label>
-                            <input type="datetime-local" id="prepaidExpirationAt" name="prepaidExpirationAt">
-                        </div>
                         <div class="form-field" id="planField">
                             <label for="plan">Plan</label>
                             <select id="plan" name="plan" required>
@@ -1591,6 +1587,29 @@
                 || planByName.get(normalizePlanName(planName))
                 || null;
             const normalizePlanCategory = (value) => (String(value || '').trim().toLowerCase() === 'prepaid' ? 'prepaid' : 'postpaid');
+            const getPlansForCategory = (category) => {
+                const normalizedCategory = normalizePlanCategory(category);
+                const exactPlans = Array.isArray(plansCatalog[normalizedCategory]) ? plansCatalog[normalizedCategory] : [];
+                if (exactPlans.length || normalizedCategory === 'postpaid') {
+                    return exactPlans;
+                }
+                return Array.isArray(plansCatalog.postpaid) ? plansCatalog.postpaid : [];
+            };
+            const findCatalogPlanForCategory = ({ planId = '', planName = '', category = '' } = {}) => {
+                const normalizedPlanId = normalizePlanId(planId);
+                const normalizedPlanName = normalizePlanName(planName);
+                const categoryPlans = getPlansForCategory(category);
+                return categoryPlans.find((plan) => {
+                    if (normalizedPlanId && normalizePlanId(plan?.id) === normalizedPlanId) {
+                        return true;
+                    }
+                    if (!normalizedPlanName) {
+                        return false;
+                    }
+                    return normalizePlanName(plan?.name) === normalizedPlanName
+                        || normalizePlanName(plan?.label) === normalizedPlanName;
+                }) || findCatalogPlan({ planId, planName });
+            };
             const normalizePhilippineMobile = (value, fallbackToRaw = true) => {
                 const original = String(value || '').trim();
                 if (!original) return '';
@@ -1822,7 +1841,7 @@
                 planSelect.innerHTML = '<option value="">Select a plan</option>'; // Reset with a placeholder
 
                 const normalizedCategory = normalizePlanCategory(category || planCategorySelect?.value || 'postpaid');
-                const availablePlans = Array.isArray(plansCatalog[normalizedCategory]) ? plansCatalog[normalizedCategory] : [];
+                const availablePlans = getPlansForCategory(normalizedCategory).slice();
 
                 availablePlans.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -2460,10 +2479,8 @@
             function recomputeDueDate() {
                 const category = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
                 if (category === 'prepaid') {
-                    const expiryDateTime = parseDateTimeValue(prepaidExpirationInput?.value || '');
-                    const expiryDateOnly = expiryDateTime ? formatDateISO(expiryDateTime) : '';
-                    if (dueDateInput) dueDateInput.value = expiryDateOnly;
-                    if (dueDateDisplay) dueDateDisplay.value = expiryDateOnly;
+                    if (dueDateInput) dueDateInput.value = '';
+                    if (dueDateDisplay) dueDateDisplay.value = '';
                     return;
                 }
                 const bill = billDateInput?.value || '';
@@ -2474,10 +2491,6 @@
             }
 
             function isServiceReady() {
-                const category = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
-                if (category === 'prepaid') {
-                    return isDateTimeOnOrAfterNow(prepaidExpirationInput?.value || '');
-                }
                 const planName = (planSelect?.value || '').trim();
                 if (!planName) return false;
                 return true;
@@ -2510,15 +2523,14 @@
                 const isPrepaid = normalized === 'prepaid';
                 if (billDateLabel) billDateLabel.textContent = 'Next Bill Date';
                 if (dueDateLabel) dueDateLabel.textContent = 'Computed Due Date';
-                if (planField) planField.style.display = isPrepaid ? 'none' : '';
+                if (planField) planField.style.display = '';
                 if (planSelect) {
-                    planSelect.required = !isPrepaid;
-                    if (isPrepaid) planSelect.value = '';
+                    planSelect.required = true;
                 }
                 if (activationDateField) activationDateField.style.display = isPrepaid ? 'none' : '';
                 if (dueOffsetField) dueOffsetField.style.display = isPrepaid ? 'none' : '';
                 if (dueDateField) dueDateField.style.display = isPrepaid ? 'none' : '';
-                if (prepaidExpirationField) prepaidExpirationField.style.display = isPrepaid ? '' : 'none';
+                if (prepaidExpirationField) prepaidExpirationField.style.display = 'none';
                 if (creditLimitField) creditLimitField.style.display = isPrepaid ? 'none' : '';
                 if (dueOffsetHelp) {
                     dueOffsetHelp.textContent = '';
@@ -2527,7 +2539,10 @@
                 if (billDateInput) billDateInput.required = !isPrepaid;
                 if (dueDateInput) dueDateInput.required = !isPrepaid;
                 if (dueOffsetInput) dueOffsetInput.required = !isPrepaid;
-                if (prepaidExpirationInput) prepaidExpirationInput.required = false;
+                if (prepaidExpirationInput) {
+                    prepaidExpirationInput.required = false;
+                    prepaidExpirationInput.value = '';
+                }
                 if (activationDateInput) activationDateInput.required = false;
                 if (!isPrepaid && activationDateInput && !activationDateInput.value) {
                     activationDateInput.value = getTodayDateInputValue();
@@ -5428,17 +5443,20 @@
                     setCustomerSubmitState(false);
                     return;
                 }
-                if (activePlanCategory !== 'prepaid' && !selectedPlanName) {
+                if (!selectedPlanName) {
                     showToast('Plan is required.', 'error');
                     planSelect?.focus();
                     setCustomerSubmitState(false);
                     return;
                 }
-                const selectedPlan = planByName.get(normalizePlanName(selectedPlanName));
+                const selectedPlan = findCatalogPlanForCategory({
+                    planName: selectedPlanName,
+                    category: activePlanCategory
+                });
                 const keepingExistingPlan = !selectedPlan
                     && existingCustomer?.planId
                     && normalizePlanName(existingCustomer.planName) === normalizePlanName(selectedPlanName);
-                if (activePlanCategory !== 'prepaid' && !selectedPlan && !keepingExistingPlan) {
+                if (!selectedPlan && !keepingExistingPlan) {
                     showToast('Select a valid plan from the system list.', 'error');
                     planSelect?.focus();
                     setCustomerSubmitState(false);
@@ -5489,8 +5507,8 @@
                     accountNumber: customerId,
                     firstName: formData.get('firstName'),
                     lastName: formData.get('lastName'),
-                    planId: planCategory === 'prepaid' ? '' : (selectedPlan?.id || existingCustomer?.planId || ''),
-                    planName: planCategory === 'prepaid' ? '' : selectedPlanName,
+                    planId: selectedPlan?.id || existingCustomer?.planId || '',
+                    planName: selectedPlanName,
                     planCategory: planCategory,
                     mikrotikId: getSelectedRouterId(),
                     status: statusValue,
@@ -5512,10 +5530,10 @@
                     payload.loginPassword = rawLoginPassword;
                 }
                 if (planCategory === 'prepaid') {
-                    payload.billDate = billDateInput?.value || '';
-                    payload.dueDate = dueDateInput?.value || '';
+                    payload.billDate = '';
+                    payload.dueDate = '';
                     payload.activationDate = '';
-                    payload.prepaidExpirationAt = prepaidExpirationInput?.value || '';
+                    payload.prepaidExpirationAt = '';
                 } else {
                     payload.billDate = formData.get('billDate');
                     payload.dueDate = formData.get('dueDate');

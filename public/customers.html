@@ -1846,6 +1846,11 @@
                 if (!Number.isFinite(amount)) return 0;
                 return Math.round((amount + Number.EPSILON) * 100) / 100;
             };
+            const roundWholePeso = (value) => {
+                const amount = Number(value);
+                if (!Number.isFinite(amount)) return 0;
+                return Math.round(amount);
+            };
             const getSelectedPlanAmount = () => {
                 const selectedPlanName = String(planSelect?.value || '').trim();
                 if (!selectedPlanName) return 0;
@@ -2654,7 +2659,7 @@
                 const daysInMonth = getInclusiveDayCount(getMonthStartDateInputValue(activationValue), periodEndValue);
                 const selectedPlanAmount = getSelectedPlanAmount();
                 const proratedAmount = daysInMonth > 0 && selectedPlanAmount > 0
-                    ? roundMoney((selectedPlanAmount / daysInMonth) * activeDays)
+                    ? roundWholePeso((selectedPlanAmount / daysInMonth) * activeDays)
                     : 0;
                 const amountText = proratedAmount > 0 ? ` - ${formatPeso(proratedAmount)}` : '';
                 firstBillPeriodDisplay.value = `${formatPeriodDate(activationValue)} to ${formatPeriodDate(periodEndValue)}${amountText}`;

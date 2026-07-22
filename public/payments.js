@@ -15,6 +15,12 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     const pendingPaymentAccounts = new Set();
     const customerSelect = document.getElementById('customerSelect');
+    const paymentCustomerField = document.getElementById('paymentCustomerField');
+    const paymentLockedCustomer = document.getElementById('paymentLockedCustomer');
+    const paymentLockedCustomerAvatar = document.getElementById('paymentLockedCustomerAvatar');
+    const paymentLockedCustomerName = document.getElementById('paymentLockedCustomerName');
+    const paymentLockedCustomerMeta = document.getElementById('paymentLockedCustomerMeta');
+    const paymentLockedAccountInput = document.getElementById('paymentLockedAccountInput');
     const paymentAmountInput = document.getElementById('paymentAmount');
     const paymentKindSelect = document.getElementById('paymentKind');
     const paymentMethodField = document.getElementById('paymentMethodField');
@@ -790,6 +796,37 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         return { firstName: '', lastName: '', fullName: '' };
     };
+    const getCustomerInitials = (customer) => {
+        const parts = getCustomerNameParts(customer);
+        const directInitials = `${parts.firstName?.[0] || ''}${parts.lastName?.[0] || ''}`.toUpperCase();
+        if (directInitials) return directInitials;
+        const fallbackName = formatCustomerName(customer);
+        const fallbackInitials = fallbackName
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0] || '')
+            .join('')
+            .toUpperCase();
+        return fallbackInitials || '--';
+    };
+    const getLockedCustomerMeta = (customer) => {
+        const accountNumber = normalizeAccountNumber(customer?.accountNumber || '');
+        const planName = String(
+            customer?.planName
+            || customer?.plan
+            || customer?.planPackage
+            || customer?.package
+            || ''
+        ).trim();
+        const area = getCustomerArea(customer);
+        const pieces = [
+            accountNumber ? `Account ${accountNumber}` : '',
+            planName,
+            area
+        ].filter(Boolean);
+        return pieces.join(' • ') || 'Payment will be saved to this subscriber.';
+    };
     const formatSubscriberDisplayName = (nameParts, sortFilter = '') => {
         if (sortFilter === 'lastNameAsc' && (nameParts.lastName || nameParts.firstName)) {
             return [nameParts.lastName, nameParts.firstName].filter(Boolean).join(', ');
@@ -1072,6 +1109,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!Number.isFinite(amount)) return 0;
         return Math.round((amount + Number.EPSILON) * 100) / 100;
     };
+    const roundWholePeso = (value) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return 0;
+        return Math.round(amount);
+    };
     const getPlanAmountForCustomer = (customer = {}) => {
         const matchedPlan = customer.planName ? planByName.get(normalizePlanName(customer.planName)) : null;
         const candidates = [
@@ -1143,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', function () {
             };
         }
         return {
-            amount: roundMoney((planAmount / totalDays) * activeDays),
+            amount: roundWholePeso((planAmount / totalDays) * activeDays),
             isProrated: true,
             periodStart: activationDate,
             periodEnd: monthEnd,
@@ -1298,7 +1340,7 @@ document.addEventListener('DOMContentLoaded', function () {
             };
         }
         return {
-            amount: roundMoney((planAmount / totalDays) * activeDays),
+            amount: roundWholePeso((planAmount / totalDays) * activeDays),
             isProrated: true,
             periodStart,
             periodEnd
@@ -1594,6 +1636,18 @@ document.addEventListener('DOMContentLoaded', function () {
             || /\b(?:cash|gcash|gash)\s+[a-z]+\s*\d{4}\b/.test(text)
             || /\bpayment-history-excel-import\b/.test(text);
     };
+    const isPaymentCreditForPayments = (entry = {}) => {
+        if (entry.direction !== 'credit') return false;
+        if (isOpeningAdvanceEntryForPayments(entry)) return false;
+        const kind = normalizeBreakdownText(entry.kind || entry.raw?.kind || entry.raw?.type);
+        return !kind || kind === 'payment' || kind === 'credit';
+    };
+    const shouldAttachCreditToBillMonthForPayments = (entry = {}, billDate = null, customer = {}) => {
+        if (!isPaymentCreditForPayments(entry) || !entry.dateObj || !billDate) return false;
+        if (!isSameMonth(entry.dateObj, billDate)) return false;
+        if (isImportedPaymentCreditForPayments(entry)) return true;
+        return resolveBreakdownPlanTypeForPayments(customer) === 'postpaid';
+    };
     const sumBreakdownEntriesForPayments = (entries = []) => roundMoney(
         entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
     );
@@ -1754,10 +1808,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .filter((entry) => {
                 if (entry.sortOrder >= debitEntries[0].sortOrder) return false;
                 if (
-                    isImportedPaymentCreditForPayments(entry)
-                    && entry.dateObj
-                    && debitEntries[0].dateObj
-                    && isSameMonth(entry.dateObj, debitEntries[0].dateObj)
+                    shouldAttachCreditToBillMonthForPayments(entry, debitEntries[0].dateObj, customer)
                 ) {
                     return false;
                 }
@@ -1769,23 +1820,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
         debitEntries.forEach((debit, index) => {
             const nextDebit = debitEntries[index + 1] || null;
-            const cycleCredits = effectiveEntries.filter((entry) => (
-                entry.direction === 'credit'
-                && !assignedCreditOrders.has(entry.sortOrder)
-                && (
-                    (
-                        isImportedPaymentCreditForPayments(entry)
-                        && entry.dateObj
-                        && debit.dateObj
-                        && isSameMonth(entry.dateObj, debit.dateObj)
-                    )
+            const cycleCredits = effectiveEntries.filter((entry) => {
+                if (entry.direction !== 'credit' || assignedCreditOrders.has(entry.sortOrder)) return false;
+                const attachesToCurrentBillMonth = shouldAttachCreditToBillMonthForPayments(entry, debit.dateObj, customer);
+                const attachesToNextBillMonth = nextDebit
+                    ? shouldAttachCreditToBillMonthForPayments(entry, nextDebit.dateObj, customer)
+                    : false;
+                return attachesToCurrentBillMonth
                     || (
-                        !isImportedPaymentCreditForPayments(entry)
+                        !attachesToNextBillMonth
                         && entry.sortOrder > debit.sortOrder
                         && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
-                    )
-                )
-            ));
+                    );
+            });
             cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
             const openingPreviousBalance = isOpeningPreviousBalanceEntryForPayments(debit);
             const planAmount = openingPreviousBalance ? 0 : resolveBreakdownPlanAmountForPayments(customer, debit.amount || context.planAmount);
@@ -1842,11 +1889,15 @@ document.addEventListener('DOMContentLoaded', function () {
         const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
         const firstEntryDate = getMinBreakdownDate(entryDates);
         const lastEntryDate = getMaxBreakdownDate(entryDates);
-        const startSeed = firstEntryDate
+        let startSeed = firstEntryDate
             || safeBreakdownDate(customer.billDate)
             || safeBreakdownDate(customer.dueDate)
             || safeBreakdownDate(customer.activationDate)
             || new Date();
+        const activationSeed = safeBreakdownDate(customer.activationDate || customer.activation_date);
+        if (activationSeed && startSeed && isBeforeBreakdownMonthForPayments(startSeed, activationSeed)) {
+            startSeed = activationSeed;
+        }
         const endSeed = getMaxBreakdownDate([
             lastEntryDate,
             safeBreakdownDate(customer.dueDate),
@@ -1870,7 +1921,7 @@ document.addEventListener('DOMContentLoaded', function () {
             cursor < entries.length
             && entries[cursor].dateObj
             && (
-                isImportedPaymentCreditForPayments(entries[cursor])
+                shouldAttachCreditToBillMonthForPayments(entries[cursor], billDate, customer)
                     ? isBeforeBreakdownMonthForPayments(entries[cursor].dateObj, billDate)
                     : isBeforeBreakdownDateForPayments(entries[cursor].dateObj, billDate)
             )
@@ -1890,9 +1941,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 && (
                     !entries[cursor].dateObj
                     || (
-                        isImportedPaymentCreditForPayments(entries[cursor])
-                            ? isSameMonth(entries[cursor].dateObj, billDate)
-                            : isBeforeBreakdownDateForPayments(entries[cursor].dateObj, nextBillDate)
+                        shouldAttachCreditToBillMonthForPayments(entries[cursor], billDate, customer)
+                            || (
+                                !shouldAttachCreditToBillMonthForPayments(entries[cursor], nextBillDate, customer)
+                                && isBeforeBreakdownDateForPayments(entries[cursor].dateObj, nextBillDate)
+                            )
                     )
                 )
             ) {
@@ -2221,10 +2274,45 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function openModal() {
+    function setPaymentCustomerLock(customer = null) {
+        const lockedCustomer = customer || null;
+        const isLocked = Boolean(lockedCustomer);
+        const accountNumber = normalizeAccountNumber(lockedCustomer?.accountNumber || '');
+
+        paymentModal?.classList.toggle('payment-modal--customer-locked', isLocked);
+        paymentCustomerField?.classList.toggle('payment-customer-field--locked', isLocked);
+
+        if (paymentLockedCustomer) {
+            paymentLockedCustomer.hidden = !isLocked;
+        }
+        if (paymentLockedCustomerAvatar) {
+            paymentLockedCustomerAvatar.textContent = isLocked ? getCustomerInitials(lockedCustomer) : '--';
+        }
+        if (paymentLockedCustomerName) {
+            paymentLockedCustomerName.textContent = isLocked ? formatCustomerName(lockedCustomer) : 'Selected subscriber';
+        }
+        if (paymentLockedCustomerMeta) {
+            paymentLockedCustomerMeta.textContent = isLocked
+                ? getLockedCustomerMeta(lockedCustomer)
+                : 'Payment will be saved to this subscriber.';
+        }
+        if (paymentLockedAccountInput) {
+            paymentLockedAccountInput.value = isLocked ? accountNumber : '';
+            paymentLockedAccountInput.disabled = !isLocked;
+        }
+        if (customerSelect) {
+            customerSelect.hidden = isLocked;
+            customerSelect.disabled = isLocked;
+            customerSelect.required = !isLocked;
+            customerSelect.setAttribute('aria-hidden', isLocked ? 'true' : 'false');
+        }
+    }
+
+    function openModal(options = {}) {
         paymentForm.reset();
         document.getElementById('paymentDate').valueAsDate = new Date();
         selectedCustomer = null;
+        setPaymentCustomerLock(null);
         ensureTransactionAmountFieldVisible();
         syncPaymentMethodVisibility();
         // no payer input anymore; server will set payer from req.user
@@ -2234,21 +2322,37 @@ document.addEventListener('DOMContentLoaded', function () {
         paymentModal.setAttribute('aria-hidden', 'false');
         syncModalScrollLock();
         updateRecorderHint();
-        customerSelect.focus();
+        if (options.focusCustomer !== false) {
+            customerSelect.focus();
+        }
     }
 
-    function openPaymentModalForAccount(accountNumber) {
+    function openPaymentModalForAccount(accountNumber, options = {}) {
         const targetAccount = normalizeAccountNumber(accountNumber);
         if (!targetAccount) return false;
 
-        const customer = findCustomerByAccount(allCustomers, targetAccount);
+        const customer = findCustomerByAccount(allCustomers, targetAccount)
+            || findCustomerByAccount(window.allCustomers, targetAccount);
         if (!customer) return false;
+        if (!findCustomerByAccount(allCustomers, targetAccount)) {
+            allCustomers.push(customer);
+        }
+        const hasCustomerOption = Array.from(customerSelect.options || [])
+            .some((option) => normalizeAccountNumber(option.value) === targetAccount);
+        if (!hasCustomerOption) {
+            customerSelect.add(new Option(`${formatCustomerName(customer)} (${targetAccount})`, targetAccount));
+        }
 
-        openModal();
+        const shouldLockCustomer = Boolean(options.lockCustomer);
+        openModal({ focusCustomer: !shouldLockCustomer });
 
         // Pre-select customer and trigger the existing auto-fill logic.
         customerSelect.value = targetAccount;
         customerSelect.dispatchEvent(new Event('change'));
+        if (shouldLockCustomer) {
+            setPaymentCustomerLock(customer);
+            paymentAmountInput?.focus();
+        }
 
         return true;
     }
@@ -4026,7 +4130,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (payNowAccountFromQuery) {
             const requestedPayNowAccount = payNowAccountFromQuery;
             payNowAccountFromQuery = '';
-            const opened = openPaymentModalForAccount(requestedPayNowAccount);
+            const opened = openPaymentModalForAccount(requestedPayNowAccount, { lockCustomer: true });
             if (!opened) {
                 showToast(`Account ${requestedPayNowAccount} was not found in Payments.`);
             }

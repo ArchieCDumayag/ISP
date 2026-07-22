@@ -15,8 +15,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitleEl = document.getElementById('breakdownSubtitle');
     const tableBody = document.getElementById('breakdownTableBody');
     const summaryEl = document.getElementById('breakdownSummary');
+    const addPaymentBtn = document.getElementById('breakdownAddPaymentBtn');
     const adjustmentToolbar = {
         form: document.getElementById('breakdownAdjustmentToolbar'),
+        toggle: document.getElementById('breakdownAdjustmentToggle'),
         month: document.getElementById('breakdownAdjustmentMonth'),
         previousBalance: document.getElementById('breakdownAdjustmentPreviousBalance'),
         advance: document.getElementById('breakdownAdjustmentAdvance'),
@@ -50,7 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
         customers: [],
         rows: [],
         context: null,
-        savingAdjustment: false
+        savingAdjustment: false,
+        adjustmentToolbarOpen: false
     };
 
     const currencyFormatter = new Intl.NumberFormat(locale, {
@@ -96,6 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!Number.isFinite(parsed)) return 0;
         return Number(parsed.toFixed(2));
     };
+    const roundWholePeso = (value) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return 0;
+        return Math.round(parsed);
+    };
     const toEditableAmount = (value) => {
         const parsed = Number(value);
         if (!Number.isFinite(parsed) || parsed < 0) return 0;
@@ -125,6 +133,10 @@ document.addEventListener('DOMContentLoaded', () => {
         || null
     );
     const formatCurrency = (value) => currencyFormatter.format(Number(value) || 0);
+    const formatCurrencyNoCents = (value) => `₱${(Number(value) || 0).toLocaleString(locale, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    })}`;
     const formatCount = (value) => countFormatter.format(Number(value) || 0);
     const showToast = (message, type = 'info') => {
         const text = String(message || '').trim();
@@ -279,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
         return {
-            amount: roundMoney((planAmount / totalDays) * activeDays),
+            amount: roundWholePeso((planAmount / totalDays) * activeDays),
             isProrated: true,
             periodStart,
             periodEnd
@@ -737,6 +749,20 @@ document.addEventListener('DOMContentLoaded', () => {
             || /\bpayment-history-excel-import\b/.test(text);
     };
 
+    const isPaymentCredit = (entry = {}) => {
+        if (entry.direction !== 'credit') return false;
+        if (isOpeningAdvanceEntry(entry)) return false;
+        const kind = normalizeText(entry.kind || entry.raw?.kind || entry.raw?.type);
+        return !kind || kind === 'payment' || kind === 'credit';
+    };
+
+    const shouldAttachCreditToBillMonth = (entry = {}, billDate = null, record = {}) => {
+        if (!isPaymentCredit(entry) || !entry.dateObj || !billDate) return false;
+        if (!isSameBillingMonth(entry.dateObj, billDate)) return false;
+        if (isImportedPaymentCredit(entry)) return true;
+        return resolvePlanType(record) === 'postpaid';
+    };
+
     const sumEntries = (entries = []) => roundMoney(
         entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
     );
@@ -944,6 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const planType = resolvePlanType(record);
         const planTypeLabel = toTitleCase(planType);
         const billingCycle = resolveBillingCycleLabel(record, billDate);
+        const planAmountDisplay = proration?.isProrated ? formatCurrencyNoCents(planAmount) : formatCurrency(planAmount);
         const billMetaParts = billMetaOverride
             ? [billMetaOverride]
             : openingPreviousBalance
@@ -959,7 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ]
             : [
                 planLabel,
-                formatCurrency(planAmount),
+                planAmountDisplay,
                 sourceType === 'posted' ? 'posted bill' : 'monthly plan',
                 proration?.isProrated
                     ? `prorated ${formatDate(proration.periodStart, '')} to ${formatDate(proration.periodEnd, '')}`
@@ -985,6 +1012,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 balanceAfterPayment,
                 sourceType,
                 isFirstRow,
+                isProrated: Boolean(proration?.isProrated),
                 isAdjustmentEditable: isFirstRow,
                 nextPreviousBalance: nextCarryOver.previousBalance,
                 nextAdvance: nextCarryOver.advance,
@@ -1021,10 +1049,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter((entry) => {
                 if (entry.sortOrder >= debitEntries[0].sortOrder) return false;
                 if (
-                    isImportedPaymentCredit(entry)
-                    && entry.dateObj
-                    && debitEntries[0].dateObj
-                    && isSameBillingMonth(entry.dateObj, debitEntries[0].dateObj)
+                    shouldAttachCreditToBillMonth(entry, debitEntries[0].dateObj, record)
                 ) {
                     return false;
                 }
@@ -1036,23 +1061,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         debitEntries.forEach((debit, index) => {
             const nextDebit = debitEntries[index + 1] || null;
-            const cycleCredits = effectiveEntries.filter((entry) => (
-                entry.direction === 'credit'
-                && !assignedCreditOrders.has(entry.sortOrder)
-                && (
-                    (
-                        isImportedPaymentCredit(entry)
-                        && entry.dateObj
-                        && debit.dateObj
-                        && isSameBillingMonth(entry.dateObj, debit.dateObj)
-                    )
+            const cycleCredits = effectiveEntries.filter((entry) => {
+                if (entry.direction !== 'credit' || assignedCreditOrders.has(entry.sortOrder)) return false;
+                const attachesToCurrentBillMonth = shouldAttachCreditToBillMonth(entry, debit.dateObj, record);
+                const attachesToNextBillMonth = nextDebit
+                    ? shouldAttachCreditToBillMonth(entry, nextDebit.dateObj, record)
+                    : false;
+                return attachesToCurrentBillMonth
                     || (
-                        !isImportedPaymentCredit(entry)
+                        !attachesToNextBillMonth
                         && entry.sortOrder > debit.sortOrder
                         && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
-                    )
-                )
-            ));
+                    );
+            });
             cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
             const openingPreviousBalance = isOpeningPreviousBalanceEntry(debit);
             const planAmount = openingPreviousBalance ? 0 : resolvePlanAmount(record, debit.amount || context.planAmount);
@@ -1115,11 +1136,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
         const firstEntryDate = getMinDate(entryDates);
         const lastEntryDate = getMaxDate(entryDates);
-        const startSeed = firstEntryDate
+        let startSeed = firstEntryDate
             || safeDate(record.billDate)
             || safeDate(record.dueDate)
             || safeDate(record.activationDate)
             || new Date();
+        const activationSeed = safeDate(record.activationDate || record.activation_date);
+        if (activationSeed && startSeed && isBeforeBillingMonth(startSeed, activationSeed)) {
+            startSeed = activationSeed;
+        }
         const endSeed = getMaxDate([
             lastEntryDate,
             safeDate(record.dueDate),
@@ -1143,7 +1168,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cursor < entries.length
             && entries[cursor].dateObj
             && (
-                isImportedPaymentCredit(entries[cursor])
+                shouldAttachCreditToBillMonth(entries[cursor], billDate, record)
                     ? isBeforeBillingMonth(entries[cursor].dateObj, billDate)
                     : isBeforeBillingDate(entries[cursor].dateObj, billDate)
             )
@@ -1163,9 +1188,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 && (
                     !entries[cursor].dateObj
                     || (
-                        isImportedPaymentCredit(entries[cursor])
-                            ? isSameBillingMonth(entries[cursor].dateObj, billDate)
-                            : isBeforeBillingDate(entries[cursor].dateObj, nextBillDate)
+                        shouldAttachCreditToBillMonth(entries[cursor], billDate, record)
+                            || (
+                                !shouldAttachCreditToBillMonth(entries[cursor], nextBillDate, record)
+                                && isBeforeBillingDate(entries[cursor].dateObj, nextBillDate)
+                            )
                     )
                 )
             ) {
@@ -1275,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         tableBody.innerHTML = rows.map((row) => {
+            const formatRowBillAmount = (value) => row.isProrated ? formatCurrencyNoCents(value) : formatCurrency(value);
             const previousBalanceCell = `<span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span>`;
             const advanceCell = `<span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span>`;
             return `
@@ -1287,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="is-num">${previousBalanceCell}</td>
                 <td class="is-num">${advanceCell}</td>
                 <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.referral)}">${formatCurrency(row.referral)}</span></td>
-                <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.due)}">${formatCurrency(row.due)}</span></td>
+                <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.due)}">${formatRowBillAmount(row.due)}</span></td>
                 <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span></td>
                 <td><span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span></td>
                 <td><span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span></td>
@@ -1304,10 +1332,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!adjustmentToolbar.form) return;
         if (!firstRow) {
             adjustmentToolbar.form.hidden = true;
+            if (adjustmentToolbar.toggle) {
+                adjustmentToolbar.toggle.hidden = true;
+                adjustmentToolbar.toggle.setAttribute('aria-expanded', 'false');
+            }
+            state.adjustmentToolbarOpen = false;
             return;
         }
 
-        adjustmentToolbar.form.hidden = false;
+        if (adjustmentToolbar.toggle) {
+            adjustmentToolbar.toggle.hidden = false;
+            adjustmentToolbar.toggle.disabled = state.savingAdjustment;
+            adjustmentToolbar.toggle.setAttribute('aria-expanded', state.adjustmentToolbarOpen ? 'true' : 'false');
+            adjustmentToolbar.toggle.innerHTML = state.adjustmentToolbarOpen
+                ? '<i class="ti ti-x" aria-hidden="true"></i> Hide adjustment'
+                : '<i class="ti ti-adjustments" aria-hidden="true"></i> Edit first bill';
+        }
+        adjustmentToolbar.form.hidden = !state.adjustmentToolbarOpen;
         if (adjustmentToolbar.month) {
             adjustmentToolbar.month.textContent = `${firstRow.billLabel || 'First bill'} only`;
         }
@@ -1364,6 +1405,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const planName = resolvePlanLabel(record);
         const referralCount = Number(context.referredCustomers?.length) || 0;
         if (titleEl) titleEl.textContent = 'Payment Breakdown';
+        if (addPaymentBtn) {
+            addPaymentBtn.href = account
+                ? `payments.html?payNow=${encodeURIComponent(account)}`
+                : 'payments.html';
+            addPaymentBtn.classList.toggle('disabled', !account);
+            addPaymentBtn.setAttribute('aria-disabled', account ? 'false' : 'true');
+        }
         if (subtitleEl) {
             subtitleEl.textContent = [
                 customerName,
@@ -1423,6 +1471,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(state.record || {}),
                 paymentBreakdownAdjustment: payload?.adjustment || { firstBill: adjustment }
             };
+            state.adjustmentToolbarOpen = false;
             applyLoadedBreakdown(nextRecord, state.customers);
             showToast('First bill adjustment saved.', 'success');
         } catch (error) {
@@ -1458,6 +1507,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (subtitleEl) subtitleEl.textContent = 'Payment breakdown could not be loaded.';
         }
     }
+
+    adjustmentToolbar.toggle?.addEventListener('click', () => {
+        if (state.savingAdjustment) return;
+        state.adjustmentToolbarOpen = !state.adjustmentToolbarOpen;
+        renderAdjustmentToolbar(state.rows);
+        if (state.adjustmentToolbarOpen) {
+            adjustmentToolbar.previousBalance?.focus();
+        }
+    });
 
     adjustmentToolbar.form?.addEventListener('submit', (event) => {
         event.preventDefault();

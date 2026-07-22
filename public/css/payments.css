@@ -1291,6 +1291,71 @@ body.modal-open {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.payment-locked-customer {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid rgba(32, 107, 196, 0.22);
+    border-radius: 12px;
+    background: rgba(32, 107, 196, 0.08);
+    color: #182433;
+}
+
+.payment-locked-customer[hidden] {
+    display: none !important;
+}
+
+.payment-locked-customer__avatar {
+    display: inline-flex;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex: 0 0 2.25rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #206bc4;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.payment-locked-customer__copy {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.payment-locked-customer__copy strong,
+.payment-locked-customer__copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.payment-locked-customer__copy strong {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.payment-locked-customer__copy small {
+    color: #667382;
+    font-size: 0.78rem;
+}
+
+.payment-locked-customer__badge {
+    margin-left: auto;
+    padding: 0.22rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(32, 107, 196, 0.14);
+    color: #206bc4;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .form-feedback {
     margin: -6px 0 0;
     font-size: 0.85em;
@@ -1339,6 +1404,26 @@ body.theme-dark .payment-form textarea:focus {
 body.theme-dark .input-with-addon {
     background: rgba(30, 41, 59, 0.6); /* Adjusted dark mode background */
     border-color: rgba(59, 74, 103, 0.5);
+}
+
+body.theme-dark .payment-locked-customer {
+    background: rgba(32, 107, 196, 0.16);
+    border-color: rgba(96, 165, 250, 0.34);
+    color: #e2e8f0;
+}
+
+body.theme-dark .payment-locked-customer__avatar {
+    background: #3b82f6;
+    color: #eff6ff;
+}
+
+body.theme-dark .payment-locked-customer__copy small {
+    color: #94a3b8;
+}
+
+body.theme-dark .payment-locked-customer__badge {
+    background: rgba(96, 165, 250, 0.2);
+    color: #bfdbfe;
 }
 
 .span-two {

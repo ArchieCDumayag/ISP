@@ -199,6 +199,13 @@
     flex-wrap: wrap;
 }
 
+.payment-breakdown-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-left: auto;
+}
+
 .section-title {
     margin: 0;
     color: var(--tblr-body-color, #182433);
@@ -264,20 +271,21 @@
 }
 
 .breakdown-adjustment-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: .55rem;
-    margin-left: auto;
-    padding: .6rem;
+    flex: 1 0 100%;
+    width: 100%;
+    margin: 0;
     border: 1px solid var(--tblr-border-color, #dce3ef);
     border-radius: .8rem;
     background: var(--tblr-bg-surface-secondary, #f8fafc);
+    box-shadow: none;
 }
 
 .breakdown-adjustment-toolbar[hidden] {
     display: none;
+}
+
+.breakdown-adjustment-toolbar .card-body {
+    padding: .75rem;
 }
 
 .breakdown-adjustment-toolbar__copy {
@@ -435,14 +443,14 @@
         align-items: stretch;
     }
 
+    .payment-breakdown-toolbar-actions,
     .breakdown-adjustment-toolbar {
         width: 100%;
-        justify-content: flex-start;
         margin-left: 0;
     }
 
-    .breakdown-adjustment-field,
     .breakdown-adjustment-input,
+    .payment-breakdown-toolbar-actions .btn,
     .breakdown-adjustment-toolbar .btn {
         width: 100%;
     }

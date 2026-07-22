@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payments.css?v=3.6">
+    <link rel="stylesheet" href="css/payments.css?v=3.7">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -165,8 +165,17 @@
             </div>
             <form id="paymentForm" class="payment-form" novalidate>
                 <div class="form-grid">
-                    <div class="form-field">
+                    <div class="form-field" id="paymentCustomerField">
                         <label for="customerSelect">Customer</label>
+                        <div class="payment-locked-customer" id="paymentLockedCustomer" hidden>
+                            <span class="payment-locked-customer__avatar" id="paymentLockedCustomerAvatar">--</span>
+                            <span class="payment-locked-customer__copy">
+                                <strong id="paymentLockedCustomerName">Selected subscriber</strong>
+                                <small id="paymentLockedCustomerMeta">Payment will be saved to this subscriber.</small>
+                            </span>
+                            <span class="payment-locked-customer__badge">Selected</span>
+                        </div>
+                        <input type="hidden" id="paymentLockedAccountInput" name="accountNumber" disabled>
                         <select id="customerSelect" name="accountNumber" required>
                             <option value="">Select a customer</option>
                         </select>
@@ -252,7 +261,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="layout.js?v=3.8"></script>
-    <script src="payments.js?v=7.6"></script>
+    <script src="payments.js?v=7.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>
 </body>

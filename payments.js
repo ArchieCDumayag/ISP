@@ -50,6 +50,7 @@ const ABSOLUTE_HTTP_URL_PATTERN = /^https?:\/\/\S+$/i;
 const ABSOLUTE_SCHEME_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
 const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 let cachedCloudflaredHostname;
+let paymentImportXlsxModule = null;
 const XENDIT_SUCCESS_STATUSES = new Set(['COMPLETED', 'SETTLED', 'PAID', 'SUCCESS', 'SUCCEEDED']);
 const XENDIT_CALLBACK_TOKEN_HEADERS = ['x-callback-token'];
 const XENDIT_SIGNATURE_HEADERS = [
@@ -657,6 +658,721 @@ const createPaymentRecordsBackup = async (payments, { branchId = null, user = nu
         createdAt,
         accountCount: payload.accountCount,
         entryCount: payload.entryCount
+    };
+};
+
+const PAYMENT_IMPORT_CLIENTS_SHEET_NAME = 'CLIENTS LIST';
+const PAYMENT_IMPORT_WARNING_LIMIT = 100;
+const PAYMENT_IMPORT_NAME_NOISE = new Set([
+    'jan', 'january', 'feb', 'february', 'mar', 'march', 'apr', 'april',
+    'may', 'jun', 'june', 'jul', 'july', 'aug', 'august', 'sep', 'sept',
+    'september', 'oct', 'october', 'nov', 'november', 'dec', 'december',
+    'adv', 'advance', 'install', 'installation', 'new', 'payment', 'pay',
+    'paid', 'pd', 'balance', 'bal', 'bill', 'billing'
+]);
+const PAYMENT_IMPORT_MONTH_LOOKUP = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12
+};
+const getPaymentImportXlsxModule = () => {
+    if (!paymentImportXlsxModule) {
+        paymentImportXlsxModule = require('xlsx');
+    }
+    return paymentImportXlsxModule;
+};
+const normalizePaymentImportHeaderKey = (value) =>
+    String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+const normalizePaymentImportText = (value) => {
+    if (value == null) return '';
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return paymentImportDateOnlyFromParts(value.getFullYear(), value.getMonth() + 1, value.getDate());
+    }
+    return String(value).replace(/\s+/g, ' ').trim();
+};
+const normalizePaymentImportNameKey = (value) => normalizePaymentImportText(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const compactPaymentImportNameKey = (value) => normalizePaymentImportNameKey(value).replace(/\s+/g, '');
+const paymentImportPad2 = (value) => String(value).padStart(2, '0');
+const paymentImportDateOnlyFromParts = (year, month, day) => {
+    let normalizedYear = Number(year);
+    const normalizedMonth = Number(month);
+    const normalizedDay = Number(day);
+    if (!normalizedYear || !normalizedMonth || !normalizedDay) return '';
+    if (normalizedYear < 100) normalizedYear += normalizedYear >= 70 ? 1900 : 2000;
+    const candidate = new Date(normalizedYear, normalizedMonth - 1, normalizedDay);
+    if (
+        Number.isNaN(candidate.getTime())
+        || candidate.getFullYear() !== normalizedYear
+        || candidate.getMonth() !== normalizedMonth - 1
+        || candidate.getDate() !== normalizedDay
+    ) {
+        return '';
+    }
+    return `${normalizedYear}-${paymentImportPad2(normalizedMonth)}-${paymentImportPad2(normalizedDay)}`;
+};
+const inferPaymentImportYear = (sheetName = '') => {
+    const match = String(sheetName || '').match(/\b(20\d{2}|\d{2})\b/);
+    if (!match) return new Date().getFullYear();
+    const year = Number(match[1]);
+    return year < 100 ? 2000 + year : year;
+};
+const inferPaymentImportMonth = (sheetName = '') => {
+    const key = normalizePaymentImportNameKey(sheetName);
+    return key.split(' ').map((token) => PAYMENT_IMPORT_MONTH_LOOKUP[token]).find(Boolean) || null;
+};
+const inferPaymentImportDateFromSheetName = (sheetName = '') => {
+    const month = inferPaymentImportMonth(sheetName);
+    const year = inferPaymentImportYear(sheetName);
+    return month ? paymentImportDateOnlyFromParts(year, month, 1) : '';
+};
+const parsePaymentImportDateOnly = (rawValue, displayValue = '', fallbackYear = new Date().getFullYear()) => {
+    if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
+        return paymentImportDateOnlyFromParts(rawValue.getFullYear(), rawValue.getMonth() + 1, rawValue.getDate());
+    }
+
+    const xlsx = paymentImportXlsxModule;
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue) && xlsx?.SSF?.parse_date_code) {
+        const parsed = xlsx.SSF.parse_date_code(rawValue);
+        if (parsed?.y && parsed?.m && parsed?.d) {
+            return paymentImportDateOnlyFromParts(parsed.y, parsed.m, parsed.d);
+        }
+    }
+
+    const text = normalizePaymentImportText(displayValue || rawValue);
+    if (!text || /^total$/i.test(text)) return '';
+
+    const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (isoMatch) return paymentImportDateOnlyFromParts(isoMatch[1], isoMatch[2], isoMatch[3]);
+
+    const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (slashMatch) return paymentImportDateOnlyFromParts(slashMatch[3], slashMatch[1], slashMatch[2]);
+
+    const dayMonthNameMatch = text.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,9})(?:[-/\s,]+(\d{2,4}))?$/);
+    if (dayMonthNameMatch) {
+        const month = PAYMENT_IMPORT_MONTH_LOOKUP[String(dayMonthNameMatch[2] || '').toLowerCase()];
+        if (month) {
+            return paymentImportDateOnlyFromParts(dayMonthNameMatch[3] || fallbackYear, month, dayMonthNameMatch[1]);
+        }
+    }
+
+    const monthDayNameMatch = text.match(/^([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s+(\d{2,4}))?$/);
+    if (monthDayNameMatch) {
+        const month = PAYMENT_IMPORT_MONTH_LOOKUP[String(monthDayNameMatch[1] || '').toLowerCase()];
+        if (month) {
+            return paymentImportDateOnlyFromParts(monthDayNameMatch[3] || fallbackYear, month, monthDayNameMatch[2]);
+        }
+    }
+
+    const parsedTime = Date.parse(text);
+    if (!Number.isNaN(parsedTime)) {
+        const parsed = new Date(parsedTime);
+        return paymentImportDateOnlyFromParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    }
+
+    return '';
+};
+const parsePaymentImportAmount = (rawValue, displayValue = '') => {
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+        return Number(rawValue.toFixed(2));
+    }
+    const text = normalizePaymentImportText(displayValue || rawValue);
+    if (!text) return 0;
+    const negative = /^\(.*\)$/.test(text) || text.includes('-');
+    const normalized = text.replace(/[₱,\s]/g, '').replace(/[()]/g, '').replace(/[^0-9.-]/g, '');
+    const amount = Number(normalized);
+    if (!Number.isFinite(amount)) return 0;
+    return Number((negative ? -Math.abs(amount) : amount).toFixed(2));
+};
+const paymentImportCell = (xlsx, sheet, row, col) => sheet?.[xlsx.utils.encode_cell({ r: row, c: col })] || null;
+const paymentImportCellText = (xlsx, sheet, row, col) => {
+    const item = paymentImportCell(xlsx, sheet, row, col);
+    return item ? normalizePaymentImportText(item.w ?? item.v ?? '') : '';
+};
+const paymentImportCellRaw = (xlsx, sheet, row, col) => paymentImportCell(xlsx, sheet, row, col)?.v;
+const paymentImportCellReferenceText = (xlsx, sheet, row, col) => {
+    const item = paymentImportCell(xlsx, sheet, row, col);
+    if (!item) return '';
+    if (typeof item.v === 'number' && Number.isFinite(item.v)) {
+        if (Number.isInteger(item.v) || String(item.w || '').toUpperCase().includes('E+')) {
+            return item.v.toFixed(0);
+        }
+    }
+    return normalizePaymentImportText(item.w ?? item.v ?? '');
+};
+const formatPaymentImportAccountNumber = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
+    return normalizePaymentImportText(value).replace(/\.0+$/, '');
+};
+const addPaymentImportAlias = (aliasMap, alias, accountNumber, area = '') => {
+    const account = String(accountNumber || '').trim();
+    const normalized = normalizePaymentImportNameKey(alias);
+    if (!account || !normalized) return;
+    const normalizedArea = normalizePaymentImportNameKey(area);
+    const keys = new Set([normalized, compactPaymentImportNameKey(alias)]);
+    if (normalizedArea) {
+        keys.add(`${normalized}|${normalizedArea}`);
+        keys.add(`${compactPaymentImportNameKey(alias)}|${normalizedArea}`);
+    }
+    keys.forEach((key) => {
+        if (!key) return;
+        if (!aliasMap.has(key)) aliasMap.set(key, new Set());
+        aliasMap.get(key).add(account);
+    });
+};
+const addPaymentImportCustomerAliases = (aliasMap, customer = {}) => {
+    const accountNumber = String(customer?.accountNumber || '').trim();
+    if (!accountNumber) return;
+    const firstName = normalizePaymentImportText(customer?.firstName);
+    const middleName = normalizePaymentImportText(customer?.middleName);
+    const lastName = normalizePaymentImportText(customer?.lastName);
+    const area = normalizePaymentImportText(customer?.area || customer?.coverageArea || customer?.barangay);
+    const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+    const firstLast = [firstName, lastName].filter(Boolean).join(' ');
+    const lastFirst = [lastName, firstName].filter(Boolean).join(' ');
+    const lastFirstMiddle = [lastName, firstName, middleName].filter(Boolean).join(' ');
+
+    [
+        customer?.name,
+        customer?.fullName,
+        fullName,
+        firstLast,
+        lastFirst,
+        lastName && firstName ? `${lastName}, ${firstName}` : '',
+        lastName && fullName ? `${lastName}, ${[firstName, middleName].filter(Boolean).join(' ')}` : '',
+        lastFirstMiddle
+    ].forEach((alias) => addPaymentImportAlias(aliasMap, alias, accountNumber, area));
+};
+const findPaymentImportHeaderRow = (rows = [], expectedKeys = []) => (
+    (Array.isArray(rows) ? rows : []).findIndex((row) => {
+        const keys = new Set((Array.isArray(row) ? row : []).map(normalizePaymentImportHeaderKey).filter(Boolean));
+        return expectedKeys.every((key) => keys.has(normalizePaymentImportHeaderKey(key)));
+    })
+);
+const buildPaymentImportCustomerLookup = (customers = [], workbook) => {
+    const xlsx = getPaymentImportXlsxModule();
+    const customerList = Array.isArray(customers) ? customers : [];
+    const customerByAccount = new Map();
+    const aliasMap = new Map();
+
+    customerList.forEach((customer) => {
+        const accountNumber = String(customer?.accountNumber || '').trim();
+        if (!accountNumber) return;
+        customerByAccount.set(accountNumber, customer);
+        addPaymentImportCustomerAliases(aliasMap, customer);
+    });
+
+    const selectedSheetName = workbook?.SheetNames?.find((name) =>
+        String(name || '').trim().toLowerCase() === PAYMENT_IMPORT_CLIENTS_SHEET_NAME.toLowerCase()
+    ) || workbook?.SheetNames?.find((name) => String(name || '').toLowerCase().includes('client'));
+    const clientSheet = selectedSheetName ? workbook.Sheets[selectedSheetName] : null;
+    if (clientSheet) {
+        const rows = xlsx.utils.sheet_to_json(clientSheet, {
+            header: 1,
+            defval: '',
+            raw: true,
+            blankrows: false
+        });
+        const headerRowIndex = findPaymentImportHeaderRow(rows, ['Account Number']);
+        const headerMap = new Map();
+        if (headerRowIndex >= 0) {
+            (rows[headerRowIndex] || []).forEach((cellValue, index) => {
+                const key = normalizePaymentImportHeaderKey(cellValue);
+                if (key && !headerMap.has(key)) headerMap.set(key, index);
+            });
+            const getCell = (row, aliases) => {
+                for (const alias of aliases) {
+                    const key = normalizePaymentImportHeaderKey(alias);
+                    if (headerMap.has(key)) return row[headerMap.get(key)];
+                }
+                return '';
+            };
+            rows.slice(headerRowIndex + 1).forEach((row) => {
+                const accountNumber = formatPaymentImportAccountNumber(getCell(row, [
+                    'Account Number',
+                    'Account No',
+                    'Account #',
+                    'account_number'
+                ]));
+                if (!accountNumber || !customerByAccount.has(accountNumber)) return;
+                const firstName = normalizePaymentImportText(getCell(row, ['First Name', 'Firstname', 'first_name']));
+                const middleName = normalizePaymentImportText(getCell(row, ['Middle Name', 'Middlename', 'middle_name']));
+                const lastName = normalizePaymentImportText(getCell(row, ['Last Name', 'Lastname', 'last_name']));
+                const area = normalizePaymentImportText(getCell(row, ['Area / Cluster', 'Area', 'Cluster', 'Barangay']));
+                const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+                const firstLast = [firstName, lastName].filter(Boolean).join(' ');
+                [
+                    fullName,
+                    firstLast,
+                    [lastName, firstName].filter(Boolean).join(' '),
+                    lastName && firstName ? `${lastName}, ${firstName}` : '',
+                    lastName && fullName ? `${lastName}, ${[firstName, middleName].filter(Boolean).join(' ')}` : ''
+                ].forEach((alias) => addPaymentImportAlias(aliasMap, alias, accountNumber, area));
+            });
+        }
+    }
+
+    const resolveAccount = (rawName, area = '') => {
+        const normalized = normalizePaymentImportNameKey(rawName);
+        const normalizedArea = normalizePaymentImportNameKey(area);
+        if (!normalized) return { accountNumber: '', customer: null, ambiguous: false };
+        const candidates = [
+            normalizedArea ? `${normalized}|${normalizedArea}` : '',
+            normalizedArea ? `${compactPaymentImportNameKey(rawName)}|${normalizedArea}` : '',
+            normalized,
+            compactPaymentImportNameKey(rawName)
+        ].filter(Boolean);
+
+        for (const candidate of candidates) {
+            const matches = aliasMap.get(candidate);
+            if (!matches || matches.size !== 1) continue;
+            const [accountNumber] = [...matches];
+            return { accountNumber, customer: customerByAccount.get(accountNumber) || null, ambiguous: false };
+        }
+
+        const ambiguous = candidates
+            .map((candidate) => aliasMap.get(candidate))
+            .find((matches) => matches && matches.size > 1);
+        if (ambiguous) {
+            return { accountNumber: '', customer: null, ambiguous: true, matches: [...ambiguous] };
+        }
+        return { accountNumber: '', customer: null, ambiguous: false };
+    };
+
+    return { resolveAccount, customerByAccount };
+};
+const trimPaymentImportNameNoise = (value) => {
+    const tokens = normalizePaymentImportNameKey(value).split(' ').filter(Boolean);
+    while (tokens.length > 1) {
+        const last = tokens[tokens.length - 1];
+        if (/^\d+$/.test(last) || PAYMENT_IMPORT_NAME_NOISE.has(last)) {
+            tokens.pop();
+            continue;
+        }
+        break;
+    }
+    return tokens.join(' ');
+};
+const paymentImportNameCandidates = (rawName) => {
+    const original = normalizePaymentImportText(rawName);
+    if (!original) return [];
+    const candidates = new Set();
+    const addCandidate = (value) => {
+        const text = normalizePaymentImportText(value);
+        const normalized = normalizePaymentImportNameKey(text);
+        if (!normalized) return;
+        candidates.add(text);
+        candidates.add(normalized);
+        const trimmed = trimPaymentImportNameNoise(text);
+        if (trimmed && trimmed !== normalized) candidates.add(trimmed);
+        const noParen = text.replace(/\([^)]*\)/g, ' ');
+        const noParenKey = normalizePaymentImportNameKey(noParen);
+        if (noParenKey && noParenKey !== normalized) candidates.add(noParenKey);
+    };
+
+    addCandidate(original);
+    const commaMatch = original.match(/^([^,]+),\s*(.+)$/);
+    if (commaMatch) {
+        addCandidate(`${commaMatch[2]} ${commaMatch[1]}`);
+        addCandidate(`${commaMatch[1]} ${commaMatch[2]}`);
+    }
+
+    return [...candidates];
+};
+const resolvePaymentImportAccount = (lookup, rawName, area = '') => {
+    const directAccountMatch = normalizePaymentImportText(rawName).match(/\b\d{6,20}\b/);
+    if (directAccountMatch && lookup.customerByAccount.has(directAccountMatch[0])) {
+        return {
+            accountNumber: directAccountMatch[0],
+            customer: lookup.customerByAccount.get(directAccountMatch[0]) || null,
+            ambiguous: false
+        };
+    }
+
+    const matches = [];
+    let sawAmbiguous = false;
+    paymentImportNameCandidates(rawName).forEach((candidate) => {
+        const resolved = lookup.resolveAccount(candidate, area);
+        if (resolved.ambiguous) {
+            sawAmbiguous = true;
+            return;
+        }
+        if (resolved.accountNumber) matches.push({ ...resolved, matchedName: candidate });
+    });
+
+    const accountNumbers = new Set(matches.map((match) => match.accountNumber));
+    if (accountNumbers.size === 1) return matches.find((match) => match.accountNumber === [...accountNumbers][0]);
+    if (accountNumbers.size > 1 || sawAmbiguous) {
+        return { accountNumber: '', customer: null, ambiguous: true, matches: [...accountNumbers] };
+    }
+    return { accountNumber: '', customer: null, ambiguous: false };
+};
+const resolvePaymentImportSheetMethod = (sheetName = '') => {
+    const name = String(sheetName || '').trim();
+    if (/^CASH(?:\b|\s)/i.test(name)) return 'Cash';
+    if (/^G(?:CASH|ASH)(?:\b|\s)/i.test(name)) return 'GCash';
+    return '';
+};
+const findPaymentImportCashHeader = (xlsx, sheet) => {
+    const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
+    for (let row = range.s.r; row <= Math.min(range.e.r, 24); row += 1) {
+        if (
+            normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 3)) === 'date'
+            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 6)) === 'particulars'
+            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 7)) === 'amount'
+        ) {
+            return row;
+        }
+    }
+    return -1;
+};
+const findPaymentImportGcashHeader = (xlsx, sheet) => {
+    const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
+    for (let row = range.s.r; row <= Math.min(range.e.r, 24); row += 1) {
+        if (
+            normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 6)) === 'date'
+            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 8)) === 'referencenumber'
+            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 9)) === 'particulars'
+            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 11)) === '3jpayment'
+        ) {
+            return row;
+        }
+    }
+    return -1;
+};
+const paymentImportSheetSlug = (value) => normalizePaymentImportNameKey(value)
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '');
+const paymentImportHash = (value, length = 10) =>
+    crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, length);
+const buildPaymentImportReference = ({ sheetName, rowNumber, method }) => {
+    const sheetToken = paymentImportSheetSlug(sheetName).replace(/-/g, '').toUpperCase().slice(0, 14) || 'SHEET';
+    const methodToken = method === 'GCash' ? 'GC' : 'CA';
+    return `CF2026-${methodToken}-${sheetToken}-${String(rowNumber).padStart(4, '0')}`.slice(0, REF_MAX_LENGTH);
+};
+const buildPaymentImportEntry = ({
+    accountNumber,
+    customer,
+    sheetName,
+    rowNumber,
+    method,
+    date,
+    amount,
+    rawName,
+    area,
+    category,
+    originalReference,
+    collector,
+    importedBy
+}) => {
+    const methodSlug = method === 'GCash' ? 'gcash' : 'cash';
+    const sourceKey = `${sheetName}|${rowNumber}|${accountNumber}|${amount.toFixed(2)}|${methodSlug}`;
+    const reference = buildPaymentImportReference({ sheetName, rowNumber, method });
+    const customerName = normalizePaymentImportText(customer?.name || customer?.fullName || [
+        customer?.firstName,
+        customer?.lastName
+    ].filter(Boolean).join(' '));
+    const descriptionParts = [
+        `Imported ${method} payment from ${sheetName}`,
+        `Excel row ${rowNumber}`,
+        category ? `Category: ${category}` : '',
+        area ? `Area: ${area}` : '',
+        collector ? `Collector: ${collector}` : '',
+        originalReference ? `Workbook ref: ${originalReference}` : '',
+        rawName && rawName !== customerName ? `Workbook name: ${rawName}` : ''
+    ].filter(Boolean);
+    const recorderName = normalizePaymentImportText(collector)
+        || normalizePaymentImportText(importedBy?.name || importedBy?.username)
+        || 'Excel Import';
+    const recordedBy = {
+        id: String(importedBy?.id || 'excel-import'),
+        username: normalizePaymentImportText(importedBy?.username) || 'excel-import',
+        name: recorderName,
+        role: normalizePaymentImportText(collector) ? 'Collector' : (importedBy?.role || 'System')
+    };
+
+    return {
+        id: `cf2026-${methodSlug}-${paymentImportSheetSlug(sheetName).slice(0, 22)}-r${rowNumber}-${paymentImportHash(sourceKey, 8)}`.slice(0, 64),
+        amount,
+        date,
+        kind: 'payment',
+        type: 'payment',
+        direction: 'credit',
+        reference,
+        orNumber: '',
+        description: descriptionParts.join('; '),
+        recordedAt: date ? `${date}T12:00:00+08:00` : new Date().toISOString(),
+        recordedBy,
+        payer: customerName || rawName || recorderName,
+        status: 'paid',
+        paymentMethod: method,
+        fingerprint: `${accountNumber}|${reference}|payment|${amount.toFixed(2)}`,
+        importedFrom: sheetName
+    };
+};
+const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) => {
+    const xlsx = getPaymentImportXlsxModule();
+    const workbook = xlsx.read(Buffer.from(buffer || []), {
+        type: 'buffer',
+        cellDates: true,
+        cellNF: false,
+        cellText: true
+    });
+    const lookup = buildPaymentImportCustomerLookup(customers, workbook);
+    const records = [];
+    const skipped = [];
+    let skippedCount = 0;
+    const bySheet = {};
+
+    workbook.SheetNames.forEach((sheetName) => {
+        const method = resolvePaymentImportSheetMethod(sheetName);
+        if (!method) return;
+
+        const sheet = workbook.Sheets[sheetName];
+        const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
+        const headerRow = method === 'Cash'
+            ? findPaymentImportCashHeader(xlsx, sheet)
+            : findPaymentImportGcashHeader(xlsx, sheet);
+        bySheet[sheetName] = { parsed: 0, matched: 0, skipped: 0, totalAmount: 0, method };
+
+        if (headerRow < 0) {
+            bySheet[sheetName].skipped += 1;
+            skippedCount += 1;
+            skipped.push({ sheetName, reason: 'Payment header not found' });
+            return;
+        }
+
+        const fallbackYear = inferPaymentImportYear(sheetName);
+        let lastDate = inferPaymentImportDateFromSheetName(sheetName);
+        let lastCollector = '';
+
+        for (let row = headerRow + 2; row <= range.e.r; row += 1) {
+            const dateCol = method === 'Cash' ? 3 : 6;
+            const rawDate = paymentImportCellRaw(xlsx, sheet, row, dateCol);
+            const dateText = paymentImportCellText(xlsx, sheet, row, dateCol);
+            const parsedDate = parsePaymentImportDateOnly(rawDate, dateText, fallbackYear);
+            if (parsedDate) lastDate = parsedDate;
+
+            const collectorText = method === 'Cash'
+                ? paymentImportCellText(xlsx, sheet, row, 9)
+                : paymentImportCellText(xlsx, sheet, row, 7);
+            if (collectorText && !/^gcash\s*no\.?$/i.test(collectorText)) lastCollector = collectorText;
+
+            const rawName = method === 'Cash'
+                ? paymentImportCellText(xlsx, sheet, row, 6)
+                : paymentImportCellText(xlsx, sheet, row, 9);
+            const amount = method === 'Cash'
+                ? parsePaymentImportAmount(paymentImportCellRaw(xlsx, sheet, row, 7), paymentImportCellText(xlsx, sheet, row, 7))
+                : parsePaymentImportAmount(paymentImportCellRaw(xlsx, sheet, row, 11), paymentImportCellText(xlsx, sheet, row, 11));
+
+            if (!rawName || /^total$/i.test(rawName) || !Number.isFinite(amount) || amount <= 0) continue;
+            bySheet[sheetName].parsed += 1;
+
+            const area = method === 'Cash' ? paymentImportCellText(xlsx, sheet, row, 5) : '';
+            const category = method === 'Cash' ? paymentImportCellText(xlsx, sheet, row, 4) : '';
+            const originalReference = method === 'GCash'
+                ? paymentImportCellReferenceText(xlsx, sheet, row, 8)
+                : '';
+            const resolved = resolvePaymentImportAccount(lookup, rawName, area);
+
+            if (!resolved.accountNumber) {
+                bySheet[sheetName].skipped += 1;
+                skippedCount += 1;
+                if (skipped.length < PAYMENT_IMPORT_WARNING_LIMIT) {
+                    skipped.push({
+                        sheetName,
+                        rowNumber: row + 1,
+                        amount,
+                        reason: resolved.ambiguous ? 'Ambiguous customer name' : 'Customer not found',
+                        customerName: rawName,
+                        area
+                    });
+                }
+                continue;
+            }
+
+            const entry = buildPaymentImportEntry({
+                accountNumber: resolved.accountNumber,
+                customer: resolved.customer,
+                sheetName,
+                rowNumber: row + 1,
+                method,
+                date: lastDate,
+                amount,
+                rawName,
+                area,
+                category,
+                originalReference,
+                collector: lastCollector,
+                importedBy
+            });
+            records.push({
+                accountNumber: resolved.accountNumber,
+                customerName: normalizePaymentImportText(resolved.customer?.name || resolved.customer?.fullName || rawName),
+                area: normalizePaymentImportText(resolved.customer?.area || resolved.customer?.coverageArea || area),
+                sheetName,
+                rowNumber: row + 1,
+                method,
+                amount,
+                entry
+            });
+            bySheet[sheetName].matched += 1;
+            bySheet[sheetName].totalAmount = Number((Number(bySheet[sheetName].totalAmount || 0) + amount).toFixed(2));
+        }
+    });
+
+    return { records, skipped, skippedCount, bySheet, sheetNames: workbook.SheetNames };
+};
+const parsePaymentImportBase64Payload = (payload = {}) => {
+    const base64 = String(payload?.fileBase64 || payload?.fileDataBase64 || payload?.data || '').trim();
+    if (!base64) return null;
+    const compact = base64.includes(',') ? base64.split(',').pop() : base64;
+    try {
+        return Buffer.from(compact, 'base64');
+    } catch {
+        return null;
+    }
+};
+const paymentImportDuplicateInHistory = (history = [], entry = {}) => (
+    (Array.isArray(history) ? history : []).some((existing) => {
+        const existingId = sanitizeString(existing?.id);
+        const existingFingerprint = sanitizeString(existing?.fingerprint);
+        const existingReference = sanitizeString(existing?.reference);
+        return (
+            (entry.id && existingId === entry.id)
+            || (entry.fingerprint && existingFingerprint === entry.fingerprint)
+            || (entry.reference && existingReference === entry.reference)
+        );
+    })
+);
+const paymentImportEntryTimestamp = (entry = {}) => {
+    const parsed = new Date(entry.recordedAt || entry.date || '').getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+const sortPaymentImportHistory = (history = []) => {
+    if (!Array.isArray(history)) return [];
+    return history.slice().sort((left, right) => {
+        const leftTime = paymentImportEntryTimestamp(left);
+        const rightTime = paymentImportEntryTimestamp(right);
+        if (rightTime !== leftTime) return rightTime - leftTime;
+        return String(right.id || '').localeCompare(String(left.id || ''));
+    });
+};
+const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = null } = {}) => {
+    const scopedBranchId = Number(branchId);
+    if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+    if (!buffer || !buffer.length) {
+        throw createError(400, 'Import file is empty.');
+    }
+
+    const customers = await readCustomers(scopedBranchId);
+    const parsed = parsePaymentImportWorkbook(buffer, customers, importedBy);
+    if (!parsed.records.length) {
+        throw createError(400, 'No importable Cash or GCash payment records found.');
+    }
+
+    const relational = await isRelationalReady();
+    const existingPayments = await readPayments(scopedBranchId);
+    const backup = await createPaymentRecordsBackup(existingPayments, {
+        branchId: scopedBranchId,
+        user: importedBy,
+        reason: 'before-payment-history-excel-import'
+    });
+    const methods = { cash: 0, gcash: 0 };
+    let imported = 0;
+    let duplicates = 0;
+
+    if (relational) {
+        await withTransaction(async (connection) => {
+            for (const record of parsed.records) {
+                const [duplicateRows] = await connection.query(
+                    `SELECT id FROM payment_entries
+                     WHERE branch_id = ?
+                       AND account_number = ?
+                       AND (id = ? OR fingerprint = ? OR reference = ?)
+                     LIMIT 1`,
+                    [
+                        scopedBranchId,
+                        record.accountNumber,
+                        record.entry.id,
+                        record.entry.fingerprint,
+                        record.entry.reference
+                    ]
+                );
+                if (duplicateRows && duplicateRows.length) {
+                    duplicates += 1;
+                    continue;
+                }
+
+                await assignEntryNumbers(connection, record.entry);
+                await assertEntryNumbersAvailable(connection, scopedBranchId, record.entry);
+                await insertPaymentEntry(record.entry, scopedBranchId, record.accountNumber, connection);
+                imported += 1;
+                if (record.method === 'GCash') methods.gcash += 1;
+                else methods.cash += 1;
+            }
+        });
+    } else {
+        const payments = existingPayments && typeof existingPayments === 'object' ? existingPayments : {};
+        parsed.records.forEach((record) => {
+            if (!payments[record.accountNumber]) {
+                payments[record.accountNumber] = {
+                    customerName: record.customerName,
+                    area: record.area,
+                    history: []
+                };
+            }
+            if (!Array.isArray(payments[record.accountNumber].history)) {
+                payments[record.accountNumber].history = [];
+            }
+            if (!payments[record.accountNumber].customerName && record.customerName) {
+                payments[record.accountNumber].customerName = record.customerName;
+            }
+            if (!payments[record.accountNumber].area && record.area) {
+                payments[record.accountNumber].area = record.area;
+            }
+            if (paymentImportDuplicateInHistory(payments[record.accountNumber].history, record.entry)) {
+                duplicates += 1;
+                return;
+            }
+            payments[record.accountNumber].history.unshift(record.entry);
+            imported += 1;
+            if (record.method === 'GCash') methods.gcash += 1;
+            else methods.cash += 1;
+        });
+
+        Object.keys(payments).forEach((accountNumber) => {
+            if (!Array.isArray(payments[accountNumber]?.history)) return;
+            payments[accountNumber].history = sortPaymentImportHistory(payments[accountNumber].history);
+        });
+        await writePayments(payments);
+    }
+
+    triggerBranchServiceRefresh(scopedBranchId, 'payment-history-excel-import');
+
+    return {
+        imported,
+        duplicates,
+        skipped: parsed.skippedCount || parsed.skipped.length,
+        warnings: parsed.skipped,
+        methods,
+        bySheet: parsed.bySheet,
+        backup
     };
 };
 
@@ -1342,6 +2058,37 @@ router.delete('/clear', async (req, res, next) => {
         res.json({ ok: true, removedCount, backup });
     } catch (error) {
         next(error.status ? error : createError(500, 'Failed to clear payment records.'));
+    }
+});
+
+// POST /api/payments/import-excel - Import Cash/GCash payment history from Excel workbook
+router.post('/import-excel', express.raw({
+    type: [
+        'application/octet-stream',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ],
+    limit: '40mb'
+}), async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const importBuffer = Buffer.isBuffer(req.body)
+            ? req.body
+            : parsePaymentImportBase64Payload(req.body || {});
+
+        const result = await importPaymentRecordsFromExcel({
+            buffer: importBuffer,
+            branchId,
+            importedBy: user
+        });
+
+        res.json({
+            ok: true,
+            ...result
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to import payment records from Excel.'));
     }
 });
 

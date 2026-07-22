@@ -18,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageInfoEl = document.getElementById('paymentHistoryPageInfo');
     const prevBtn = document.getElementById('paymentHistoryPrev');
     const nextBtn = document.getElementById('paymentHistoryNext');
+    const importBtn = document.getElementById('paymentHistoryImportBtn');
+    const importFileInput = document.getElementById('paymentHistoryImportFile');
     const backupBtn = document.getElementById('paymentHistoryBackupBtn');
     const clearBtn = document.getElementById('paymentHistoryClearBtn');
     const metricEntriesEl = document.getElementById('historyMetricEntries');
@@ -258,6 +260,19 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `${filename} (${countText}, ${accountText})`
             : `${countText}, ${accountText}`;
     };
+    const describePaymentImport = (payload = {}) => {
+        const imported = Number(payload.imported) || 0;
+        const duplicates = Number(payload.duplicates) || 0;
+        const skipped = Number(payload.skipped) || 0;
+        const cash = Number(payload?.methods?.cash) || 0;
+        const gcash = Number(payload?.methods?.gcash) || 0;
+        const importedText = `${formatCount(imported)} ${imported === 1 ? 'payment' : 'payments'}`;
+        const methodText = `Cash ${formatCount(cash)}, GCash ${formatCount(gcash)}`;
+        const extras = [];
+        if (duplicates) extras.push(`${formatCount(duplicates)} duplicate${duplicates === 1 ? '' : 's'} skipped`);
+        if (skipped) extras.push(`${formatCount(skipped)} unmatched row${skipped === 1 ? '' : 's'} skipped`);
+        return `Imported ${importedText} (${methodText})${extras.length ? `. ${extras.join('; ')}.` : '.'}`;
+    };
     const countEntriesInPayments = (payments = {}) => Object.values(payments || {}).reduce((sum, record) => (
         sum + (Array.isArray(record?.history) ? record.history.length : 0)
     ), 0);
@@ -337,7 +352,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const rows = [];
         Object.entries(payments || {}).forEach(([accountNumber, paymentRecord]) => {
-            const customer = customerMap.get(String(accountNumber || '').trim()) || null;
+            const paymentFallbackCustomer = paymentRecord?.customerName || paymentRecord?.name
+                ? {
+                    name: paymentRecord.customerName || paymentRecord.name,
+                    area: paymentRecord.area || paymentRecord.coverageArea || ''
+                }
+                : null;
+            const customer = customerMap.get(String(accountNumber || '').trim()) || paymentFallbackCustomer;
             const subscriber = getCustomerName(customer, accountNumber);
             const area = getCustomerArea(customer) || 'Unassigned';
 
@@ -588,6 +609,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function importPaymentHistoryFromFile(file) {
+        if (!file) return;
+        const fileName = String(file.name || '').trim();
+        if (!/\.(xlsx|xls)$/i.test(fileName)) {
+            showToast('Select an Excel file (.xlsx or .xls).', 'error');
+            if (importFileInput) importFileInput.value = '';
+            return;
+        }
+
+        setButtonBusy(importBtn, true);
+        setButtonBusy(backupBtn, true);
+        setButtonBusy(clearBtn, true);
+        try {
+            const response = await fetch('/api/payments/import-excel', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'X-Import-Filename': encodeURIComponent(fileName || 'payment-history-import.xlsx')
+                },
+                body: await file.arrayBuffer()
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(payload?.error || payload?.message || 'Failed to import payment records.');
+            }
+
+            await loadHistory();
+            if (Array.isArray(payload?.warnings) && payload.warnings.length) {
+                console.warn('Payment import skipped rows:', payload.warnings);
+            }
+            showToast(describePaymentImport(payload), Number(payload?.imported) ? 'success' : 'info');
+        } catch (error) {
+            showToast(error.message || 'Failed to import payment records.', 'error');
+        } finally {
+            setButtonBusy(importBtn, false);
+            setButtonBusy(backupBtn, false);
+            setButtonBusy(clearBtn, false);
+            if (importFileInput) importFileInput.value = '';
+        }
+    }
+
     async function deleteEntriesFromPayments(payments = {}) {
         const entries = [];
         Object.entries(payments || {}).forEach(([accountNumber, record]) => {
@@ -712,6 +775,10 @@ document.addEventListener('DOMContentLoaded', () => {
     endDateInput?.addEventListener('change', () => applyFilters({ resetPage: true }));
     sortSelect?.addEventListener('change', () => applyFilters({ resetPage: true }));
     pageSizeSelect?.addEventListener('change', () => applyFilters({ resetPage: true }));
+    importBtn?.addEventListener('click', () => importFileInput?.click());
+    importFileInput?.addEventListener('change', () => {
+        void importPaymentHistoryFromFile(importFileInput.files?.[0] || null);
+    });
     backupBtn?.addEventListener('click', backupPaymentRecords);
     clearBtn?.addEventListener('click', clearPaymentRecords);
     tableBody?.addEventListener('click', async (event) => {

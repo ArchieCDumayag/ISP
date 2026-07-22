@@ -427,9 +427,11 @@
   <script src="layout.js?v=3.7"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="js/payment-current-bill.js?v=1.0"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const API_CUSTOMERS = '/api/customers';
+      const API_PAYMENT_RECORDS = '/api/payment-records';
       const API_PON_STATE = '/api/pon/state';
       const REFRESH_INTERVAL_MS = 60_000;
       const LINKS_MIN_ZOOM = 14;
@@ -649,8 +651,37 @@
 
       const formatCustomerBalance = (value) => {
         const parsed = Number(value);
-        if (!Number.isFinite(parsed)) return '0';
-        return parsed.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        if (!Number.isFinite(parsed)) return '₱0.00';
+        if (window.PaymentCurrentBill?.formatBalanceAfterPayment) {
+          return window.PaymentCurrentBill.formatBalanceAfterPayment(parsed);
+        }
+        return `₱${parsed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      };
+
+      const loadPaymentRecordIndex = async () => {
+        const recordsByAccount = new Map();
+        try {
+          const res = await fetch(API_PAYMENT_RECORDS, { cache: 'no-store' });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data?.error || data?.message || 'Unable to load payment records.');
+          const records = Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []);
+          records.forEach((record) => {
+            const account = normalizeLookupKey(record?.accountNumber || record?.account || record?.id);
+            if (account) recordsByAccount.set(account, record);
+          });
+        } catch (error) {
+          console.warn('Unable to load payment records for coverage map current bill:', error?.message || error);
+        }
+        return recordsByAccount;
+      };
+
+      const resolveCustomerCurrentBillDisplay = (customer = {}, paymentRecord = null, paymentRecords = []) => {
+        const source = paymentRecord || customer || {};
+        if (window.PaymentCurrentBill?.resolveCurrentBillState) {
+          const state = window.PaymentCurrentBill.resolveCurrentBillState(source, paymentRecords);
+          return window.PaymentCurrentBill.formatBalanceAfterPayment(state.amount);
+        }
+        return formatCustomerBalance(source.balance);
       };
 
       const parseCoordinatePair = (value) => {
@@ -983,12 +1014,16 @@
         customerPointIndex = new Map();
         customerRecords = [];
 
-        const res = await fetch(API_CUSTOMERS, { cache: 'no-store' });
+        const [res, paymentRecordsByAccount] = await Promise.all([
+          fetch(API_CUSTOMERS, { cache: 'no-store' }),
+          loadPaymentRecordIndex()
+        ]);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data?.error || data?.message || 'Unable to load customers.');
         }
         const customers = Array.isArray(data) ? data : (Array.isArray(data.customers) ? data.customers : []);
+        const paymentRecords = Array.from(paymentRecordsByAccount.values());
         const points = [];
         let mapped = 0;
         let invalid = 0;
@@ -1008,7 +1043,8 @@
           const name = fullName || String(customer?.name || '').trim() || 'Customer';
           const accountNumber = String(customer?.accountNumber || customer?.account || customer?.id || '').trim() || '-';
           const status = normalizeMikrotikCustomerStatus(customer?.mikrotikStatus);
-          const balance = formatCustomerBalance(customer?.balance);
+          const paymentRecord = paymentRecordsByAccount.get(normalizeLookupKey(accountNumber)) || null;
+          const balance = resolveCustomerCurrentBillDisplay(customer, paymentRecord, paymentRecords);
           const marker = L.marker([lat, lng], { icon: markerIcon(status, 'customer') }).bindPopup(`
             <div class="customer-map-popup__content">
               <div class="customer-map-popup__header">
@@ -1018,7 +1054,7 @@
               <div class="customer-map-popup__account">${escapeHtml(accountNumber)}</div>
               <div class="customer-map-popup__divider" role="presentation"></div>
               <div class="customer-map-popup__row">
-                <span class="customer-map-popup__metric-label">Balance</span>
+                <span class="customer-map-popup__metric-label">Current Bill</span>
                 <span>${escapeHtml(balance)}</span>
               </div>
             </div>

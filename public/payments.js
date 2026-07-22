@@ -136,6 +136,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let paymentHistoryEntries = [];
     const paymentHistorySelectedEntryIds = new Set();
     const paymentHistoryExpandedYears = new Set();
+    let currentBillStateCache = new WeakMap();
     const ACCOUNT_INFO_LIVE_REFRESH_MS = 4000;
     const ACCOUNT_INFO_PPPOE_LIVE_REFRESH_MS = 1000;
     let customerFormBridgeReady = false;
@@ -652,6 +653,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
     const SQL_DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
     const ISO_DATETIME_NO_TZ_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+    const EPSILON = 0.005;
+    const MAX_SYNTHETIC_BREAKDOWN_ROWS = 120;
     const MANILA_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
         timeZone: MANILA_TIME_ZONE,
         month: 'short',
@@ -1175,6 +1178,709 @@ document.addEventListener('DOMContentLoaded', function () {
             return sum;
         }, 0));
     };
+
+    const normalizeBreakdownText = (value) => String(value || '').trim().toLowerCase();
+    const normalizeBreakdownIdentity = (value) => normalizeBreakdownText(value).replace(/[^a-z0-9]+/g, '');
+    const toBreakdownAmount = (value) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? roundMoney(Math.abs(parsed)) : 0;
+    };
+    const toBreakdownAdjustmentAmount = (value) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return 0;
+        return roundMoney(parsed);
+    };
+    const hasBreakdownAmountOverride = (value) => {
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string' && !value.trim()) return false;
+        return Number.isFinite(Number(value));
+    };
+    const normalizeFirstBillAdjustmentForPayments = (adjustment = null) => {
+        const firstBill = adjustment?.firstBill || adjustment || null;
+        if (!firstBill || typeof firstBill !== 'object') return null;
+        return {
+            previousBalance: toBreakdownAdjustmentAmount(firstBill.previousBalance),
+            advance: toBreakdownAdjustmentAmount(firstBill.advance)
+        };
+    };
+    const getFirstBillAdjustmentForPayments = (customer = {}) => normalizeFirstBillAdjustmentForPayments(
+        customer.paymentBreakdownAdjustment
+        || customer.breakdownAdjustment
+        || customer.firstBillAdjustment
+        || null
+    );
+    const safeBreakdownDate = (value) => parseTimestampValue(value);
+    const getBreakdownDateParts = (date) => {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+        return {
+            year: date.getFullYear(),
+            month: date.getMonth() + 1,
+            day: date.getDate()
+        };
+    };
+    const buildBreakdownMonthlyDate = (year, month, billingDay) => {
+        const parsedYear = Number(year);
+        const parsedMonth = Number(month);
+        if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth)) return null;
+        const monthIndex = Math.min(Math.max(parsedMonth, 1), 12) - 1;
+        const lastDay = new Date(parsedYear, monthIndex + 1, 0).getDate();
+        return new Date(
+            parsedYear,
+            monthIndex,
+            Math.min(Math.max(Number(billingDay) || 1, 1), lastDay)
+        );
+    };
+    const getNextBreakdownMonthParts = (year, month) => (
+        month >= 12
+            ? { year: year + 1, month: 1 }
+            : { year, month: month + 1 }
+    );
+    const getMinBreakdownDate = (dates = []) => {
+        const validDates = dates.filter((date) => date instanceof Date && !Number.isNaN(date.getTime()));
+        if (!validDates.length) return null;
+        return validDates.reduce((earliest, date) => date < earliest ? date : earliest, validDates[0]);
+    };
+    const getMaxBreakdownDate = (dates = []) => {
+        const validDates = dates.filter((date) => date instanceof Date && !Number.isNaN(date.getTime()));
+        if (!validDates.length) return null;
+        return validDates.reduce((latest, date) => date > latest ? date : latest, validDates[0]);
+    };
+    const resolveFirstMonthProrationForPayments = (customer = {}, billDate = null, fullPlanAmount = 0) => {
+        const activationDate = safeBreakdownDate(customer.activationDate || customer.activation_date);
+        const planAmount = Number(fullPlanAmount) || 0;
+        if (isExistingCustomerStart(customer) && activationDate && billDate && isSameMonth(activationDate, billDate)) {
+            return {
+                amount: 0,
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+        if (!activationDate || !billDate || planAmount <= 0 || !isSameMonth(activationDate, billDate)) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+        const periodEnd = getMonthEndDate(activationDate);
+        const periodStart = activationDate;
+        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+        const activeDays = getInclusiveDayCount(periodStart, periodEnd);
+        const totalDays = getInclusiveDayCount(monthStart, periodEnd);
+        if (!activeDays || !totalDays || activeDays >= totalDays) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+        return {
+            amount: roundMoney((planAmount / totalDays) * activeDays),
+            isProrated: true,
+            periodStart,
+            periodEnd
+        };
+    };
+    const resolveBreakdownPlanAmountForPayments = (customer = {}, overrideAmount = null) => {
+        const matchedPlan = customer.planName ? planByName.get(normalizePlanName(customer.planName)) : null;
+        const candidates = [
+            overrideAmount,
+            matchedPlan?.price,
+            customer.planAmount,
+            customer.planPrice,
+            customer.monthlyFee,
+            customer.price,
+            customer.amount
+        ];
+        for (const candidate of candidates) {
+            const parsed = Number(candidate);
+            if (Number.isFinite(parsed) && parsed > 0) return roundMoney(parsed);
+        }
+        return 0;
+    };
+    const normalizeBreakdownPlanType = (value) => {
+        const normalized = normalizeBreakdownText(value);
+        if (normalized.includes('prepaid')) return 'prepaid';
+        if (normalized.includes('postpaid')) return 'postpaid';
+        return '';
+    };
+    const resolveSourcePlanTypeForPayments = (customer = {}) => {
+        const directType = [
+            customer.sourceType,
+            customer.source_type,
+            customer.customerType,
+            customer.customer_type,
+            customer.accountType,
+            customer.account_type,
+            customer.subscriberType,
+            customer.subscriber_type
+        ].map(normalizeBreakdownPlanType).find(Boolean);
+        if (directType) return directType;
+
+        const remarks = String(customer.remarks || customer.notes || '').trim();
+        const sourceMatch = remarks.match(/\bsource\s+type\s*:\s*(prepaid|postpaid)\b/i);
+        return sourceMatch?.[1] ? normalizeBreakdownPlanType(sourceMatch[1]) : '';
+    };
+    const resolveBreakdownPlanTypeForPayments = (customer = {}) => {
+        const sourceType = resolveSourcePlanTypeForPayments(customer);
+        if (sourceType) return sourceType;
+
+        const explicit = normalizeBreakdownPlanType(customer.planCategory || customer.planType || customer.type);
+        if (explicit) return explicit;
+
+        const billing = normalizeBreakdownText(customer.planBilling || customer.billingCycle || customer.billing);
+        if (billing.includes('prepaid')) return 'prepaid';
+        if (billing.includes('postpaid')) return 'postpaid';
+
+        const planName = normalizeBreakdownText(customer.planName || customer.plan);
+        if (planName.includes('prepaid')) return 'prepaid';
+        return resolvePlanCategory(customer);
+    };
+    const resolveBreakdownDirectionForPayments = (entry = {}) => {
+        if (isOpeningPreviousBalanceRawForPayments(entry)) return 'debit';
+        const direction = normalizeBreakdownText(entry.direction || entry.nature);
+        if (direction === 'debit' || direction === 'credit') return direction;
+        const kind = normalizeBreakdownText(entry.kind || entry.type);
+        if (kind === 'charge' || kind === 'debit' || kind === 'bill') return 'debit';
+        return 'credit';
+    };
+    const resolveBreakdownKindForPayments = (entry = {}) => {
+        const kind = normalizeBreakdownText(entry.kind || entry.type);
+        if (kind) return kind;
+        return resolveBreakdownDirectionForPayments(entry) === 'debit' ? 'charge' : 'payment';
+    };
+    const isOpeningPreviousBalanceRawForPayments = (entry = {}) => {
+        const reference = normalizeBreakdownText(entry?.reference || entry?.orNumber || entry?.or_number);
+        const description = normalizeBreakdownText([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' '));
+        return reference.startsWith('obb-')
+            || reference.startsWith('opening-bal-')
+            || description.includes('previous balance bill')
+            || description.includes('opening previous balance');
+    };
+    const isOpeningAdvanceRawForPayments = (entry = {}) => {
+        const reference = normalizeBreakdownText(entry?.reference || entry?.orNumber || entry?.or_number);
+        const description = normalizeBreakdownText([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' '));
+        return reference.startsWith('oba-')
+            || reference.startsWith('opening-adv-')
+            || description.includes('opening advance payment');
+    };
+    const isPrepaidAutoChargeRawForPayments = (entry = {}) => {
+        const description = normalizeBreakdownText([
+            entry?.description,
+            entry?.notes,
+            entry?.remarks
+        ].filter(Boolean).join(' '));
+        return description.includes('prepaid renewal charge');
+    };
+    const normalizeBreakdownEntryForPayments = (entry, index) => {
+        const amount = toBreakdownAmount(entry?.amount);
+        if (!amount) return null;
+        const openingPreviousBalance = isOpeningPreviousBalanceRawForPayments(entry);
+        const direction = openingPreviousBalance ? 'debit' : resolveBreakdownDirectionForPayments(entry);
+        const kind = openingPreviousBalance ? 'bill' : resolveBreakdownKindForPayments(entry);
+        const dateObj = safeBreakdownDate(entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at);
+        return {
+            raw: entry || {},
+            index,
+            id: String(entry?.id || entry?.entryId || entry?.fingerprint || index),
+            amount,
+            direction,
+            kind,
+            dateObj,
+            time: dateObj ? dateObj.getTime() : index,
+            isOpeningPreviousBalance: openingPreviousBalance,
+            isOpeningAdvance: isOpeningAdvanceRawForPayments(entry),
+            isPrepaidAutoCharge: isPrepaidAutoChargeRawForPayments(entry)
+        };
+    };
+    const compareBreakdownEntriesForPayments = (left, right) => {
+        if (left.time !== right.time) return left.time - right.time;
+        if (left.direction !== right.direction) return left.direction === 'debit' ? -1 : 1;
+        return left.index - right.index;
+    };
+    const getBreakdownEntryDateKeyForPayments = (entry = {}) => (
+        entry?.dateObj instanceof Date && !Number.isNaN(entry.dateObj.getTime())
+            ? formatDateISO(entry.dateObj)
+            : ''
+    );
+    const isOpeningPreviousBalanceEntryForPayments = (entry = {}) => Boolean(
+        entry?.isOpeningPreviousBalance || isOpeningPreviousBalanceRawForPayments(entry?.raw || entry)
+    );
+    const isOpeningAdvanceEntryForPayments = (entry = {}) => Boolean(
+        entry?.isOpeningAdvance || isOpeningAdvanceRawForPayments(entry?.raw || entry)
+    );
+    const isPrepaidAutoChargeEntryForPayments = (entry = {}) => Boolean(
+        entry?.isPrepaidAutoCharge || isPrepaidAutoChargeRawForPayments(entry?.raw || entry)
+    );
+    const findIgnoredOpeningAutoChargeOrdersForPayments = (entries = []) => {
+        const openingAdjustments = entries.filter((entry) => (
+            (
+                entry.direction === 'debit'
+                && isOpeningPreviousBalanceEntryForPayments(entry)
+            )
+            || (
+                entry.direction === 'credit'
+                && isOpeningAdvanceEntryForPayments(entry)
+            )
+        ));
+        if (!openingAdjustments.length) return new Set();
+
+        const ignored = new Set();
+        entries.forEach((entry) => {
+            if (entry.direction !== 'debit' || !isPrepaidAutoChargeEntryForPayments(entry)) return;
+            const entryDateKey = getBreakdownEntryDateKeyForPayments(entry);
+            const matchedOpeningAdjustment = openingAdjustments.some((opening) => {
+                const amountMatches = Math.abs((Number(opening.amount) || 0) - (Number(entry.amount) || 0)) <= EPSILON;
+                const dateMatches = entryDateKey && entryDateKey === getBreakdownEntryDateKeyForPayments(opening);
+                const timeDiff = Math.abs((Number(entry.time) || 0) - (Number(opening.time) || 0));
+                return amountMatches && dateMatches && timeDiff <= 30000;
+            });
+            if (matchedOpeningAdjustment) ignored.add(entry.sortOrder);
+        });
+
+        return ignored;
+    };
+    const getBreakdownCustomerNameForPayments = (customer = {}, fallbackAccount = '') => {
+        const firstName = String(customer.firstName || '').trim();
+        const lastName = String(customer.lastName || '').trim();
+        const fullFromParts = [firstName, lastName].filter(Boolean).join(' ').trim();
+        const fallbackName = String(customer.name || customer.fullName || '').trim();
+        const account = String(fallbackAccount || customer.accountNumber || '').trim();
+        return fullFromParts || fallbackName || (account ? `Account ${account}` : 'Customer');
+    };
+    const getBreakdownReferralValuesForPayments = (customer = {}) => {
+        const values = [];
+        [
+            'referredBy',
+            'referred_by',
+            'referredByName',
+            'referred_by_name',
+            'referredByAccount',
+            'referredByAccountNumber',
+            'referred_by_account',
+            'referred_by_account_number',
+            'referrer',
+            'referrerName',
+            'referrerAccount',
+            'referrerAccountNumber',
+            'referralAccount',
+            'referralAccountNumber',
+            'referralSource'
+        ].forEach((field) => {
+            const value = customer?.[field];
+            if (value || value === 0) values.push(String(value));
+        });
+
+        const remarks = String(customer.remarks || customer.notes || '').trim();
+        if (remarks) {
+            const patterns = [
+                /referred\s+by\s*:\s*([^;\n]+)/gi,
+                /referrer\s*:\s*([^;\n]+)/gi,
+                /referral\s*:\s*([^;\n]+)/gi
+            ];
+            patterns.forEach((pattern) => {
+                let match;
+                while ((match = pattern.exec(remarks)) !== null) {
+                    if (match[1]) values.push(match[1]);
+                }
+            });
+        }
+
+        return values.map((value) => String(value || '').trim()).filter(Boolean);
+    };
+    const getBreakdownIdentityValuesForPayments = (customer = {}) => {
+        const firstName = String(customer.firstName || '').trim();
+        const lastName = String(customer.lastName || '').trim();
+        const fullName = getBreakdownCustomerNameForPayments(customer, customer.accountNumber);
+        return [
+            customer.accountNumber,
+            customer.id,
+            customer.loginUsername,
+            customer.pppoeUsername,
+            customer.name,
+            customer.fullName,
+            fullName,
+            firstName && lastName ? `${firstName} ${lastName}` : '',
+            firstName && lastName ? `${lastName}, ${firstName}` : '',
+            firstName && lastName ? `${lastName} ${firstName}` : ''
+        ].map((value) => String(value || '').trim()).filter(Boolean);
+    };
+    const matchesBreakdownReferralValueForPayments = (referralValue, targetIdentitySet) => {
+        const referralKey = normalizeBreakdownIdentity(referralValue);
+        if (!referralKey) return false;
+        if (targetIdentitySet.has(referralKey)) return true;
+        return Array.from(targetIdentitySet).some((identity) => (
+            identity.length >= 5
+            && (referralKey.includes(identity) || identity.includes(referralKey))
+        ));
+    };
+    const findReferredCustomersForPayments = (customer = {}, customers = []) => {
+        const targetAccount = normalizeAccountNumber(customer.accountNumber || '');
+        const targetIdentitySet = new Set(
+            getBreakdownIdentityValuesForPayments(customer)
+                .map(normalizeBreakdownIdentity)
+                .filter(Boolean)
+        );
+
+        return (Array.isArray(customers) ? customers : []).filter((candidate) => {
+            const currentAccount = normalizeAccountNumber(candidate?.accountNumber || '');
+            if (targetAccount && currentAccount === targetAccount) return false;
+            return getBreakdownReferralValuesForPayments(candidate).some((value) => (
+                matchesBreakdownReferralValueForPayments(value, targetIdentitySet)
+            ));
+        });
+    };
+    const isReferralCreditForPayments = (entry = {}) => {
+        if (entry.direction !== 'credit') return false;
+        const text = normalizeBreakdownText([
+            entry.kind,
+            entry.raw?.kind,
+            entry.raw?.type,
+            entry.raw?.description,
+            entry.raw?.notes,
+            entry.raw?.remarks,
+            entry.raw?.reference,
+            entry.raw?.orNumber
+        ].filter(Boolean).join(' '));
+        return /\b(referral|referred|referrer)\b/.test(text);
+    };
+    const sumBreakdownEntriesForPayments = (entries = []) => roundMoney(
+        entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
+    );
+    const splitBreakdownCarryOverForPayments = (balanceAfterPayment) => {
+        const signedBalance = roundMoney(Number(balanceAfterPayment) || 0);
+        if (signedBalance > EPSILON) {
+            return {
+                signedBalance,
+                previousBalance: signedBalance,
+                advance: 0,
+                type: 'balance'
+            };
+        }
+        if (signedBalance < -EPSILON) {
+            return {
+                signedBalance,
+                previousBalance: 0,
+                advance: roundMoney(Math.abs(signedBalance)),
+                type: 'advance'
+            };
+        }
+        return {
+            signedBalance: 0,
+            previousBalance: 0,
+            advance: 0,
+            type: 'settled'
+        };
+    };
+    const applyBreakdownEntryToBalanceForPayments = (balance, entry = {}) => {
+        const amount = Number(entry.amount) || 0;
+        if (entry.direction === 'debit') return roundMoney(balance + amount);
+        if (entry.direction === 'credit') return roundMoney(balance - amount);
+        return roundMoney(balance);
+    };
+    const createBreakdownReferralContextForPayments = (customer, entries, customers) => {
+        const planAmount = getPlanAmountForCustomer(customer);
+        const referredCustomers = findReferredCustomersForPayments(customer, customers);
+        const explicitReferralTotal = sumBreakdownEntriesForPayments(entries.filter(isReferralCreditForPayments));
+        const automaticReferralTotal = explicitReferralTotal > EPSILON
+            ? 0
+            : roundMoney(Math.floor(referredCustomers.length / 2) * planAmount);
+
+        return {
+            planAmount,
+            referredCustomers,
+            explicitReferralTotal,
+            automaticReferralTotal,
+            automaticReferralRemaining: automaticReferralTotal,
+            automaticReferralApplied: 0,
+            usedSyntheticBills: false,
+            firstBillAdjustment: getFirstBillAdjustmentForPayments(customer)
+        };
+    };
+    const takeAutomaticReferralForPayments = (context, dueBeforeReferral) => {
+        const available = Number(context?.automaticReferralRemaining) || 0;
+        const base = Math.max(0, Number(dueBeforeReferral) || 0);
+        if (available <= EPSILON || base <= EPSILON) return 0;
+        const applied = roundMoney(Math.min(available, base));
+        context.automaticReferralRemaining = roundMoney(available - applied);
+        context.automaticReferralApplied = roundMoney((Number(context.automaticReferralApplied) || 0) + applied);
+        return applied;
+    };
+    const createBreakdownRowForPayments = ({
+        customer,
+        billDate,
+        planAmount,
+        credits,
+        runningBalance,
+        context,
+        sourceType,
+        proration = null,
+        previousBalanceOverride = null,
+        advanceOverride = null,
+        openingPreviousBalance = false,
+        openingAdvance = false,
+        isFirstRow = false
+    }) => {
+        const firstBillAdjustment = isFirstRow ? normalizeFirstBillAdjustmentForPayments(context?.firstBillAdjustment) : null;
+        const effectivePreviousBalanceOverride = firstBillAdjustment
+            ? firstBillAdjustment.previousBalance
+            : previousBalanceOverride;
+        const effectiveAdvanceOverride = firstBillAdjustment
+            ? firstBillAdjustment.advance
+            : advanceOverride;
+        const hasPreviousBalanceOverride = hasBreakdownAmountOverride(effectivePreviousBalanceOverride);
+        const hasAdvanceOverride = hasBreakdownAmountOverride(effectiveAdvanceOverride);
+        const carryOver = splitBreakdownCarryOverForPayments(runningBalance);
+        const previousBalance = hasPreviousBalanceOverride
+            ? roundMoney(Math.max(0, Number(effectivePreviousBalanceOverride) || 0))
+            : carryOver.previousBalance;
+        const advance = hasAdvanceOverride
+            ? roundMoney(Math.max(0, Number(effectiveAdvanceOverride) || 0))
+            : carryOver.advance;
+        const referralCredits = (Array.isArray(credits) ? credits : []).filter(isReferralCreditForPayments);
+        const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCreditForPayments(entry));
+        const explicitReferral = sumBreakdownEntriesForPayments(referralCredits);
+        const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
+        const automaticReferral = explicitReferral > EPSILON
+            ? 0
+            : takeAutomaticReferralForPayments(context, dueBeforeAutoReferral);
+        const referral = roundMoney(explicitReferral + automaticReferral);
+        const rawDue = roundMoney(planAmount - advance + previousBalance - referral);
+        const due = roundMoney(Math.max(0, rawDue));
+        const amountPaid = sumBreakdownEntriesForPayments(paymentCredits);
+        const balanceAfterPayment = roundMoney(rawDue - amountPaid);
+        const nextCarryOver = splitBreakdownCarryOverForPayments(balanceAfterPayment);
+
+        return {
+            row: {
+                billDate,
+                planAmount,
+                previousBalance,
+                advance,
+                referral,
+                due,
+                amountPaid,
+                paymentStatus: balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid',
+                balanceAfterPayment,
+                sourceType,
+                planType: resolveBreakdownPlanTypeForPayments(customer),
+                isFirstRow,
+                isAdjustmentEditable: isFirstRow,
+                isProrated: Boolean(proration?.isProrated),
+                periodStart: proration?.periodStart || null,
+                periodEnd: proration?.periodEnd || null,
+                openingPreviousBalance,
+                openingAdvance,
+                nextPreviousBalance: nextCarryOver.previousBalance,
+                nextAdvance: nextCarryOver.advance,
+                nextCarryOverType: nextCarryOver.type
+            },
+            nextBalance: nextCarryOver.signedBalance
+        };
+    };
+    const resolveBreakdownBillingDayForPayments = (customer = {}, fallbackDate = null) => {
+        const candidates = [
+            safeBreakdownDate(customer.billDate),
+            safeBreakdownDate(customer.dueDate),
+            safeBreakdownDate(customer.activationDate),
+            fallbackDate
+        ];
+        for (const date of candidates) {
+            const parts = getBreakdownDateParts(date);
+            if (parts?.day) return parts.day;
+        }
+        return 1;
+    };
+    const buildBreakdownRowsFromPostedDebitsForPayments = (customer, entries, context) => {
+        const rows = [];
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrdersForPayments(entries);
+        const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
+        const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
+        if (!debitEntries.length) return rows;
+
+        let runningBalance = 0;
+        effectiveEntries
+            .filter((entry) => entry.sortOrder < debitEntries[0].sortOrder)
+            .forEach((entry) => {
+                runningBalance = applyBreakdownEntryToBalanceForPayments(runningBalance, entry);
+            });
+
+        debitEntries.forEach((debit, index) => {
+            const nextDebit = debitEntries[index + 1] || null;
+            const cycleCredits = effectiveEntries.filter((entry) => (
+                entry.direction === 'credit'
+                && entry.sortOrder > debit.sortOrder
+                && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
+            ));
+            const openingPreviousBalance = isOpeningPreviousBalanceEntryForPayments(debit);
+            const planAmount = openingPreviousBalance ? 0 : resolveBreakdownPlanAmountForPayments(customer, debit.amount || context.planAmount);
+            const result = createBreakdownRowForPayments({
+                customer,
+                billDate: debit.dateObj,
+                planAmount,
+                credits: cycleCredits,
+                runningBalance,
+                context,
+                sourceType: openingPreviousBalance ? 'opening' : 'posted',
+                previousBalanceOverride: openingPreviousBalance ? debit.amount : null,
+                openingPreviousBalance,
+                isFirstRow: index === 0
+            });
+            rows.push(result.row);
+            runningBalance = result.nextBalance;
+        });
+
+        return rows;
+    };
+    const buildBreakdownRowsFromOpeningAdvanceOnlyForPayments = (customer, entries, context) => {
+        if (!isExistingCustomerStart(customer)) return [];
+        const openingAdvanceEntries = (Array.isArray(entries) ? entries : []).filter((entry) => (
+            entry.direction === 'credit'
+            && isOpeningAdvanceEntryForPayments(entry)
+        ));
+        if (!openingAdvanceEntries.length) return [];
+
+        const totalAdvance = sumBreakdownEntriesForPayments(openingAdvanceEntries);
+        if (totalAdvance <= EPSILON) return [];
+
+        const billDate = getMaxBreakdownDate(openingAdvanceEntries.map((entry) => entry.dateObj))
+            || safeBreakdownDate(customer.activationDate)
+            || safeBreakdownDate(customer.billDate)
+            || safeBreakdownDate(customer.dueDate)
+            || new Date();
+        const result = createBreakdownRowForPayments({
+            customer,
+            billDate,
+            planAmount: 0,
+            credits: [],
+            runningBalance: 0,
+            context,
+            sourceType: 'opening',
+            advanceOverride: totalAdvance,
+            openingAdvance: true,
+            isFirstRow: true
+        });
+        return [result.row];
+    };
+    const buildBreakdownRowsFromMonthlyPlanForPayments = (customer, entries, context) => {
+        const planAmount = context.planAmount;
+        const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
+        const firstEntryDate = getMinBreakdownDate(entryDates);
+        const lastEntryDate = getMaxBreakdownDate(entryDates);
+        const startSeed = firstEntryDate
+            || safeBreakdownDate(customer.billDate)
+            || safeBreakdownDate(customer.dueDate)
+            || safeBreakdownDate(customer.activationDate)
+            || new Date();
+        const endSeed = getMaxBreakdownDate([
+            lastEntryDate,
+            safeBreakdownDate(customer.dueDate),
+            safeBreakdownDate(customer.billDate),
+            new Date()
+        ]) || startSeed;
+        const startParts = getBreakdownDateParts(startSeed) || getBreakdownDateParts(new Date());
+        const endParts = getBreakdownDateParts(endSeed) || startParts;
+        const billingDay = resolveBreakdownBillingDayForPayments(customer, startSeed);
+        const rows = [];
+        let currentYear = startParts.year;
+        let currentMonth = startParts.month;
+        let billDate = buildBreakdownMonthlyDate(currentYear, currentMonth, billingDay);
+        const lastBillDate = buildBreakdownMonthlyDate(endParts.year, endParts.month, billingDay);
+        let runningBalance = 0;
+        let cursor = 0;
+
+        context.usedSyntheticBills = true;
+
+        while (
+            cursor < entries.length
+            && entries[cursor].dateObj
+            && entries[cursor].dateObj < billDate
+        ) {
+            runningBalance = applyBreakdownEntryToBalanceForPayments(runningBalance, entries[cursor]);
+            cursor += 1;
+        }
+
+        let guard = 0;
+        while (billDate && lastBillDate && billDate <= lastBillDate && guard < MAX_SYNTHETIC_BREAKDOWN_ROWS) {
+            const nextParts = getNextBreakdownMonthParts(currentYear, currentMonth);
+            const nextBillDate = buildBreakdownMonthlyDate(nextParts.year, nextParts.month, billingDay);
+            const cycleCredits = [];
+
+            while (
+                cursor < entries.length
+                && (!entries[cursor].dateObj || entries[cursor].dateObj < nextBillDate)
+            ) {
+                const entry = entries[cursor];
+                if (entry.direction === 'credit') {
+                    cycleCredits.push(entry);
+                } else {
+                    runningBalance = applyBreakdownEntryToBalanceForPayments(runningBalance, entry);
+                }
+                cursor += 1;
+            }
+
+            const proration = resolveFirstMonthProrationForPayments(customer, billDate, planAmount);
+            const result = createBreakdownRowForPayments({
+                customer,
+                billDate,
+                planAmount: proration.amount,
+                credits: cycleCredits,
+                runningBalance,
+                context,
+                sourceType: 'monthly',
+                proration: proration.isProrated ? proration : null,
+                isFirstRow: rows.length === 0
+            });
+            rows.push(result.row);
+            runningBalance = result.nextBalance;
+
+            currentYear = nextParts.year;
+            currentMonth = nextParts.month;
+            billDate = nextBillDate;
+            guard += 1;
+        }
+
+        return rows;
+    };
+    const buildBreakdownRowsForPayments = (customer = {}, customers = []) => {
+        const entries = (Array.isArray(customer.history) ? customer.history : [])
+            .map(normalizeBreakdownEntryForPayments)
+            .filter(Boolean)
+            .sort(compareBreakdownEntriesForPayments)
+            .map((entry, sortOrder) => ({ ...entry, sortOrder }));
+        const context = createBreakdownReferralContextForPayments(customer, entries, customers);
+        let rows = [];
+        if (entries.some((entry) => entry.direction === 'debit')) {
+            rows = buildBreakdownRowsFromPostedDebitsForPayments(customer, entries, context);
+        }
+        if (!rows.length) {
+            rows = buildBreakdownRowsFromOpeningAdvanceOnlyForPayments(customer, entries, context);
+        }
+        if (!rows.length) {
+            rows = buildBreakdownRowsFromMonthlyPlanForPayments(customer, entries, context);
+        }
+
+        return { rows, context };
+    };
+    const getCurrentMonthBreakdownRowForPayments = (customer = {}, cycleDate = new Date()) => {
+        const customerPool = Array.isArray(allCustomers) && allCustomers.length
+            ? allCustomers
+            : (Array.isArray(window.allCustomers) ? window.allCustomers : []);
+        const { rows } = buildBreakdownRowsForPayments(customer, customerPool);
+        const currentRows = rows.filter((row) => isSameMonth(row.billDate, cycleDate));
+        return currentRows.length ? currentRows[currentRows.length - 1] : null;
+    };
     const getEntryDate = (entry = {}) => parseDateOnly(entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || '');
     const isPrepaidBillChargeEntry = (entry = {}) => {
         if (resolveEntryDirection(entry) !== 'debit') return false;
@@ -1193,6 +1899,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     };
     const resolveCurrentBillState = (customer = {}) => {
+        if (customer && typeof customer === 'object' && currentBillStateCache.has(customer)) {
+            return currentBillStateCache.get(customer);
+        }
         const planCategory = resolvePlanCategory(customer);
         const planAmount = getPlanAmountForCustomer(customer);
         const ledgerBalance = getLedgerBalance(customer);
@@ -1200,29 +1909,64 @@ document.addEventListener('DOMContentLoaded', function () {
         const existingCustomerStart = isExistingCustomerOpeningCycle(customer, cycleDate);
         const hasPostedCurrentBill = hasCurrentMonthBillCharge(customer, planCategory, cycleDate);
         const firstBilling = resolveFirstBillingAmount(customer, planAmount, cycleDate);
-        const currentBillAmount = firstBilling.amount;
-        const amount = hasPostedCurrentBill
-            ? ledgerBalance
-            : roundMoney(ledgerBalance + currentBillAmount);
-        const displayAmount = Math.abs(amount);
-        const billClass = amount > 0
-            ? 'has-balance'
-            : (amount < 0 ? 'advance-balance' : 'zero-balance');
+        const currentBreakdownRow = getCurrentMonthBreakdownRowForPayments(customer, cycleDate);
 
-        return {
+        if (currentBreakdownRow) {
+            const currentBillAmount = roundMoney(currentBreakdownRow.due);
+            const balanceAfterPayment = roundMoney(currentBreakdownRow.balanceAfterPayment);
+            const billClass = balanceAfterPayment > EPSILON
+                ? 'has-balance'
+                : (balanceAfterPayment < -EPSILON ? 'advance-balance' : 'zero-balance');
+            const state = {
+                amount: balanceAfterPayment,
+                payableAmount: Math.max(0, balanceAfterPayment),
+                displayAmount: Math.abs(currentBillAmount),
+                billClass,
+                planCategory: currentBreakdownRow.planType || planCategory,
+                planAmount,
+                currentBillAmount,
+                currentMonthDue: currentBillAmount,
+                existingCustomerStart,
+                hasPostedCurrentBill: currentBreakdownRow.sourceType === 'posted' || currentBreakdownRow.sourceType === 'opening',
+                hasCurrentBreakdownRow: true,
+                paymentStatus: currentBreakdownRow.paymentStatus,
+                isProrated: Boolean(currentBreakdownRow.isProrated),
+                periodStart: currentBreakdownRow.periodStart || firstBilling.periodStart,
+                periodEnd: currentBreakdownRow.periodEnd || firstBilling.periodEnd,
+                skipInitialCharge: firstBilling.skipInitialCharge,
+                currentBreakdownRow
+            };
+            if (customer && typeof customer === 'object') currentBillStateCache.set(customer, state);
+            return state;
+        }
+
+        const currentBillAmount = firstBilling.amount;
+        const amount = roundMoney(ledgerBalance);
+        const displayAmount = 0;
+        const billClass = amount > EPSILON
+            ? 'has-balance'
+            : (amount < -EPSILON ? 'advance-balance' : 'zero-balance');
+
+        const fallbackState = {
             amount,
+            payableAmount: Math.max(0, amount),
             displayAmount,
             billClass,
             planCategory,
             planAmount,
             currentBillAmount,
+            currentMonthDue: 0,
             existingCustomerStart,
             hasPostedCurrentBill,
+            hasCurrentBreakdownRow: false,
+            paymentStatus: amount <= EPSILON ? 'paid' : 'unpaid',
             isProrated: firstBilling.isProrated,
             periodStart: firstBilling.periodStart,
             periodEnd: firstBilling.periodEnd,
             skipInitialCharge: firstBilling.skipInitialCharge
         };
+        if (customer && typeof customer === 'object') currentBillStateCache.set(customer, fallbackState);
+        return fallbackState;
     };
     const getCustomerCycleDay = (customer = {}) => {
         const billDate = parseDateOnly(customer?.billDate);
@@ -1235,8 +1979,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!targetDateKey) return true;
         const targetDate = parseDateOnly(targetDateKey);
         if (!targetDate) return true;
-        const balance = resolveCurrentBillState(customer).amount;
+        const currentBillState = resolveCurrentBillState(customer);
+        const balance = currentBillState.amount;
         if (!Number.isFinite(balance) || balance <= 0) return false;
+        if (currentBillState.currentBreakdownRow?.billDate) {
+            return formatDateISO(currentBillState.currentBreakdownRow.billDate) === targetDateKey;
+        }
 
         const planCategory = resolvePlanCategory(customer);
         if (planCategory === 'prepaid') {
@@ -1264,7 +2012,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function autofillTransactionAmount(customer) {
         ensureTransactionAmountFieldVisible();
         if (!paymentAmountInput) return;
-        const currentBillAmount = customer ? resolveCurrentBillState(customer).amount : 0;
+        const currentBillState = customer ? resolveCurrentBillState(customer) : null;
+        const currentBillAmount = currentBillState ? currentBillState.payableAmount : 0;
         paymentAmountInput.value = customer && currentBillAmount > 0
             ? currentBillAmount.toFixed(2)
             : '';
@@ -2280,6 +3029,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     customerStatus: resolveSubscriberStatus(record, mainCustomer)
                 };
             });
+            currentBillStateCache = new WeakMap();
             window.allCustomers = mainCustomers.map((customer) => ({
                 ...customer,
                 status: resolveSubscriberStatus(customer)
@@ -2443,13 +3193,12 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     const deriveStatus = (customer) => {
-        const balance = resolveCurrentBillState(customer).amount;
-        const limitRaw = Number(customer.creditLimit);
-        const planAmt = getPlanAmountForCustomer(customer);
-        const creditLimit = Number.isFinite(limitRaw) && limitRaw >= 0 ? limitRaw : planAmt;
-        if (balance < 0) return 'advance';
-        if (balance <= 0) return 'paid';
-        if (creditLimit > 0 && balance > creditLimit) return 'overdue';
+        const currentBillState = resolveCurrentBillState(customer);
+        const balance = currentBillState.amount;
+        if (balance < -EPSILON) return 'advance';
+        if (balance <= EPSILON) return 'paid';
+        const dueStatus = getDueStatus(currentBillState.currentBreakdownRow?.billDate || customer?.dueDate);
+        if (dueStatus.state === 'overdue') return 'overdue';
         return 'due';
     };
 
@@ -2507,11 +3256,12 @@ document.addEventListener('DOMContentLoaded', function () {
             let billingCycleDisplay = 'Not set';
             let billingCycleMeta = 'No cycle recorded';
             const planCategory = resolvePlanCategory(customer);
-            const dueStatus = getDueStatus(customer?.dueDate);
             const currentBillState = resolveCurrentBillState(customer);
+            const currentCycleDueDate = currentBillState.currentBreakdownRow?.billDate || customer?.dueDate;
+            const dueStatus = getDueStatus(currentCycleDueDate);
             const balanceNumber = currentBillState.amount;
-            const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < 0;
-            const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > 0;
+            const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < -EPSILON;
+            const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > EPSILON;
 
             if (planCategory === 'prepaid') {
                 billingCycleDisplay = 'Prepaid';
@@ -2528,7 +3278,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     switch (d % 10) { case 1: return "st"; case 2: return "nd"; case 3: return "rd"; default: return "th"; }
                 };
                 billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
-                billingCycleMeta = `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;
+                billingCycleMeta = currentBillState.currentBreakdownRow?.billDate
+                    ? `Current due: ${formatDate(currentBillState.currentBreakdownRow.billDate)}`
+                    : `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;
             }
 
             // Use Math.abs for last payment amount and add class for color coding
@@ -2545,17 +3297,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Use Math.abs to prevent negative sign, color coding will indicate the status
             const balanceAmount = formatCurrency(currentBillState.displayAmount);
-            const dueForDisplay = planCategory === 'postpaid'
-                ? getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })
-                : formatDate(customer.dueDate);
-            const prepaidBillMeta = currentBillState.amount < -0.005
+            const dueForDisplay = currentBillState.currentBreakdownRow?.billDate
+                ? formatDate(currentBillState.currentBreakdownRow.billDate)
+                : (planCategory === 'postpaid'
+                    ? getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })
+                    : formatDate(customer.dueDate));
+            const prepaidBillMeta = !currentBillState.hasCurrentBreakdownRow
+                ? 'No current bill'
+                : currentBillState.amount < -EPSILON
                 ? 'Advance'
-                : (currentBillState.amount <= 0.005
+                : (currentBillState.amount <= EPSILON
                     ? 'Paid'
                     : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : (currentBillState.isProrated ? 'Prorated bill' : 'Current bill'))));
-            const postpaidBillMeta = currentBillState.amount < -0.005
+            const postpaidBillMeta = !currentBillState.hasCurrentBreakdownRow
+                ? 'No current bill'
+                : currentBillState.amount < -EPSILON
                 ? (currentBillState.existingCustomerStart ? 'Opening advance' : 'Advance after current bill')
-                : (currentBillState.amount <= 0.005 ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.isProrated ? 'Prorated bill' : `Due ${dueForDisplay}`)));
+                : (currentBillState.amount <= EPSILON ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.isProrated ? 'Prorated bill' : `Due ${dueForDisplay}`)));
             const currentBill = planCategory === 'prepaid'
                 ? `${balanceAmount}<br>${prepaidBillMeta}`
                 : `${balanceAmount}<br>${postpaidBillMeta}`;

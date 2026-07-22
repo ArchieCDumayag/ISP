@@ -21,6 +21,13 @@ document.addEventListener('DOMContentLoaded', () => {
         referral: document.getElementById('breakdownMetricReferral'),
         balance: document.getElementById('breakdownMetricBalance')
     };
+    const state = {
+        record: null,
+        customers: [],
+        rows: [],
+        context: null,
+        savingAdjustment: false
+    };
 
     const currencyFormatter = new Intl.NumberFormat(locale, {
         style: 'currency',
@@ -65,8 +72,45 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!Number.isFinite(parsed)) return 0;
         return Number(parsed.toFixed(2));
     };
+    const toEditableAmount = (value) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return 0;
+        return roundMoney(parsed);
+    };
+    const hasAmountOverride = (value) => {
+        if (value === null || value === undefined) return false;
+        if (typeof value === 'string' && !value.trim()) return false;
+        return Number.isFinite(Number(value));
+    };
+    const formatEditableAmount = (value) => {
+        const amount = toEditableAmount(value);
+        return amount ? amount.toFixed(2) : '';
+    };
+    const normalizeFirstBillAdjustment = (adjustment = null) => {
+        const firstBill = adjustment?.firstBill || adjustment || null;
+        if (!firstBill || typeof firstBill !== 'object') return null;
+        return {
+            previousBalance: toEditableAmount(firstBill.previousBalance),
+            advance: toEditableAmount(firstBill.advance)
+        };
+    };
+    const getFirstBillAdjustment = (record = {}) => normalizeFirstBillAdjustment(
+        record.paymentBreakdownAdjustment
+        || record.breakdownAdjustment
+        || record.firstBillAdjustment
+        || null
+    );
     const formatCurrency = (value) => currencyFormatter.format(Number(value) || 0);
     const formatCount = (value) => countFormatter.format(Number(value) || 0);
+    const showToast = (message, type = 'info') => {
+        const text = String(message || '').trim();
+        if (!text) return;
+        if (typeof window.appToast === 'function') {
+            window.appToast(text, { type });
+            return;
+        }
+        window.alert(text);
+    };
 
     const parseDateOnlyParts = (value) => {
         const raw = String(value ?? '').trim();
@@ -551,6 +595,32 @@ document.addEventListener('DOMContentLoaded', () => {
         return roundMoney(balance);
     };
 
+    const splitBalanceCarryOver = (balanceAfterPayment) => {
+        const signedBalance = roundMoney(Number(balanceAfterPayment) || 0);
+        if (signedBalance > EPSILON) {
+            return {
+                signedBalance,
+                previousBalance: signedBalance,
+                advance: 0,
+                type: 'balance'
+            };
+        }
+        if (signedBalance < -EPSILON) {
+            return {
+                signedBalance,
+                previousBalance: 0,
+                advance: roundMoney(Math.abs(signedBalance)),
+                type: 'advance'
+            };
+        }
+        return {
+            signedBalance: 0,
+            previousBalance: 0,
+            advance: 0,
+            type: 'settled'
+        };
+    };
+
     const isOpeningPreviousBalanceEntry = (entry = {}) => Boolean(
         entry?.isOpeningPreviousBalance || isOpeningPreviousBalanceRaw(entry?.raw || entry)
     );
@@ -617,7 +687,8 @@ document.addEventListener('DOMContentLoaded', () => {
             automaticReferralTotal,
             automaticReferralRemaining: automaticReferralTotal,
             automaticReferralApplied: 0,
-            usedSyntheticBills: false
+            usedSyntheticBills: false,
+            firstBillAdjustment: getFirstBillAdjustment(record)
         };
     };
 
@@ -647,17 +718,26 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentModeOverride = '',
         paymentDateOverride = null,
         billLabelOverride = '',
-        billMetaOverride = ''
+        billMetaOverride = '',
+        isFirstRow = false
     }) => {
         const planLabel = resolvePlanLabel(record);
-        const hasPreviousBalanceOverride = Number.isFinite(Number(previousBalanceOverride));
-        const hasAdvanceOverride = Number.isFinite(Number(advanceOverride));
+        const firstBillAdjustment = isFirstRow ? normalizeFirstBillAdjustment(context?.firstBillAdjustment) : null;
+        const effectivePreviousBalanceOverride = firstBillAdjustment
+            ? firstBillAdjustment.previousBalance
+            : previousBalanceOverride;
+        const effectiveAdvanceOverride = firstBillAdjustment
+            ? firstBillAdjustment.advance
+            : advanceOverride;
+        const hasPreviousBalanceOverride = hasAmountOverride(effectivePreviousBalanceOverride);
+        const hasAdvanceOverride = hasAmountOverride(effectiveAdvanceOverride);
+        const carryOver = splitBalanceCarryOver(runningBalance);
         const previousBalance = hasPreviousBalanceOverride
-            ? roundMoney(Math.max(0, Number(previousBalanceOverride) || 0))
-            : roundMoney(Math.max(0, Number(runningBalance) || 0));
+            ? roundMoney(Math.max(0, Number(effectivePreviousBalanceOverride) || 0))
+            : carryOver.previousBalance;
         const advance = hasAdvanceOverride
-            ? roundMoney(Math.max(0, Number(advanceOverride) || 0))
-            : roundMoney(Math.max(0, -(Number(runningBalance) || 0)));
+            ? roundMoney(Math.max(0, Number(effectiveAdvanceOverride) || 0))
+            : carryOver.advance;
         const referralCredits = (Array.isArray(credits) ? credits : []).filter(isReferralCredit);
         const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
         const explicitReferral = sumEntries(referralCredits);
@@ -672,6 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const paymentMode = paymentModeOverride || (amountPaid > EPSILON ? resolvePaymentModeSummary(paymentCredits) : '-');
         const paymentDate = paymentDateOverride || (amountPaid > EPSILON ? resolveLatestPaymentDate(paymentCredits) : null);
         const balanceAfterPayment = roundMoney(rawDue - amountPaid);
+        const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
         const paymentStatus = balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid';
         const billLabel = billLabelOverride || (openingPreviousBalance ? 'Previous Balance' : (openingAdvance ? 'Opening Advance' : formatMonth(billDate, 'Bill')));
         const planType = resolvePlanType(record);
@@ -716,9 +797,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 paymentDateLabel: paymentDate ? formatDate(paymentDate, '-') : '-',
                 paymentStatus,
                 balanceAfterPayment,
-                sourceType
+                sourceType,
+                isFirstRow,
+                isAdjustmentEditable: isFirstRow,
+                nextPreviousBalance: nextCarryOver.previousBalance,
+                nextAdvance: nextCarryOver.advance,
+                nextCarryOverType: nextCarryOver.type
             },
-            nextBalance: balanceAfterPayment
+            nextBalance: nextCarryOver.signedBalance
         };
     };
 
@@ -768,7 +854,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 context,
                 sourceType: openingPreviousBalance ? 'opening' : 'posted',
                 previousBalanceOverride: openingPreviousBalance ? debit.amount : null,
-                openingPreviousBalance
+                openingPreviousBalance,
+                isFirstRow: index === 0
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;
@@ -806,7 +893,8 @@ document.addEventListener('DOMContentLoaded', () => {
             paymentModeOverride: resolvePaymentModeSummary(openingAdvanceEntries),
             paymentDateOverride: resolveLatestPaymentDate(openingAdvanceEntries),
             billLabelOverride: 'Opening Advance',
-            billMetaOverride: `Opening advance payment · ${formatCurrency(totalAdvance)}`
+            billMetaOverride: `Opening advance payment · ${formatCurrency(totalAdvance)}`,
+            isFirstRow: true
         });
         return [result.row];
     };
@@ -877,7 +965,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 runningBalance,
                 context,
                 sourceType: 'monthly',
-                proration: proration.isProrated ? proration : null
+                proration: proration.isProrated ? proration : null,
+                isFirstRow: rows.length === 0
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;
@@ -946,6 +1035,48 @@ document.addEventListener('DOMContentLoaded', () => {
         if (summaryEl) summaryEl.textContent = message;
     };
 
+    const renderAdjustmentInput = (field, value, label) => `
+        <label class="breakdown-adjustment-field">
+            <span class="breakdown-adjustment-field__label">${escapeHtml(label)}</span>
+            <input
+                type="number"
+                class="form-control form-control-sm breakdown-adjustment-input"
+                min="0"
+                step="0.01"
+                inputmode="decimal"
+                data-breakdown-adjustment-field="${escapeHtml(field)}"
+                value="${escapeHtml(formatEditableAmount(value))}"
+                placeholder="0.00"
+                aria-label="${escapeHtml(label)}"
+                ${state.savingAdjustment ? 'disabled' : ''}
+            >
+        </label>
+    `;
+
+    const renderBillCell = (row) => {
+        const adjustmentActions = row.isAdjustmentEditable
+            ? `
+                <span class="breakdown-bill__adjustment">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-primary breakdown-adjustment-save"
+                        ${state.savingAdjustment ? 'disabled aria-busy="true"' : ''}
+                    >
+                        ${state.savingAdjustment ? 'Saving...' : 'Save adjustment'}
+                    </button>
+                    <span class="breakdown-bill__hint">First bill only</span>
+                </span>
+            `
+            : '';
+        return `
+            <span class="breakdown-bill">
+                <span class="breakdown-bill__title">${escapeHtml(row.billLabel)}</span>
+                <span class="breakdown-bill__meta">${escapeHtml(row.billMeta)}</span>
+                ${adjustmentActions}
+            </span>
+        `;
+    };
+
     const renderRows = (rows = []) => {
         if (!tableBody) return;
         if (!rows.length) {
@@ -953,18 +1084,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        tableBody.innerHTML = rows.map((row) => `
-            <tr>
+        tableBody.innerHTML = rows.map((row) => {
+            const previousBalanceCell = row.isAdjustmentEditable
+                ? renderAdjustmentInput('previousBalance', row.previousBalance, 'Previous Balance')
+                : `<span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span>`;
+            const advanceCell = row.isAdjustmentEditable
+                ? renderAdjustmentInput('advance', row.advance, 'Advance')
+                : `<span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span>`;
+            return `
+            <tr${row.isAdjustmentEditable ? ' class="is-first-adjustment-row"' : ''}>
                 <td>
-                    <span class="breakdown-bill">
-                        <span class="breakdown-bill__title">${escapeHtml(row.billLabel)}</span>
-                        <span class="breakdown-bill__meta">${escapeHtml(row.billMeta)}</span>
-                    </span>
+                    ${renderBillCell(row)}
                 </td>
                 <td><span class="breakdown-type is-${escapeHtml(row.planType || 'postpaid')}">${escapeHtml(row.planTypeLabel || 'Postpaid')}</span></td>
                 <td><span class="breakdown-cycle">${escapeHtml(row.billingCycle || '-')}</span></td>
-                <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span></td>
-                <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span></td>
+                <td class="is-num">${previousBalanceCell}</td>
+                <td class="is-num">${advanceCell}</td>
                 <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.referral)}">${formatCurrency(row.referral)}</span></td>
                 <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.due)}">${formatCurrency(row.due)}</span></td>
                 <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span></td>
@@ -973,7 +1108,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><span class="breakdown-status is-${row.paymentStatus}">${escapeHtml(row.paymentStatus)}</span></td>
                 <td class="is-num"><span class="breakdown-amount ${getBalanceClass(row.balanceAfterPayment)}">${escapeHtml(formatBalance(row.balanceAfterPayment))}</span></td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
     };
 
     const renderMetrics = (rows = [], context = {}) => {
@@ -1020,13 +1156,66 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    async function fetchJSON(url) {
-        const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    async function fetchJSON(url, options = {}) {
+        const response = await fetch(url, { credentials: 'include', cache: 'no-store', ...options });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
             throw new Error(payload?.error || payload?.message || `Request failed: ${response.status}`);
         }
         return payload;
+    }
+
+    const readFirstBillAdjustmentInputs = () => {
+        const previousInput = tableBody?.querySelector('[data-breakdown-adjustment-field="previousBalance"]');
+        const advanceInput = tableBody?.querySelector('[data-breakdown-adjustment-field="advance"]');
+        return {
+            previousBalance: toEditableAmount(previousInput?.value),
+            advance: toEditableAmount(advanceInput?.value)
+        };
+    };
+
+    const applyLoadedBreakdown = (record, customers) => {
+        const { rows, context } = buildBreakdownRows(record, customers);
+        state.record = record;
+        state.customers = customers;
+        state.rows = rows;
+        state.context = context;
+        renderHeader(record, context);
+        renderRows(rows);
+        renderMetrics(rows, context);
+    };
+
+    async function saveFirstBillAdjustment() {
+        if (state.savingAdjustment) return;
+        if (!accountNumber) {
+            showToast('No customer account selected.', 'error');
+            return;
+        }
+
+        const adjustment = readFirstBillAdjustmentInputs();
+        state.savingAdjustment = true;
+        renderRows(state.rows);
+        try {
+            const payload = await fetchJSON(`/api/payment-records/${encodeURIComponent(accountNumber)}/breakdown-adjustment`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ firstBill: adjustment })
+            });
+
+            const nextRecord = {
+                ...(state.record || {}),
+                paymentBreakdownAdjustment: payload?.adjustment || { firstBill: adjustment }
+            };
+            applyLoadedBreakdown(nextRecord, state.customers);
+            showToast('First bill adjustment saved.', 'success');
+        } catch (error) {
+            showToast(error?.message || 'Failed to save first bill adjustment.', 'error');
+            renderRows(state.rows);
+        } finally {
+            state.savingAdjustment = false;
+            renderRows(state.rows);
+            renderMetrics(state.rows, state.context || {});
+        }
     }
 
     async function loadBreakdown() {
@@ -1045,16 +1234,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!record) throw new Error('Customer payment record was not found.');
 
             const customers = Array.isArray(customersPayload?.customers) ? customersPayload.customers : [];
-            const { rows, context } = buildBreakdownRows(record, customers);
-            renderHeader(record, context);
-            renderRows(rows);
-            renderMetrics(rows, context);
+            applyLoadedBreakdown(record, customers);
         } catch (error) {
             console.error('Failed to load payment breakdown:', error);
             renderEmpty(error?.message || 'Could not load payment breakdown.');
             if (subtitleEl) subtitleEl.textContent = 'Payment breakdown could not be loaded.';
         }
     }
+
+    tableBody?.addEventListener('click', (event) => {
+        const saveButton = event.target.closest('.breakdown-adjustment-save');
+        if (!saveButton) return;
+        void saveFirstBillAdjustment();
+    });
 
     loadBreakdown();
 });

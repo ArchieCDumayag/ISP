@@ -1,14 +1,16 @@
 ﻿const express = require('express');
 const createError = require('http-errors');
-const { readJson } = require('./data-store');
+const { readJson, writeJson } = require('./data-store');
 const customersModule = require('./customers');
 const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
+const { accountHasRole } = require('./role-utils');
 
 const router = express.Router();
 const STORE_KEYS = {
     customers: 'customers',
     payments: 'payments',
-    plans: 'plans'
+    plans: 'plans',
+    paymentBreakdownAdjustments: 'payment_breakdown_adjustments'
 };
 const readCustomers = async (branchId = null) => {
     if (typeof customersModule.readVisibleCustomers === 'function') {
@@ -33,6 +35,13 @@ const readPlans = async (branchId = null) => {
     }
     const data = await readJson(STORE_KEYS.plans, []);
     return Array.isArray(data) ? data : [];
+};
+const readPaymentBreakdownAdjustments = async () => {
+    const data = await readJson(STORE_KEYS.paymentBreakdownAdjustments, {});
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+};
+const writePaymentBreakdownAdjustments = async (adjustments = {}) => {
+    await writeJson(STORE_KEYS.paymentBreakdownAdjustments, adjustments && typeof adjustments === 'object' ? adjustments : {});
 };
 
 const ENTRY_KIND_DIRECTIONS = {
@@ -92,7 +101,35 @@ const sanitizeCustomerForRecord = (customer) => {
     return { ...rest, loginPasswordSet: hasPassword };
 };
 
-const buildPaymentRecord = (customer, payments = {}, plans = []) => {
+const branchAdjustmentKey = (branchId = null) => String(branchId || 'global');
+const normalizeAdjustmentAmount = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return Number(parsed.toFixed(2));
+};
+const sanitizePaymentBreakdownAdjustment = (adjustment = {}) => {
+    const firstBill = adjustment?.firstBill || adjustment || {};
+    return {
+        firstBill: {
+            previousBalance: normalizeAdjustmentAmount(firstBill.previousBalance),
+            advance: normalizeAdjustmentAmount(firstBill.advance)
+        }
+    };
+};
+const getPaymentBreakdownAdjustment = (adjustments = {}, branchId = null, accountNumber = '') => {
+    const branchBucket = adjustments?.[branchAdjustmentKey(branchId)] || {};
+    const raw = branchBucket?.[String(accountNumber || '').trim()] || null;
+    return raw && typeof raw === 'object' ? sanitizePaymentBreakdownAdjustment(raw) : null;
+};
+const assertAdminUser = (req) => {
+    const user = req.user || null;
+    if (!user || !accountHasRole(user, 'Admin')) {
+        throw createError(403, 'Admin access is required.');
+    }
+    return user;
+};
+
+const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null) => {
     if (!customer || typeof customer !== 'object') return null;
     const sanitizedCustomer = sanitizeCustomerForRecord(customer);
     if (!sanitizedCustomer) return null;
@@ -109,6 +146,7 @@ const buildPaymentRecord = (customer, payments = {}, plans = []) => {
         subscriberStatus,
         customerStatus: subscriberStatus,
         planCategory,
+        paymentBreakdownAdjustment: getPaymentBreakdownAdjustment(adjustments, branchId, accountNumber),
         ...summary,
         history: paymentHistory
     };
@@ -190,14 +228,15 @@ function calculatePaymentSummary(history = [], creditLimit, planAmount) {
 router.get('/', async (req, res, next) => {
     try {
         const branchId = req.user?.branchId || null;
-        const [customers, payments, plans] = await Promise.all([
+        const [customers, payments, plans, adjustments] = await Promise.all([
             readCustomers(branchId),
             readPayments(branchId),
-            readPlans(branchId)
+            readPlans(branchId),
+            readPaymentBreakdownAdjustments()
         ]);
 
         const paymentRecords = customers
-            .map((customer) => buildPaymentRecord(customer, payments, plans))
+            .map((customer) => buildPaymentRecord(customer, payments, plans, adjustments, branchId))
             .filter(Boolean);
 
         res.json({ records: paymentRecords });
@@ -215,10 +254,11 @@ router.get('/:accountNumber', async (req, res, next) => {
         }
 
         const branchId = req.user?.branchId || null;
-        const [customers, payments, plans] = await Promise.all([
+        const [customers, payments, plans, adjustments] = await Promise.all([
             readCustomers(branchId),
             readPayments(branchId),
-            readPlans(branchId)
+            readPlans(branchId),
+            readPaymentBreakdownAdjustments()
         ]);
 
         const customer = Array.isArray(customers)
@@ -228,7 +268,7 @@ router.get('/:accountNumber', async (req, res, next) => {
             return next(createError(404, 'Customer not found.'));
         }
 
-        const record = buildPaymentRecord(customer, payments, plans);
+        const record = buildPaymentRecord(customer, payments, plans, adjustments, branchId);
         if (!record) {
             return next(createError(500, 'Failed to generate payment record.'));
         }
@@ -236,6 +276,52 @@ router.get('/:accountNumber', async (req, res, next) => {
         res.json({ record });
     } catch (error) {
         next(createError(500, 'Failed to generate payment record.'));
+    }
+});
+
+// PATCH /api/payment-records/:accountNumber/breakdown-adjustment - Save first bill adjustment
+router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
+    try {
+        const user = assertAdminUser(req);
+        const accountNumber = String(req.params?.accountNumber || '').trim();
+        if (!accountNumber) {
+            return next(createError(400, 'Account number is required.'));
+        }
+
+        const branchId = user.branchId || null;
+        const customers = await readCustomers(branchId);
+        const customer = Array.isArray(customers)
+            ? customers.find((entry) => String(entry?.accountNumber || '').trim() === accountNumber)
+            : null;
+        if (!customer) {
+            return next(createError(404, 'Customer not found.'));
+        }
+
+        const nextAdjustment = sanitizePaymentBreakdownAdjustment(req.body?.firstBill || req.body || {});
+        const adjustments = await readPaymentBreakdownAdjustments();
+        const branchKey = branchAdjustmentKey(branchId);
+        const branchBucket = adjustments[branchKey] && typeof adjustments[branchKey] === 'object'
+            ? adjustments[branchKey]
+            : {};
+
+        branchBucket[accountNumber] = {
+            ...nextAdjustment,
+            updatedAt: new Date().toISOString(),
+            updatedBy: {
+                id: user.id || null,
+                username: user.username || null,
+                name: user.name || user.username || null
+            }
+        };
+        adjustments[branchKey] = branchBucket;
+        await writePaymentBreakdownAdjustments(adjustments);
+
+        res.json({
+            ok: true,
+            adjustment: sanitizePaymentBreakdownAdjustment(branchBucket[accountNumber])
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to save payment breakdown adjustment.'));
     }
 });
 

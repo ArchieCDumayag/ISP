@@ -100,6 +100,7 @@ const PAYMENT_CONFIRMATION_QUEUE_TABLE = 'payment_confirmation_queue';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ARCHIVE_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 let archiveCleanupInterval = null;
+let customerImportXlsxModule = null;
 
 const normalizeCustomerStatus = (value, fallback = STATUS_ACTIVE) => {
     const raw = String(value || '').trim().toLowerCase();
@@ -2764,6 +2765,521 @@ const triggerBranchServiceRefreshSafe = (branchId, source = 'customers') => {
         }
     } catch (error) {
         console.warn('Customer-triggered service refresh failed:', error?.message || error);
+    }
+};
+
+const IMPORT_CLIENTS_SHEET_NAME = 'CLIENTS LIST';
+const IMPORT_CLIENTS_WARNING_LIMIT = 100;
+const getCustomerImportXlsxModule = () => {
+    if (!customerImportXlsxModule) {
+        customerImportXlsxModule = require('xlsx');
+    }
+    return customerImportXlsxModule;
+};
+const normalizeImportHeaderKey = (value) =>
+    String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+const normalizeImportText = (value) => {
+    if (value == null) return '';
+    if (value instanceof Date) return formatDateOnly(value) || '';
+    const raw = String(value).trim();
+    if (!raw) return '';
+    return raw.replace(/\s+/g, ' ');
+};
+const parseImportNumber = (value) => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const numeric = Number(raw.replace(/[^0-9.-]+/g, ''));
+    return Number.isFinite(numeric) ? numeric : null;
+};
+const formatImportedAccountNumber = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return String(Math.trunc(value));
+    }
+    return normalizeImportText(value).replace(/\.0+$/, '');
+};
+const parseImportedDateOnly = (value) => {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return formatDateOnly(value) || '';
+    }
+    const xlsx = customerImportXlsxModule;
+    if (typeof value === 'number' && Number.isFinite(value) && xlsx?.SSF?.parse_date_code) {
+        const parsed = xlsx.SSF.parse_date_code(value);
+        if (parsed?.y && parsed?.m && parsed?.d) {
+            return formatDateOnly(new Date(parsed.y, parsed.m - 1, parsed.d)) || '';
+        }
+    }
+
+    const raw = normalizeImportText(value);
+    if (!raw) return '';
+    const isoMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (isoMatch) {
+        return formatDateOnly(new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]))) || '';
+    }
+
+    const monthLookup = {
+        jan: 1, january: 1,
+        feb: 2, february: 2,
+        mar: 3, march: 3,
+        apr: 4, april: 4,
+        may: 5,
+        jun: 6, june: 6,
+        jul: 7, july: 7,
+        aug: 8, august: 8,
+        sep: 9, sept: 9, september: 9,
+        oct: 10, october: 10,
+        nov: 11, november: 11,
+        dec: 12, december: 12
+    };
+    const monthNameMatch = raw.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,9})[-/\s](\d{2,4})$/);
+    if (monthNameMatch) {
+        const day = Number(monthNameMatch[1]);
+        const month = monthLookup[String(monthNameMatch[2] || '').toLowerCase()];
+        let year = Number(monthNameMatch[3]);
+        if (year < 100) year += year >= 70 ? 1900 : 2000;
+        if (day && month && year) {
+            return formatDateOnly(new Date(year, month - 1, day)) || '';
+        }
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? '' : (formatDateOnly(parsed) || '');
+};
+const normalizeImportedClientStatus = (value, fallback = STATUS_ACTIVE) => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return normalizeCustomerStatus(fallback, STATUS_ACTIVE);
+    if (['active', 'actv', 'connected', 'online', 'paid'].includes(raw)) return STATUS_ACTIVE;
+    if (['dc', 'disconnected', 'disconnect', 'disabled', 'cut', 'cutoff', 'cut-off'].includes(raw)) return STATUS_DISABLED;
+    if (['inactive', 'offline', 'down'].includes(raw)) return STATUS_INACTIVE;
+    return normalizeCustomerStatus(raw, normalizeCustomerStatus(fallback, STATUS_ACTIVE));
+};
+const normalizeImportedPlanCategory = (value, fallback = '') => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw.includes('prepaid') || raw === 'pre') return 'prepaid';
+    if (raw.includes('postpaid') || raw === 'post') return 'postpaid';
+    return normalizePlanCategory(fallback) || 'postpaid';
+};
+const buildImportedBillingDate = (billingValue, planCategory, activationDateValue, now = new Date()) => {
+    const directDate = parseImportedDateOnly(billingValue);
+    if (directDate) return directDate;
+
+    const raw = String(billingValue || '').trim().toLowerCase();
+    const base = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+    let day = null;
+    if (/\b(first|1st)\b/.test(raw)) {
+        day = 1;
+    } else if (/\b(last|31st|31)\b/.test(raw)) {
+        day = 31;
+    } else {
+        const numericMatch = raw.match(/\b([1-9]|[12]\d|3[01])(?:st|nd|rd|th)?\b/);
+        if (numericMatch) day = Number(numericMatch[1]);
+    }
+
+    if (!day) {
+        const category = normalizePlanCategory(planCategory);
+        day = category === 'prepaid' ? 1 : 31;
+    }
+
+    const year = base.getFullYear();
+    const month = base.getMonth();
+    const clampedDay = clampDay(year, month, day);
+    const candidate = formatDateOnly(new Date(year, month, clampedDay));
+    if (candidate) return candidate;
+
+    const activationDate = parseImportedDateOnly(activationDateValue);
+    return activationDate || getTodayDateOnly();
+};
+const findImportedClientPlan = (plans = [], { planCategory = '', planValue = '', planAmount = null } = {}) => {
+    const category = normalizePlanCategory(planCategory);
+    const normalizedPlanValue = normalizePlanName(planValue);
+    const amount = Number(planAmount);
+    return (Array.isArray(plans) ? plans : []).find((plan) => {
+        if (category && normalizePlanCategory(plan?.category) !== category) return false;
+        if (normalizedPlanValue) {
+            const candidates = [plan?.id, plan?.name, plan?.label].map(normalizePlanName);
+            if (candidates.includes(normalizedPlanValue)) return true;
+        }
+        const price = Number(plan?.price);
+        return Number.isFinite(amount)
+            && amount > 0
+            && Number.isFinite(price)
+            && Number(price.toFixed(2)) === Number(amount.toFixed(2));
+    }) || null;
+};
+const slugifyImportedPlanId = (value) =>
+    String(value || '').trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64);
+const ensureUniqueImportedPlanId = (baseId, usedIds) => {
+    const base = slugifyImportedPlanId(baseId) || `import-plan-${crypto.randomUUID().slice(0, 8)}`;
+    let candidate = base;
+    let counter = 1;
+    while (usedIds.has(candidate)) {
+        candidate = `${base}-${counter++}`;
+    }
+    usedIds.add(candidate);
+    return candidate;
+};
+const buildImportedClientPlan = ({ planCategory = '', planValue = '', planAmount = null } = {}, usedIds = new Set()) => {
+    const category = normalizePlanCategory(planCategory) || 'postpaid';
+    const amount = Number(planAmount);
+    const amountLabel = Number.isFinite(amount) && amount > 0
+        ? String(Number(amount.toFixed(2))).replace(/\.00$/, '')
+        : normalizeImportText(planValue);
+    const categoryLabel = category === 'prepaid' ? 'Prepaid' : 'Postpaid';
+    const name = normalizeImportText(planValue) && Number.isNaN(Number(String(planValue).trim()))
+        ? normalizeImportText(planValue)
+        : `${categoryLabel} ${amountLabel || 'Plan'}`;
+    const now = new Date().toISOString();
+    return {
+        id: ensureUniqueImportedPlanId(`${category}-${name}`, usedIds),
+        category,
+        label: name,
+        name,
+        price: Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0,
+        priceSuffix: '/ month',
+        validity: 0,
+        createdAt: now,
+        updatedAt: now
+    };
+};
+const persistImportedPlans = async (plans = [], branchId = null) => {
+    const newPlans = Array.isArray(plans) ? plans.filter(Boolean) : [];
+    if (!newPlans.length) return;
+    if (await isRelationalReady()) {
+        const nowDateTime = toMysqlDateTime(new Date()) || new Date().toISOString().slice(0, 19).replace('T', ' ');
+        for (const plan of newPlans) {
+            await query(
+                `INSERT INTO plans (
+                    branch_id, plan_id, name, label, category, price, price_suffix, validity, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    label = VALUES(label),
+                    category = VALUES(category),
+                    price = VALUES(price),
+                    price_suffix = VALUES(price_suffix),
+                    validity = VALUES(validity),
+                    updated_at = VALUES(updated_at)`,
+                [
+                    branchId,
+                    plan.id,
+                    plan.name,
+                    plan.label || plan.name,
+                    plan.category,
+                    Number.isFinite(Number(plan.price)) ? Number(plan.price) : null,
+                    plan.priceSuffix || '/ month',
+                    Number.isFinite(Number(plan.validity)) ? Math.trunc(Number(plan.validity)) : 0,
+                    toMysqlDateTime(plan.createdAt) || nowDateTime,
+                    toMysqlDateTime(plan.updatedAt) || nowDateTime
+                ]
+            );
+        }
+        return;
+    }
+
+    const existingRaw = await readJson(STORE_KEYS.plans, []);
+    const list = Array.isArray(existingRaw) ? existingRaw.slice() : [];
+    const byId = new Map(list.map((plan, index) => [String(plan?.id || '').trim(), index]));
+    newPlans.forEach((plan) => {
+        const id = String(plan?.id || '').trim();
+        if (!id) return;
+        if (byId.has(id)) {
+            list[byId.get(id)] = { ...list[byId.get(id)], ...plan };
+        } else {
+            byId.set(id, list.length);
+            list.push(plan);
+        }
+    });
+    await writeJson(STORE_KEYS.plans, list);
+};
+const ensurePlansForImportedClientRecords = async (records = [], branchId = null, warnings = []) => {
+    const plans = await readPlans(branchId);
+    const usedIds = new Set((Array.isArray(plans) ? plans : []).map((plan) => String(plan?.id || '').trim()).filter(Boolean));
+    const createdPlans = [];
+    const pushWarning = (message) => {
+        if (warnings.length < IMPORT_CLIENTS_WARNING_LIMIT) warnings.push(message);
+    };
+
+    records.forEach((record) => {
+        const matchedPlan = findImportedClientPlan(plans, record);
+        if (matchedPlan) {
+            record.resolvedPlan = matchedPlan;
+            return;
+        }
+
+        if (!Number.isFinite(Number(record.planAmount)) || Number(record.planAmount) <= 0) {
+            pushWarning(`Row ${record.rowNumber}: skipped plan creation because Plan is blank or invalid.`);
+            return;
+        }
+
+        const plan = buildImportedClientPlan(record, usedIds);
+        plans.push(plan);
+        createdPlans.push(plan);
+        record.resolvedPlan = plan;
+    });
+
+    await persistImportedPlans(createdPlans, branchId);
+    return { plans, createdPlans };
+};
+const getImportCell = (row = [], headerMap = new Map(), aliases = []) => {
+    for (const alias of aliases) {
+        const key = normalizeImportHeaderKey(alias);
+        if (!headerMap.has(key)) continue;
+        return row[headerMap.get(key)];
+    }
+    return '';
+};
+const parseImportedClientRecordsFromWorkbook = (buffer, { sheetName = IMPORT_CLIENTS_SHEET_NAME } = {}) => {
+    const xlsx = getCustomerImportXlsxModule();
+    const workbook = xlsx.read(Buffer.from(buffer || []), {
+        type: 'buffer',
+        cellDates: true,
+        cellNF: false,
+        cellText: false
+    });
+    const selectedSheetName = workbook.SheetNames.find((name) =>
+        String(name || '').trim().toLowerCase() === String(sheetName || '').trim().toLowerCase()
+    ) || workbook.SheetNames.find((name) => String(name || '').toLowerCase().includes('client'));
+    if (!selectedSheetName || !workbook.Sheets[selectedSheetName]) {
+        throw createError(400, `Sheet "${sheetName}" was not found.`);
+    }
+
+    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[selectedSheetName], {
+        header: 1,
+        defval: '',
+        raw: true,
+        blankrows: false
+    });
+    const headerRowIndex = rows.findIndex((row) =>
+        Array.isArray(row)
+        && row.some((cell) => normalizeImportHeaderKey(cell) === 'accountnumber')
+    );
+    if (headerRowIndex < 0) {
+        throw createError(400, 'Unable to find the CLIENTS LIST header row.');
+    }
+
+    const headerMap = new Map();
+    (rows[headerRowIndex] || []).forEach((cell, index) => {
+        const key = normalizeImportHeaderKey(cell);
+        if (key && !headerMap.has(key)) headerMap.set(key, index);
+    });
+
+    const records = [];
+    rows.slice(headerRowIndex + 1).forEach((row, offset) => {
+        const rowNumber = headerRowIndex + offset + 2;
+        const accountNumber = formatImportedAccountNumber(getImportCell(row, headerMap, [
+            'Account Number',
+            'Account No',
+            'Account #',
+            'account_number'
+        ]));
+        const firstName = normalizeImportText(getImportCell(row, headerMap, ['First Name', 'Firstname', 'first_name']));
+        const middleName = normalizeImportText(getImportCell(row, headerMap, ['Middle Name', 'Middlename', 'middle_name']));
+        const lastName = normalizeImportText(getImportCell(row, headerMap, ['Last Name', 'Lastname', 'last_name']));
+        const planValue = normalizeImportText(getImportCell(row, headerMap, ['Plan', 'Plan Name', 'Plan Amount']));
+        const planAmount = parseImportNumber(planValue);
+        const planCategory = normalizeImportedPlanCategory(getImportCell(row, headerMap, ['Plan Type', 'Type', 'Plan Category']));
+        const activationDate = parseImportedDateOnly(getImportCell(row, headerMap, ['Activation Date', 'Activated Date', 'activation_date']));
+        const billingRaw = getImportCell(row, headerMap, ['Billing Date', 'Billing Cycle', 'Bill Date']);
+        const billDate = buildImportedBillingDate(billingRaw, planCategory, activationDate);
+        const dueDate = billDate;
+
+        if (!accountNumber && !firstName && !lastName && !planValue) return;
+
+        records.push({
+            rowNumber,
+            accountNumber,
+            activationDate,
+            planCategory,
+            status: normalizeImportedClientStatus(getImportCell(row, headerMap, ['Status'])),
+            planValue,
+            planAmount,
+            firstName,
+            middleName,
+            lastName,
+            mobileRaw: normalizePhilippineMobile(getImportCell(row, headerMap, ['Mobile Number', 'Mobile', 'Contact Number', 'Phone'])),
+            email: normalizeImportText(getImportCell(row, headerMap, ['Email', 'Email Address'])),
+            street: normalizeImportText(getImportCell(row, headerMap, ['Street/House No.', 'Street', 'House No.', 'Address'])),
+            province: normalizeImportText(getImportCell(row, headerMap, ['Province'])),
+            municipality: normalizeImportText(getImportCell(row, headerMap, ['Municipality/City', 'Municipality', 'City'])),
+            barangay: normalizeImportText(getImportCell(row, headerMap, ['Barangay'])),
+            area: normalizeImportText(getImportCell(row, headerMap, ['Area / Cluster', 'Area', 'Cluster'])),
+            mapPin: normalizeImportText(getImportCell(row, headerMap, ['Coordinates', 'Map Pin', 'MapPin'])),
+            pppoeUsername: normalizeImportText(getImportCell(row, headerMap, ['PPPoE', 'PPPOE', 'PPPoE Username', 'PPPoE Account'])),
+            referredBy: normalizeImportText(getImportCell(row, headerMap, ['REFERRED BY', 'Referred By', 'Referral'])),
+            billingCycle: normalizeImportText(billingRaw),
+            billDate,
+            dueDate,
+            creditLimit: parseImportNumber(getImportCell(row, headerMap, ['Credit Limit', 'Credit'])),
+            facebookUsername: normalizeImportText(getImportCell(row, headerMap, ['Facebook Username', 'Facebook', 'FB Username']))
+        });
+    });
+
+    return { records, sheetName: selectedSheetName, totalRows: Math.max(0, rows.length - headerRowIndex - 1) };
+};
+const mergeImportedClientValue = (incoming, fallback = '') => {
+    const text = normalizeImportText(incoming);
+    return text || fallback || '';
+};
+const importClientListRecords = async ({ records = [], branchId, importedBy = null } = {}) => {
+    const scopedBranchId = Number(branchId);
+    if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+
+    const warnings = [];
+    const pushWarning = (message) => {
+        if (warnings.length < IMPORT_CLIENTS_WARNING_LIMIT) warnings.push(message);
+    };
+    const validRecords = (Array.isArray(records) ? records : []).filter((record) => {
+        if (!record?.accountNumber) {
+            pushWarning(`Row ${record?.rowNumber || '?'} skipped: account number is missing.`);
+            return false;
+        }
+        return true;
+    });
+    if (!validRecords.length) {
+        throw createError(400, 'No importable clients found in CLIENTS LIST.');
+    }
+
+    const { createdPlans } = await ensurePlansForImportedClientRecords(validRecords, scopedBranchId, warnings);
+    const allCustomers = await readCustomers();
+    const existingIndexByAccount = new Map();
+    allCustomers.forEach((customer, index) => {
+        const account = String(customer?.accountNumber || '').trim();
+        if (account && !existingIndexByAccount.has(account)) existingIndexByAccount.set(account, index);
+    });
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const importedAccounts = [];
+
+    validRecords.forEach((record) => {
+        const plan = record.resolvedPlan;
+        if (!plan) {
+            skipped += 1;
+            pushWarning(`Row ${record.rowNumber}: skipped ${record.accountNumber} because no matching plan could be resolved.`);
+            return;
+        }
+
+        const existingIndex = existingIndexByAccount.get(record.accountNumber);
+        const existing = Number.isInteger(existingIndex) ? (allCustomers[existingIndex] || {}) : {};
+        const firstName = mergeImportedClientValue(record.firstName, existing.firstName);
+        const middleName = mergeImportedClientValue(record.middleName, existing.middleName);
+        const lastName = mergeImportedClientValue(record.lastName, existing.lastName);
+        const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ').trim()
+            || mergeImportedClientValue(existing.name, record.accountNumber);
+        const activationDate = record.activationDate || existing.activationDate || getTodayDateOnly();
+        const category = normalizePlanCategory(record.planCategory || plan.category || existing.planCategory) || 'postpaid';
+        const billDate = record.billDate || existing.billDate || buildImportedBillingDate(record.billingCycle, category, activationDate, now);
+        const dueDate = record.dueDate || existing.dueDate || billDate;
+        const creditLimit = Number.isFinite(Number(record.creditLimit))
+            ? Math.floor(Number(record.creditLimit))
+            : (Number.isFinite(Number(existing.creditLimit)) ? Number(existing.creditLimit) : undefined);
+        const mobileRaw = mergeImportedClientValue(record.mobileRaw, existing.mobileRaw || existing.mobile);
+        const loginUsername = mergeImportedClientValue(
+            record.facebookUsername || record.pppoeUsername,
+            existing.loginUsername || fullName || record.accountNumber
+        );
+        const loginPassword = String(existing.loginPassword || '').trim() || record.accountNumber;
+        const pppoeUsername = mergeImportedClientValue(record.pppoeUsername, existing.pppoeUsername);
+        const importedCustomer = {
+            ...existing,
+            accountNumber: record.accountNumber,
+            branchId: scopedBranchId,
+            firstName,
+            middleName,
+            lastName,
+            name: fullName,
+            email: mergeImportedClientValue(record.email, existing.email),
+            mobileRaw: mobileRaw || null,
+            mobile: mobileRaw || null,
+            street: mergeImportedClientValue(record.street, existing.street),
+            province: mergeImportedClientValue(record.province, existing.province),
+            municipality: mergeImportedClientValue(record.municipality, existing.municipality),
+            barangay: mergeImportedClientValue(record.barangay, existing.barangay),
+            area: mergeImportedClientValue(record.area, existing.area),
+            mapPin: mergeImportedClientValue(record.mapPin, existing.mapPin),
+            status: normalizeImportedClientStatus(record.status, existing.status || STATUS_ACTIVE),
+            since: formatSinceFromActivationDate(activationDate, now),
+            activationDate,
+            planId: String(plan.id || '').trim() || null,
+            planName: String(plan.name || plan.label || record.planValue || '').trim(),
+            planAmount: Number.isFinite(Number(plan.price))
+                ? Number(Number(plan.price).toFixed(2))
+                : (Number.isFinite(Number(record.planAmount)) ? Number(Number(record.planAmount).toFixed(2)) : null),
+            planBilling: category === 'prepaid' ? 'Prepaid' : 'Monthly',
+            planCategory: category,
+            billDate,
+            dueDate,
+            prepaidExpirationAt: category === 'prepaid' ? (existing.prepaidExpirationAt || null) : null,
+            dueOffset: Number.isFinite(Number(existing.dueOffset)) ? Number(existing.dueOffset) : 0,
+            ...(creditLimit !== undefined ? { creditLimit } : {}),
+            loginUsername,
+            loginPassword,
+            ...(pppoeUsername ? { pppoeMode: 'manual', pppoeUsername } : {}),
+            referredBy: mergeImportedClientValue(record.referredBy, existing.referredBy),
+            billingCycle: mergeImportedClientValue(record.billingCycle, existing.billingCycle),
+            facebookUsername: mergeImportedClientValue(record.facebookUsername, existing.facebookUsername),
+            importedFrom: IMPORT_CLIENTS_SHEET_NAME,
+            importedAt: nowIso,
+            importedBy: importedBy ? {
+                id: importedBy.id || '',
+                username: importedBy.username || '',
+                name: importedBy.name || ''
+            } : existing.importedBy,
+            createdAt: existing.createdAt || nowIso,
+            updatedAt: nowIso
+        };
+
+        if (Number.isInteger(existingIndex)) {
+            allCustomers[existingIndex] = importedCustomer;
+            updated += 1;
+        } else {
+            existingIndexByAccount.set(record.accountNumber, allCustomers.length);
+            allCustomers.push(importedCustomer);
+            created += 1;
+        }
+        importedAccounts.push(record.accountNumber);
+    });
+
+    if (await isRelationalReady()) {
+        const importedCustomers = importedAccounts
+            .map((account) => {
+                const index = existingIndexByAccount.get(account);
+                return Number.isInteger(index) ? allCustomers[index] : null;
+            })
+            .filter(Boolean);
+        await writeCustomers(importedCustomers, scopedBranchId);
+    } else {
+        await writeCustomers(allCustomers, scopedBranchId);
+    }
+    triggerBranchServiceRefreshSafe(scopedBranchId, 'customers-client-list-import');
+
+    return {
+        created,
+        updated,
+        skipped,
+        imported: created + updated,
+        plansCreated: createdPlans.length,
+        warnings
+    };
+};
+const parseImportBase64Payload = (payload = {}) => {
+    const base64 = String(payload?.fileBase64 || payload?.fileDataBase64 || payload?.data || '').trim();
+    if (!base64) return null;
+    const compact = base64.includes(',') ? base64.split(',').pop() : base64;
+    try {
+        return Buffer.from(compact, 'base64');
+    } catch {
+        return null;
     }
 };
 
@@ -5628,6 +6144,48 @@ publicRouter.post('/payments/proof', async (req, res, next) => {
         });
     } catch (error) {
         return next(error);
+    }
+});
+
+// POST /api/customers/import-clients - Import client records from an Excel CLIENTS LIST tab
+router.post('/import-clients', express.raw({
+    type: [
+        'application/octet-stream',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ],
+    limit: '40mb'
+}), async (req, res, next) => {
+    try {
+        const branchId = req.user?.branchId || null;
+        if (!branchId) {
+            return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
+        }
+
+        const importBuffer = Buffer.isBuffer(req.body)
+            ? req.body
+            : parseImportBase64Payload(req.body || {});
+        if (!importBuffer || !importBuffer.length) {
+            return res.status(400).json({ ok: false, error: 'Import file is empty.' });
+        }
+
+        const parsed = parseImportedClientRecordsFromWorkbook(importBuffer, {
+            sheetName: req.headers['x-import-sheet'] || req.body?.sheetName || IMPORT_CLIENTS_SHEET_NAME
+        });
+        const result = await importClientListRecords({
+            records: parsed.records,
+            branchId,
+            importedBy: req.user || null
+        });
+
+        return res.json({
+            ok: true,
+            sheetName: parsed.sheetName,
+            totalRows: parsed.totalRows,
+            ...result
+        });
+    } catch (error) {
+        next(error);
     }
 });
 

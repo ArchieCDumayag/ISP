@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customers.css?v=2.8">
+    <link rel="stylesheet" href="css/customers.css?v=2.9">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
@@ -36,6 +36,8 @@
                 <p class="subtitle">Create delightful customer journeys with a polished billing workspace.</p>
             </div>
             <div class="header-actions">
+                <button class="ghost-btn import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import clients</button>
+                <input type="file" class="import-clients-input" id="importClientsFile" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Import clients Excel file">
                 <button class="add-btn" id="openModalBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add customer</button> 
             </div>
         </section>
@@ -844,6 +846,8 @@
             const viewModal = document.getElementById('customerViewModal');
             const creditOverrideModal = document.getElementById('creditOverrideModal');
             const openBtn = document.getElementById('openModalBtn');
+            const importClientsBtn = document.getElementById('importClientsBtn');
+            const importClientsFileInput = document.getElementById('importClientsFile');
             const closeBtn = document.getElementById('closeModalBtn');
             const closeViewBtn = document.getElementById('closeViewModalBtn');
             const closeCreditOverrideBtn = document.getElementById('closeCreditOverrideBtn');
@@ -4615,6 +4619,66 @@
                 }, 3000);
             }
 
+            function setImportClientsBusy(isBusy) {
+                if (!importClientsBtn) return;
+                importClientsBtn.disabled = Boolean(isBusy);
+                importClientsBtn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+                importClientsBtn.innerHTML = isBusy
+                    ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Importing...'
+                    : '<i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import clients';
+            }
+
+            async function importClientsFromFile(file) {
+                if (!file) return;
+                const fileName = String(file.name || '').trim();
+                if (!/\.(xlsx|xls)$/i.test(fileName)) {
+                    showToast('Select an Excel file (.xlsx or .xls).');
+                    return;
+                }
+
+                setImportClientsBusy(true);
+                try {
+                    const fileBuffer = await file.arrayBuffer();
+                    const response = await fetch('/api/customers/import-clients', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                            'Content-Type': 'application/octet-stream',
+                            'X-Import-Filename': encodeURIComponent(fileName),
+                            'X-Import-Sheet': 'CLIENTS LIST'
+                        },
+                        body: fileBuffer
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || payload?.ok === false) {
+                        throw new Error(payload?.message || payload?.error || `Import failed (${response.status})`);
+                    }
+
+                    await loadPlans();
+                    await loadCustomers();
+
+                    const imported = Number(payload.imported || 0);
+                    const created = Number(payload.created || 0);
+                    const updated = Number(payload.updated || 0);
+                    const plansCreated = Number(payload.plansCreated || 0);
+                    const skipped = Number(payload.skipped || 0);
+                    const warning = Array.isArray(payload.warnings) && payload.warnings.length
+                        ? ` Warning: ${payload.warnings[0]}`
+                        : '';
+                    showToast(`Imported ${imported} client${imported === 1 ? '' : 's'} (${created} new, ${updated} updated). Plans added: ${plansCreated}. Skipped: ${skipped}.${warning}`);
+                    if (payload.warnings?.length) {
+                        console.warn('Client import warnings:', payload.warnings);
+                    }
+                } catch (error) {
+                    showToast(`Import failed: ${error.message || error}`);
+                } finally {
+                    setImportClientsBusy(false);
+                    if (importClientsFileInput) {
+                        importClientsFileInput.value = '';
+                    }
+                }
+            }
+
             async function postOpeningPaymentEntries(accountNumber, amounts = {}, effectiveDate = '') {
                 const normalizedAccount = String(accountNumber || '').trim();
                 if (!normalizedAccount) return [];
@@ -4851,6 +4915,14 @@
                 addFlowReturnTo = '';
                 openModal();
             });
+            if (importClientsBtn && importClientsFileInput) {
+                importClientsBtn.addEventListener('click', () => {
+                    importClientsFileInput.click();
+                });
+                importClientsFileInput.addEventListener('change', () => {
+                    void importClientsFromFile(importClientsFileInput.files?.[0] || null);
+                });
+            }
             if (loginPassToggleBtn && loginPassInput) {
                 setLoginPasswordVisibility(false);
                 loginPassToggleBtn.addEventListener('click', () => {

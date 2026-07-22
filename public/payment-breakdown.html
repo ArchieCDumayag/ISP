@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-breakdown.css?v=1.4">
+    <link rel="stylesheet" href="css/payment-breakdown.css?v=1.5">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -29,6 +29,60 @@
                             <i class="ti ti-arrow-left" aria-hidden="true"></i>
                             Back to Payments
                         </a>
+                    </div>
+                </section>
+
+                <section class="subscriber-info-card" id="subscriberInfoCard" aria-label="Subscriber information">
+                    <div class="subscriber-info-card__header">
+                        <span class="subscriber-info-avatar" id="subscriberInfoAvatar">--</span>
+                        <div class="subscriber-info-title">
+                            <p class="subscriber-info-kicker">Subscriber Info</p>
+                            <h2 id="subscriberInfoName">Loading subscriber...</h2>
+                            <p id="subscriberInfoMeta">Account information is loading...</p>
+                        </div>
+                        <span class="subscriber-info-status" id="subscriberInfoStatus">Loading</span>
+                    </div>
+                    <div class="subscriber-info-grid">
+                        <div class="subscriber-info-item">
+                            <span>Account #</span>
+                            <strong id="subscriberInfoAccount">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Plan Type</span>
+                            <strong id="subscriberInfoPlanType">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Plan</span>
+                            <strong id="subscriberInfoPlan">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Billing Cycle</span>
+                            <strong id="subscriberInfoBillingCycle">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Activation Date</span>
+                            <strong id="subscriberInfoActivationDate">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Due Date</span>
+                            <strong id="subscriberInfoDueDate">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Credit Limit</span>
+                            <strong id="subscriberInfoCreditLimit">-</strong>
+                        </div>
+                        <div class="subscriber-info-item">
+                            <span>Area / Cluster</span>
+                            <strong id="subscriberInfoArea">-</strong>
+                        </div>
+                        <div class="subscriber-info-item subscriber-info-item--wide">
+                            <span>Contact</span>
+                            <strong id="subscriberInfoContact">-</strong>
+                        </div>
+                        <div class="subscriber-info-item subscriber-info-item--wide">
+                            <span>Address</span>
+                            <strong id="subscriberInfoAddress">-</strong>
+                        </div>
                     </div>
                 </section>
 
@@ -123,7 +177,7 @@
     </div>
 
     <script src="layout.js?v=3.8"></script>
-    <script src="js/payment-breakdown.js?v=2.2"></script>
+    <script src="js/payment-breakdown.js?v=2.3"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>
 </body>

@@ -1912,7 +1912,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const currentBreakdownRow = getCurrentMonthBreakdownRowForPayments(customer, cycleDate);
 
         if (currentBreakdownRow) {
-            const currentBillAmount = roundMoney(currentBreakdownRow.due);
+            const currentMonthDue = roundMoney(currentBreakdownRow.due);
             const balanceAfterPayment = roundMoney(currentBreakdownRow.balanceAfterPayment);
             const billClass = balanceAfterPayment > EPSILON
                 ? 'has-balance'
@@ -1920,12 +1920,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const state = {
                 amount: balanceAfterPayment,
                 payableAmount: Math.max(0, balanceAfterPayment),
-                displayAmount: Math.abs(currentBillAmount),
+                displayAmount: Math.abs(balanceAfterPayment),
                 billClass,
                 planCategory: currentBreakdownRow.planType || planCategory,
                 planAmount,
-                currentBillAmount,
-                currentMonthDue: currentBillAmount,
+                currentBillAmount: balanceAfterPayment,
+                currentMonthDue,
+                balanceAfterPayment,
                 existingCustomerStart,
                 hasPostedCurrentBill: currentBreakdownRow.sourceType === 'posted' || currentBreakdownRow.sourceType === 'opening',
                 hasCurrentBreakdownRow: true,

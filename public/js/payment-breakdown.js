@@ -15,6 +15,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitleEl = document.getElementById('breakdownSubtitle');
     const tableBody = document.getElementById('breakdownTableBody');
     const summaryEl = document.getElementById('breakdownSummary');
+    const subscriberInfo = {
+        card: document.getElementById('subscriberInfoCard'),
+        avatar: document.getElementById('subscriberInfoAvatar'),
+        name: document.getElementById('subscriberInfoName'),
+        meta: document.getElementById('subscriberInfoMeta'),
+        status: document.getElementById('subscriberInfoStatus'),
+        account: document.getElementById('subscriberInfoAccount'),
+        planType: document.getElementById('subscriberInfoPlanType'),
+        plan: document.getElementById('subscriberInfoPlan'),
+        billingCycle: document.getElementById('subscriberInfoBillingCycle'),
+        activationDate: document.getElementById('subscriberInfoActivationDate'),
+        dueDate: document.getElementById('subscriberInfoDueDate'),
+        creditLimit: document.getElementById('subscriberInfoCreditLimit'),
+        area: document.getElementById('subscriberInfoArea'),
+        contact: document.getElementById('subscriberInfoContact'),
+        address: document.getElementById('subscriberInfoAddress')
+    };
     const metrics = {
         bills: document.getElementById('breakdownMetricBills'),
         paid: document.getElementById('breakdownMetricPaid'),
@@ -449,6 +466,126 @@ document.addEventListener('DOMContentLoaded', () => {
         const day = getZonedDateParts(cycleDate)?.day;
         if (day) return `Every ${day}${getOrdinalSuffix(day)} of the month`;
         return planBilling || 'Monthly';
+    };
+
+    const setSubscriberText = (element, value, fallback = '-') => {
+        if (!element) return;
+        const text = String(value ?? '').trim();
+        element.textContent = text || fallback;
+    };
+
+    const getSubscriberInitials = (record = {}, fallbackAccount = '') => {
+        const firstName = String(record.firstName || '').trim();
+        const lastName = String(record.lastName || '').trim();
+        const source = firstName || lastName
+            ? [firstName, lastName].filter(Boolean)
+            : getCustomerName(record, fallbackAccount).split(/\s+/).filter(Boolean);
+        const initials = source
+            .slice(0, 2)
+            .map((part) => part.charAt(0))
+            .join('')
+            .toUpperCase();
+        return initials || '??';
+    };
+
+    const resolveSubscriberStatus = (record = {}) => {
+        const raw = normalizeText(
+            record.customerStatus
+            || record.subscriberStatus
+            || record.status
+            || record.accountStatus
+            || ''
+        );
+        if (raw === 'disabled' || raw === 'suspended') {
+            return { label: 'Disabled', className: 'is-disabled' };
+        }
+        if (raw === 'inactive' || raw === 'archived' || raw === 'deleted') {
+            return { label: 'Inactive', className: 'is-inactive' };
+        }
+        return { label: raw ? toTitleCase(raw) : 'Active', className: 'is-active' };
+    };
+
+    const formatRecordDate = (value, fallback = '-') => {
+        const parsed = safeDate(value);
+        return parsed ? formatDate(parsed, fallback) : fallback;
+    };
+
+    const resolveContactText = (record = {}) => {
+        const contactParts = [
+            record.mobile,
+            record.mobileRaw,
+            record.phone,
+            record.phoneNumber,
+            record.email
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean);
+        return Array.from(new Set(contactParts)).join(' • ');
+    };
+
+    const resolveAddressText = (record = {}) => {
+        const explicitAddress = String(record.address || record.fullAddress || '').trim();
+        if (explicitAddress) return explicitAddress;
+        return [
+            record.street,
+            record.purok,
+            record.sitio,
+            record.barangay,
+            record.municipality || record.city,
+            record.province
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+            .join(', ');
+    };
+
+    const resolveAreaText = (record = {}) => [
+        record.area,
+        record.cluster,
+        record.coverageArea,
+        record.coverage_area
+    ]
+        .map((value) => String(value || '').trim())
+        .find(Boolean) || '';
+
+    const renderSubscriberInfo = (record = {}) => {
+        const account = String(record.accountNumber || accountNumber || '').trim();
+        const customerName = getCustomerName(record, account);
+        const planAmount = resolvePlanAmount(record);
+        const planName = resolvePlanLabel(record);
+        const planType = resolvePlanType(record);
+        const billDate = safeDate(record.billDate) || safeDate(record.dueDate);
+        const billingCycle = resolveBillingCycleLabel(record, billDate);
+        const status = resolveSubscriberStatus(record);
+        const joined = String(record.since || record.joinDate || '').trim();
+        const creditLimit = Number(record.creditLimit);
+        const metaParts = [
+            account ? `Account ${account}` : '',
+            joined ? `Joined ${joined}` : '',
+            resolveAreaText(record)
+        ].filter(Boolean);
+
+        if (subscriberInfo.card) subscriberInfo.card.hidden = false;
+        setSubscriberText(subscriberInfo.avatar, getSubscriberInitials(record, account));
+        setSubscriberText(subscriberInfo.name, customerName, 'Subscriber');
+        setSubscriberText(subscriberInfo.meta, metaParts.join(' • '), 'Subscriber account details');
+        if (subscriberInfo.status) {
+            subscriberInfo.status.className = `subscriber-info-status ${status.className}`;
+            subscriberInfo.status.textContent = status.label;
+        }
+        setSubscriberText(subscriberInfo.account, account);
+        setSubscriberText(subscriberInfo.planType, toTitleCase(planType || 'postpaid'));
+        setSubscriberText(
+            subscriberInfo.plan,
+            `${planName}${planAmount ? ` • ${formatCurrency(planAmount)}` : ''}`
+        );
+        setSubscriberText(subscriberInfo.billingCycle, billingCycle);
+        setSubscriberText(subscriberInfo.activationDate, formatRecordDate(record.activationDate || record.activation_date));
+        setSubscriberText(subscriberInfo.dueDate, formatRecordDate(record.dueDate || record.prepaidExpirationAt || record.billDate));
+        setSubscriberText(subscriberInfo.creditLimit, Number.isFinite(creditLimit) ? formatCurrency(creditLimit) : '');
+        setSubscriberText(subscriberInfo.area, resolveAreaText(record));
+        setSubscriberText(subscriberInfo.contact, resolveContactText(record));
+        setSubscriberText(subscriberInfo.address, resolveAddressText(record));
     };
 
     const getReferralValues = (customer = {}) => {
@@ -1181,6 +1318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.rows = rows;
         state.context = context;
         renderHeader(record, context);
+        renderSubscriberInfo(record);
         renderRows(rows);
         renderMetrics(rows, context);
     };

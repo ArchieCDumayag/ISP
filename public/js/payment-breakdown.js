@@ -203,6 +203,28 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
+    const compareBillingDateOnly = (left, right) => {
+        const leftParts = getZonedDateParts(left);
+        const rightParts = getZonedDateParts(right);
+        if (!leftParts || !rightParts) {
+            const leftTime = left instanceof Date && !Number.isNaN(left.getTime()) ? left.getTime() : 0;
+            const rightTime = right instanceof Date && !Number.isNaN(right.getTime()) ? right.getTime() : 0;
+            return leftTime - rightTime;
+        }
+        if (leftParts.year !== rightParts.year) return leftParts.year - rightParts.year;
+        if (leftParts.month !== rightParts.month) return leftParts.month - rightParts.month;
+        return leftParts.day - rightParts.day;
+    };
+
+    const isBeforeBillingDate = (left, right) => compareBillingDateOnly(left, right) < 0;
+    const isBeforeBillingMonth = (left, right) => {
+        const leftParts = getZonedDateParts(left);
+        const rightParts = getZonedDateParts(right);
+        if (!leftParts || !rightParts) return isBeforeBillingDate(left, right);
+        if (leftParts.year !== rightParts.year) return leftParts.year < rightParts.year;
+        return leftParts.month < rightParts.month;
+    };
+
     const getInclusiveDayCount = (startDate, endDate) => {
         const startParts = getZonedDateParts(startDate);
         const endParts = getZonedDateParts(endDate);
@@ -695,6 +717,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return /\b(referral|referred|referrer)\b/.test(text);
     };
 
+    const isImportedPaymentCredit = (entry = {}) => {
+        if (entry.direction !== 'credit') return false;
+        const kind = normalizeText(entry.kind || entry.raw?.kind || entry.raw?.type);
+        if (kind && kind !== 'payment' && kind !== 'credit') return false;
+        const reference = String(entry.raw?.reference || entry.raw?.orNumber || '').trim();
+        const text = normalizeText([
+            entry.raw?.importedFrom,
+            entry.raw?.imported_from,
+            entry.raw?.description,
+            entry.raw?.notes,
+            entry.raw?.remarks,
+            entry.raw?.paymentMethod,
+            entry.raw?.payment_method
+        ].filter(Boolean).join(' '));
+        return /^CF2026-/i.test(reference)
+            || /\bimported\s+(?:cash|gcash|gash)?\s*payment\b/.test(text)
+            || /\b(?:cash|gcash|gash)\s+[a-z]+\s*\d{4}\b/.test(text)
+            || /\bpayment-history-excel-import\b/.test(text);
+    };
+
     const sumEntries = (entries = []) => roundMoney(
         entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
     );
@@ -972,10 +1014,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
+        const assignedCreditOrders = new Set();
 
         let runningBalance = 0;
         effectiveEntries
-            .filter((entry) => entry.sortOrder < debitEntries[0].sortOrder)
+            .filter((entry) => {
+                if (entry.sortOrder >= debitEntries[0].sortOrder) return false;
+                if (
+                    isImportedPaymentCredit(entry)
+                    && entry.dateObj
+                    && debitEntries[0].dateObj
+                    && isSameBillingMonth(entry.dateObj, debitEntries[0].dateObj)
+                ) {
+                    return false;
+                }
+                return true;
+            })
             .forEach((entry) => {
                 runningBalance = applyEntryToBalance(runningBalance, entry);
             });
@@ -984,9 +1038,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const nextDebit = debitEntries[index + 1] || null;
             const cycleCredits = effectiveEntries.filter((entry) => (
                 entry.direction === 'credit'
-                && entry.sortOrder > debit.sortOrder
-                && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
+                && !assignedCreditOrders.has(entry.sortOrder)
+                && (
+                    (
+                        isImportedPaymentCredit(entry)
+                        && entry.dateObj
+                        && debit.dateObj
+                        && isSameBillingMonth(entry.dateObj, debit.dateObj)
+                    )
+                    || (
+                        !isImportedPaymentCredit(entry)
+                        && entry.sortOrder > debit.sortOrder
+                        && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
+                    )
+                )
             ));
+            cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
             const openingPreviousBalance = isOpeningPreviousBalanceEntry(debit);
             const planAmount = openingPreviousBalance ? 0 : resolvePlanAmount(record, debit.amount || context.planAmount);
             const result = createBreakdownRow({
@@ -1075,7 +1142,11 @@ document.addEventListener('DOMContentLoaded', () => {
         while (
             cursor < entries.length
             && entries[cursor].dateObj
-            && entries[cursor].dateObj < billDate
+            && (
+                isImportedPaymentCredit(entries[cursor])
+                    ? isBeforeBillingMonth(entries[cursor].dateObj, billDate)
+                    : isBeforeBillingDate(entries[cursor].dateObj, billDate)
+            )
         ) {
             runningBalance = applyEntryToBalance(runningBalance, entries[cursor]);
             cursor += 1;
@@ -1089,7 +1160,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             while (
                 cursor < entries.length
-                && (!entries[cursor].dateObj || entries[cursor].dateObj < nextBillDate)
+                && (
+                    !entries[cursor].dateObj
+                    || (
+                        isImportedPaymentCredit(entries[cursor])
+                            ? isSameBillingMonth(entries[cursor].dateObj, billDate)
+                            : isBeforeBillingDate(entries[cursor].dateObj, nextBillDate)
+                    )
+                )
             ) {
                 const entry = entries[cursor];
                 if (entry.direction === 'credit') {

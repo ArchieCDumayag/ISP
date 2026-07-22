@@ -1218,6 +1218,26 @@ document.addEventListener('DOMContentLoaded', function () {
             day: date.getDate()
         };
     };
+    const compareBreakdownDateOnlyForPayments = (left, right) => {
+        const leftParts = getBreakdownDateParts(left);
+        const rightParts = getBreakdownDateParts(right);
+        if (!leftParts || !rightParts) {
+            const leftTime = left instanceof Date && !Number.isNaN(left.getTime()) ? left.getTime() : 0;
+            const rightTime = right instanceof Date && !Number.isNaN(right.getTime()) ? right.getTime() : 0;
+            return leftTime - rightTime;
+        }
+        if (leftParts.year !== rightParts.year) return leftParts.year - rightParts.year;
+        if (leftParts.month !== rightParts.month) return leftParts.month - rightParts.month;
+        return leftParts.day - rightParts.day;
+    };
+    const isBeforeBreakdownDateForPayments = (left, right) => compareBreakdownDateOnlyForPayments(left, right) < 0;
+    const isBeforeBreakdownMonthForPayments = (left, right) => {
+        const leftParts = getBreakdownDateParts(left);
+        const rightParts = getBreakdownDateParts(right);
+        if (!leftParts || !rightParts) return isBeforeBreakdownDateForPayments(left, right);
+        if (leftParts.year !== rightParts.year) return leftParts.year < rightParts.year;
+        return leftParts.month < rightParts.month;
+    };
     const buildBreakdownMonthlyDate = (year, month, billingDay) => {
         const parsedYear = Number(year);
         const parsedMonth = Number(month);
@@ -1555,6 +1575,25 @@ document.addEventListener('DOMContentLoaded', function () {
         ].filter(Boolean).join(' '));
         return /\b(referral|referred|referrer)\b/.test(text);
     };
+    const isImportedPaymentCreditForPayments = (entry = {}) => {
+        if (entry.direction !== 'credit') return false;
+        const kind = normalizeBreakdownText(entry.kind || entry.raw?.kind || entry.raw?.type);
+        if (kind && kind !== 'payment' && kind !== 'credit') return false;
+        const reference = String(entry.raw?.reference || entry.raw?.orNumber || '').trim();
+        const text = normalizeBreakdownText([
+            entry.raw?.importedFrom,
+            entry.raw?.imported_from,
+            entry.raw?.description,
+            entry.raw?.notes,
+            entry.raw?.remarks,
+            entry.raw?.paymentMethod,
+            entry.raw?.payment_method
+        ].filter(Boolean).join(' '));
+        return /^CF2026-/i.test(reference)
+            || /\bimported\s+(?:cash|gcash|gash)?\s*payment\b/.test(text)
+            || /\b(?:cash|gcash|gash)\s+[a-z]+\s*\d{4}\b/.test(text)
+            || /\bpayment-history-excel-import\b/.test(text);
+    };
     const sumBreakdownEntriesForPayments = (entries = []) => roundMoney(
         entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
     );
@@ -1708,10 +1747,22 @@ document.addEventListener('DOMContentLoaded', function () {
         const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
+        const assignedCreditOrders = new Set();
 
         let runningBalance = 0;
         effectiveEntries
-            .filter((entry) => entry.sortOrder < debitEntries[0].sortOrder)
+            .filter((entry) => {
+                if (entry.sortOrder >= debitEntries[0].sortOrder) return false;
+                if (
+                    isImportedPaymentCreditForPayments(entry)
+                    && entry.dateObj
+                    && debitEntries[0].dateObj
+                    && isSameMonth(entry.dateObj, debitEntries[0].dateObj)
+                ) {
+                    return false;
+                }
+                return true;
+            })
             .forEach((entry) => {
                 runningBalance = applyBreakdownEntryToBalanceForPayments(runningBalance, entry);
             });
@@ -1720,9 +1771,22 @@ document.addEventListener('DOMContentLoaded', function () {
             const nextDebit = debitEntries[index + 1] || null;
             const cycleCredits = effectiveEntries.filter((entry) => (
                 entry.direction === 'credit'
-                && entry.sortOrder > debit.sortOrder
-                && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
+                && !assignedCreditOrders.has(entry.sortOrder)
+                && (
+                    (
+                        isImportedPaymentCreditForPayments(entry)
+                        && entry.dateObj
+                        && debit.dateObj
+                        && isSameMonth(entry.dateObj, debit.dateObj)
+                    )
+                    || (
+                        !isImportedPaymentCreditForPayments(entry)
+                        && entry.sortOrder > debit.sortOrder
+                        && (!nextDebit || entry.sortOrder < nextDebit.sortOrder)
+                    )
+                )
             ));
+            cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
             const openingPreviousBalance = isOpeningPreviousBalanceEntryForPayments(debit);
             const planAmount = openingPreviousBalance ? 0 : resolveBreakdownPlanAmountForPayments(customer, debit.amount || context.planAmount);
             const result = createBreakdownRowForPayments({
@@ -1805,7 +1869,11 @@ document.addEventListener('DOMContentLoaded', function () {
         while (
             cursor < entries.length
             && entries[cursor].dateObj
-            && entries[cursor].dateObj < billDate
+            && (
+                isImportedPaymentCreditForPayments(entries[cursor])
+                    ? isBeforeBreakdownMonthForPayments(entries[cursor].dateObj, billDate)
+                    : isBeforeBreakdownDateForPayments(entries[cursor].dateObj, billDate)
+            )
         ) {
             runningBalance = applyBreakdownEntryToBalanceForPayments(runningBalance, entries[cursor]);
             cursor += 1;
@@ -1819,7 +1887,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
             while (
                 cursor < entries.length
-                && (!entries[cursor].dateObj || entries[cursor].dateObj < nextBillDate)
+                && (
+                    !entries[cursor].dateObj
+                    || (
+                        isImportedPaymentCreditForPayments(entries[cursor])
+                            ? isSameMonth(entries[cursor].dateObj, billDate)
+                            : isBeforeBreakdownDateForPayments(entries[cursor].dateObj, nextBillDate)
+                    )
+                )
             ) {
                 const entry = entries[cursor];
                 if (entry.direction === 'credit') {

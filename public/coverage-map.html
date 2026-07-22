@@ -882,6 +882,28 @@
         return null;
       };
 
+      const resolveCustomerCoordinateValue = (customer = {}) => {
+        const directMapPin = String(customer?.mapPin || '').trim();
+        if (directMapPin) {
+          return { value: directMapPin, source: 'customer' };
+        }
+
+        const napAssignment = customer?.napAssignment && typeof customer.napAssignment === 'object'
+          ? customer.napAssignment
+          : {};
+        const napCoordinate = String(
+          napAssignment?.coordinate
+          || napAssignment?.coordinates
+          || napAssignment?.coords
+          || ''
+        ).trim();
+        if (napCoordinate) {
+          return { value: napCoordinate, source: 'nap' };
+        }
+
+        return { value: '', source: '' };
+      };
+
       const markerCenterLatLng = (lat, lng) => {
         if (!map) return L.latLng(lat, lng);
         const anchorPoint = map.latLngToLayerPoint([lat, lng]);
@@ -972,7 +994,8 @@
         let invalid = 0;
 
         customers.forEach((customer) => {
-          const parsed = parseCoordinatePair(customer?.mapPin);
+          const coordinate = resolveCustomerCoordinateValue(customer);
+          const parsed = parseCoordinatePair(coordinate.value);
           if (!parsed) {
             invalid += 1;
             return;
@@ -1009,7 +1032,7 @@
 
           const accountKey = normalizeLookupKey(accountNumber);
           const nameKey = normalizeName(name);
-          const pointPayload = { lat, lng, label: name, status, marker, accountNumber };
+          const pointPayload = { lat, lng, label: name, status, marker, accountNumber, coordinateSource: coordinate.source };
           if (accountKey) customerPointIndex.set(accountKey, pointPayload);
           if (nameKey && !customerPointIndex.has(nameKey)) customerPointIndex.set(nameKey, pointPayload);
         });

@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customers.css?v=2.7">
+    <link rel="stylesheet" href="css/customers.css?v=2.8">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
@@ -1022,6 +1022,7 @@
             const DEFAULT_MAP_PICKER_CENTER = [12.8797, 121.774];
             const DEFAULT_MAP_PICKER_ZOOM = 6;
             const DETAIL_MAP_PICKER_ZOOM = 18;
+            const MAP_PICKER_PIN_ICON_SIZE = [34, 42];
             let mapPinPickerMap = null;
             let mapPinPickerMarker = null;
             let mapPinPickerSelection = null;
@@ -2307,6 +2308,22 @@
                 setCustomerNapHint(parts.join(' | '));
             }
 
+            function fillBlankCustomerMapPinFromNap(selectedNap = null) {
+                if (!mapPinInput || !selectedNap) return false;
+                const currentValue = String(mapPinInput.value || '').trim();
+                const previousAutoValue = String(mapPinInput.dataset.autoNapMapPin || '').trim();
+                if (currentValue && (!previousAutoValue || currentValue !== previousAutoValue)) return false;
+
+                const parsedCoordinate = parseCoordinateValue(resolveNapCoordinateValue(selectedNap));
+                if (!parsedCoordinate) return false;
+
+                const nextValue = formatCoordinatePair(parsedCoordinate.lat, parsedCoordinate.lng);
+                mapPinInput.value = nextValue;
+                mapPinInput.dataset.autoNapMapPin = nextValue;
+                mapPinInput.dispatchEvent(new Event('input', { bubbles: true }));
+                return true;
+            }
+
             function renderCustomerNapPortOptions({ napId = '', preferredPort = null } = {}) {
                 if (!customerNapPortSelect) return;
                 const selectedNap = getNapCatalogEntry(napId || customerNapIdSelect?.value || '');
@@ -2325,6 +2342,7 @@
                 const currentAccountNumber = getActiveCustomerAccountNumber();
                 updateSelectedNapMapButtonState(selectedNap);
                 updateCustomerOpticalFieldState(selectedNap);
+                fillBlankCustomerMapPinFromNap(selectedNap);
                 const portEntries = buildNapPortEntries(selectedNap);
                 const portOptions = portEntries
                     .map((entry) => {
@@ -3223,6 +3241,29 @@
                 return layerKey;
             };
 
+            const createMapPickerPinIcon = (type = 'customer') => {
+                if (!window.L) return undefined;
+                const normalizedType = String(type || '').trim().toLowerCase();
+                const isNap = normalizedType === 'nap';
+                const color = isNap ? '#7c3aed' : '#2563eb';
+                const label = isNap ? 'N' : 'C';
+                const svg = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42" aria-hidden="true" focusable="false">
+                        <path d="M17 1.5C9.82 1.5 4 7.32 4 14.5C4 25.72 17 40.5 17 40.5C17 40.5 30 25.72 30 14.5C30 7.32 24.18 1.5 17 1.5Z" fill="${color}"/>
+                        <circle cx="17" cy="14.5" r="7.3" fill="#ffffff" fill-opacity="0.95"/>
+                        <text x="17" y="18.2" text-anchor="middle" font-size="10.5" font-weight="800" fill="${color}" font-family="Arial, sans-serif">${label}</text>
+                    </svg>
+                `.trim();
+                return window.L.divIcon({
+                    html: svg,
+                    className: `map-picker-transparent-icon map-picker-transparent-icon--${isNap ? 'nap' : 'customer'}`,
+                    iconSize: MAP_PICKER_PIN_ICON_SIZE,
+                    iconAnchor: [17, 40],
+                    popupAnchor: [0, -36],
+                    tooltipAnchor: [0, -34]
+                });
+            };
+
             const setMapPinPickerSelection = (lat, lng, { center = true, statusMessage = '' } = {}) => {
                 if (!isValidCoordinatePair(lat, lng)) return false;
                 mapPinPickerSelection = { lat: Number(lat), lng: Number(lng) };
@@ -3231,7 +3272,10 @@
                 if (mapPinPickerMap && window.L) {
                     const latLng = window.L.latLng(mapPinPickerSelection.lat, mapPinPickerSelection.lng);
                     if (!mapPinPickerMarker) {
-                        mapPinPickerMarker = window.L.marker(latLng, { draggable: true }).addTo(mapPinPickerMap);
+                        mapPinPickerMarker = window.L.marker(latLng, {
+                            draggable: true,
+                            icon: createMapPickerPinIcon('customer')
+                        }).addTo(mapPinPickerMap);
                         mapPinPickerMarker.on('dragend', (event) => {
                             const nextLatLng = event.target.getLatLng();
                             setMapPinPickerSelection(nextLatLng.lat, nextLatLng.lng, {
@@ -3240,6 +3284,7 @@
                             });
                         });
                     } else {
+                        mapPinPickerMarker.setIcon(createMapPickerPinIcon('customer'));
                         mapPinPickerMarker.setLatLng(latLng);
                     }
 
@@ -3427,7 +3472,8 @@
                 mappedNaps.forEach((nap) => {
                     const { parsedCoordinate } = nap;
                     const marker = window.L.marker([parsedCoordinate.lat, parsedCoordinate.lng], {
-                        title: formatNapSelectLabel(nap)
+                        title: formatNapSelectLabel(nap),
+                        icon: createMapPickerPinIcon('nap')
                     });
                     marker.bindTooltip(formatNapSelectLabel(nap), {
                         direction: 'top',

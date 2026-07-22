@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="coverage.css?v=1.7">
+    <link rel="stylesheet" href="coverage.css?v=1.9">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
@@ -477,6 +477,12 @@
       let statusRestoreTimer = null;
       let summaryStatusMessage = 'Loading map data...';
       let visibleCounts = { customers: 0, naps: 0, links: 0 };
+      const MARKER_ICON_SIZE = [32, 40];
+      const MARKER_ICON_ANCHOR = [16, 40];
+      const MARKER_LINK_CENTER_OFFSET = [
+        (MARKER_ICON_SIZE[0] / 2) - MARKER_ICON_ANCHOR[0],
+        (MARKER_ICON_SIZE[1] / 2) - MARKER_ICON_ANCHOR[1]
+      ];
 
       const metrics = {
         customers: { total: 0, mapped: 0, invalid: 0 },
@@ -876,6 +882,26 @@
         return null;
       };
 
+      const markerCenterLatLng = (lat, lng) => {
+        if (!map) return L.latLng(lat, lng);
+        const anchorPoint = map.latLngToLayerPoint([lat, lng]);
+        const centerPoint = anchorPoint.add(MARKER_LINK_CENTER_OFFSET);
+        return map.layerPointToLatLng(centerPoint);
+      };
+
+      const buildNapCustomerLinkLatLngs = (row) => ([
+        markerCenterLatLng(row.napLat, row.napLng),
+        markerCenterLatLng(row.customerLat, row.customerLng)
+      ]);
+
+      const updateNapCustomerLinkGeometry = () => {
+        if (!map || !linkRecords.length) return;
+        linkRecords.forEach((row) => {
+          if (!row?.line || typeof row.line.setLatLngs !== 'function') return;
+          row.line.setLatLngs(buildNapCustomerLinkLatLngs(row));
+        });
+      };
+
       const refreshNapCustomerLinks = () => {
         if (!map || !napLinksLayer) return;
         napLinksLayer.clearLayers();
@@ -898,25 +924,27 @@
               return;
             }
             mapped += 1;
-            const line = L.polyline(
-              [[napParsed.lat, napParsed.lng], [customerPoint.lat, customerPoint.lng]],
-              { color: statusColor(customerPoint.status), weight: 2.4, opacity: 0.82, dashArray: '10 8', className: 'nap-link-live' }
-            );
-            const customerLabel = connection?.customerName || connection?.customerId || connection?.customerRef || 'Customer';
-            line.bindPopup(`
-              <strong>${escapeHtml(nap?.code || 'NAP')}</strong> &rarr; <strong>${escapeHtml(customerLabel)}</strong><br>
-              <small>Port: ${escapeHtml(connection?.port || '-')}</small><br>
-              <small>Status: ${escapeHtml(customerMapStatusLabel(customerPoint.status))}</small>
-            `);
-            linkRecords.push({
-              line,
+            const linkRecord = {
+              line: null,
               customerStatus: customerPoint.status,
               napStatus: getNapStatus(nap),
               napLat: napParsed.lat,
               napLng: napParsed.lng,
               customerLat: customerPoint.lat,
               customerLng: customerPoint.lng
-            });
+            };
+            const line = L.polyline(
+              buildNapCustomerLinkLatLngs(linkRecord),
+              { color: statusColor(customerPoint.status), weight: 2.4, opacity: 0.82, dashArray: '10 8', className: 'nap-link-live' }
+            );
+            linkRecord.line = line;
+            const customerLabel = connection?.customerName || connection?.customerId || connection?.customerRef || 'Customer';
+            line.bindPopup(`
+              <strong>${escapeHtml(nap?.code || 'NAP')}</strong> &rarr; <strong>${escapeHtml(customerLabel)}</strong><br>
+              <small>Port: ${escapeHtml(connection?.port || '-')}</small><br>
+              <small>Status: ${escapeHtml(customerMapStatusLabel(customerPoint.status))}</small>
+            `);
+            linkRecords.push(linkRecord);
             points.push([napParsed.lat, napParsed.lng], [customerPoint.lat, customerPoint.lng]);
           });
         });
@@ -1185,6 +1213,7 @@
         napLinksLayer = L.layerGroup().addTo(map);
 
         map.on('zoomend', () => {
+          updateNapCustomerLinkGeometry();
           applyMapFilters();
           renderSummary();
         });

@@ -924,6 +924,14 @@ body.theme-dark .coverage-page .map-last-updated {
     text-decoration: underline;
 }
 
+.coverage-page #coverageMap .leaflet-marker-icon,
+.coverage-page #coverageMap .leaflet-div-icon,
+.coverage-page #mapView .cov-pin-icon {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: 0 !important;
+}
+
 .cov-pin-icon {
     filter: drop-shadow(0 6px 10px rgba(15, 23, 42, 0.28));
 }

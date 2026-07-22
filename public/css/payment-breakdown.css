@@ -195,6 +195,8 @@
 
 .payment-breakdown-toolbar {
     align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
 }
 
 .section-title {
@@ -261,19 +263,41 @@
     font-size: .74rem;
 }
 
-.breakdown-bill__adjustment {
-    display: inline-flex;
+.breakdown-adjustment-toolbar {
+    display: flex;
     align-items: center;
-    gap: .4rem;
-    margin-top: .3rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: .55rem;
+    margin-left: auto;
+    padding: .6rem;
+    border: 1px solid var(--tblr-border-color, #dce3ef);
+    border-radius: .8rem;
+    background: var(--tblr-bg-surface-secondary, #f8fafc);
 }
 
-.breakdown-bill__hint,
+.breakdown-adjustment-toolbar[hidden] {
+    display: none;
+}
+
+.breakdown-adjustment-toolbar__copy {
+    display: grid;
+    gap: .1rem;
+    min-width: 9rem;
+}
+
+.breakdown-adjustment-toolbar__label,
 .breakdown-adjustment-field__label {
     color: var(--tblr-secondary, #667085);
     font-size: .68rem;
     font-weight: 700;
     line-height: 1.1;
+}
+
+.breakdown-adjustment-toolbar__copy strong {
+    color: var(--tblr-body-color, #182433);
+    font-size: .78rem;
+    line-height: 1.2;
 }
 
 .is-first-adjustment-row td {
@@ -282,14 +306,15 @@
 
 .breakdown-adjustment-field {
     display: inline-grid;
-    justify-items: end;
+    justify-items: start;
     gap: .2rem;
     min-width: 7rem;
     margin: 0;
 }
 
 .breakdown-adjustment-input {
-    max-width: 7rem;
+    width: 7.5rem;
+    max-width: 100%;
     text-align: right;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -406,6 +431,22 @@
 }
 
 @media (max-width: 680px) {
+    .payment-breakdown-toolbar {
+        align-items: stretch;
+    }
+
+    .breakdown-adjustment-toolbar {
+        width: 100%;
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    .breakdown-adjustment-field,
+    .breakdown-adjustment-input,
+    .breakdown-adjustment-toolbar .btn {
+        width: 100%;
+    }
+
     .subscriber-info-card__header {
         align-items: flex-start;
         flex-wrap: wrap;

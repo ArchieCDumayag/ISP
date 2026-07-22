@@ -15,6 +15,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitleEl = document.getElementById('breakdownSubtitle');
     const tableBody = document.getElementById('breakdownTableBody');
     const summaryEl = document.getElementById('breakdownSummary');
+    const adjustmentToolbar = {
+        form: document.getElementById('breakdownAdjustmentToolbar'),
+        month: document.getElementById('breakdownAdjustmentMonth'),
+        previousBalance: document.getElementById('breakdownAdjustmentPreviousBalance'),
+        advance: document.getElementById('breakdownAdjustmentAdvance'),
+        save: document.getElementById('breakdownAdjustmentSave')
+    };
     const subscriberInfo = {
         card: document.getElementById('subscriberInfoCard'),
         avatar: document.getElementById('subscriberInfoAvatar'),
@@ -1170,46 +1177,14 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
         if (summaryEl) summaryEl.textContent = message;
+        renderAdjustmentToolbar([]);
     };
 
-    const renderAdjustmentInput = (field, value, label) => `
-        <label class="breakdown-adjustment-field">
-            <span class="breakdown-adjustment-field__label">${escapeHtml(label)}</span>
-            <input
-                type="number"
-                class="form-control form-control-sm breakdown-adjustment-input"
-                min="0"
-                step="0.01"
-                inputmode="decimal"
-                data-breakdown-adjustment-field="${escapeHtml(field)}"
-                value="${escapeHtml(formatEditableAmount(value))}"
-                placeholder="0.00"
-                aria-label="${escapeHtml(label)}"
-                ${state.savingAdjustment ? 'disabled' : ''}
-            >
-        </label>
-    `;
-
     const renderBillCell = (row) => {
-        const adjustmentActions = row.isAdjustmentEditable
-            ? `
-                <span class="breakdown-bill__adjustment">
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-primary breakdown-adjustment-save"
-                        ${state.savingAdjustment ? 'disabled aria-busy="true"' : ''}
-                    >
-                        ${state.savingAdjustment ? 'Saving...' : 'Save adjustment'}
-                    </button>
-                    <span class="breakdown-bill__hint">First bill only</span>
-                </span>
-            `
-            : '';
         return `
             <span class="breakdown-bill">
                 <span class="breakdown-bill__title">${escapeHtml(row.billLabel)}</span>
                 <span class="breakdown-bill__meta">${escapeHtml(row.billMeta)}</span>
-                ${adjustmentActions}
             </span>
         `;
     };
@@ -1222,12 +1197,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         tableBody.innerHTML = rows.map((row) => {
-            const previousBalanceCell = row.isAdjustmentEditable
-                ? renderAdjustmentInput('previousBalance', row.previousBalance, 'Previous Balance')
-                : `<span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span>`;
-            const advanceCell = row.isAdjustmentEditable
-                ? renderAdjustmentInput('advance', row.advance, 'Advance')
-                : `<span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span>`;
+            const previousBalanceCell = `<span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span>`;
+            const advanceCell = `<span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span>`;
             return `
             <tr${row.isAdjustmentEditable ? ' class="is-first-adjustment-row"' : ''}>
                 <td>
@@ -1247,6 +1218,38 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
         `;
         }).join('');
+        renderAdjustmentToolbar(rows);
+    };
+
+    const renderAdjustmentToolbar = (rows = []) => {
+        const firstRow = (Array.isArray(rows) ? rows : []).find((row) => row?.isAdjustmentEditable) || null;
+        if (!adjustmentToolbar.form) return;
+        if (!firstRow) {
+            adjustmentToolbar.form.hidden = true;
+            return;
+        }
+
+        adjustmentToolbar.form.hidden = false;
+        if (adjustmentToolbar.month) {
+            adjustmentToolbar.month.textContent = `${firstRow.billLabel || 'First bill'} only`;
+        }
+        if (adjustmentToolbar.previousBalance) {
+            adjustmentToolbar.previousBalance.value = formatEditableAmount(firstRow.previousBalance);
+            adjustmentToolbar.previousBalance.disabled = state.savingAdjustment;
+        }
+        if (adjustmentToolbar.advance) {
+            adjustmentToolbar.advance.value = formatEditableAmount(firstRow.advance);
+            adjustmentToolbar.advance.disabled = state.savingAdjustment;
+        }
+        if (adjustmentToolbar.save) {
+            adjustmentToolbar.save.disabled = state.savingAdjustment;
+            adjustmentToolbar.save.textContent = state.savingAdjustment ? 'Saving...' : 'Save adjustment';
+            if (state.savingAdjustment) {
+                adjustmentToolbar.save.setAttribute('aria-busy', 'true');
+            } else {
+                adjustmentToolbar.save.removeAttribute('aria-busy');
+            }
+        }
     };
 
     const renderMetrics = (rows = [], context = {}) => {
@@ -1303,11 +1306,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const readFirstBillAdjustmentInputs = () => {
-        const previousInput = tableBody?.querySelector('[data-breakdown-adjustment-field="previousBalance"]');
-        const advanceInput = tableBody?.querySelector('[data-breakdown-adjustment-field="advance"]');
         return {
-            previousBalance: toEditableAmount(previousInput?.value),
-            advance: toEditableAmount(advanceInput?.value)
+            previousBalance: toEditableAmount(adjustmentToolbar.previousBalance?.value),
+            advance: toEditableAmount(adjustmentToolbar.advance?.value)
         };
     };
 
@@ -1332,7 +1333,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const adjustment = readFirstBillAdjustmentInputs();
         state.savingAdjustment = true;
-        renderRows(state.rows);
+        renderAdjustmentToolbar(state.rows);
         try {
             const payload = await fetchJSON(`/api/payment-records/${encodeURIComponent(accountNumber)}/breakdown-adjustment`, {
                 method: 'PATCH',
@@ -1348,10 +1349,10 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('First bill adjustment saved.', 'success');
         } catch (error) {
             showToast(error?.message || 'Failed to save first bill adjustment.', 'error');
-            renderRows(state.rows);
+            renderAdjustmentToolbar(state.rows);
         } finally {
             state.savingAdjustment = false;
-            renderRows(state.rows);
+            renderAdjustmentToolbar(state.rows);
             renderMetrics(state.rows, state.context || {});
         }
     }
@@ -1380,9 +1381,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    tableBody?.addEventListener('click', (event) => {
-        const saveButton = event.target.closest('.breakdown-adjustment-save');
-        if (!saveButton) return;
+    adjustmentToolbar.form?.addEventListener('submit', (event) => {
+        event.preventDefault();
         void saveFirstBillAdjustment();
     });
 

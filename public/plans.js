@@ -6,8 +6,10 @@
     const planForm = document.getElementById('planForm');
     const modalTitle = document.getElementById('planModalTitle');
     const modalSubtitle = document.getElementById('planModalSubtitle');
+    const priceSuffixAddon = document.getElementById('planPriceSuffix');
     const toast = document.getElementById('planToast');
     const routerBindingsContainer = document.getElementById('planRouterBindings');
+    const MONTHLY_PRICE_SUFFIX = '/ month';
     const metrics = {
       prepaid: document.getElementById('metric-prepaid'),
       postpaid: document.getElementById('metric-postpaid'),
@@ -117,10 +119,18 @@
       return normalizeRouterId(routers[0]?.id);
     };
 
+    const normalizePlanPriceSuffix = (_category, value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return MONTHLY_PRICE_SUFFIX;
+      if (/\bday\b|\bdays\b|daily|validity/i.test(raw)) return MONTHLY_PRICE_SUFFIX;
+      return raw.replace(/^\/month$/i, MONTHLY_PRICE_SUFFIX);
+    };
+
     const normalizePlan = (plan) => {
       if (!plan || typeof plan !== 'object') return null;
       const id = String(plan.id || '').trim();
       if (!id) return null;
+      const category = ensureCategoryKey(plan.category);
       const actions = Array.isArray(plan.actions) && plan.actions.length
         ? Array.from(new Set(plan.actions.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean)))
         : ['edit', 'delete'];
@@ -129,14 +139,14 @@
       });
       return {
         id,
-        category: ensureCategoryKey(plan.category),
+        category,
         label: String(plan.label || '').trim(),
         name: String(plan.name || '').trim(),
         description: String(plan.description || '').trim(),
         profile: String(plan.profile || '').trim(),
         profileBindings: normalizeProfileBindings(plan.profileBindings || plan.profile_bindings),
         price: coerceNumber(plan.price),
-        priceSuffix: String(plan.priceSuffix || '').trim(),
+        priceSuffix: normalizePlanPriceSuffix(category, plan.priceSuffix),
         validity: coerceNumber(plan.validity),
         benefits: Array.isArray(plan.benefits)
           ? plan.benefits.map((entry) => String(entry || '').trim()).filter(Boolean)
@@ -300,14 +310,16 @@
         field.className = 'form-field router-profile-field';
 
         const fieldLabel = document.createElement('label');
+        fieldLabel.className = 'form-label';
         fieldLabel.setAttribute('for', `plan-router-profile-${routerId}`);
         fieldLabel.textContent = label;
 
         const selectWrapper = document.createElement('div');
-        selectWrapper.className = 'select-wrapper';
+        selectWrapper.className = 'input-group input-group-flat';
 
         const select = document.createElement('select');
         select.id = `plan-router-profile-${routerId}`;
+        select.className = 'form-select';
         select.setAttribute('data-plan-router-profile', 'true');
         select.setAttribute('data-router-id', routerId);
         select.required = true;
@@ -429,8 +441,8 @@
     };
 
     const ACTION_META = {
-      edit: { icon: 'fa-pen', label: 'Edit' },
-      delete: { icon: 'fa-trash', label: 'Delete' },
+      edit: { icon: 'ti ti-pencil', label: 'Edit' },
+      delete: { icon: 'ti ti-trash', label: 'Delete' },
     };
 
     const renderPlansTable = () => {
@@ -460,33 +472,34 @@
             ).length;
             usageCounts.set(plan.id, totalClients);
             const categoryLabel = plan.category === 'postpaid' ? 'Postpaid' : 'Prepaid';
-            const categoryHint = plan.category === 'postpaid' ? 'Monthly billing' : 'Validity based';
-            const categoryIcon = plan.category === 'postpaid' ? 'fa-calendar-days' : 'fa-bolt';
+            const categoryHint = plan.category === 'postpaid' ? 'Monthly billing' : 'Monthly prepaid';
+            const categoryIcon = plan.category === 'postpaid' ? 'ti ti-calendar-dollar me-1' : 'ti ti-bolt me-1';
+            const categoryBadgeClass = plan.category === 'postpaid' ? 'bg-orange-lt text-orange' : 'bg-cyan-lt text-cyan';
             const actions = (plan.actions || []).map((actionType) => {
               const meta = ACTION_META[actionType];
               if (!meta) return '';
-              const dangerClass = actionType === 'delete' ? ' danger' : '';
+              const actionClass = actionType === 'delete' ? 'btn-outline-danger' : 'btn-ghost-secondary';
               const isDeleteBlocked = actionType === 'delete' && totalClients > 0;
               const ariaLabel = meta.label + ' ' + escapeHtml(plan.name);
               const title = isDeleteBlocked
                 ? 'Cannot delete. ' + totalClients + ' customer' + (totalClients === 1 ? '' : 's') + ' still use this plan.'
                 : meta.label;
               const disabledAttr = isDeleteBlocked ? ' disabled aria-disabled="true"' : '';
-              return '<button class="ghost-icon' + dangerClass + '" type="button" data-plan-action="' + actionType + '" data-plan-id="' + escapeHtml(plan.id) + '" data-category="' + escapeHtml(plan.category) + '" aria-label="' + ariaLabel + '" title="' + escapeHtml(title) + '"' + disabledAttr + '><i class="fa-solid ' + meta.icon + '"></i></button>';
+              return '<button class="btn btn-icon btn-sm ' + actionClass + '" type="button" data-plan-action="' + actionType + '" data-plan-id="' + escapeHtml(plan.id) + '" data-category="' + escapeHtml(plan.category) + '" aria-label="' + ariaLabel + '" title="' + escapeHtml(title) + '"' + disabledAttr + '><i class="' + meta.icon + '" aria-hidden="true"></i></button>';
             }).join('');
-            const priceSuffix = plan.priceSuffix ? '<span class="price-suffix">' + escapeHtml(plan.priceSuffix) + '</span>' : '';
+            const priceSuffix = '<span class="text-secondary ms-1">' + escapeHtml(normalizePlanPriceSuffix(plan.category, plan.priceSuffix)) + '</span>';
             const profileSummary = buildPlanProfileSummary(plan);
             return (
               '<tr class="plan-row plan-row--' + escapeHtml(plan.category) + '" data-plan-id="' + escapeHtml(plan.id) + '" data-category="' + escapeHtml(plan.category) + '">' +
-                '<td>' + (idx + 1) + '</td>' +
-                '<td class="col-name"><div class="plan-name"><span class="plan-name__label plan-name__label--' + escapeHtml(plan.category) + '">' + categoryLabel + '</span><span class="plan-name__title">' + escapeHtml(plan.name) + '</span></div></td>' +
-                '<td>' + formatPrice(plan.price) + priceSuffix + '</td>' +
-                '<td>' + escapeHtml(profileSummary) + '</td>' +
-                '<td style="font-size:.8em;color:#64748b;font-weight:600;">' + (plan.createdAt ? new Date(plan.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-') + '</td>' +
-                '<td style="font-size:.8em;color:#64748b;font-weight:600;">' + (plan.updatedAt ? new Date(plan.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-') + '</td>' +
-                '<td>' + totalClients + '</td>' +
-                '<td><div class="plan-type-cell"><span class="plan-type-pill plan-type-pill--' + escapeHtml(plan.category) + '"><i class="fa-solid ' + categoryIcon + '"></i>' + categoryLabel + '</span><span class="plan-type-hint">' + categoryHint + '</span></div></td>' +
-                '<td class="col-actions"><div class="plan-actions">' + actions + '</div></td>' +
+                '<td class="text-center text-secondary">' + (idx + 1) + '</td>' +
+                '<td class="col-name"><span class="fw-semibold">' + escapeHtml(plan.name) + '</span></td>' +
+                '<td class="text-center"><span class="fw-semibold">' + formatPrice(plan.price) + '</span>' + priceSuffix + '</td>' +
+                '<td class="text-center text-secondary">' + escapeHtml(profileSummary) + '</td>' +
+                '<td class="text-center text-secondary">' + (plan.createdAt ? new Date(plan.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-') + '</td>' +
+                '<td class="text-center text-secondary">' + (plan.updatedAt ? new Date(plan.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-') + '</td>' +
+                '<td class="text-center">' + totalClients + '</td>' +
+                '<td><div class="plans-type-cell"><span class="badge ' + categoryBadgeClass + '"><i class="' + categoryIcon + '" aria-hidden="true"></i>' + categoryLabel + '</span><span class="text-secondary small">' + categoryHint + '</span></div></td>' +
+                '<td class="col-actions text-center"><div class="btn-list flex-nowrap justify-content-center">' + actions + '</div></td>' +
               '</tr>'
             );
           }).join('');
@@ -546,17 +559,17 @@
 
     const applyCategoryUI = (selectedCategory, plan = null) => {
       const normalized = ensureCategoryKey(selectedCategory);
-      const isPrepaid = normalized === 'prepaid';
       const validityField = document.getElementById('planValidityField');
       if (validityField) {
-        validityField.style.display = isPrepaid ? '' : 'none';
+        validityField.style.display = 'none';
         const validityInput = validityField.querySelector('input');
         if (validityInput) {
-          validityInput.value = isPrepaid ? (plan?.validity ?? '7') : '';
+          validityInput.value = '';
         }
       }
+      if (priceSuffixAddon) priceSuffixAddon.textContent = MONTHLY_PRICE_SUFFIX;
       if (modalSubtitle) {
-        modalSubtitle.textContent = normalized === 'prepaid' ? 'Prepaid bundle' : 'Postpaid plan';
+        modalSubtitle.textContent = normalized === 'prepaid' ? 'Prepaid monthly plan' : 'Postpaid monthly plan';
       }
     };
 
@@ -575,7 +588,7 @@
       if (!planForm || !planModal) return;
       state.editing = plan ? { category, plan } : null;
       if (modalTitle) modalTitle.textContent = plan ? 'Edit plan' : 'Add plan';
-      if (modalSubtitle) modalSubtitle.textContent = category === 'prepaid' ? 'Prepaid bundle' : 'Postpaid plan';
+      if (modalSubtitle) modalSubtitle.textContent = category === 'prepaid' ? 'Prepaid monthly plan' : 'Postpaid monthly plan';
 
       const categoryField = document.getElementById('planCategory');
       const planIdField = getField('planId');
@@ -658,15 +671,8 @@
         ? collectProfileBindingsFromForm()
         : normalizeProfileBindings(state.editing?.plan?.profileBindings);
       const price = coerceNumber(priceField?.value || 0);
-      let priceSuffix = '';
-      let validity = null;
-
-      if (category === 'prepaid') {
-        validity = coerceNumber(getField('validity')?.value);
-        priceSuffix = `/ ${validity} days`;
-      } else {
-        priceSuffix = '/ month';
-      }
+      const priceSuffix = MONTHLY_PRICE_SUFFIX;
+      const validity = null;
 
       if (!name) {
         alert('Please complete the required fields.');

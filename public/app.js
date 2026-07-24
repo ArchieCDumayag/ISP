@@ -753,7 +753,115 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    function buildMonthlySeries(payments, year) {
+    const roundMoney = (value) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return 0;
+        return Number(parsed.toFixed(2));
+    };
+
+    const getCustomerAccountNumber = (customer = {}) => String(customer?.accountNumber || '').trim();
+
+    function buildDashboardBreakdownRecords(payments, customers) {
+        const paymentMap = payments && typeof payments === 'object' ? payments : {};
+        const customerMap = new Map();
+
+        (Array.isArray(customers) ? customers : []).forEach((customer) => {
+            const accountNumber = getCustomerAccountNumber(customer);
+            if (accountNumber) customerMap.set(accountNumber, customer);
+        });
+
+        const accountNumbers = new Set([
+            ...customerMap.keys(),
+            ...Object.keys(paymentMap).map((accountNumber) => String(accountNumber || '').trim()).filter(Boolean)
+        ]);
+
+        return Array.from(accountNumbers).map((accountNumber) => {
+            const customer = customerMap.get(accountNumber) || {};
+            const paymentRecord = paymentMap[accountNumber] || {};
+            const history = Array.isArray(paymentRecord.history)
+                ? paymentRecord.history
+                : (Array.isArray(customer.history) ? customer.history : []);
+
+            return {
+                ...customer,
+                ...paymentRecord,
+                accountNumber,
+                history
+            };
+        });
+    }
+
+    function resolveBreakdownMonthIndex(billDate, year, billingHelper) {
+        const parsedDate = billDate instanceof Date ? billDate : safeDate(billDate);
+        if (!parsedDate || !billingHelper || typeof billingHelper.isSameBillingMonth !== 'function') return null;
+
+        for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+            const monthProbe = new Date(Date.UTC(year, monthIndex, 15, 12, 0, 0));
+            if (billingHelper.isSameBillingMonth(parsedDate, monthProbe)) return monthIndex;
+        }
+
+        return null;
+    }
+
+    function applyBreakdownBalanceAfterPaymentTotals(months, payments, customers, year, displayMonthLimit) {
+        const billingHelper = window.PaymentCurrentBill;
+        if (!billingHelper || typeof billingHelper.buildBreakdownRows !== 'function') return false;
+
+        const records = buildDashboardBreakdownRecords(payments, customers);
+        const monthlyTotals = Array.from({ length: 12 }, () => ({
+            balance: 0,
+            signedBalanceAfterPayment: 0,
+            advance: 0,
+            rows: 0
+        }));
+
+        records.forEach((record) => {
+            let breakdownRows = [];
+            try {
+                breakdownRows = billingHelper.buildBreakdownRows(record, records)?.rows || [];
+            } catch (error) {
+                console.warn('Dashboard balance breakdown failed:', error);
+                return;
+            }
+
+            const latestRowByMonth = new Map();
+            breakdownRows.forEach((row) => {
+                const monthIndex = resolveBreakdownMonthIndex(row?.billDate, year, billingHelper);
+                if (monthIndex === null) return;
+                latestRowByMonth.set(monthIndex, row);
+            });
+
+            latestRowByMonth.forEach((row, monthIndex) => {
+                const balanceAfterPayment = roundMoney(row?.balanceAfterPayment);
+                monthlyTotals[monthIndex].signedBalanceAfterPayment = roundMoney(
+                    monthlyTotals[monthIndex].signedBalanceAfterPayment + balanceAfterPayment
+                );
+                if (balanceAfterPayment > 0) {
+                    monthlyTotals[monthIndex].balance = roundMoney(monthlyTotals[monthIndex].balance + balanceAfterPayment);
+                } else if (balanceAfterPayment < 0) {
+                    monthlyTotals[monthIndex].advance = roundMoney(monthlyTotals[monthIndex].advance + Math.abs(balanceAfterPayment));
+                }
+                monthlyTotals[monthIndex].rows += 1;
+            });
+        });
+
+        const hasBreakdownTotals = monthlyTotals.some((total) => total.rows > 0);
+        if (!hasBreakdownTotals) return false;
+
+        monthlyTotals.forEach((total, monthIndex) => {
+            const month = months[monthIndex];
+            if (!month) return;
+
+            month.balanceAfterPayment = total.signedBalanceAfterPayment;
+            month.advanceAfterPayment = total.advance;
+            month.outstanding = total.balance;
+            month.balance = month.monthIndex > displayMonthLimit ? null : total.balance;
+        });
+
+        return true;
+    }
+
+    function buildMonthlySeries(payments, year, customers = []) {
         const yearStart = new Date(year, 0, 1);
         const now = new Date();
         const displayMonthLimit = year < now.getFullYear()
@@ -833,6 +941,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             delete month._payingAccountIds;
         });
+
+        applyBreakdownBalanceAfterPaymentTotals(months, payments, customers, year, displayMonthLimit);
 
         let previousCollected = null;
         months.forEach((month) => {
@@ -919,8 +1029,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ? months.reduce((sum, month) => sum + (Number(month?.collected) || 0), 0)
             : (Number(selectedMonth?.collected) || 0);
         const outstanding = selectedMonthIndex === null
-            ? Math.max(billed - collected, 0)
-            : (Number(selectedMonth?.outstanding) || Math.max(billed - collected, 0));
+            ? months.reduce((sum, month) => sum + Math.max(0, Number(month?.outstanding) || 0), 0)
+            : Math.max(0, Number(selectedMonth?.outstanding) || 0);
         const monthlyCollectionRate = billed === 0 ? 0 : (collected / billed) * 100;
         const monthlyPayingSubs = selectedMonthIndex === null
             ? (payingAccounts instanceof Set ? payingAccounts.size : 0)
@@ -952,8 +1062,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (trendOutstandingMetaEl) {
             trendOutstandingMetaEl.textContent = selectedMonthIndex === null
-                ? `Unpaid vs billed across ${summaryLabel}`
-                : `Unpaid vs billed in ${summaryLabel}`;
+                ? `Balance After Payment across ${summaryLabel}`
+                : `Balance After Payment in ${summaryLabel}`;
         }
 
         if (trendCollectionBadgeEl) {
@@ -1694,7 +1804,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function refreshTrend() {
-        const { months, highlightIndex, payingAccounts } = buildMonthlySeries(trendState.payments, trendState.year);
+        const { months, highlightIndex, payingAccounts } = buildMonthlySeries(trendState.payments, trendState.year, trendState.customers);
         trendState.series = months;
 
         updateTrendKPIs(months, highlightIndex, payingAccounts);

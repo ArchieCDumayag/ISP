@@ -312,7 +312,7 @@
     const count = getSelectedModalAreas().length;
     if (assignmentAreaCount) assignmentAreaCount.textContent = `${count} selected`;
     if (assignmentSaveBtn) {
-      assignmentSaveBtn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Save ${count} assignment${count === 1 ? '' : 's'}`;
+      assignmentSaveBtn.innerHTML = `<i class="ti ti-device-floppy"></i> Save ${count} assignment${count === 1 ? '' : 's'}`;
       assignmentSaveBtn.disabled = !String(modalCollectorSelect?.value || '').trim();
     }
     if (assignmentClearSelectedBtn) assignmentClearSelectedBtn.disabled = count === 0;
@@ -337,16 +337,17 @@
           const assignedToCurrent = collectorId && collectorIds.includes(collectorId);
           const assignedCopy = collectorNames.length ? collectorNames.join(', ') : 'Unassigned';
           const assignedChips = collectorNames.length
-            ? collectorNames.map((name) => `<span>${escapeHtml(name)}</span>`).join('')
-            : '<span class="is-empty">No collector assigned</span>';
+            ? collectorNames.map((name) => `<span class="badge bg-secondary-lt text-secondary">${escapeHtml(name)}</span>`).join('')
+            : '<span class="badge bg-secondary-lt text-secondary is-empty">No collector assigned</span>';
           return `
-            <label class="assignment-area-option${checked ? ' is-selected' : ''}${assignedToCurrent ? ' is-current' : ''}">
-              <input type="checkbox" value="${escapeHtml(area)}" ${checked ? 'checked' : ''} ${collectorId ? '' : 'disabled'}>
-              <span class="assignment-area-option__check" aria-hidden="true"><i class="fa-solid fa-check"></i></span>
-              <span class="assignment-area-option__body">
-                <strong>${escapeHtml(area)}</strong>
-                <small>Assigned:</small>
-                <span class="assignment-area-option__assignees" title="${escapeHtml(assignedCopy)}">${assignedChips}</span>
+            <label class="list-group-item assignment-area-option${checked ? ' is-selected' : ''}${assignedToCurrent ? ' is-current' : ''}">
+              <span class="form-check">
+                <input class="form-check-input" type="checkbox" value="${escapeHtml(area)}" ${checked ? 'checked' : ''} ${collectorId ? '' : 'disabled'}>
+                <span class="form-check-label assignment-area-option__body">
+                  <span class="assignment-area-option__title">${escapeHtml(area)}</span>
+                  <span class="assignment-area-option__meta">Assigned:</span>
+                  <span class="assignment-area-option__assignees" title="${escapeHtml(assignedCopy)}">${assignedChips}</span>
+                </span>
               </span>
             </label>
           `;
@@ -484,7 +485,7 @@
       wrap.appendChild(empty);
     } else {
       const table = document.createElement('table');
-      table.className = 'collector-area-table';
+      table.className = 'table table-vcenter table-sm collector-area-table';
 
       const thead = document.createElement('thead');
       const headerRow = document.createElement('tr');
@@ -511,8 +512,8 @@
         actionCell.className = 'collector-area-actions';
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
-        removeBtn.className = 'ghost-icon danger';
-        removeBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        removeBtn.className = 'btn btn-icon btn-sm btn-outline-danger';
+        removeBtn.innerHTML = '<i class="ti ti-trash"></i>';
         removeBtn.title = `Remove ${area}`;
         removeBtn.setAttribute('data-assign-action', 'delete');
         removeBtn.setAttribute('data-area', area);
@@ -593,12 +594,12 @@
       const collectorTd = document.createElement('td');
       const toggleBtn = document.createElement('button');
       toggleBtn.type = 'button';
-      toggleBtn.className = 'collector-row-trigger';
+      toggleBtn.className = 'btn btn-link btn-sm px-0 collector-row-trigger';
       toggleBtn.setAttribute('aria-haspopup', 'dialog');
       toggleBtn.tabIndex = -1;
 
       const avatar = document.createElement('span');
-      avatar.className = `collector-avatar collector-avatar--tone-${(index % 4) + 1}`;
+      avatar.className = `avatar avatar-sm bg-primary-lt text-primary collector-avatar collector-avatar--tone-${(index % 4) + 1}`;
       avatar.setAttribute('aria-hidden', 'true');
       avatar.textContent = getCollectorInitials(collectorId);
 
@@ -617,7 +618,9 @@
       const areaTd = document.createElement('td');
       areaTd.className = 'col-clients';
       const areaPill = document.createElement('span');
-      areaPill.className = `collector-area-pill${areas.length ? '' : ' is-empty'}`;
+      areaPill.className = areas.length
+        ? 'badge bg-primary-lt text-primary collector-area-pill'
+        : 'badge bg-secondary-lt text-secondary collector-area-pill is-empty';
       areaPill.textContent = areaCountLabel(areas.length);
       areaTd.appendChild(areaPill);
 
@@ -629,11 +632,11 @@
       const actionTd = document.createElement('td');
       actionTd.className = 'text-center col-actions';
       const actionsWrap = document.createElement('div');
-      actionsWrap.className = 'table-actions justify-content-center';
+      actionsWrap.className = 'btn-list justify-content-center flex-nowrap';
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
-      editBtn.className = 'ghost-icon';
-      editBtn.innerHTML = '<i class="fa-solid fa-pen-to-square"></i>';
+      editBtn.className = 'btn btn-icon btn-sm btn-ghost-secondary';
+      editBtn.innerHTML = '<i class="ti ti-edit"></i>';
       editBtn.title = `Edit ${getCollectorName(collectorId)}`;
       editBtn.setAttribute('data-assign-action', 'edit-collector');
       editBtn.setAttribute('data-collector-id', collectorId);
@@ -928,36 +931,36 @@
     } else {
       const totalAll = totals.reduce((s, r) => s + (r.total || 0), 0);
       reportContainer.innerHTML = `
-        <div class="table-wrapper elevated">
-          <table class="plans-table collectors-table">
+        <div class="table-responsive collector-report-table-wrapper">
+          <table class="table table-vcenter table-sm collectors-table collector-report-table">
             <thead>
               <tr>
-                <th style="text-align:center; width:80px">ID</th>
+                <th class="text-center" style="width:80px">ID</th>
                 <th>Collector</th>
                 <th>Area</th>
-                <th style="text-align:center; width:160px">Total Collected</th>
+                <th class="text-center" style="width:160px">Total Collected</th>
               </tr>
             </thead>
             <tbody>
               ${totals
                 .map((r, i) => `
                 <tr>
-                  <td style="text-align:center">${i + 1}</td>
+                  <td class="text-center">${i + 1}</td>
                   <td>${r.collectorName}</td>
                   <td>${r.areasAssigned ? r.areasAssigned + ' area(s)' : '—'}</td>
-                  <td style="text-align:center">PHP ${new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(r.total)}</td>
+                  <td class="text-center">PHP ${new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(r.total)}</td>
                 </tr>
               `)
                 .join('')}
               <tr>
                 <td></td>
-                <td style="font-weight:700">Total</td>
+                <td class="fw-semibold">Total</td>
                 <td></td>
-                <td style="font-weight:700; text-align:center">PHP ${new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalAll)}</td>
+                <td class="fw-semibold text-center">PHP ${new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalAll)}</td>
               </tr>
             </tbody>
           </table>
-          <div class="table-footer" style="display:block; margin-top:.75rem;">
+          <div class="card-footer assignment-footer">
             <div class="footer-summary">Showing ${totals.length} assignments</div>
           </div>
         </div>

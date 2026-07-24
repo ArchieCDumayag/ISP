@@ -9,74 +9,71 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="coverage.css?v=1.6">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <link rel="stylesheet" href="css/coverage-tabler.css?v=1.5">
 </head>
-<body>
-  <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+  <div class="app-shell tabler-fluid-vertical">
     <div id="sidebar"></div>
-    <div class="app-main">
+    <div class="app-main page-wrapper">
       <div id="topbar"></div>
 
       <main class="page coverage-page">
-        <section class="section-header">
+        <section class="page-header">
           <div class="page-title">
+            <p class="eyebrow">Service Area Management</p>
             <h1>Coverage Table</h1>
             <p class="subtitle">Manage service coverage areas in table view.</p>
           </div>
           <div class="header-actions">
-            <button class="add-btn" id="openModalBtn"><i class="ti ti-map-pin" aria-hidden="true"></i> Add Coverage Area</button>
+            <button class="btn btn-primary btn-sm" id="openModalBtn" type="button"><i class="ti ti-map-pin" aria-hidden="true"></i> Add Coverage Area</button>
           </div>
         </section>
 
-        <div class="section-frame table-wrapper elevated coverage-directory" style="padding:0;">
-          <div class="section-toolbar">
-            <div class="search-field">
-              <i class="ti ti-search" aria-hidden="true"></i>
-              <input id="searchCoverage" type="search" placeholder="Search area, code, or router" aria-label="Search coverage">
+        <section class="card coverage-card">
+          <div class="card-header coverage-toolbar">
+            <div class="input-icon coverage-search">
+              <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+              <input class="form-control form-control-sm" id="searchCoverage" type="search" placeholder="Search area, code, or router" aria-label="Search coverage">
             </div>
-            <div class="toolbar-actions">
-              <div class="page-size-control">
-                <label for="coverageSortSelect">Sort</label>
-                <div class="select-wrapper">
-                  <select id="coverageSortSelect" name="coverageSortSelect">
-                    <option value="">Default</option>
-                    <option value="nameAsc">A-Z</option>
-                    <option value="nameDesc">Z-A</option>
-                  </select>
-                </div>
+            <div class="coverage-toolbar-actions">
+              <div class="coverage-control">
+                <label class="form-label" for="coverageSortSelect">Sort</label>
+                <select class="form-select form-select-sm" id="coverageSortSelect" name="coverageSortSelect">
+                  <option value="">Default</option>
+                  <option value="nameAsc">A-Z</option>
+                  <option value="nameDesc">Z-A</option>
+                </select>
               </div>
-              <div class="page-size-control">
-                <label for="coveragePageSizeSelect">Show</label>
-                <div class="select-wrapper">
-                  <select id="coveragePageSizeSelect" name="coveragePageSizeSelect">
-                    <option value="10" selected>10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
-                </div>
+              <div class="coverage-control">
+                <label class="form-label" for="coveragePageSizeSelect">Show</label>
+                <select class="form-select form-select-sm" id="coveragePageSizeSelect" name="coveragePageSizeSelect">
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
               </div>
-              <button class="ghost-btn" id="filterBtn" type="button"><i class="ti ti-filter" aria-hidden="true"></i> Filter</button>
+              <button class="btn btn-outline-secondary btn-sm" id="filterBtn" type="button"><i class="ti ti-filter" aria-hidden="true"></i> Filter</button>
             </div>
           </div>
 
-          <div id="tableView">
-            <table class="coverage-table">
+          <div class="table-responsive" id="tableView">
+            <table class="table table-vcenter table-sm coverage-table">
               <thead>
                 <tr>
-                  <th class="coverage-id-col">ID</th>
+                  <th class="coverage-id-col text-center">ID</th>
                   <th class="coverage-area-col">Area Name</th>
-                  <th class="coverage-router-col">MikroTik Link</th>
-                  <th class="coverage-date-col">Created</th>
-                  <th class="coverage-date-col">Updated</th>
-                  <th class="coverage-clients-col">Total Clients</th>
-                  <th class="actions-col">Actions</th>
+                  <th class="coverage-router-col text-center">MikroTik Link</th>
+                  <th class="coverage-date-col text-center">Created</th>
+                  <th class="coverage-date-col text-center">Updated</th>
+                  <th class="coverage-clients-col text-center">Total Clients</th>
+                  <th class="actions-col text-center">Actions</th>
                 </tr>
               </thead>
               <tbody id="coverageTbody"></tbody>
             </table>
-            <div class="empty-state" id="emptyState" style="display:none;">
+            <div class="empty-state p-4" id="emptyState" style="display:none;">
               <i class="ti ti-map-pin" aria-hidden="true"></i>
               <p>No coverage areas found.</p>
             </div>
@@ -89,70 +86,72 @@
               <button type="button" class="footer-btn" id="coverageNext" aria-label="Next page" disabled>&#8250;</button>
             </div>
           </div>
-        </div>
+        </section>
       </main>
     </div>
   </div>
 
-  <div id="coverageModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <h2 id="modalTitle">Add Coverage Area</h2>
-          <p class="modal-subtitle">Register a serviceable location</p>
+  <div id="coverageModal" class="modal tabler-form-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title" id="modalTitle">Add Coverage Area</h2>
+            <p class="modal-subtitle">Register a serviceable location</p>
+          </div>
+          <button class="btn-close" id="closeModalBtn" type="button" aria-label="Close"></button>
         </div>
-        <button class="close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
-      </div>
-      <div class="modal-body">
-        <form id="coverageForm" class="plan-form" autocomplete="off">
-          <div class="form-grid">
-            <div class="form-field">
-              <label>Area Name</label>
-              <input type="text" name="name" required>
-            </div>
-            <div class="form-field">
-              <label>MikroTik Link</label>
-              <select name="mikrotikId" id="coverageMikrotikLink">
-                <option value="">No MikroTik link</option>
-              </select>
+        <form id="coverageForm" class="tabler-modal-form" autocomplete="off">
+          <div class="modal-body">
+            <div class="form-grid">
+              <div class="form-field">
+                <label class="form-label" for="coverageAreaName">Area Name</label>
+                <input class="form-control" id="coverageAreaName" type="text" name="name" required>
+              </div>
+              <div class="form-field">
+                <label class="form-label" for="coverageMikrotikLink">MikroTik Link</label>
+                <select class="form-select" name="mikrotikId" id="coverageMikrotikLink">
+                  <option value="">No MikroTik link</option>
+                </select>
+              </div>
             </div>
           </div>
+          <div class="modal-footer form-actions">
+            <button type="button" class="btn btn-link btn-sm" id="cancelBtn">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save</button>
+          </div>
         </form>
-      </div>
-      <div class="modal-footer form-actions">
-        <button type="button" class="ghost-btn" id="cancelBtn">Cancel</button>
-        <button type="submit" form="coverageForm" class="primary-btn"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save</button>
       </div>
     </div>
   </div>
 
-  <div id="filterModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle" aria-hidden="true">
-    <div class="modal-content" style="width: min(560px, 95vw);">
-      <div class="modal-header">
-        <div>
-          <h2 id="filterModalTitle">Filter Coverage</h2>
-          <p class="modal-subtitle">Filter coverage areas in the table view.</p>
+  <div id="filterModal" class="modal tabler-form-modal" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title" id="filterModalTitle">Filter Coverage</h2>
+            <p class="modal-subtitle">Filter coverage areas in the table view.</p>
+          </div>
+          <button class="btn-close" id="closeFilterModalBtn" type="button" aria-label="Close"></button>
         </div>
-        <button class="close-modal" id="closeFilterModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
-      </div>
-      <form id="filterForm" class="plan-form" autocomplete="off">
-        <div class="modal-body">
-          <div class="form-grid">
+        <form id="filterForm" class="tabler-modal-form" autocomplete="off">
+          <div class="modal-body">
             <div class="form-field">
-              <label for="filterClients">Filter by Clients</label>
-              <select id="filterClients" name="filterClients">
-                <option value="">All Areas</option>
-                <option value="withClients">With Clients</option>
-                <option value="withoutClients">No Clients</option>
-              </select>
+              <label class="form-label" for="filterClients">Filter by Clients</label>
+              <select class="form-select" id="filterClients" name="filterClients">
+                  <option value="">All Areas</option>
+                  <option value="withClients">With Clients</option>
+                  <option value="withoutClients">No Clients</option>
+                </select>
             </div>
           </div>
-        </div>
-        <div class="modal-footer form-actions">
-          <button type="button" class="ghost-btn" id="resetFiltersBtn">Reset Filters</button>
-          <button type="submit" class="primary-btn"><i class="ti ti-check" aria-hidden="true"></i> Apply Filters</button>
-        </div>
-      </form>
+          <div class="modal-footer form-actions">
+            <button type="button" class="btn btn-link btn-sm" id="resetFiltersBtn">Reset Filters</button>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="ti ti-check" aria-hidden="true"></i> Apply Filters</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -445,36 +444,33 @@
           const safeRouterMeta = escapeHtml(routerId || 'Generate follows selected/default router');
           const routerCell = mikrotikEnabled
             ? `
-              <td class="coverage-router-cell">
-                <div class="coverage-router-link${routerId ? ' is-linked' : ''}">
-                  <span class="coverage-router-link__status" aria-hidden="true"></span>
-                  <span class="coverage-router-link__body">
-                    <span class="coverage-router-link__label">${safeRouterLabel}</span>
-                    <span class="coverage-router-link__meta">${safeRouterMeta}</span>
-                  </span>
+              <td class="text-center">
+                <div class="coverage-router-link">
+                  <span class="badge ${routerId ? 'bg-success-lt text-success' : 'bg-secondary-lt text-secondary'}">${safeRouterLabel}</span>
+                  <span class="text-secondary small">${safeRouterMeta}</span>
                 </div>
               </td>`
             : '';
           return `
             <tr data-id="${row.id}">
-              <td class="coverage-id-cell"><span class="coverage-id-badge">${safeId}</span></td>
+              <td class="text-center"><span class="badge bg-secondary-lt text-secondary">${safeId}</span></td>
               <td class="coverage-area-data">
                 <div class="coverage-area-cell">
-                  <span class="coverage-area-cell__icon" aria-hidden="true"><i class="ti ti-map-pin" aria-hidden="true"></i></span>
-                  <span class="coverage-area-cell__body">
-                    <span class="coverage-area-cell__name">${safeName}</span>
-                    <span class="coverage-area-cell__meta">${safeAreaCode}</span>
+                  <span class="avatar avatar-sm bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-map-pin" aria-hidden="true"></i></span>
+                  <span class="d-flex flex-column">
+                    <span class="fw-semibold">${safeName}</span>
+                    <span class="text-secondary small">${safeAreaCode}</span>
                   </span>
                 </div>
               </td>
               ${routerCell}
-              <td class="coverage-date-cell"><span class="coverage-date-pill">${escapeHtml(formatDateOnly(row.created))}</span></td>
-              <td class="coverage-date-cell"><span class="coverage-date-pill">${escapeHtml(formatDateOnly(row.updated))}</span></td>
-              <td class="coverage-clients-cell"><span class="coverage-clients-pill${totalClients > 0 ? ' is-active' : ''}">${escapeHtml(totalClients)}</span></td>
-              <td class="row-actions">
-                <div class="coverage-row-actions">
-                  <button class="ghost-icon" data-action="edit" title="Edit" aria-label="Edit ${safeName}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
-                  <button class="ghost-icon danger" data-action="delete" title="Delete" aria-label="Delete ${safeName}"><i class="ti ti-trash" aria-hidden="true"></i></button>
+              <td class="text-center text-secondary">${escapeHtml(formatDateOnly(row.created))}</td>
+              <td class="text-center text-secondary">${escapeHtml(formatDateOnly(row.updated))}</td>
+              <td class="text-center"><span class="badge ${totalClients > 0 ? 'bg-primary-lt text-primary' : 'bg-secondary-lt text-secondary'}">${escapeHtml(totalClients)}</span></td>
+              <td class="text-center">
+                <div class="btn-list flex-nowrap justify-content-center">
+                  <button class="btn btn-icon btn-sm btn-ghost-secondary" data-action="edit" title="Edit" aria-label="Edit ${safeName}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+                  <button class="btn btn-icon btn-sm btn-outline-danger" data-action="delete" title="Delete" aria-label="Delete ${safeName}"><i class="ti ti-trash" aria-hidden="true"></i></button>
                 </div>
               </td>
             </tr>

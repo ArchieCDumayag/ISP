@@ -1369,6 +1369,92 @@ body.theme-dark .modal-footer .primary-btn:hover {
     box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
 }
 
+/* plans.html Tabler normalization */
+body.layout-fluid-vertical .plans-page {
+    gap: .75rem !important;
+}
+
+body.layout-fluid-vertical .plan-category.card {
+    overflow: hidden;
+}
+
+body.layout-fluid-vertical .category-head {
+    align-items: center;
+    margin: 0;
+}
+
+body.layout-fluid-vertical .plans-table {
+    min-width: 860px;
+    border-collapse: collapse;
+}
+
+body.layout-fluid-vertical .plans-table thead th {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    border-bottom: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    letter-spacing: .04em !important;
+}
+
+body.layout-fluid-vertical .plans-table tbody tr,
+body.layout-fluid-vertical .plans-table tbody tr:nth-child(even) {
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .plans-table tbody tr:hover {
+    background: rgba(32, 107, 196, .04) !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .plans-table tbody tr.plan-row--postpaid td:first-child,
+body.layout-fluid-vertical .plans-table tbody tr.plan-row--prepaid td:first-child {
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .plans-table td.col-name {
+    text-align: left;
+}
+
+body.layout-fluid-vertical .plans-table .badge {
+    width: fit-content;
+}
+
+body.layout-fluid-vertical .plans-table .btn-list {
+    gap: .375rem;
+}
+
+body.layout-fluid-vertical .plans-table .btn-icon[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+body.layout-fluid-vertical .table-footer {
+    padding: .625rem .75rem !important;
+    border-top: 1px solid var(--app-border, rgba(148, 163, 184, .35));
+    background: var(--tblr-bg-surface-secondary, #f8fafc);
+}
+
+body.layout-fluid-vertical .router-profile-grid {
+    gap: .75rem;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .input-group-text {
+    min-height: 2rem;
+    padding: .3125rem .5rem;
+    font-size: .8125rem;
+}
+
+body.theme-dark.layout-fluid-vertical .plans-table thead th,
+body.theme-dark.layout-fluid-vertical .table-footer {
+    background: #111827 !important;
+    border-color: rgba(71, 85, 105, .45) !important;
+}
+
+body.theme-dark.layout-fluid-vertical .plans-table tbody tr:hover {
+    background: rgba(64, 137, 232, .1) !important;
+}
+
 /* Dark mode fixes for payments.html components */
 body.theme-dark .metric-card {
     background: rgba(14, 23, 42, 0.85);
@@ -1432,4 +1518,281 @@ body.theme-dark .billing-meta {
     font-size: 1.8em;
     font-weight: 700;
     color: #0f172a;
+}
+
+/* plans.html final Tabler UI arrangement */
+body.layout-fluid-vertical .plans-page {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .75rem !important;
+    padding: 1rem var(--content-padding, 1rem) 1.25rem !important;
+}
+
+body.layout-fluid-vertical .plans-page .page-header {
+    margin-bottom: 0 !important;
+}
+
+body.layout-fluid-vertical .plans-page .section-frame.card.plan-category {
+    gap: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border-radius: var(--tblr-border-radius-lg, 6px) !important;
+    border: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    background: var(--app-surface, #fff) !important;
+    box-shadow: var(--tblr-box-shadow-sm, 0 .125rem .25rem rgba(15, 23, 42, .075)) !important;
+}
+
+body.layout-fluid-vertical .plans-page .category-head.card-header {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+    padding: .75rem 1rem !important;
+    border-bottom: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+body.layout-fluid-vertical .plans-page .category-head .card-title {
+    margin: 0 !important;
+    font-size: .95rem !important;
+    line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .plans-page .category-head p {
+    margin: .125rem 0 0 !important;
+    font-size: .75rem !important;
+    line-height: 1.35 !important;
+    color: var(--app-muted, #64748b) !important;
+}
+
+body.layout-fluid-vertical .plans-page .table-responsive {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table {
+    width: 100% !important;
+    min-width: 820px !important;
+    margin: 0 !important;
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table thead th {
+    padding: .5rem .625rem !important;
+    font-size: .6875rem !important;
+    line-height: 1.2 !important;
+    font-weight: 700 !important;
+    letter-spacing: .04em !important;
+    text-transform: uppercase !important;
+    color: var(--app-muted, #64748b) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    border-bottom: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table tbody td {
+    padding: .5rem .625rem !important;
+    font-size: .8125rem !important;
+    line-height: 1.25 !important;
+    vertical-align: middle !important;
+    border-top: 1px solid var(--app-border, rgba(148, 163, 184, .24)) !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table tbody tr,
+body.layout-fluid-vertical .plans-page .plans-table tbody tr:nth-child(even),
+body.layout-fluid-vertical .plans-page .plans-table tbody tr:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table tbody tr:hover {
+    background: rgba(32, 107, 196, .04) !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table tbody tr.plan-row--postpaid td:first-child,
+body.layout-fluid-vertical .plans-page .plans-table tbody tr.plan-row--prepaid td:first-child {
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table .badge {
+    width: fit-content !important;
+    min-height: 1.25rem !important;
+    padding: .1875rem .5rem !important;
+    font-size: .6875rem !important;
+    line-height: 1.2 !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table .btn-list {
+    gap: .375rem !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table .btn-icon {
+    width: 1.75rem !important;
+    min-width: 1.75rem !important;
+    height: 1.75rem !important;
+    min-height: 1.75rem !important;
+}
+
+body.layout-fluid-vertical .plans-page .plans-table .btn-icon[disabled] {
+    opacity: .45 !important;
+    cursor: not-allowed !important;
+}
+
+body.layout-fluid-vertical .plans-page .empty-state {
+    margin: 0 !important;
+    border-top: 1px solid var(--app-border, rgba(148, 163, 184, .24)) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    color: var(--app-muted, #64748b) !important;
+}
+
+body.layout-fluid-vertical .plans-page .empty-state i {
+    font-size: 1.5rem !important;
+}
+
+body.layout-fluid-vertical .plans-page .table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin: 0 !important;
+    padding: .625rem .75rem !important;
+    border-top: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+body.layout-fluid-vertical .modal.tabler-form-modal {
+    display: none !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1055 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 1rem !important;
+    background: rgba(15, 23, 42, .45) !important;
+}
+
+body.layout-fluid-vertical .modal.tabler-form-modal.show {
+    display: flex !important;
+    opacity: 1 !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-dialog {
+    width: min(720px, calc(100vw - 2rem)) !important;
+    max-width: min(720px, calc(100vw - 2rem)) !important;
+    margin: 0 auto !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-content {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: calc(100vh - 2rem) !important;
+    border-radius: var(--tblr-border-radius-lg, 6px) !important;
+    border: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    background: var(--app-surface, #fff) !important;
+    box-shadow: var(--tblr-box-shadow-lg, 0 1rem 3rem rgba(15, 23, 42, .18)) !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-header,
+body.layout-fluid-vertical .tabler-form-modal .modal-body,
+body.layout-fluid-vertical .tabler-form-modal .modal-footer {
+    padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-header {
+    border-bottom: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-footer {
+    border-top: 1px solid var(--app-border, rgba(148, 163, 184, .35)) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-title {
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .modal-subtitle {
+    margin: .125rem 0 0 !important;
+    font-size: .75rem !important;
+    line-height: 1.35 !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .form-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .75rem !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .form-field {
+    gap: .25rem !important;
+    margin: 0 !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .form-field.span-two {
+    grid-column: 1 / -1 !important;
+}
+
+body.layout-fluid-vertical .router-profile-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+    gap: .75rem !important;
+}
+
+body.layout-fluid-vertical .tabler-form-modal .input-group-text {
+    min-height: 2rem !important;
+    padding: .3125rem .5rem !important;
+    font-size: .8125rem !important;
+}
+
+@media (max-width: 640px) {
+    body.layout-fluid-vertical .plans-page .category-head.card-header {
+        align-items: stretch !important;
+    }
+
+    body.layout-fluid-vertical .plans-page .category-head .btn {
+        width: 100% !important;
+    }
+
+    body.layout-fluid-vertical .tabler-form-modal .form-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.layout-fluid-vertical .tabler-form-modal .form-field.span-two {
+        grid-column: auto !important;
+    }
+}
+
+body.theme-dark.layout-fluid-vertical .plans-page .section-frame.card.plan-category,
+body.theme-dark.layout-fluid-vertical .tabler-form-modal .modal-content {
+    background: var(--app-surface, #111827) !important;
+    border-color: var(--app-border, rgba(71, 85, 105, .45)) !important;
+}
+
+body.theme-dark.layout-fluid-vertical .plans-page .category-head.card-header,
+body.theme-dark.layout-fluid-vertical .plans-page .plans-table thead th,
+body.theme-dark.layout-fluid-vertical .plans-page .table-footer,
+body.theme-dark.layout-fluid-vertical .tabler-form-modal .modal-header,
+body.theme-dark.layout-fluid-vertical .tabler-form-modal .modal-footer {
+    background: #111827 !important;
+    border-color: rgba(71, 85, 105, .45) !important;
+}
+
+body.theme-dark.layout-fluid-vertical .plans-page .plans-table tbody td {
+    border-color: rgba(71, 85, 105, .32) !important;
 }

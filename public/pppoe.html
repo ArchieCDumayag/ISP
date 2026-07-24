@@ -8,37 +8,39 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/accounts.css?v=4.6">
+    <link rel="stylesheet" href="css/accounts.css?v=4.9">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.0">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
     <script src="theme-init.js?v=2.6"></script>
 </head>
-<body>
-    <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
         <div id="sidebar"></div>
-        <div class="app-main">
+        <div class="app-main page-wrapper">
             <div id="topbar"></div>
             <main class="page pppoe-page">
-                <div id="pppoe-disabled-notice" class="alert alert-warning mikrotik-disabled-message" style="display:none;">
+                <div id="pppoe-disabled-notice" class="alert alert-warning mikrotik-disabled-message d-flex align-items-start gap-2" style="display:none;">
+                    <i class="ti ti-alert-triangle mt-1" aria-hidden="true"></i>
                     <p>MikroTik integration is disabled or missing credentials. Configure the router settings under Control Center to access PPPoE management.</p>
                 </div>
-                <div id="pppoe-workbench">
-                <section class="page-header pppoe-header">
+                <div id="pppoe-workbench" class="container-xl">
+                <section class="page-header pppoe-header d-flex align-items-center justify-content-between flex-wrap gap-3">
                     <div class="page-title">
+                        <p class="eyebrow">Network Access</p>
                         <h1>PPPoE Management</h1>
                         <p class="subtitle">Manage PPPoE users, monitor status and usage.</p>
                     </div>
-                    <div class="pppoe-header-actions">
-                        <div class="pppoe-sync-status badge bg-white text-secondary border">
+                    <div class="pppoe-header-actions btn-list">
+                        <div class="pppoe-sync-status badge bg-blue-lt text-blue border">
                             <span>Last Sync: <strong id="pppoe-last-sync-time">--</strong></span>
                             <span class="pppoe-sync-status__state" id="pppoe-last-sync-state"><i class="ti ti-circle" aria-hidden="true"></i> Waiting</span>
                         </div>
-                        <button class="btn btn-outline-primary" id="pppoe-sync-btn" type="button"><i class="ti ti-refresh" aria-hidden="true"></i> Sync from MikroTik</button>
+                        <button class="btn btn-primary btn-sm" id="pppoe-sync-btn" type="button"><i class="ti ti-refresh" aria-hidden="true"></i> Sync from MikroTik</button>
                     </div>
                 </section>
 
                 <section class="card mikrotik-status-card" id="mikrotik-status-card">
-                <div class="status-card-header">
+                <div class="status-card-header card-header">
                         <div class="status-card-left">
                             <span class="status-dot" id="mt-status-dot"></span>
                             <div>
@@ -50,16 +52,16 @@
                         <div class="pppoe-router-picker pppoe-router-picker--inline">
                             <label for="pppoe-router-select">Router</label>
                             <div class="select-wrapper">
-                                <select id="pppoe-router-select" aria-label="Select MikroTik router">
+                                <select id="pppoe-router-select" class="form-select form-select-sm" aria-label="Select MikroTik router">
                                     <option value="">Loading routers...</option>
                                 </select>
                             </div>
                         </div>
-                        <button class="btn btn-icon btn-outline-secondary" id="mt-info-refresh" title="Refresh info" type="button"><i class="ti ti-refresh" aria-hidden="true"></i></button>
+                        <button class="btn btn-icon btn-outline-secondary btn-sm" id="mt-info-refresh" title="Refresh info" type="button"><i class="ti ti-refresh" aria-hidden="true"></i></button>
                         <span class="status-time" id="mt-connection-timer">--</span>
                     </div>
                 </div>
-                <div class="status-grid">
+                <div class="status-grid card-body">
                         <div class="status-item">
                             <div class="status-icon pill"><i class="ti ti-sitemap" aria-hidden="true"></i></div>
                             <div class="status-meta">
@@ -155,27 +157,27 @@
                             <button class="btn btn-primary" id="pppoe-generate-open-btn" type="button" hidden style="display:none;"><i class="ti ti-wand" aria-hidden="true"></i> Generate PPPoE</button>
                         </div>
                     </header>
-                    <section class="card-body section-toolbar pppoe-toolbar">
-                        <div class="search-field">
-                            <i class="ti ti-search" aria-hidden="true"></i>
-                            <input type="search" id="pppoe-search" placeholder="Search by username, customer, router, profile, or status" aria-label="Search PPPoE accounts">
+                    <section class="card-body section-toolbar pppoe-toolbar tabler-toolbar">
+                        <div class="input-icon flex-fill pppoe-search-control">
+                            <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                            <input type="search" class="form-control form-control-sm" id="pppoe-search" placeholder="Search by username, customer, router, profile, or status" aria-label="Search PPPoE accounts">
                         </div>
                         <div class="filter-chips" role="radiogroup" aria-label="Status filters">
-                            <button class="chip active" data-pppoe-status-chip="all" role="radio" aria-checked="true">All</button>
-                            <button class="chip" data-pppoe-status-chip="online" role="radio" aria-checked="false">Online</button>
-                            <button class="chip" data-pppoe-status-chip="offline" role="radio" aria-checked="false">Offline</button>
-                            <button class="chip" data-pppoe-status-chip="disabled" role="radio" aria-checked="false">Disabled</button>
+                            <button type="button" class="chip btn btn-sm active" data-pppoe-status-chip="all" role="radio" aria-checked="true">All</button>
+                            <button type="button" class="chip btn btn-sm" data-pppoe-status-chip="online" role="radio" aria-checked="false">Online</button>
+                            <button type="button" class="chip btn btn-sm" data-pppoe-status-chip="offline" role="radio" aria-checked="false">Offline</button>
+                            <button type="button" class="chip btn btn-sm" data-pppoe-status-chip="disabled" role="radio" aria-checked="false">Disabled</button>
                         </div>
                         <div class="filter-chips" role="radiogroup" aria-label="Assignment filters">
-                            <button class="chip active" data-pppoe-assignment-chip="all" role="radio" aria-checked="true">All Links</button>
-                            <button class="chip" data-pppoe-assignment-chip="assigned" role="radio" aria-checked="false">Assigned</button>
-                            <button class="chip" data-pppoe-assignment-chip="unassigned" role="radio" aria-checked="false">Unassigned</button>
+                            <button type="button" class="chip btn btn-sm active" data-pppoe-assignment-chip="all" role="radio" aria-checked="true">All Links</button>
+                            <button type="button" class="chip btn btn-sm" data-pppoe-assignment-chip="assigned" role="radio" aria-checked="false">Assigned</button>
+                            <button type="button" class="chip btn btn-sm" data-pppoe-assignment-chip="unassigned" role="radio" aria-checked="false">Unassigned</button>
                         </div>
                         <div class="toolbar-actions">
                             <div class="page-size-control">
                                 <label for="pppoe-page-size">Show</label>
                                 <div class="select-wrapper">
-                                    <select id="pppoe-page-size" name="pppoePageSize">
+                                    <select id="pppoe-page-size" class="form-select form-select-sm" name="pppoePageSize">
                                         <option value="10">10</option>
                                         <option value="25" selected>25</option>
                                         <option value="50">50</option>
@@ -186,8 +188,8 @@
                             </div>
                         </div>
                     </section>
-                    <div class="table-responsive table-wrapper pppoe-table-wrapper">
-                        <table class="settings-table pppoe-table table table-vcenter table-hover card-table" aria-label="PPPoE accounts">
+                    <div class="table-responsive pppoe-table-wrapper">
+                        <table class="pppoe-table table table-vcenter table-hover card-table mb-0" aria-label="PPPoE accounts">
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -222,31 +224,33 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="pppoe-edit-modal" aria-hidden="true">
-        <div class="modal-container">
+    <div class="modal-overlay tabler-form-modal" id="pppoe-edit-modal" aria-hidden="true">
+        <div class="modal-container modal-content">
             <header class="modal-header">
-                <h3>Edit PPPoE Entry</h3>
+                <h3 class="modal-title">Edit PPPoE Entry</h3>
                 <button type="button" class="btn-close modal-close" id="pppoe-edit-close" aria-label="Close edit modal"></button>
             </header>
-            <form class="modal-form" id="pppoe-edit-form">
-                <div class="form-field">
-                    <label for="pppoe-edit-username">Username</label>
-                    <input type="text" id="pppoe-edit-username" name="username" required />
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-edit-password">Password</label>
-                    <div class="secure-input-wrap">
-                        <input type="password" id="pppoe-edit-password" name="password" required />
-                        <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-edit-password-toggle" type="button" aria-label="Show password" title="Show password">
-                            <i class="ti ti-eye" aria-hidden="true"></i>
-                        </button>
+            <form class="modal-form tabler-modal-form" id="pppoe-edit-form">
+                <div class="modal-body">
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-edit-username">Username</label>
+                        <input type="text" class="form-control" id="pppoe-edit-username" name="username" required />
                     </div>
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-edit-profile">Profile</label>
-                    <select id="pppoe-edit-profile" name="profile">
-                        <option value="">Select profile</option>
-                    </select>
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-edit-password">Password</label>
+                        <div class="secure-input-wrap">
+                            <input type="password" class="form-control" id="pppoe-edit-password" name="password" required />
+                            <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-edit-password-toggle" type="button" aria-label="Show password" title="Show password">
+                                <i class="ti ti-eye" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-edit-profile">Profile</label>
+                        <select id="pppoe-edit-profile" class="form-select" name="profile">
+                            <option value="">Select profile</option>
+                        </select>
+                    </div>
                 </div>
                 <footer class="modal-footer">
                     <button type="button" class="btn" id="pppoe-edit-cancel">Cancel</button>
@@ -256,45 +260,50 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="pppoe-assign-modal" aria-hidden="true">
-        <div class="modal-container">
+    <div class="modal-overlay tabler-form-modal" id="pppoe-assign-modal" aria-hidden="true">
+        <div class="modal-container modal-content">
             <header class="modal-header">
-                <h3 id="pppoe-assign-title">Assign PPPoE to Customer</h3>
+                <h3 class="modal-title" id="pppoe-assign-title">Assign PPPoE to Customer</h3>
                 <button type="button" class="btn-close modal-close" id="pppoe-assign-close" aria-label="Close assign modal"></button>
             </header>
-            <form class="modal-form" id="pppoe-assign-form">
-                <div class="form-field">
-                    <label for="pppoe-assign-customer">Customer</label>
-                    <div class="pppoe-customer-search-field">
-                        <i class="ti ti-search" aria-hidden="true"></i>
-                        <input type="search" id="pppoe-assign-customer-search" placeholder="Search customer name, account #, area, plan, or PPPoE" autocomplete="off" required aria-controls="pppoe-assign-customer-results" aria-expanded="false">
-                        <div class="pppoe-customer-search-results" id="pppoe-assign-customer-results" role="listbox" hidden></div>
+            <form class="modal-form tabler-modal-form pppoe-assign-form" id="pppoe-assign-form">
+                <div class="modal-body">
+                    <div class="pppoe-assign-card">
+                        <label class="form-label" for="pppoe-assign-customer-search">Customer</label>
+                        <div class="input-icon pppoe-customer-search-field pppoe-assign-search">
+                            <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                            <input type="search" class="form-control" id="pppoe-assign-customer-search" placeholder="Search customer name, account #, area, plan, or PPPoE" autocomplete="off" required aria-controls="pppoe-assign-customer-results" aria-expanded="false">
+                            <div class="pppoe-customer-search-results" id="pppoe-assign-customer-results" role="listbox" hidden></div>
+                        </div>
+                        <div class="form-hint">Search and select the subscriber that will receive this PPPoE account.</div>
+                        <select id="pppoe-assign-customer" class="form-select" name="customerAccount">
+                            <option value="">Select customer</option>
+                        </select>
                     </div>
-                    <select id="pppoe-assign-customer" name="customerAccount">
-                        <option value="">Select customer</option>
-                    </select>
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-assign-username">PPPoE Username</label>
-                    <div class="secure-input-wrap">
-                        <input type="text" id="pppoe-assign-username" readonly>
-                        <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-assign-username-copy" type="button" aria-label="Copy PPPoE username" title="Copy username">
-                            <i class="ti ti-copy" aria-hidden="true"></i>
-                        </button>
+                    <div class="pppoe-assign-fields-grid">
+                        <div class="form-field">
+                            <label class="form-label" for="pppoe-assign-username">PPPoE Username</label>
+                            <div class="input-group secure-input-wrap">
+                                <input type="text" class="form-control" id="pppoe-assign-username" readonly>
+                                <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-assign-username-copy" type="button" aria-label="Copy PPPoE username" title="Copy username">
+                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-field">
+                            <label class="form-label" for="pppoe-assign-password">PPPoE Password</label>
+                            <div class="input-group secure-input-wrap">
+                                <input type="text" class="form-control" id="pppoe-assign-password" readonly>
+                                <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-assign-password-copy" type="button" aria-label="Copy PPPoE password" title="Copy password">
+                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-assign-password">PPPoE Password</label>
-                    <div class="secure-input-wrap">
-                        <input type="text" id="pppoe-assign-password" readonly>
-                        <button class="btn btn-icon btn-outline-secondary secure-input-toggle" id="pppoe-assign-password-copy" type="button" aria-label="Copy PPPoE password" title="Copy password">
-                            <i class="ti ti-copy" aria-hidden="true"></i>
-                        </button>
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-assign-profile">PPPoE Profile</label>
+                        <input type="text" class="form-control" id="pppoe-assign-profile" readonly>
                     </div>
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-assign-profile">PPPoE Profile</label>
-                    <input type="text" id="pppoe-assign-profile" readonly>
                 </div>
                 <footer class="modal-footer">
                     <button type="button" class="btn btn-outline-danger me-auto" id="pppoe-assign-unassign">Unassign</button>
@@ -305,34 +314,36 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="pppoe-generate-modal" aria-hidden="true">
-        <div class="modal-container">
+    <div class="modal-overlay tabler-form-modal" id="pppoe-generate-modal" aria-hidden="true">
+        <div class="modal-container modal-content">
             <header class="modal-header">
-                <h3>Generate PPPoE</h3>
+                <h3 class="modal-title">Generate PPPoE</h3>
                 <button type="button" class="btn-close modal-close" id="pppoe-generate-close" aria-label="Close generate modal"></button>
             </header>
-            <form class="modal-form" id="pppoe-generate-form">
-                <div class="form-field">
-                    <label for="pppoe-generate-customer">Customer</label>
-                    <div class="pppoe-customer-search-field">
-                        <i class="ti ti-search" aria-hidden="true"></i>
-                        <input type="search" id="pppoe-generate-customer-search" placeholder="Search customer name, account #, NAP, area, or plan" autocomplete="off" required aria-controls="pppoe-generate-customer-results" aria-expanded="false">
-                        <div class="pppoe-customer-search-results" id="pppoe-generate-customer-results" role="listbox" hidden></div>
+            <form class="modal-form tabler-modal-form" id="pppoe-generate-form">
+                <div class="modal-body">
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-generate-customer">Customer</label>
+                        <div class="input-icon pppoe-customer-search-field">
+                            <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                            <input type="search" class="form-control" id="pppoe-generate-customer-search" placeholder="Search customer name, account #, NAP, area, or plan" autocomplete="off" required aria-controls="pppoe-generate-customer-results" aria-expanded="false">
+                            <div class="pppoe-customer-search-results" id="pppoe-generate-customer-results" role="listbox" hidden></div>
+                        </div>
+                        <select id="pppoe-generate-customer" class="form-select" name="customerAccount">
+                            <option value="">Select customer</option>
+                        </select>
                     </div>
-                    <select id="pppoe-generate-customer" name="customerAccount">
-                        <option value="">Select customer</option>
-                    </select>
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-generate-username">Generated Username</label>
-                    <input type="text" id="pppoe-generate-username" name="username" readonly>
-                </div>
-                <div class="form-field">
-                    <label for="pppoe-generate-password">Generated Password</label>
-                    <input type="text" id="pppoe-generate-password" name="password" readonly>
-                </div>
-                <div class="form-field">
-                    <small class="muted" id="pppoe-generate-note">Username format: NAPCODE-NAPNO-FIRST-LAST (or FIRST-LAST if no NAP). If the customer already has PPPoE assigned, the existing username/password will be shown.</small>
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-generate-username">Generated Username</label>
+                        <input type="text" class="form-control" id="pppoe-generate-username" name="username" readonly>
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label" for="pppoe-generate-password">Generated Password</label>
+                        <input type="text" class="form-control" id="pppoe-generate-password" name="password" readonly>
+                    </div>
+                    <div class="form-field mb-0">
+                        <small class="text-muted" id="pppoe-generate-note">Username format: NAPCODE-NAPNO-FIRST-LAST (or FIRST-LAST if no NAP). If the customer already has PPPoE assigned, the existing username/password will be shown.</small>
+                    </div>
                 </div>
                 <footer class="modal-footer">
                     <button type="button" class="btn" id="pppoe-generate-cancel">Cancel</button>
@@ -342,13 +353,13 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="pppoe-traffic-modal" aria-hidden="true">
-        <div class="modal-container modal-container--traffic">
+    <div class="modal-overlay tabler-form-modal" id="pppoe-traffic-modal" aria-hidden="true">
+        <div class="modal-container modal-content modal-container--traffic">
             <header class="modal-header">
-                <h3 id="pppoe-traffic-title">PPPoE Traffic</h3>
+                <h3 class="modal-title" id="pppoe-traffic-title">PPPoE Traffic</h3>
                 <button type="button" class="btn-close modal-close" id="pppoe-traffic-close" aria-label="Close traffic modal"></button>
             </header>
-            <div class="pppoe-traffic-modal">
+            <div class="modal-body pppoe-traffic-modal">
                 <p class="pppoe-traffic-modal__sub" id="pppoe-traffic-subtitle">Select a PPPoE row to monitor live traffic.</p>
                 <div class="pppoe-traffic-status-row">
                     <span class="pppoe-traffic-status-dot" id="pppoe-traffic-status-dot"></span>
@@ -419,18 +430,18 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="pppoe-session-history-modal" aria-hidden="true">
-        <div class="modal-container modal-container--session-history">
+    <div class="modal-overlay tabler-form-modal" id="pppoe-session-history-modal" aria-hidden="true">
+        <div class="modal-container modal-content modal-container--session-history">
             <header class="modal-header">
                 <div>
-                    <h3 id="pppoe-session-history-title">Session History</h3>
+                    <h3 class="modal-title" id="pppoe-session-history-title">Session History</h3>
                     <p class="pppoe-traffic-modal__sub" id="pppoe-session-history-subtitle">PPPoE login and logout records.</p>
                 </div>
                 <button type="button" class="btn-close modal-close" id="pppoe-session-history-close" aria-label="Close session history modal"></button>
             </header>
-            <div class="pppoe-session-history">
-                <div class="table-responsive table-wrapper">
-                    <table class="settings-table pppoe-session-history__table table table-vcenter card-table" aria-label="PPPoE session history">
+            <div class="modal-body pppoe-session-history">
+                <div class="table-responsive">
+                    <table class="pppoe-session-history__table table table-vcenter card-table mb-0" aria-label="PPPoE session history">
                         <thead>
                             <tr>
                                 <th>#</th>

@@ -1,0 +1,345 @@
+/* Tabler-normal layout for collectors-history.html only. */
+
+body.layout-fluid-vertical .collectors-history-page {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+}
+
+body.layout-fluid-vertical .collectors-history-page .collection-history-shell.card {
+    width: min(100%, 980px);
+}
+
+.collectors-history-page .collection-history-shell {
+    padding: 0 !important;
+    border-radius: var(--tblr-border-radius-lg, .5rem) !important;
+    background: var(--app-surface, #fff) !important;
+    box-shadow: none !important;
+    overflow: hidden;
+}
+
+.collectors-history-page .collection-history-top {
+    align-items: center !important;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .75rem 1rem !important;
+}
+
+.collectors-history-page .collection-history-title {
+    align-items: center !important;
+    gap: .5rem !important;
+}
+
+.collectors-history-page .collection-history-title__icon {
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    min-width: 1.75rem !important;
+    flex: 0 0 1.75rem !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    font-size: .875rem !important;
+}
+
+.collectors-history-page .collection-history-title .card-title {
+    margin: 0 !important;
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+}
+
+.collectors-history-page .collection-history-title .text-secondary {
+    font-size: .75rem;
+    line-height: 1.35;
+}
+
+.collectors-history-page .collection-history-controls {
+    align-items: end;
+    justify-content: flex-start;
+    gap: .75rem;
+    margin: 0 !important;
+    padding: .75rem 1rem !important;
+    border-top: 1px solid var(--app-border, #e6e7e9);
+}
+
+.collectors-history-page .collection-history-filter {
+    width: min(100%, 16rem) !important;
+    gap: .25rem !important;
+}
+
+.collectors-history-page .collection-history-filter .form-label {
+    margin: 0;
+    color: var(--app-muted, #64748b);
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.collectors-history-page .collection-history-select {
+    display: block !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.collectors-history-page .collection-history-select .input-icon-addon {
+    color: var(--app-muted, #64748b);
+}
+
+.collectors-history-page .collection-history-select .form-select {
+    min-height: 1.875rem;
+    padding-left: 2rem;
+    font-size: .75rem;
+    font-weight: 400;
+}
+
+.collectors-history-page .collection-history-table-wrap {
+    display: block;
+    width: 100%;
+    margin: 0 !important;
+    border: 0 !important;
+    border-top: 1px solid var(--app-border, #e6e7e9) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow-x: auto;
+}
+
+.collectors-history-page .collection-history-table {
+    display: table !important;
+    width: 100% !important;
+    min-width: 680px !important;
+    margin: 0;
+    table-layout: fixed;
+}
+
+.collectors-history-page .collection-history-table thead {
+    display: table-header-group !important;
+}
+
+.collectors-history-page .collection-history-table tbody {
+    display: table-row-group !important;
+}
+
+.collectors-history-page .collection-history-table tr {
+    display: table-row !important;
+}
+
+.collectors-history-page .collection-history-table th,
+.collectors-history-page .collection-history-table td {
+    display: table-cell !important;
+    padding: .375rem .5rem !important;
+    font-size: .75rem !important;
+    line-height: 1.2 !important;
+    vertical-align: middle !important;
+}
+
+.collectors-history-page .collection-history-table thead th {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    color: var(--app-muted, #52677a) !important;
+    font-size: .625rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .04em !important;
+    text-transform: uppercase !important;
+}
+
+.collectors-history-page .collection-history-table th i {
+    margin-right: .25rem !important;
+    font-size: .75rem !important;
+}
+
+.collectors-history-page .collection-history-table th:last-child,
+.collectors-history-page .collection-history-table td:last-child {
+    text-align: right !important;
+}
+
+.collectors-history-page .history-col-id {
+    width: 5rem;
+}
+
+.collectors-history-page .history-col-collected,
+.collectors-history-modal .history-col-collected {
+    width: 11rem;
+}
+
+.collectors-history-modal .history-col-payments,
+.collectors-history-modal .history-col-accounts {
+    width: 7rem;
+}
+
+.collectors-history-page .collection-history-month-row td {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+.collectors-history-page .collection-history-month-toggle {
+    min-height: 0 !important;
+    gap: .375rem !important;
+    color: var(--app-text, #172033) !important;
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+    text-decoration: none;
+}
+
+.collectors-history-page .collection-history-chevron {
+    width: .75rem;
+    font-size: .75rem !important;
+}
+
+.collectors-history-page .collection-history-month-total,
+.collectors-history-page .collection-history-entry-amount {
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+    white-space: nowrap;
+}
+
+.collectors-history-page .collection-history-person {
+    gap: .375rem !important;
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.collectors-history-page .collection-history-avatar {
+    width: 1.5rem !important;
+    min-width: 1.5rem !important;
+    height: 1.5rem !important;
+    flex: 0 0 1.5rem !important;
+    border-radius: 999px !important;
+    font-size: .6875rem !important;
+}
+
+.collectors-history-page .collection-history-empty {
+    padding: 1rem !important;
+    font-size: .75rem !important;
+}
+
+.collectors-history-page .collection-history-footer {
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .5rem .75rem !important;
+    color: var(--app-muted, #64748b);
+    font-size: .75rem;
+}
+
+.collectors-history-page .collection-history-record-count,
+.collectors-history-page .collection-history-live {
+    gap: .375rem;
+}
+
+.collectors-history-page .collection-history-info-icon {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    font-size: .6875rem !important;
+}
+
+.collectors-history-page .collection-history-live-dot {
+    width: .375rem;
+    height: .375rem;
+    box-shadow: 0 0 0 .1875rem rgba(47, 179, 68, .12);
+}
+
+.collectors-history-modal {
+    --app-form-modal-width: 680px;
+}
+
+.collectors-history-modal .modal-header {
+    min-height: 0 !important;
+    padding: .75rem 1rem !important;
+}
+
+.collectors-history-modal .modal-title {
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+}
+
+.collectors-history-modal .modal-subtitle {
+    font-size: .75rem !important;
+    line-height: 1.35 !important;
+}
+
+.collectors-history-modal .modal-body {
+    padding: .75rem 1rem !important;
+}
+
+.collectors-history-modal .modal-footer {
+    padding: .625rem 1rem !important;
+}
+
+.collectors-history-modal .history-modal-table-wrap {
+    margin: 0 !important;
+    border: 1px solid var(--app-border, #e6e7e9);
+    border-radius: var(--tblr-border-radius, .375rem);
+    background: var(--app-surface, #fff);
+    overflow-x: auto;
+}
+
+.collectors-history-modal .history-table {
+    min-width: 520px;
+    margin: 0;
+}
+
+.collectors-history-modal .history-table th,
+.collectors-history-modal .history-table td {
+    padding: .375rem .5rem !important;
+    font-size: .75rem !important;
+    line-height: 1.2 !important;
+}
+
+.collectors-history-modal .history-table thead th {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    color: var(--app-muted, #52677a) !important;
+    font-size: .625rem !important;
+}
+
+.collectors-history-modal .btn {
+    min-height: 1.875rem !important;
+    padding: .25rem .625rem !important;
+    font-size: .75rem !important;
+}
+
+body.theme-dark .collectors-history-page .collection-history-shell,
+[data-bs-theme=dark] .collectors-history-page .collection-history-shell,
+body.theme-dark .collectors-history-modal .history-modal-table-wrap,
+[data-bs-theme=dark] .collectors-history-modal .history-modal-table-wrap {
+    background: var(--app-surface, #0f172a) !important;
+    border-color: var(--app-border, rgba(148, 163, 184, .22)) !important;
+}
+
+body.theme-dark .collectors-history-page .collection-history-table thead th,
+[data-bs-theme=dark] .collectors-history-page .collection-history-table thead th,
+body.theme-dark .collectors-history-modal .history-table thead th,
+[data-bs-theme=dark] .collectors-history-modal .history-table thead th {
+    background: rgba(30, 41, 59, .9) !important;
+    color: var(--app-muted, #cbd5e1) !important;
+}
+
+body.theme-dark .collectors-history-page .collection-history-month-toggle,
+[data-bs-theme=dark] .collectors-history-page .collection-history-month-toggle {
+    color: var(--app-text, #f8fafc) !important;
+}
+
+@media (max-width: 760px) {
+    body.layout-fluid-vertical .collectors-history-page .collection-history-shell.card {
+        width: 100%;
+    }
+
+    .collectors-history-page .collection-history-top {
+        align-items: flex-start !important;
+    }
+
+    .collectors-history-page .collection-history-controls {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .collectors-history-page .collection-history-filter {
+        width: 100% !important;
+    }
+
+    .collectors-history-page .collection-history-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

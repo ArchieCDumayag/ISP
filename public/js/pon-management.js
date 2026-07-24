@@ -6,6 +6,7 @@
   const oltForm = document.getElementById('oltForm');
   const napForm = document.getElementById('napForm');
   const napConfigForm = document.getElementById('napConfigForm');
+  const ponPortNameForm = document.getElementById('ponPortNameForm');
   const openNapMapBtn = document.getElementById('openNapMapBtn');
   const applyNapMapBtn = document.getElementById('applyNapMapBtn');
   const napMapLayerButtons = Array.from(document.querySelectorAll('[data-nap-map-layer]'));
@@ -28,12 +29,16 @@
 
   const oltModal = document.getElementById('oltModal');
   const napModal = document.getElementById('napModal');
+  const ponPortNameModal = document.getElementById('ponPortNameModal');
   const portNapModal = document.getElementById('portNapModal');
   const napSubscribersModal = document.getElementById('napSubscribersModal');
   const napPortAssignModal = document.getElementById('napPortAssignModal');
   const napOpticalModal = document.getElementById('napOpticalModal');
   const napConfigModal = document.getElementById('napConfigModal');
   const napMapModal = document.getElementById('napMapModal');
+  const ponPortNameMeta = document.getElementById('ponPortNameMeta');
+  const ponPortDisplayNameInput = document.getElementById('ponPortDisplayName');
+  const ponPortRefValueInput = document.getElementById('ponPortRefValue');
   const portNapModalTitle = document.getElementById('portNapModalTitle');
   const portNapModalSubtitle = document.getElementById('portNapModalSubtitle');
   const napSubscribersModalTitle = document.getElementById('napSubscribersModalTitle');
@@ -69,6 +74,7 @@
     expandedOltIds: new Set(),
     reopenPortModalOnNapClose: false,
     selectedPort: null,
+    selectedPonPortName: null,
     selectedNapId: '',
     selectedNapConfigId: '',
     selectedNapPortAssignment: null,
@@ -89,6 +95,7 @@
   const modalMap = {
     oltModal,
     napModal,
+    ponPortNameModal,
     portNapModal,
     napSubscribersModal,
     napPortAssignModal,
@@ -231,6 +238,47 @@
     return cleaned;
   };
   const normalizePonCodePrefix = (value) => normalizeNapCodePrefix(value) || 'PON';
+
+  const normalizePonPortNames = (value, totalPorts = 0) => {
+    let source = value;
+    if (typeof source === 'string') {
+      try {
+        source = JSON.parse(source);
+      } catch {
+        source = {};
+      }
+    }
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+    const maxPorts = clamp(toNonNegativeInt(totalPorts, 0), 0, 4096);
+    const normalized = {};
+    Object.entries(source).forEach(([key, label]) => {
+      const ponRef = normalizePonRef(key);
+      if (!ponRef) return;
+      const orderMatch = ponRef.match(/^pon-(\d+)$/i);
+      const order = orderMatch ? Number(orderMatch[1]) : null;
+      if (maxPorts && Number.isInteger(order) && order > maxPorts) return;
+
+      const displayName = toText(label).slice(0, 80);
+      if (!displayName || displayName.toLowerCase() === ponRef.toLowerCase()) return;
+      normalized[ponRef] = displayName;
+    });
+    return normalized;
+  };
+
+  const getPonPortDisplayName = (olt, ponRef) => {
+    const normalizedRef = normalizePonRef(ponRef);
+    if (!normalizedRef) return '';
+    const names = normalizePonPortNames(olt?.ponPortNames, olt?.ponPorts);
+    return toText(names[normalizedRef]) || normalizedRef;
+  };
+
+  const hasCustomPonPortName = (olt, ponRef) => {
+    const normalizedRef = normalizePonRef(ponRef);
+    if (!normalizedRef) return false;
+    const names = normalizePonPortNames(olt?.ponPortNames, olt?.ponPorts);
+    return Boolean(toText(names[normalizedRef]));
+  };
 
   const normalizeNapSplitter = (value) => {
     const raw = toText(value).replace('/', ':');
@@ -617,7 +665,8 @@
       status: normalizeOltStatus(rawOlt?.status),
       ponCodePrefix: normalizePonCodePrefix(rawOlt?.ponCodePrefix || rawOlt?.pon_code_prefix),
       ponPorts,
-      usedPorts
+      usedPorts,
+      ponPortNames: normalizePonPortNames(rawOlt?.ponPortNames || rawOlt?.pon_port_names, ponPorts)
     };
   };
 
@@ -783,7 +832,8 @@
       site: toText(item.site),
       status: normalizeOltStatus(item.status),
       ponCodePrefix: normalizePonCodePrefix(item.ponCodePrefix),
-      ponPorts: clamp(toNonNegativeInt(item.ponPorts, 0), 0, 4096)
+      ponPorts: clamp(toNonNegativeInt(item.ponPorts, 0), 0, 4096),
+      ponPortNames: normalizePonPortNames(item.ponPortNames, item.ponPorts)
     })),
     naps: state.naps.map((item) => ({
       id: toText(item.id),
@@ -1154,6 +1204,7 @@
         key,
         linkedOlt,
         ponRef,
+        portName: getPonPortDisplayName(olt, ponRef),
         naps: [],
         ponCapacity: defaultPonCapacity,
         totalCapacity: 0,
@@ -1171,6 +1222,7 @@
           key,
           linkedOlt,
           ponRef,
+          portName: getPonPortDisplayName(olt, ponRef),
           naps: [],
           ponCapacity: defaultPonCapacity,
           totalCapacity: 0,
@@ -1233,11 +1285,14 @@
               const effectiveUsed = Math.max(toNumber(group.totalUsed, 0), 0);
               const clientUsed = clamp(assignedCustomers, 0, ponCapacity || Number.MAX_SAFE_INTEGER);
               const usagePercent = safePercent(clientUsed, ponCapacity);
+              const portName = toText(group.portName) || group.ponRef;
+              const customPortName = normalizeNameKey(portName) !== normalizeNameKey(group.ponRef);
               return `
                 <tr data-linked-olt="${escapeHtml(group.linkedOlt)}" data-pon-ref="${escapeHtml(group.ponRef)}">
                   <td>
                     <button type="button" class="pon-port-link" data-action="open-port-naps" data-linked-olt="${escapeHtml(group.linkedOlt)}" data-pon-ref="${escapeHtml(group.ponRef)}">
-                      ${escapeHtml(group.ponRef)}
+                      <span class="pon-port-name">${escapeHtml(portName)}</span>
+                      <span class="pon-port-ref">${customPortName ? escapeHtml(group.ponRef) : 'Default label'}</span>
                     </button>
                   </td>
                   <td>${ponCapacity}</td>
@@ -1252,9 +1307,14 @@
                     </div>
                   </td>
                   <td class="actions-col">
-                    <button type="button" class="pon-icon-btn pon-icon-btn--add" data-action="add-nap-for-port" data-linked-olt="${escapeHtml(group.linkedOlt)}" data-pon-ref="${escapeHtml(group.ponRef)}" title="Add NAP" aria-label="Add NAP">
-                      <i class="fa-solid fa-plus"></i>
-                    </button>
+                    <span class="pon-action-group">
+                      <button type="button" class="pon-icon-btn pon-icon-btn--set" data-action="edit-pon-port-name" data-linked-olt="${escapeHtml(group.linkedOlt)}" data-pon-ref="${escapeHtml(group.ponRef)}" title="Edit PON port name" aria-label="Edit PON port name">
+                        <i class="ti ti-pencil" aria-hidden="true"></i>
+                      </button>
+                      <button type="button" class="pon-icon-btn pon-icon-btn--add" data-action="add-nap-for-port" data-linked-olt="${escapeHtml(group.linkedOlt)}" data-pon-ref="${escapeHtml(group.ponRef)}" title="Add NAP" aria-label="Add NAP">
+                        <i class="ti ti-plus" aria-hidden="true"></i>
+                      </button>
+                    </span>
                   </td>
                 </tr>
               `;
@@ -1272,7 +1332,7 @@
                     <table class="pon-table pon-subtable" aria-label="PON ports for ${escapeHtml(item.name || 'OLT')}">
                       <thead>
                         <tr>
-                          <th>PON Port</th>
+                          <th>PON Port / Name</th>
                           <th>Customer Capacity</th>
                           <th>Total NAP</th>
                           <th>Total Capacity</th>
@@ -1297,7 +1357,7 @@
           <tr data-olt-id="${escapeHtml(item.id)}" class="${isExpanded ? 'is-expanded' : ''}">
             <td>
               <button type="button" class="pon-olt-toggle ${isExpanded ? 'is-expanded' : ''}" data-action="toggle-olt-ports" data-olt-id="${escapeHtml(item.id)}">
-                <i class="fa-solid fa-chevron-right"></i>
+                <i class="ti ti-chevron-right" aria-hidden="true"></i>
                 <span>${escapeHtml(item.name || '-')}</span>
               </button>
             </td>
@@ -1312,10 +1372,10 @@
             <td class="actions-col">
               <div class="pon-action-group">
                 <button class="pon-icon-btn" type="button" data-action="edit-olt" title="Edit OLT" aria-label="Edit OLT">
-                  <i class="fa-solid fa-pen-to-square"></i>
+                  <i class="ti ti-edit" aria-hidden="true"></i>
                 </button>
                 <button class="pon-delete" type="button" data-action="delete-olt" title="Delete OLT" aria-label="Delete OLT">
-                  <i class="fa-solid fa-trash"></i>
+                  <i class="ti ti-trash" aria-hidden="true"></i>
                 </button>
               </div>
             </td>
@@ -1375,6 +1435,7 @@
   const closeAllModals = () => {
     closeModal(oltModal);
     closeModal(napModal);
+    closeModal(ponPortNameModal);
     closeModal(portNapModal);
     closeModal(napSubscribersModal);
     closeModal(napPortAssignModal);
@@ -1623,10 +1684,12 @@
     }
 
     const naps = getSelectedPortNaps();
+    const selectedOlt = findOltByName(selected.linkedOlt);
+    const portDisplayName = getPonPortDisplayName(selectedOlt, selected.ponRef) || selected.ponRef;
     const ponCapacity = naps.reduce((max, nap) => Math.max(max, Math.max(toNumber(nap.ponCapacity, 0), 0)), 0);
     const assignedCustomers = naps.reduce((sum, nap) => sum + getNapConnections(nap).length, 0);
-    portNapModalTitle.textContent = `NAP List: ${selected.ponRef}`;
-    portNapModalSubtitle.textContent = `OLT: ${selected.linkedOlt} | NAP Count: ${naps.length} | Customer Capacity: ${ponCapacity} | Assigned: ${assignedCustomers}`;
+    portNapModalTitle.textContent = `NAP List: ${portDisplayName}`;
+    portNapModalSubtitle.textContent = `OLT: ${selected.linkedOlt} | PON: ${selected.ponRef} | NAP Count: ${naps.length} | Customer Capacity: ${ponCapacity} | Assigned: ${assignedCustomers}`;
 
     if (!naps.length) {
       portNapTableBody.innerHTML = '<tr><td colspan="7" class="pon-empty"><div class="pon-empty__center">No NAP records for this port.</div></td></tr>';
@@ -1659,10 +1722,10 @@
             <td class="actions-col">
               <span class="pon-action-group">
                 <button type="button" class="pon-icon-btn pon-icon-btn--config" data-action="open-nap-config" data-nap-id="${escapeHtml(nap.id)}" title="Edit NAP" aria-label="Edit NAP">
-                  <i class="fa-solid fa-pen-to-square"></i>
+                  <i class="ti ti-edit" aria-hidden="true"></i>
                 </button>
                 <button type="button" class="pon-delete" data-action="delete-nap-from-port" data-nap-id="${escapeHtml(nap.id)}" title="Delete NAP" aria-label="Delete NAP">
-                  <i class="fa-solid fa-trash"></i>
+                  <i class="ti ti-trash" aria-hidden="true"></i>
                 </button>
               </span>
             </td>
@@ -1738,7 +1801,7 @@
                     title="${escapeHtml(useTitle)}"
                     aria-label="${escapeHtml(useTitle)}"
                   >
-                    <i class="fa-solid fa-user-plus"></i>
+                    <i class="ti ti-user-plus" aria-hidden="true"></i>
                   </button>
                   <button
                     type="button"
@@ -1750,7 +1813,7 @@
                     aria-label="${escapeHtml(removeTitle)}"
                     ${canRemoveAssignment ? '' : 'disabled'}
                   >
-                    <i class="fa-solid fa-user-minus"></i>
+                    <i class="ti ti-user-minus" aria-hidden="true"></i>
                   </button>
                 </span>
               </div>
@@ -1768,7 +1831,7 @@
                   aria-label="${escapeHtml(setOpticalTitle)}"
                   ${canSetOptical ? '' : 'disabled'}
                 >
-                  <i class="fa-solid fa-sliders"></i>
+                  <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
                 </button>
               </div>
             </td>
@@ -1829,7 +1892,7 @@
                 title="Use customer"
                 aria-label="Use customer"
               >
-                <i class="fa-solid fa-check"></i>
+                <i class="ti ti-check" aria-hidden="true"></i>
               </button>
             </td>
           </tr>
@@ -2117,6 +2180,59 @@
     openModal(portNapModal);
   };
 
+  const openPonPortNameForm = (linkedOlt, ponRef) => {
+    if (!canPersistPonChanges({ notify: true })) return;
+    const olt = findOltByName(linkedOlt);
+    const normalizedRef = normalizePonRef(ponRef);
+    if (!olt || !normalizedRef) {
+      showToast('PON port not found.', 'error');
+      return;
+    }
+
+    state.selectedPonPortName = {
+      linkedOlt: toText(olt.name),
+      ponRef: normalizedRef
+    };
+    const displayName = getPonPortDisplayName(olt, normalizedRef);
+    if (ponPortRefValueInput) ponPortRefValueInput.value = normalizedRef;
+    if (ponPortDisplayNameInput) {
+      ponPortDisplayNameInput.value = hasCustomPonPortName(olt, normalizedRef) ? displayName : '';
+      ponPortDisplayNameInput.placeholder = `Default: ${normalizedRef}`;
+    }
+    if (ponPortNameMeta) {
+      ponPortNameMeta.textContent = `${toText(olt.name) || 'OLT'} • ${normalizedRef}`;
+    }
+    openModal(ponPortNameModal, '#ponPortDisplayName');
+  };
+
+  const savePonPortName = async (formData) => {
+    if (!canPersistPonChanges({ notify: true })) {
+      return false;
+    }
+    const selected = state.selectedPonPortName;
+    const normalizedRef = normalizePonRef(selected?.ponRef || formData.get('ponPortRefValue'));
+    const olt = findOltByName(selected?.linkedOlt);
+    if (!olt || !normalizedRef) {
+      showToast('PON port not found.', 'error');
+      return false;
+    }
+
+    const displayName = toText(formData.get('ponPortDisplayName')).slice(0, 80);
+    const names = normalizePonPortNames(olt.ponPortNames, olt.ponPorts);
+    if (displayName && displayName.toLowerCase() !== normalizedRef.toLowerCase()) {
+      names[normalizedRef] = displayName;
+    } else {
+      delete names[normalizedRef];
+    }
+    olt.ponPortNames = normalizePonPortNames(names, olt.ponPorts);
+
+    renderPonWorkspace();
+    const committed = await commitPonChanges();
+    if (!committed) return false;
+    showToast(displayName ? 'PON port name updated.' : 'PON port name reset to default.', 'success');
+    return true;
+  };
+
   const openNapSubscribers = (napId) => {
     state.selectedNapId = toText(napId);
     renderNapSubscribersModal();
@@ -2171,13 +2287,13 @@
     }
     if (oltModalTitle) {
       oltModalTitle.innerHTML = normalizedMode === 'edit'
-        ? '<i class="fa-solid fa-pen-to-square"></i> Edit OLT'
-        : '<i class="fa-solid fa-server"></i> Add OLT';
+        ? '<i class="ti ti-edit" aria-hidden="true"></i> Edit OLT'
+        : '<i class="ti ti-server" aria-hidden="true"></i> Add OLT';
     }
     if (oltSubmitBtn) {
       oltSubmitBtn.innerHTML = normalizedMode === 'edit'
-        ? '<i class="fa-solid fa-floppy-disk"></i> Save changes'
-        : '<i class="fa-solid fa-plus"></i> Add OLT';
+        ? '<i class="ti ti-device-floppy" aria-hidden="true"></i> Save changes'
+        : '<i class="ti ti-plus" aria-hidden="true"></i> Add OLT';
     }
   };
 
@@ -2247,7 +2363,8 @@
         site,
         status,
         ponCodePrefix,
-        ponPorts
+        ponPorts,
+        ponPortNames: normalizePonPortNames(target.ponPortNames, ponPorts)
       };
 
       if (previousOltKey && previousOltKey !== nextOltKey) {
@@ -2264,6 +2381,12 @@
             linkedOlt: name
           };
         }
+        if (state.selectedPonPortName && normalizeNameKey(state.selectedPonPortName.linkedOlt) === previousOltKey) {
+          state.selectedPonPortName = {
+            ...state.selectedPonPortName,
+            linkedOlt: name
+          };
+        }
       }
     } else {
       state.olts.push({
@@ -2273,7 +2396,8 @@
         site,
         status,
         ponCodePrefix,
-        ponPorts
+        ponPorts,
+        ponPortNames: {}
       });
     }
     syncNapPonCapacityWithTechnology();
@@ -2538,6 +2662,10 @@
       state.reopenPortModalOnNapClose = false;
       closeModal(portNapModal);
     }
+    if (state.selectedPonPortName && normalizeNameKey(state.selectedPonPortName.linkedOlt) === oltNameKey) {
+      state.selectedPonPortName = null;
+      closeModal(ponPortNameModal);
+    }
 
     clearNapSelectionState(removedNapIds);
     renderPonWorkspace();
@@ -2662,6 +2790,15 @@
         closeModal(napConfigModal);
       }
     });
+    ponPortNameForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const ok = await savePonPortName(new FormData(ponPortNameForm));
+      if (ok) {
+        ponPortNameForm.reset();
+        state.selectedPonPortName = null;
+        closeModal(ponPortNameModal);
+      }
+    });
     napOpticalForm?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const ok = await saveNapPortOpticalInfo(new FormData(napOpticalForm));
@@ -2701,6 +2838,16 @@
         if (!linkedOlt || !ponRef) return;
         state.reopenPortModalOnNapClose = false;
         openNapFormForPort(linkedOlt, ponRef);
+        return;
+      }
+
+      const editPonPortNameBtn = event.target.closest('[data-action="edit-pon-port-name"]');
+      if (editPonPortNameBtn) {
+        const linkedOlt = editPonPortNameBtn.getAttribute('data-linked-olt');
+        const ponRef = editPonPortNameBtn.getAttribute('data-pon-ref');
+        if (!linkedOlt || !ponRef) return;
+        state.reopenPortModalOnNapClose = false;
+        openPonPortNameForm(linkedOlt, ponRef);
         return;
       }
 

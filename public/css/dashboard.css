@@ -3022,3 +3022,919 @@ body.theme-dark .status-pill--alert {
 body.theme-dark .chart-empty-msg {
     color: #cbd5f5;
 }
+
+/* index.html Tabler normal reset: remove oversized/custom dashboard presentation. */
+body.layout-fluid-vertical .dashboard-main {
+    --dashboard-border: var(--tblr-border-color, var(--app-border, #e5e7eb));
+    --dashboard-surface: var(--tblr-bg-surface, var(--app-surface, #ffffff));
+    --dashboard-subtle: var(--tblr-bg-surface-secondary, #f8fafc);
+    --dashboard-muted: var(--tblr-muted, var(--app-muted, #667085));
+    --dashboard-text: var(--tblr-body-color, var(--app-text, #1f2937));
+    width: 100% !important;
+    max-width: 1320px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1rem !important;
+    margin-right: auto !important;
+    margin-left: auto !important;
+    padding: 1rem var(--tblr-page-padding, 1rem) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .page-header {
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .page-title h1 {
+    margin: 0 !important;
+    color: var(--dashboard-text) !important;
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .eyebrow {
+    margin: 0 0 .125rem !important;
+    color: var(--dashboard-muted) !important;
+    font-size: .6875rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .subtitle,
+body.layout-fluid-vertical .dashboard-main .page-title .subtitle {
+    margin: .25rem 0 0 !important;
+    color: var(--dashboard-muted) !important;
+    font-size: .8125rem !important;
+    line-height: 1.4 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-summary,
+body.layout-fluid-vertical .dashboard-main .trend-card,
+body.layout-fluid-vertical .dashboard-main .trend-panel,
+body.layout-fluid-vertical .dashboard-main .chart-wrapper,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card,
+body.layout-fluid-vertical .dashboard-main .trend-chart-total,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown__empty,
+body.layout-fluid-vertical .dashboard-main .trend-chart-insight {
+    border: 1px solid var(--dashboard-border) !important;
+    border-radius: var(--tblr-border-radius, 6px) !important;
+    background: var(--dashboard-surface) !important;
+    background-image: none !important;
+    box-shadow: var(--tblr-box-shadow-card, 0 1px 2px rgba(15, 23, 42, .04)) !important;
+    overflow: hidden !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-summary::before,
+body.layout-fluid-vertical .dashboard-main .trend-summary::after,
+body.layout-fluid-vertical .dashboard-main .trend-card::before,
+body.layout-fluid-vertical .dashboard-main .trend-card::after,
+body.layout-fluid-vertical .dashboard-main .trend-panel::before,
+body.layout-fluid-vertical .dashboard-main .trend-panel::after,
+body.layout-fluid-vertical .dashboard-main .chart-wrapper::before,
+body.layout-fluid-vertical .dashboard-main .chart-wrapper::after,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card::before,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card::after {
+    content: none !important;
+    display: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-summary:hover,
+body.layout-fluid-vertical .dashboard-main .trend-card:hover,
+body.layout-fluid-vertical .dashboard-main .trend-panel:hover,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card:hover {
+    box-shadow: var(--tblr-box-shadow-card, 0 1px 2px rgba(15, 23, 42, .04)) !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-summary {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-header,
+body.layout-fluid-vertical .dashboard-main .trend-panel .panel-header {
+    min-height: auto !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+    padding: .875rem 1rem !important;
+    border-bottom: 1px solid var(--dashboard-border) !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-header-copy {
+    min-width: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-header-copy h2,
+body.layout-fluid-vertical .dashboard-main .trend-panel .panel-header h2 {
+    margin: 0 !important;
+    color: var(--dashboard-text) !important;
+    font-size: .9375rem !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel .panel-header p {
+    margin: .25rem 0 0 !important;
+    color: var(--dashboard-muted) !important;
+    font-size: .75rem !important;
+    line-height: 1.35 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-filters {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: .5rem !important;
+    margin: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-filter {
+    display: block !important;
+    min-width: 10rem !important;
+    margin: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-filter select,
+body.layout-fluid-vertical .dashboard-main .trend-filter .form-select {
+    min-height: 2rem !important;
+    padding-top: .25rem !important;
+    padding-bottom: .25rem !important;
+    border: 1px solid var(--dashboard-border) !important;
+    border-radius: var(--tblr-border-radius, 6px) !important;
+    background-color: var(--dashboard-surface) !important;
+    box-shadow: none !important;
+    color: var(--dashboard-text) !important;
+    font-size: .8125rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-kpis {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)) !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+    padding: 1rem !important;
+    background: transparent !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card {
+    min-height: auto !important;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    gap: .125rem .625rem !important;
+    padding: .875rem 1rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card .card-top {
+    display: contents !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card .card-icon {
+    grid-row: 1 / span 2 !important;
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(var(--tblr-primary-rgb, 6, 111, 209), .18) !important;
+    border-radius: var(--tblr-border-radius, 6px) !important;
+    background: color-mix(in srgb, var(--tblr-primary, #066fd1) 9%, transparent) !important;
+    color: var(--tblr-primary, #066fd1) !important;
+    box-shadow: none !important;
+    font-size: .95rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card--collected .card-icon {
+    background: color-mix(in srgb, var(--tblr-success, #2fb344) 10%, transparent) !important;
+    border-color: color-mix(in srgb, var(--tblr-success, #2fb344) 22%, transparent) !important;
+    color: var(--tblr-success, #2fb344) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card--rate .card-icon {
+    background: color-mix(in srgb, var(--tblr-info, #4299e1) 10%, transparent) !important;
+    border-color: color-mix(in srgb, var(--tblr-info, #4299e1) 22%, transparent) !important;
+    color: var(--tblr-info, #4299e1) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card--outstanding .card-icon {
+    background: color-mix(in srgb, var(--tblr-danger, #d63939) 10%, transparent) !important;
+    border-color: color-mix(in srgb, var(--tblr-danger, #d63939) 22%, transparent) !important;
+    color: var(--tblr-danger, #d63939) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card .card-label,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card__label,
+body.layout-fluid-vertical .dashboard-main .trend-chart-total-label,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-label {
+    margin: 0 !important;
+    color: var(--dashboard-muted) !important;
+    font-size: .6875rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .04em !important;
+    line-height: 1.2 !important;
+    text-transform: uppercase !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card .card-value,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card__value,
+body.layout-fluid-vertical .dashboard-main .trend-chart-total-value,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-value {
+    margin: .125rem 0 0 !important;
+    color: var(--dashboard-text) !important;
+    font-size: 1.125rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+    letter-spacing: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-card .card-meta,
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card__meta,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-share,
+body.layout-fluid-vertical .dashboard-main .trend-chart-insight {
+    margin: .125rem 0 0 !important;
+    color: var(--dashboard-muted) !important;
+    font-size: .75rem !important;
+    line-height: 1.35 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .target-pill,
+body.layout-fluid-vertical .dashboard-main .status-pill,
+body.layout-fluid-vertical .dashboard-main .trend-collection-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .25rem !important;
+    min-height: 1.25rem !important;
+    padding: .125rem .375rem !important;
+    border: 1px solid var(--dashboard-border) !important;
+    border-radius: var(--tblr-border-radius-pill, 100rem) !important;
+    background: var(--dashboard-subtle) !important;
+    color: var(--dashboard-muted) !important;
+    box-shadow: none !important;
+    font-size: .6875rem !important;
+    font-weight: 600 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .status-pill--good {
+    border-color: color-mix(in srgb, var(--tblr-success, #2fb344) 24%, transparent) !important;
+    background: color-mix(in srgb, var(--tblr-success, #2fb344) 12%, transparent) !important;
+    color: var(--tblr-success, #2fb344) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .status-pill--alert {
+    border-color: color-mix(in srgb, var(--tblr-danger, #d63939) 24%, transparent) !important;
+    background: color-mix(in srgb, var(--tblr-danger, #d63939) 12%, transparent) !important;
+    color: var(--tblr-danger, #d63939) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-grid {
+    display: grid !important;
+    gap: 1rem !important;
+    margin: 0 !important;
+    align-items: stretch !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-grid--primary,
+body.layout-fluid-vertical .dashboard-main .trend-grid--insights {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel {
+    min-height: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel .panel-body {
+    flex: 1 1 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .875rem !important;
+    margin: 0 !important;
+    padding: 1rem !important;
+    background: transparent !important;
+    background-image: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-highlight-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-highlight-card {
+    min-height: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .25rem !important;
+    padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .chart-wrapper {
+    min-height: 0 !important;
+    height: 260px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel--line .chart-wrapper {
+    height: 280px !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel--bar .chart-wrapper {
+    height: 240px !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel--pie .chart-wrapper {
+    width: 100% !important;
+    max-width: none !important;
+    height: 220px !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .chart-wrapper canvas,
+body.layout-fluid-vertical .dashboard-main .trend-panel--line .chart-wrapper canvas,
+body.layout-fluid-vertical .dashboard-main .trend-panel--channels .chart-wrapper canvas {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-stack {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, .9fr) !important;
+    gap: .875rem !important;
+    align-items: stretch !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-panel--bar .trend-chart-stack {
+    grid-template-columns: minmax(0, 1.35fr) minmax(14rem, .65fr) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-meta {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .75rem !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-total,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown__empty,
+body.layout-fluid-vertical .dashboard-main .trend-chart-insight {
+    padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .5rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    min-height: auto !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item.is-actionable:hover,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item.is-actionable:focus-visible,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item.is-active {
+    border-color: color-mix(in srgb, var(--tblr-primary, #066fd1) 30%, var(--dashboard-border)) !important;
+    background: color-mix(in srgb, var(--tblr-primary, #066fd1) 6%, var(--dashboard-surface)) !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-swatch {
+    width: .625rem !important;
+    min-width: .625rem !important;
+    height: .625rem !important;
+    border-radius: 999px !important;
+    background: var(--trend-breakdown-color, var(--tblr-primary, #066fd1)) !important;
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-main,
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-metrics {
+    display: flex !important;
+    align-items: center !important;
+    gap: .5rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-metrics {
+    margin-left: auto !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-chart-insight {
+    margin: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main .trend-balance-detail {
+    border: 1px solid var(--dashboard-border) !important;
+    border-radius: var(--tblr-border-radius, 6px) !important;
+    background: var(--dashboard-surface) !important;
+    background-image: none !important;
+    box-shadow: var(--tblr-box-shadow-lg, 0 1rem 3rem rgba(15, 23, 42, .18)) !important;
+}
+
+body.theme-dark.layout-fluid-vertical .dashboard-main {
+    --dashboard-border: var(--tblr-border-color, var(--app-border, #2f3b4a));
+    --dashboard-surface: var(--tblr-bg-surface, var(--app-surface, #182433));
+    --dashboard-subtle: var(--tblr-bg-surface-secondary, #151f2c);
+    --dashboard-muted: var(--tblr-muted, #94a3b8);
+    --dashboard-text: var(--tblr-body-color, var(--app-text, #f4f6fa));
+}
+
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-summary,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-card,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-panel,
+body.theme-dark.layout-fluid-vertical .dashboard-main .chart-wrapper,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-highlight-card,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-chart-total,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-item,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-chart-breakdown__empty,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-chart-insight,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-balance-detail {
+    border-color: var(--dashboard-border) !important;
+    background: var(--dashboard-surface) !important;
+    color: var(--dashboard-text) !important;
+}
+
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-header,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-panel .panel-header,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-filter select,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-filter .form-select {
+    border-color: var(--dashboard-border) !important;
+    background-color: var(--dashboard-surface) !important;
+    color: var(--dashboard-text) !important;
+}
+
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-card .card-meta,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-highlight-card__meta,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-chart-breakdown-share,
+body.theme-dark.layout-fluid-vertical .dashboard-main .trend-chart-insight,
+body.theme-dark.layout-fluid-vertical .dashboard-main .subtitle {
+    color: var(--dashboard-muted) !important;
+}
+
+@media (max-width: 1180px) {
+    body.layout-fluid-vertical .dashboard-main .trend-grid--primary,
+    body.layout-fluid-vertical .dashboard-main .trend-grid--insights {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 900px) {
+    body.layout-fluid-vertical .dashboard-main .trend-chart-stack,
+    body.layout-fluid-vertical .dashboard-main .trend-panel--bar .trend-chart-stack {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main .trend-highlight-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 640px) {
+    body.layout-fluid-vertical .dashboard-main {
+        padding: .75rem !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main .trend-header,
+    body.layout-fluid-vertical .dashboard-main .trend-panel .panel-header {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main .trend-filters,
+    body.layout-fluid-vertical .dashboard-main .trend-filter,
+    body.layout-fluid-vertical .dashboard-main .trend-filter select,
+    body.layout-fluid-vertical .dashboard-main .trend-filter .form-select {
+        width: 100% !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main .trend-kpis {
+        grid-template-columns: 1fr !important;
+        padding: .75rem !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main .chart-wrapper,
+    body.layout-fluid-vertical .dashboard-main .trend-panel--line .chart-wrapper,
+    body.layout-fluid-vertical .dashboard-main .trend-panel--bar .chart-wrapper,
+    body.layout-fluid-vertical .dashboard-main .trend-panel--pie .chart-wrapper {
+        height: 220px !important;
+    }
+}
+
+/* index.html final Tabler override loaded after tabler-app.css. */
+body.layout-fluid-vertical .dashboard-main.page {
+    max-width: 1320px !important;
+    margin: 0 auto !important;
+    padding: 1rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page,
+body.layout-fluid-vertical .dashboard-main.page * {
+    letter-spacing: normal;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .eyebrow,
+body.layout-fluid-vertical .dashboard-main.page .card-label,
+body.layout-fluid-vertical .dashboard-main.page .trend-highlight-card__label,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-total-label,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown-label {
+    letter-spacing: .04em !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .card,
+body.layout-fluid-vertical .dashboard-main.page .panel,
+body.layout-fluid-vertical .dashboard-main.page .trend-summary,
+body.layout-fluid-vertical .dashboard-main.page .trend-card,
+body.layout-fluid-vertical .dashboard-main.page .trend-panel,
+body.layout-fluid-vertical .dashboard-main.page .chart-wrapper,
+body.layout-fluid-vertical .dashboard-main.page .trend-highlight-card,
+body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metric,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-total,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown-item,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown__empty,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-insight {
+    border: 1px solid var(--dashboard-border) !important;
+    border-radius: var(--tblr-border-radius, 6px) !important;
+    background: var(--dashboard-surface) !important;
+    background-image: none !important;
+    box-shadow: var(--tblr-box-shadow-card, 0 1px 2px rgba(15, 23, 42, .04)) !important;
+    transform: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .card::before,
+body.layout-fluid-vertical .dashboard-main.page .card::after,
+body.layout-fluid-vertical .dashboard-main.page .panel::before,
+body.layout-fluid-vertical .dashboard-main.page .panel::after,
+body.layout-fluid-vertical .dashboard-main.page .trend-summary::before,
+body.layout-fluid-vertical .dashboard-main.page .trend-summary::after,
+body.layout-fluid-vertical .dashboard-main.page .trend-card::before,
+body.layout-fluid-vertical .dashboard-main.page .trend-card::after,
+body.layout-fluid-vertical .dashboard-main.page .trend-panel::before,
+body.layout-fluid-vertical .dashboard-main.page .trend-panel::after,
+body.layout-fluid-vertical .dashboard-main.page .chart-wrapper::before,
+body.layout-fluid-vertical .dashboard-main.page .chart-wrapper::after,
+body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metric::before,
+body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metric::after {
+    content: none !important;
+    display: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .card-header,
+body.layout-fluid-vertical .dashboard-main.page .trend-header,
+body.layout-fluid-vertical .dashboard-main.page .panel-header {
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: .75rem 1rem !important;
+    border-bottom: 1px solid var(--dashboard-border) !important;
+    background: transparent !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .card-body,
+body.layout-fluid-vertical .dashboard-main.page .panel-body {
+    padding: 1rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-summary {
+    padding: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-kpis.card-body {
+    padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-card.card {
+    min-height: 0 !important;
+    padding: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-card .card-icon {
+    width: 1.875rem !important;
+    min-width: 1.875rem !important;
+    height: 1.875rem !important;
+    font-size: .875rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .card-value,
+body.layout-fluid-vertical .dashboard-main.page .trend-card .card-value,
+body.layout-fluid-vertical .dashboard-main.page .trend-highlight-card__value,
+body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metric__value,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-total-value,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown-value {
+    font-size: 1rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-grid {
+    gap: .875rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-panel .panel-body {
+    gap: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-highlight-grid,
+body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metrics {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: .625rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-highlight-card,
+body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metric {
+    min-height: 0 !important;
+    padding: .625rem .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .chart-wrapper {
+    min-height: 0 !important;
+    height: 220px !important;
+    padding: .625rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-panel--line .chart-wrapper {
+    height: 240px !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-panel--bar .chart-wrapper {
+    height: 220px !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-panel--pie .chart-wrapper,
+body.layout-fluid-vertical .dashboard-main.page .chart-wrapper--doughnut {
+    height: 200px !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-stack {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, .72fr) !important;
+    gap: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-panel--bar .trend-chart-stack {
+    grid-template-columns: minmax(0, 1.2fr) minmax(12rem, .8fr) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-meta,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-meta--luxury {
+    gap: .5rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown--luxury {
+    gap: .5rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-total,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown-item,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown__empty,
+body.layout-fluid-vertical .dashboard-main.page .trend-chart-insight {
+    min-height: 0 !important;
+    padding: .625rem .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .form-select,
+body.layout-fluid-vertical .dashboard-main.page select {
+    min-height: 2rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page .btn,
+body.layout-fluid-vertical .dashboard-main.page .target-pill,
+body.layout-fluid-vertical .dashboard-main.page .status-pill {
+    box-shadow: none !important;
+}
+
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .card,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .panel,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-summary,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-card,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-panel,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .chart-wrapper,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-highlight-card,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-luxury-metric,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-chart-total,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown-item,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-chart-breakdown__empty,
+body.theme-dark.layout-fluid-vertical .dashboard-main.page .trend-chart-insight {
+    border-color: var(--dashboard-border) !important;
+    background: var(--dashboard-surface) !important;
+}
+
+@media (max-width: 900px) {
+    body.layout-fluid-vertical .dashboard-main.page .trend-highlight-grid,
+    body.layout-fluid-vertical .dashboard-main.page .trend-luxury-metrics,
+    body.layout-fluid-vertical .dashboard-main.page .trend-chart-stack,
+    body.layout-fluid-vertical .dashboard-main.page .trend-panel--bar .trend-chart-stack {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+@media (max-width: 640px) {
+    body.layout-fluid-vertical .dashboard-main.page {
+        padding: .75rem !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main.page .card-header,
+    body.layout-fluid-vertical .dashboard-main.page .trend-header,
+    body.layout-fluid-vertical .dashboard-main.page .panel-header,
+    body.layout-fluid-vertical .dashboard-main.page .card-body,
+    body.layout-fluid-vertical .dashboard-main.page .panel-body {
+        padding: .75rem !important;
+    }
+}
+
+/* Area performance compact Tabler stat row. */
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend.area-performance-card {
+    border-radius: var(--tblr-border-radius, 6px) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend.area-performance-card > .trend-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    padding: .625rem .875rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-header-copy h2 {
+    font-size: .875rem !important;
+    line-height: 1.2 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-header .subtitle {
+    margin-top: .125rem !important;
+    font-size: .72rem !important;
+    line-height: 1.25 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filters {
+    gap: .375rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filter {
+    min-width: 8.75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filter select,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filter .form-select {
+    min-height: 1.875rem !important;
+    padding-top: .1875rem !important;
+    padding-bottom: .1875rem !important;
+    font-size: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-kpis {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: .5rem !important;
+    padding: .625rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat {
+    min-width: 0 !important;
+    min-height: 4.75rem !important;
+    display: grid !important;
+    grid-template-columns: 1.625rem minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto !important;
+    align-content: center !important;
+    align-items: center !important;
+    gap: .0625rem .5rem !important;
+    padding: .5rem .625rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-top {
+    display: contents !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-icon {
+    grid-row: 1 / span 3 !important;
+    width: 1.625rem !important;
+    min-width: 1.625rem !important;
+    height: 1.625rem !important;
+    border-radius: var(--tblr-border-radius, 6px) !important;
+    font-size: .75rem !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-label,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-value,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-meta {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-label {
+    white-space: nowrap !important;
+    font-size: .625rem !important;
+    line-height: 1.15 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-value {
+    margin: .0625rem 0 0 !important;
+    font-size: .9375rem !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend #trendTotalBilled,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend #trendTotalCollected,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend #trendCollectionRate,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend #trendPayingSubs,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend #trendOutstanding {
+    color: var(--dashboard-text) !important;
+    font-size: .9375rem !important;
+    font-weight: 700 !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .card-meta {
+    margin: .0625rem 0 0 !important;
+    display: block !important;
+    font-size: .6875rem !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .target-pill,
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat .status-pill {
+    min-height: 1rem !important;
+    padding: 0 .25rem !important;
+    font-size: .625rem !important;
+    line-height: 1 !important;
+    vertical-align: middle !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat.trend-card--outstanding .card-value {
+    color: var(--tblr-danger, #d63939) !important;
+}
+
+body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-stat.trend-card--collected .card-value {
+    color: var(--tblr-success, #2fb344) !important;
+}
+
+@media (max-width: 1180px) {
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-kpis {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 760px) {
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend.area-performance-card > .trend-header {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filter,
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filter select,
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend .trend-filter .form-select {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 480px) {
+    body.layout-fluid-vertical .dashboard-main.page #monthly-trend .area-performance-kpis {
+        grid-template-columns: 1fr !important;
+    }
+}

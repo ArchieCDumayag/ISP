@@ -1,0 +1,621 @@
+/* Tabler-normal layout for collectors.html only. */
+
+body.layout-fluid-vertical .collectors-page {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+}
+
+body.layout-fluid-vertical .collectors-page .collectors-board.card {
+    width: min(100%, 980px);
+}
+
+.collectors-board.collector-assignment-shell {
+    gap: 0 !important;
+    padding: 0 !important;
+    border-radius: var(--tblr-border-radius-lg, .5rem) !important;
+    background: var(--app-surface, #fff) !important;
+    box-shadow: none !important;
+    overflow: hidden;
+}
+
+.collectors-board .collector-assignment-header {
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .75rem 1rem !important;
+}
+
+.collectors-board .collector-assignment-heading {
+    display: grid;
+    gap: .125rem;
+}
+
+.collectors-board .collector-assignment-heading .card-title {
+    margin: 0;
+    font-size: 1rem !important;
+    line-height: 1.25;
+}
+
+.collectors-board .collector-assignment-heading .text-secondary {
+    font-size: .75rem;
+    line-height: 1.35;
+}
+
+.collectors-board .collector-assign-btn {
+    min-height: 1.875rem !important;
+    padding: .25rem .625rem !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    box-shadow: none !important;
+    white-space: nowrap;
+}
+
+.collectors-board .collector-assignment-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .5rem;
+    padding: .75rem 1rem !important;
+    border-bottom: 1px solid var(--app-border, #e6e7e9);
+}
+
+.collectors-board .collector-stat-card {
+    min-height: 0 !important;
+    gap: .5rem !important;
+    padding: .5rem .625rem !important;
+    border: 1px solid var(--app-border, #e6e7e9) !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    background: var(--app-surface, #fff) !important;
+    box-shadow: none !important;
+}
+
+.collectors-board .collector-stat-card__icon {
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    flex: 0 0 1.75rem !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    font-size: .875rem !important;
+}
+
+.collectors-board .collector-stat-card__body {
+    gap: .125rem;
+}
+
+.collectors-board .collector-stat-card__body span {
+    color: var(--app-muted, #64748b);
+    font-size: .6875rem !important;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.collectors-board .collector-stat-card__body strong,
+.collectors-board .collector-stat-card--month .collector-stat-card__body strong {
+    color: var(--app-text, #172033);
+    font-size: .9375rem !important;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.collectors-board .assignment-toast {
+    margin: 0 !important;
+}
+
+.collectors-board .assignment-table-wrapper {
+    display: block;
+    width: 100%;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow-x: auto;
+}
+
+.collectors-board .collector-assignment-table {
+    display: table !important;
+    width: 100% !important;
+    min-width: 680px !important;
+    max-width: 100% !important;
+    margin: 0;
+    table-layout: fixed;
+}
+
+.collectors-board .collector-assignment-table thead {
+    display: table-header-group !important;
+}
+
+.collectors-board .collector-assignment-table tbody {
+    display: table-row-group !important;
+}
+
+.collectors-board .collector-assignment-table tr {
+    display: table-row !important;
+}
+
+.collectors-board .collector-assignment-table th,
+.collectors-board .collector-assignment-table td {
+    display: table-cell !important;
+    padding: .375rem .5rem !important;
+    font-size: .75rem !important;
+    line-height: 1.2 !important;
+    vertical-align: middle !important;
+}
+
+.collectors-board .collector-assignment-table thead th {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    color: var(--app-muted, #52677a) !important;
+    font-size: .625rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .04em !important;
+    text-transform: uppercase !important;
+}
+
+.collectors-board .collector-assignment-table th,
+.collectors-board .collector-assignment-table td {
+    text-align: center !important;
+}
+
+.collectors-board .collector-assignment-table th:first-child,
+.collectors-board .collector-assignment-table td:first-child {
+    text-align: left !important;
+}
+
+.collectors-board .collector-assignment-table .col-clients {
+    width: 9rem;
+}
+
+.collectors-board .collector-assignment-table .col-balance {
+    width: 12rem;
+}
+
+.collectors-board .collector-assignment-table .col-actions {
+    width: 5.25rem;
+}
+
+.collectors-board .collector-summary-row {
+    cursor: pointer;
+}
+
+.collectors-board .collector-row-trigger {
+    width: auto !important;
+    min-height: 0 !important;
+    gap: .375rem !important;
+    color: var(--app-text, #172033) !important;
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+    line-height: 1.2;
+    text-align: left;
+    text-decoration: none !important;
+}
+
+.collectors-board .collector-row-trigger:hover,
+.collectors-board .collector-row-trigger:focus-visible {
+    text-decoration: none !important;
+}
+
+.collectors-board .collector-avatar {
+    width: 1.5rem !important;
+    min-width: 1.5rem !important;
+    height: 1.5rem !important;
+    flex: 0 0 1.5rem !important;
+    font-size: .6875rem !important;
+    font-weight: 700;
+}
+
+.collectors-board .collector-row-copy {
+    gap: .0625rem;
+}
+
+.collectors-board .collector-row-name {
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.collectors-board .collector-row-meta {
+    color: var(--app-muted, #64748b);
+    font-size: .6875rem;
+    font-weight: 500;
+}
+
+.collectors-board .collector-area-pill.badge {
+    min-width: 0 !important;
+    min-height: 1.125rem;
+    padding: .125rem .375rem !important;
+    border-radius: 999px !important;
+    font-size: .6875rem !important;
+    font-weight: 600 !important;
+}
+
+.collectors-board .collector-month-total {
+    color: var(--tblr-success, #2fb344) !important;
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+}
+
+.collectors-board .collector-month-total.is-zero {
+    color: var(--app-muted, #64748b) !important;
+}
+
+.collectors-board .btn-list {
+    gap: .25rem;
+}
+
+.collectors-board .btn-icon {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+}
+
+.collectors-board .empty-state {
+    align-items: center;
+    justify-content: center;
+    color: var(--app-muted, #64748b);
+    gap: .375rem;
+    margin: 0;
+}
+
+.collectors-board .empty-state i {
+    font-size: 1rem;
+}
+
+.collectors-board .empty-state p {
+    margin: 0;
+    font-size: .75rem;
+}
+
+.collectors-board .assignment-footer {
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .5rem .75rem !important;
+    color: var(--app-muted, #64748b);
+    font-size: .75rem;
+}
+
+.collectors-board .assignment-footer__summary,
+.collectors-board .assignment-footer__controls,
+.collectors-board .assignment-footer__collected,
+.collectors-board .assignment-footer__live {
+    gap: .375rem;
+}
+
+.collectors-board .assignment-footer__collected strong {
+    color: var(--tblr-success, #2fb344);
+    font-size: .75rem;
+}
+
+.collectors-board .assignment-footer__live-dot {
+    width: .375rem;
+    height: .375rem;
+    box-shadow: 0 0 0 .1875rem rgba(47, 179, 68, .12);
+}
+
+.collectors-tabler-modal {
+    --app-form-modal-width: 760px;
+}
+
+.collectors-tabler-modal.collector-areas-modal {
+    --app-form-modal-width: 680px;
+}
+
+.collectors-tabler-modal .modal-dialog {
+    width: min(var(--app-form-modal-width), calc(100vw - 2rem)) !important;
+    max-width: min(var(--app-form-modal-width), calc(100vw - 2rem)) !important;
+}
+
+.collectors-tabler-modal .modal-content {
+    border-radius: var(--tblr-border-radius-lg, .5rem) !important;
+    box-shadow: var(--tblr-box-shadow-lg, 0 1rem 3rem rgba(15, 23, 42, .18)) !important;
+}
+
+.collectors-tabler-modal .modal-header {
+    min-height: 0 !important;
+    padding: .75rem 1rem !important;
+}
+
+.collectors-tabler-modal .modal-title {
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+}
+
+.collectors-tabler-modal .modal-subtitle {
+    font-size: .75rem !important;
+    line-height: 1.35 !important;
+}
+
+.collectors-tabler-modal .modal-body {
+    padding: .75rem 1rem !important;
+}
+
+.collectors-tabler-modal .modal-footer,
+.collectors-tabler-modal .form-actions.modal-footer {
+    padding: .625rem 1rem !important;
+}
+
+.assignment-modal__body {
+    display: grid;
+    gap: .75rem;
+}
+
+.assignment-modal .assignment-modal__collector {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.assignment-modal .assignment-modal__collector label {
+    font-size: .75rem !important;
+}
+
+.assignment-modal .assignment-modal__collector select {
+    min-height: 1.875rem !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    font-size: .75rem !important;
+}
+
+.assignment-modal .assignment-area-picker.card {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1px solid var(--app-border, #e6e7e9) !important;
+    border-radius: var(--tblr-border-radius, .375rem) !important;
+    box-shadow: none !important;
+    overflow: hidden;
+}
+
+.assignment-modal .assignment-area-picker__header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .5rem !important;
+    margin: 0 !important;
+    padding: .5rem .75rem !important;
+    border-bottom: 1px solid var(--app-border, #e6e7e9) !important;
+}
+
+.assignment-modal .assignment-area-picker__header .form-label {
+    color: var(--app-text, #172033) !important;
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+}
+
+.assignment-modal .assignment-area-picker__header .badge {
+    min-height: 1.125rem;
+    padding: .125rem .375rem;
+    font-size: .6875rem;
+    font-weight: 600;
+}
+
+.assignment-modal .assignment-area-picker__body {
+    display: grid;
+    gap: .5rem;
+    padding: .75rem !important;
+}
+
+.assignment-modal .assignment-search-control {
+    margin: 0;
+}
+
+.assignment-modal .assignment-search-control .form-control {
+    min-height: 1.875rem;
+    font-size: .75rem;
+}
+
+.assignment-modal .assignment-area-tools {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    flex-wrap: wrap !important;
+    gap: .5rem !important;
+    margin: 0 !important;
+}
+
+.assignment-modal .assignment-filter-tabs,
+.assignment-modal .assignment-bulk-actions {
+    gap: .25rem !important;
+}
+
+.collector-areas-modal .collector-area-table {
+    min-width: 520px;
+}
+
+.collector-areas-modal .collector-area-breakdown {
+    padding: 0 !important;
+    border-top: 0 !important;
+}
+
+.collector-areas-modal .collector-area-breakdown__head {
+    gap: .5rem;
+    margin-bottom: .5rem;
+}
+
+.collector-areas-modal .collector-area-breakdown__head span {
+    font-size: .75rem;
+    font-weight: 500;
+}
+
+.collector-areas-modal .collector-area-table th,
+.collector-areas-modal .collector-area-table td {
+    padding: .375rem .5rem !important;
+    font-size: .75rem !important;
+}
+
+.collector-areas-modal .btn-icon {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+}
+
+.assignment-modal .assignment-area-list {
+    min-height: 180px !important;
+    max-height: min(42vh, 320px) !important;
+    display: block !important;
+    padding: 0 !important;
+    overflow-y: auto;
+    border: 1px solid var(--app-border, #e6e7e9);
+    border-radius: var(--tblr-border-radius, .375rem);
+    background: var(--app-surface, #fff);
+}
+
+.assignment-modal .assignment-area-option.list-group-item {
+    display: block !important;
+    min-height: 0 !important;
+    padding: .5rem .625rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--app-border, #e6e7e9) !important;
+    border-radius: 0 !important;
+    background: var(--app-surface, #fff) !important;
+    cursor: pointer;
+}
+
+.assignment-modal .assignment-area-option.list-group-item:last-child {
+    border-bottom: 0 !important;
+}
+
+.assignment-modal .assignment-area-option.is-selected {
+    background: var(--tblr-primary-lt, #eaf3ff) !important;
+}
+
+.assignment-modal .assignment-area-option .form-check {
+    display: grid !important;
+    grid-template-columns: 1rem minmax(0, 1fr) !important;
+    align-items: start !important;
+    gap: .5rem !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.assignment-modal .assignment-area-option .form-check-input {
+    position: static !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    min-width: 1rem !important;
+    min-height: 1rem !important;
+    margin: .125rem 0 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+.assignment-modal .assignment-area-option .form-check-input:checked {
+    background-color: var(--tblr-primary, #206bc4) !important;
+    border-color: var(--tblr-primary, #206bc4) !important;
+}
+
+.assignment-modal .assignment-area-option__body {
+    display: grid !important;
+    grid-template-columns: minmax(7rem, 1fr) auto;
+    align-items: center;
+    gap: .125rem .5rem !important;
+    min-width: 0;
+    color: var(--app-text, #172033);
+}
+
+.assignment-modal .assignment-area-option__title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--app-text, #172033);
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.assignment-modal .assignment-area-option__meta,
+.assignment-modal .assignment-area-empty {
+    color: var(--app-muted, #64748b);
+    font-size: .6875rem !important;
+    font-weight: 500 !important;
+}
+
+.assignment-modal .assignment-area-option__assignees {
+    grid-column: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: .25rem !important;
+    min-width: 0;
+    text-align: right;
+}
+
+.assignment-modal .assignment-area-option__assignees span {
+    padding: .125rem .375rem !important;
+    border-radius: 999px !important;
+    font-size: .6875rem !important;
+    font-weight: 500 !important;
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.assignment-modal .modal-message {
+    margin: 0 !important;
+    font-size: .75rem !important;
+}
+
+.assignment-modal .assignment-filter-tab,
+.assignment-modal .assignment-bulk-btn,
+.assignment-modal__actions .btn,
+.collector-areas-modal__actions .btn {
+    min-height: 1.875rem !important;
+    padding: .25rem .625rem !important;
+    font-size: .75rem !important;
+}
+
+.assignment-modal .assignment-filter-tab.is-active {
+    color: var(--tblr-primary, #206bc4) !important;
+    background: var(--tblr-primary-lt, #eaf3ff) !important;
+    border-color: rgba(var(--tblr-primary-rgb, 32, 107, 196), .35) !important;
+}
+
+body.theme-dark .collectors-board.collector-assignment-shell,
+[data-bs-theme=dark] .collectors-board.collector-assignment-shell,
+body.theme-dark .collectors-board .collector-stat-card,
+[data-bs-theme=dark] .collectors-board .collector-stat-card {
+    background: var(--app-surface, #0f172a) !important;
+    border-color: var(--app-border, rgba(148, 163, 184, .22)) !important;
+}
+
+body.theme-dark .collectors-board .collector-assignment-table thead th,
+[data-bs-theme=dark] .collectors-board .collector-assignment-table thead th {
+    background: rgba(30, 41, 59, .9) !important;
+    color: var(--app-muted, #cbd5e1) !important;
+}
+
+body.theme-dark .collectors-board .collector-row-trigger,
+[data-bs-theme=dark] .collectors-board .collector-row-trigger,
+body.theme-dark .collectors-board .collector-stat-card__body strong,
+[data-bs-theme=dark] .collectors-board .collector-stat-card__body strong {
+    color: var(--app-text, #f8fafc) !important;
+}
+
+@media (max-width: 760px) {
+    body.layout-fluid-vertical .collectors-page .collectors-board.card {
+        width: 100%;
+    }
+
+    .collectors-board .collector-assignment-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .collectors-board .collector-assign-btn {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .collectors-board .collector-assignment-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .collectors-board .assignment-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

@@ -1,14 +1,16 @@
-﻿const express = require('express');
+const express = require('express');
 const createError = require('http-errors');
-const { readJson } = require('./data-store');
-const { query } = require('./db');
+const { readJson, writeJson } = require('./data-store');
+const { query, isMysqlEnabled } = require('./db');
 const { accountHasRole } = require('./role-utils');
+const { isJsonStorageMode } = require('./storage-mode');
 
 const router = express.Router();
 const STORE_KEY_PREFIX = 'finance_payroll_branch_';
 const MAX_ATTENDANCE_DAYS = 62;
 const ALLOWED_ATTENDANCE_STATUSES = new Set(['absent', 'half-day', 'whole-day']);
 const legacyImportByBranch = new Map();
+const useJsonPayrollStorage = () => isJsonStorageMode() || !isMysqlEnabled();
 
 const toSafeText = (value, maxLen = 0) => {
     const text = String(value == null ? '' : value).trim();
@@ -56,6 +58,12 @@ const parseJsonText = (value, fallback) => {
     } catch {
         return fallback;
     }
+};
+
+const parseJsonPayload = (value, fallback) => {
+    if (value == null || value === '') return fallback;
+    if (typeof value === 'string') return parseJsonText(value, fallback);
+    return value == null ? fallback : value;
 };
 
 const normalizeBoolean = (value, fallback = false) => {
@@ -216,6 +224,18 @@ const resolveBranchId = (req) => {
 
 const buildStoreKey = (branchId) => `${STORE_KEY_PREFIX}${branchId}`;
 
+const readJsonPayroll = async (branchId) => {
+    const storeKey = buildStoreKey(branchId);
+    const items = await readJson(storeKey, []);
+    return (Array.isArray(items) ? items : []).map((item) => hydratePayrollEntry(item));
+};
+
+const writeJsonPayroll = async (branchId, items) => {
+    const storeKey = buildStoreKey(branchId);
+    const normalized = (Array.isArray(items) ? items : []).map((item) => hydratePayrollEntry(item));
+    await writeJson(storeKey, normalized);
+};
+
 const mapPayrollRow = (row = {}) => ({
     id: toSafeText(row.id, 80),
     payDate: normalizeDateOnly(row.pay_date || row.payDate),
@@ -298,7 +318,67 @@ const toDbPayrollRecord = (branchId, entry = {}, actor = {}) => {
     };
 };
 
+const payrollRecordToJsonEntry = (record = {}) => hydratePayrollEntry({
+    id: toSafeText(record.id, 80),
+    payDate: normalizeDateOnly(record.payDate || record.pay_date),
+    periodStart: normalizeDateOnly(record.periodStart || record.period_start),
+    periodEnd: normalizeDateOnly(record.periodEnd || record.period_end),
+    employeeName: toSafeText(record.employeeName || record.employee_name, 140),
+    role: toSafeText(record.role, 120),
+    ratePerDay: normalizeAmount(record.ratePerDay ?? record.rate_per_day ?? record.grossPay ?? record.gross_pay),
+    grossPay: normalizeAmount(record.grossPay ?? record.gross_pay),
+    deductions: normalizeAmount(record.deductions ?? 0) || 0,
+    netPay: normalizeAmount(record.netPay ?? record.net_pay),
+    notes: toSafeText(record.notes, 1200),
+    submitted: normalizeBoolean(record.submitted, false),
+    submittedAt: normalizeDateTime(record.submittedAt || record.submitted_at),
+    attendance: parseJsonPayload(record.attendanceJson ?? record.attendance_json ?? record.attendance, []),
+    attendanceSummary: parseJsonPayload(record.attendanceSummaryJson ?? record.attendance_summary_json ?? record.attendanceSummary, {}),
+    debts: parseJsonPayload(record.debtsJson ?? record.debts_json ?? record.debts, []),
+    debtTotal: normalizeAmount(record.debtTotal ?? record.debt_total),
+    debtCount: Number(record.debtCount ?? record.debt_count) || 0,
+    createdAt: normalizeDateTime(record.createdAt || record.created_at),
+    updatedAt: normalizeDateTime(record.updatedAt || record.updated_at),
+    createdByUserId: record.createdByUserId != null
+        ? String(record.createdByUserId)
+        : (record.created_by_user_id != null ? String(record.created_by_user_id) : ''),
+    createdByUsername: toSafeText(record.createdByUsername || record.created_by_username, 100),
+    createdByName: toSafeText(record.createdByName || record.created_by_name, 120),
+    createdBy: toSafeText(
+        record.createdByUsername ||
+        record.created_by_username ||
+        record.createdByName ||
+        record.created_by_name ||
+        record.createdBy,
+        120
+    )
+});
+
 const insertPayrollRecord = async (record, { upsert = false } = {}) => {
+    if (useJsonPayrollStorage()) {
+        const items = await readJsonPayroll(record.branchId);
+        const entry = payrollRecordToJsonEntry(record);
+        const existingIndex = items.findIndex((item) => String(item?.id || '') === String(entry.id));
+        if (existingIndex >= 0) {
+            if (!upsert) {
+                throw createError(409, 'Payroll entry already exists.');
+            }
+            items[existingIndex] = hydratePayrollEntry({
+                ...items[existingIndex],
+                ...entry,
+                createdAt: items[existingIndex].createdAt || entry.createdAt,
+                createdBy: items[existingIndex].createdBy || entry.createdBy,
+                createdByUserId: items[existingIndex].createdByUserId || entry.createdByUserId,
+                createdByUsername: items[existingIndex].createdByUsername || entry.createdByUsername,
+                createdByName: items[existingIndex].createdByName || entry.createdByName
+            });
+        } else {
+            items.push(entry);
+        }
+        await writeJsonPayroll(record.branchId, items);
+        return { affectedRows: existingIndex >= 0 ? 2 : 1 };
+    }
+
     const sql = upsert
         ? `INSERT INTO finance_payroll (
                 id, branch_id, pay_date, period_start, period_end, employee_name, role,
@@ -364,6 +444,25 @@ const insertPayrollRecord = async (record, { upsert = false } = {}) => {
 };
 
 const updatePayrollRecord = async (record) => {
+    if (useJsonPayrollStorage()) {
+        const items = await readJsonPayroll(record.branchId);
+        const existingIndex = items.findIndex((item) => String(item?.id || '') === String(record.id));
+        if (existingIndex < 0) return { affectedRows: 0 };
+        const entry = payrollRecordToJsonEntry(record);
+        items[existingIndex] = hydratePayrollEntry({
+            ...items[existingIndex],
+            ...entry,
+            id: record.id,
+            createdAt: items[existingIndex].createdAt || entry.createdAt,
+            createdBy: items[existingIndex].createdBy || entry.createdBy,
+            createdByUserId: items[existingIndex].createdByUserId || entry.createdByUserId,
+            createdByUsername: items[existingIndex].createdByUsername || entry.createdByUsername,
+            createdByName: items[existingIndex].createdByName || entry.createdByName
+        });
+        await writeJsonPayroll(record.branchId, items);
+        return { affectedRows: 1 };
+    }
+
     const [result] = await query(
         `UPDATE finance_payroll
          SET pay_date = ?,
@@ -412,6 +511,11 @@ const updatePayrollRecord = async (record) => {
 };
 
 const getPayrollById = async (branchId, entryId) => {
+    if (useJsonPayrollStorage()) {
+        const items = await readJsonPayroll(branchId);
+        return items.find((item) => String(item?.id || '') === String(entryId)) || null;
+    }
+
     const [rows] = await query(
         `SELECT
             id,
@@ -449,6 +553,7 @@ const getPayrollById = async (branchId, entryId) => {
 
 const ensureLegacyPayrollImported = async (branchId) => {
     if (!branchId) return;
+    if (useJsonPayrollStorage()) return;
     if (legacyImportByBranch.has(branchId)) {
         return legacyImportByBranch.get(branchId);
     }
@@ -479,6 +584,10 @@ const ensureLegacyPayrollImported = async (branchId) => {
 };
 
 const readBranchPayroll = async (branchId) => {
+    if (useJsonPayrollStorage()) {
+        return readJsonPayroll(branchId);
+    }
+
     await ensureLegacyPayrollImported(branchId);
     const [rows] = await query(
         `SELECT
@@ -758,6 +867,16 @@ router.delete('/:id', async (req, res, next) => {
     try {
         const entryId = toSafeText(req.params?.id, 80);
         if (!entryId) return next(createError(400, 'Payroll ID is required.'));
+
+        if (useJsonPayrollStorage()) {
+            const items = await readJsonPayroll(req.branchId);
+            const nextItems = items.filter((item) => String(item?.id || '') !== String(entryId));
+            if (nextItems.length === items.length) {
+                return next(createError(404, 'Payroll entry not found.'));
+            }
+            await writeJsonPayroll(req.branchId, nextItems);
+            return res.json({ ok: true });
+        }
 
         const [result] = await query(
             'DELETE FROM finance_payroll WHERE id = ? AND branch_id = ?',

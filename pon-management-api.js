@@ -85,6 +85,40 @@ const normalizePonRef = (value) => {
   return raw;
 };
 
+const normalizePonPortNames = (value, totalPorts = 0) => {
+  let source = value;
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      source = {};
+    }
+  }
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+  const maxPorts = clamp(toNonNegativeInt(totalPorts, 0), 0, 4096);
+  const normalized = {};
+  Object.entries(source).forEach(([key, label]) => {
+    const ponRef = normalizePonRef(key);
+    if (!ponRef) return;
+    const orderMatch = ponRef.match(/^pon-(\d+)$/i);
+    const order = orderMatch ? Number(orderMatch[1]) : null;
+    if (maxPorts && Number.isInteger(order) && order > maxPorts) return;
+
+    const displayName = toText(label).slice(0, 80);
+    if (!displayName || displayName.toLowerCase() === ponRef.toLowerCase()) return;
+    normalized[ponRef] = displayName;
+  });
+  return normalized;
+};
+
+const getPonPortDisplayName = (olt, ponRef) => {
+  const normalizedRef = normalizePonRef(ponRef);
+  if (!normalizedRef) return '';
+  const names = normalizePonPortNames(olt?.ponPortNames, olt?.ponPorts);
+  return toText(names[normalizedRef]) || normalizedRef;
+};
+
 const normalizeLookupKey = (value) => toText(value).toLowerCase();
 const normalizeSubscriberStatus = (value) => {
   const raw = toText(value).toLowerCase();
@@ -215,7 +249,8 @@ const normalizeOltRecord = (raw, index) => {
     site: toText(raw?.site),
     status: normalizeOltStatus(raw?.status),
     ponCodePrefix: normalizePonCodePrefix(raw?.ponCodePrefix || raw?.pon_code_prefix),
-    ponPorts
+    ponPorts,
+    ponPortNames: normalizePonPortNames(raw?.ponPortNames || raw?.pon_port_names, ponPorts)
   };
 };
 
@@ -419,7 +454,8 @@ const loadState = async (branchId) => {
     site: toText(row.site),
     status: normalizeOltStatus(row.status),
     ponCodePrefix: normalizePonCodePrefix(row.pon_code_prefix),
-    ponPorts: clamp(toNonNegativeInt(row.pon_ports, 0), 0, 4096)
+    ponPorts: clamp(toNonNegativeInt(row.pon_ports, 0), 0, 4096),
+    ponPortNames: {}
   }));
 
   const naps = (napRows || []).map((row) => {
@@ -566,6 +602,7 @@ const buildPortList = (olts = [], naps = []) => {
         oltId,
         linkedOlt,
         ponRef,
+        ponPortName: getPonPortDisplayName(olt, ponRef),
         ponPortNo: port,
         ponCapacity: defaultPonCapacity,
         napCount: 0,
@@ -588,6 +625,7 @@ const buildPortList = (olts = [], naps = []) => {
           oltId,
           linkedOlt,
           ponRef,
+          ponPortName: getPonPortDisplayName(olt, ponRef),
           ponPortNo: Number.isFinite(getPonRefOrder(ponRef)) ? getPonRefOrder(ponRef) : null,
           ponCapacity: defaultPonCapacity,
           napCount: 0,

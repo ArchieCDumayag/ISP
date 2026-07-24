@@ -10,6 +10,7 @@
   const modalSubtitle = document.getElementById('historyModalSubtitle');
   const modalBody = document.getElementById('historyModalBody');
   const modalClose = document.getElementById('historyModalClose');
+  const modalDone = document.getElementById('historyModalDone');
 
   const fmtMoney = (n) =>
     new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n || 0));
@@ -195,13 +196,13 @@
 
     const totalCollected = rows.reduce((sum, row) => sum + row.amount, 0);
     reportContainer.innerHTML = `
-      <table class="plans-table collectors-table">
+      <table class="table table-vcenter table-sm collectors-table collector-report-table">
         <thead>
           <tr>
-            <th style="text-align:center; width:80px;">ID</th>
+            <th class="text-center history-col-id">ID</th>
             <th>Collector</th>
             <th>Area</th>
-            <th style="text-align:center; width:180px;">Total Collected</th>
+            <th class="text-center history-col-collected">Total Collected</th>
           </tr>
         </thead>
         <tbody>
@@ -209,23 +210,23 @@
             .map(
               (row, index) => `
             <tr class="collector-report-row" data-daily-collector-id="${row.collectorId}" data-month="${currentMonthKey}">
-              <td style="text-align:center;">${index + 1}</td>
-              <td><button type="button" class="collector-row-trigger" data-daily-collector-id="${row.collectorId}" data-month="${currentMonthKey}">${row.collectorName}</button></td>
+              <td class="text-center">${index + 1}</td>
+              <td><button type="button" class="btn btn-link btn-sm px-0 collector-row-trigger" data-daily-collector-id="${row.collectorId}" data-month="${currentMonthKey}">${escapeHtml(row.collectorName)}</button></td>
               <td>${row.areaCount ? `${row.areaCount} area(s)` : '-'}</td>
-              <td style="text-align:center;">PHP ${fmtMoney(row.amount)}</td>
+              <td class="text-center">PHP ${fmtMoney(row.amount)}</td>
             </tr>
           `
             )
             .join('')}
           <tr>
             <td></td>
-            <td style="font-weight:700;">Total</td>
+            <td class="fw-semibold">Total</td>
             <td></td>
-            <td style="font-weight:700; text-align:center;">PHP ${fmtMoney(totalCollected)}</td>
+            <td class="fw-semibold text-center">PHP ${fmtMoney(totalCollected)}</td>
           </tr>
         </tbody>
       </table>
-      <div class="table-footer" style="display:block; margin-top:.75rem;">
+      <div class="card-footer collection-history-footer">
         <div class="footer-summary">Showing ${rows.length} collectors for ${monthLabel(currentMonthKey)}</div>
       </div>
     `;
@@ -293,8 +294,8 @@
         <tr class="collection-history-month-row" data-history-month="${escapeHtml(month)}">
           <td>
             <button type="button" class="collection-history-month-toggle" data-history-month-toggle="${escapeHtml(month)}" aria-expanded="${isExpanded ? 'true' : 'false'}">
-              <i class="fa-solid fa-chevron-right collection-history-chevron" aria-hidden="true"></i>
-              <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+              <i class="ti ti-chevron-right collection-history-chevron" aria-hidden="true"></i>
+              <i class="ti ti-calendar" aria-hidden="true"></i>
               <span>${escapeHtml(monthLabel(month))}</span>
             </button>
           </td>
@@ -308,7 +309,7 @@
             <td></td>
             <td>
               <span class="collection-history-person">
-                <span class="collection-history-avatar collection-history-avatar--tone-${(index % 4) + 1}" aria-hidden="true">${escapeHtml(getCollectorInitials(row.collectorName))}</span>
+                <span class="avatar avatar-sm bg-primary-lt text-primary collection-history-avatar collection-history-avatar--tone-${(index % 4) + 1}" aria-hidden="true">${escapeHtml(getCollectorInitials(row.collectorName))}</span>
                 <span>${escapeHtml(row.collectorName)}</span>
               </span>
             </td>
@@ -388,10 +389,10 @@
       render();
     } catch (err) {
       if (reportContainer) {
-        reportContainer.innerHTML = `<p class="empty-copy" style="color:#b91c1c;">${err.message || 'Error loading report'}</p>`;
+        reportContainer.innerHTML = `<p class="empty-copy text-danger">${err.message || 'Error loading report'}</p>`;
       }
       if (tableBody) {
-        tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:28px; color:#b91c1c;">${err.message ||
+        tableBody.innerHTML = `<tr><td colspan="3" class="collection-history-empty text-danger">${err.message ||
           'Error loading data'}</td></tr>`;
       }
       if (summary) summary.textContent = '';
@@ -424,18 +425,18 @@
       : [];
 
     if (!rows.length) {
-      modalBody.innerHTML = '<p style="padding:16px; text-align:center;">No area data for this month.</p>';
+      modalBody.innerHTML = '<p class="empty-copy text-center p-3 mb-0">No area data for this month.</p>';
       return;
     }
 
     const total = rows.reduce((s, r) => s + r.amount, 0);
     modalBody.innerHTML = `
-      <table class="plans-table history-table">
+      <table class="table table-vcenter table-sm history-table">
         <thead>
           <tr>
             <th>Area</th>
-            <th style="text-align:right; width:120px;">Payments</th>
-            <th style="text-align:right; width:180px;">Collected</th>
+            <th class="text-end history-col-payments">Payments</th>
+            <th class="text-end history-col-collected">Collected</th>
           </tr>
         </thead>
         <tbody>
@@ -443,17 +444,17 @@
             .map(
               (r) => `
               <tr>
-                <td>${r.area}</td>
-                <td style="text-align:right;">${fmtInt(r.payments)}</td>
-                <td style="text-align:right;">PHP ${fmtMoney(r.amount)}</td>
+                <td>${escapeHtml(r.area)}</td>
+                <td class="text-end">${fmtInt(r.payments)}</td>
+                <td class="text-end">PHP ${fmtMoney(r.amount)}</td>
               </tr>
             `
             )
             .join('')}
           <tr>
-            <td style="font-weight:700;">Total</td>
-            <td style="text-align:right; font-weight:700;">${fmtInt(rows.reduce((sum, row) => sum + (Number(row.payments) || 0), 0))}</td>
-            <td style="text-align:right; font-weight:700;">PHP ${fmtMoney(total)}</td>
+            <td class="fw-semibold">Total</td>
+            <td class="fw-semibold text-end">${fmtInt(rows.reduce((sum, row) => sum + (Number(row.payments) || 0), 0))}</td>
+            <td class="fw-semibold text-end">PHP ${fmtMoney(total)}</td>
           </tr>
         </tbody>
       </table>
@@ -467,7 +468,7 @@
       : [];
 
     if (!rows.length) {
-      modalBody.innerHTML = '<p style="padding:16px; text-align:center;">No daily collection data for this month.</p>';
+      modalBody.innerHTML = '<p class="empty-copy text-center p-3 mb-0">No daily collection data for this month.</p>';
       return;
     }
 
@@ -476,13 +477,13 @@
     const totalAccounts = new Set(rows.flatMap((row) => row.accountNumbers || [])).size;
 
     modalBody.innerHTML = `
-      <table class="plans-table history-table">
+      <table class="table table-vcenter table-sm history-table">
         <thead>
           <tr>
             <th>Date</th>
-            <th style="text-align:right; width:110px;">Payments</th>
-            <th style="text-align:right; width:120px;">Accounts</th>
-            <th style="text-align:right; width:180px;">Collected</th>
+            <th class="text-end history-col-payments">Payments</th>
+            <th class="text-end history-col-accounts">Accounts</th>
+            <th class="text-end history-col-collected">Collected</th>
           </tr>
         </thead>
         <tbody>
@@ -490,19 +491,19 @@
             .map(
               (row) => `
               <tr>
-                <td title="${row.areas.join(', ')}">${formatDateKey(row.dateKey)}</td>
-                <td style="text-align:right;">${fmtInt(row.payments)}</td>
-                <td style="text-align:right;">${fmtInt(row.uniqueAccounts)}</td>
-                <td style="text-align:right;">PHP ${fmtMoney(row.amount)}</td>
+                <td title="${escapeHtml(row.areas.join(', '))}">${formatDateKey(row.dateKey)}</td>
+                <td class="text-end">${fmtInt(row.payments)}</td>
+                <td class="text-end">${fmtInt(row.uniqueAccounts)}</td>
+                <td class="text-end">PHP ${fmtMoney(row.amount)}</td>
               </tr>
             `
             )
             .join('')}
           <tr>
-            <td style="font-weight:700;">Total</td>
-            <td style="text-align:right; font-weight:700;">${fmtInt(totalPayments)}</td>
-            <td style="text-align:right; font-weight:700;">${fmtInt(totalAccounts)}</td>
-            <td style="text-align:right; font-weight:700;">PHP ${fmtMoney(totalAmount)}</td>
+            <td class="fw-semibold">Total</td>
+            <td class="fw-semibold text-end">${fmtInt(totalPayments)}</td>
+            <td class="fw-semibold text-end">${fmtInt(totalAccounts)}</td>
+            <td class="fw-semibold text-end">PHP ${fmtMoney(totalAmount)}</td>
           </tr>
         </tbody>
       </table>
@@ -554,6 +555,7 @@
   });
 
   modalClose?.addEventListener('click', closeModal);
+  modalDone?.addEventListener('click', closeModal);
   modal?.addEventListener('click', (e) => {
     if (e.target === modal) closeModal();
   });

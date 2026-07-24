@@ -5439,3 +5439,1447 @@ body.theme-dark .pppoe-page .pppoe-table .icon-btn.btn {
         flex-direction: column;
     }
 }
+
+/* PPPoE Tabler UI final normalization */
+.pppoe-page {
+    --pppoe-radius: var(--tblr-border-radius, 8px);
+    --pppoe-border: var(--tblr-border-color, var(--app-border, #dce3ed));
+    --pppoe-surface: var(--tblr-card-bg, var(--app-surface, #ffffff));
+    --pppoe-muted: var(--tblr-muted, var(--app-muted, #667085));
+}
+
+.pppoe-page #pppoe-workbench {
+    display: grid;
+    gap: .875rem;
+}
+
+.pppoe-page .pppoe-header {
+    min-height: 0 !important;
+    align-items: center !important;
+    margin-bottom: 0 !important;
+}
+
+.pppoe-page .pppoe-header .eyebrow {
+    margin: 0 0 .2rem;
+    color: var(--tblr-primary, #206bc4);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.pppoe-page .pppoe-header .page-title h1 {
+    font-size: 1.25rem !important;
+    line-height: 1.2;
+}
+
+.pppoe-page .pppoe-header .subtitle {
+    margin-top: .25rem;
+    font-size: .8125rem;
+}
+
+.pppoe-page .pppoe-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.pppoe-page .pppoe-sync-status {
+    min-height: 2rem;
+    gap: .5rem;
+    padding: .25rem .625rem;
+    border-radius: var(--pppoe-radius) !important;
+    font-size: .75rem;
+}
+
+.pppoe-page #pppoe-sync-btn {
+    min-height: 2rem;
+    padding-inline: .75rem;
+}
+
+.pppoe-page .mikrotik-status-card,
+.pppoe-page .pppoe-summary-card,
+.pppoe-page .pppoe-accounts-card {
+    border: 1px solid var(--pppoe-border);
+    border-radius: var(--pppoe-radius);
+    background: var(--pppoe-surface);
+    box-shadow: var(--tblr-box-shadow-card, 0 1px 2px rgba(15, 23, 42, .04));
+}
+
+.pppoe-page .mikrotik-status-card {
+    overflow: hidden;
+}
+
+.pppoe-page .mikrotik-status-card .status-card-header {
+    min-height: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .875rem 1rem !important;
+    background: var(--pppoe-surface);
+}
+
+.pppoe-page .status-card-left {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+}
+
+.pppoe-page .status-card-left::before {
+    content: "\eb52";
+    font-family: "tabler-icons";
+    font-weight: 400;
+    line-height: 1;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--pppoe-radius);
+    font-size: .95rem;
+}
+
+.pppoe-page .status-title {
+    margin: 0;
+    font-size: .875rem;
+}
+
+.pppoe-page .status-sub {
+    font-size: .75rem;
+}
+
+.pppoe-page .status-card-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+
+.pppoe-page .pppoe-router-picker--inline {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+}
+
+.pppoe-page .pppoe-router-picker--inline label,
+.pppoe-page .status-time {
+    font-size: .6875rem;
+    letter-spacing: .04em;
+}
+
+.pppoe-page .pppoe-router-picker--inline .select-wrapper {
+    min-width: 12rem;
+}
+
+.pppoe-page .status-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.pppoe-page .status-item {
+    min-height: 4.5rem;
+    display: flex;
+    align-items: center;
+    padding: .75rem .875rem;
+    background: var(--pppoe-surface);
+}
+
+.pppoe-page .status-meta .label,
+.pppoe-page .pppoe-summary-card__label,
+.pppoe-page .settings-table.pppoe-table thead th {
+    color: var(--pppoe-muted);
+    font-size: .625rem;
+    letter-spacing: .055em;
+    text-transform: uppercase;
+}
+
+.pppoe-page .status-meta .value {
+    font-size: .875rem;
+}
+
+.pppoe-page .usage-indicator {
+    height: .25rem;
+    margin-top: .375rem;
+}
+
+.pppoe-page .pppoe-summary-strip {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .625rem;
+}
+
+.pppoe-page .pppoe-summary-card {
+    min-height: 4.5rem;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: .125rem .625rem;
+    padding: .75rem .875rem;
+}
+
+.pppoe-page .pppoe-summary-card__icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--pppoe-radius);
+    font-size: .95rem;
+}
+
+.pppoe-page .pppoe-summary-card__value {
+    font-size: 1.125rem;
+    font-weight: 700;
+}
+
+.pppoe-page .pppoe-accounts-card > .panel-header {
+    min-height: 3.25rem;
+    padding: .75rem 1rem !important;
+}
+
+.pppoe-page .pppoe-accounts-card .card-title {
+    font-size: .9375rem !important;
+}
+
+.pppoe-page .pppoe-toolbar {
+    display: grid;
+    grid-template-columns: minmax(16rem, 1fr) auto auto auto;
+    gap: .625rem;
+    padding: .75rem 1rem !important;
+    background: var(--pppoe-surface);
+}
+
+.pppoe-page .pppoe-toolbar .search-field {
+    min-height: 2rem;
+    padding-inline: .625rem;
+}
+
+.pppoe-page .pppoe-toolbar .search-field i {
+    font-size: 1rem;
+}
+
+.pppoe-page .pppoe-toolbar .search-field input,
+.pppoe-page .pppoe-toolbar .select-wrapper select {
+    min-height: 2rem;
+    border: 0;
+    box-shadow: none;
+    font-size: .8125rem;
+}
+
+.pppoe-page .pppoe-toolbar .filter-chips {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .125rem;
+    border: 1px solid var(--pppoe-border);
+    border-radius: var(--pppoe-radius);
+    background: var(--tblr-bg-surface-secondary, #f8fafc);
+}
+
+.pppoe-page .pppoe-toolbar .chip.btn {
+    min-height: 1.75rem;
+    padding: .25rem .625rem;
+    border: 0 !important;
+    border-radius: calc(var(--pppoe-radius) - 2px);
+    background: transparent;
+    color: var(--pppoe-muted);
+    box-shadow: none !important;
+    outline: 0 !important;
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.pppoe-page .pppoe-toolbar .chip.btn.active {
+    background: var(--tblr-primary, #206bc4) !important;
+    color: #fff !important;
+}
+
+.pppoe-page .pppoe-table-wrapper {
+    overflow: auto;
+    border-top: 1px solid var(--pppoe-border);
+}
+
+.pppoe-page .settings-table.pppoe-table {
+    min-width: 1060px;
+}
+
+.pppoe-page .settings-table.pppoe-table th,
+.pppoe-page .settings-table.pppoe-table td {
+    padding: .625rem .75rem;
+    font-size: .8125rem;
+}
+
+.pppoe-page .settings-table.pppoe-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--tblr-bg-surface-secondary, #f8fafc);
+}
+
+.pppoe-page .pppoe-avatar {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+}
+
+.pppoe-page .pppoe-name {
+    font-size: .8125rem;
+}
+
+.pppoe-page .pppoe-subtext,
+.pppoe-page .last-seen-cell,
+.pppoe-page .status-stack__meta {
+    font-size: .72rem;
+}
+
+.pppoe-page .pppoe-table .icon-btn.btn {
+    width: 1.75rem !important;
+    min-width: 1.75rem !important;
+    height: 1.75rem !important;
+    min-height: 1.75rem !important;
+}
+
+.pppoe-page .table-footer {
+    min-height: 2.75rem;
+    padding: .625rem 1rem !important;
+}
+
+.pppoe-page .page-indicator,
+.pppoe-page #pppoe-count-label {
+    font-size: .75rem;
+}
+
+#pppoe-edit-modal.tabler-form-modal,
+#pppoe-assign-modal.tabler-form-modal,
+#pppoe-generate-modal.tabler-form-modal,
+#pppoe-traffic-modal.tabler-form-modal,
+#pppoe-session-history-modal.tabler-form-modal {
+    --app-form-modal-width: 560px;
+}
+
+#pppoe-edit-modal .modal-container.modal-content,
+#pppoe-assign-modal .modal-container.modal-content,
+#pppoe-generate-modal .modal-container.modal-content {
+    width: min(560px, calc(100vw - 2rem)) !important;
+    max-width: min(560px, calc(100vw - 2rem)) !important;
+}
+
+#pppoe-traffic-modal.tabler-form-modal {
+    --app-form-modal-width: 1120px;
+}
+
+#pppoe-traffic-modal .modal-container.modal-content {
+    width: min(1120px, calc(100vw - 2rem)) !important;
+    max-width: min(1120px, calc(100vw - 2rem)) !important;
+}
+
+#pppoe-session-history-modal.tabler-form-modal {
+    --app-form-modal-width: 820px;
+}
+
+#pppoe-session-history-modal .modal-container.modal-content {
+    width: min(820px, calc(100vw - 2rem)) !important;
+    max-width: min(820px, calc(100vw - 2rem)) !important;
+}
+
+#pppoe-edit-modal .modal-form,
+#pppoe-assign-modal .modal-form,
+#pppoe-generate-modal .modal-form {
+    padding: 1rem;
+}
+
+#pppoe-edit-modal .modal-form .modal-footer,
+#pppoe-assign-modal .modal-form .modal-footer,
+#pppoe-generate-modal .modal-form .modal-footer {
+    margin: .25rem -1rem -1rem;
+}
+
+#pppoe-edit-modal .secure-input-wrap,
+#pppoe-assign-modal .secure-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+}
+
+#pppoe-edit-modal .secure-input-wrap .form-control,
+#pppoe-assign-modal .secure-input-wrap .form-control {
+    flex: 1 1 auto;
+}
+
+body.theme-dark .pppoe-page {
+    --pppoe-border: var(--app-border, #2f3b4a);
+    --pppoe-surface: var(--app-surface, #182433);
+    --pppoe-muted: #94a3b8;
+}
+
+body.theme-dark .pppoe-page .pppoe-toolbar .filter-chips,
+body.theme-dark .pppoe-page .settings-table.pppoe-table thead th {
+    background: #151f2c;
+}
+
+@media (max-width: 1180px) {
+    .pppoe-page .status-grid,
+    .pppoe-page .pppoe-summary-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .pppoe-page .pppoe-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .pppoe-page .pppoe-toolbar .filter-chips {
+        width: 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+    }
+}
+
+@media (max-width: 700px) {
+    .pppoe-page .pppoe-header,
+    .pppoe-page .pppoe-header-actions,
+    .pppoe-page .status-card-right,
+    .pppoe-page .pppoe-router-picker--inline {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    .pppoe-page .status-grid,
+    .pppoe-page .pppoe-summary-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .pppoe-page .status-item {
+        border-left: 0;
+        border-top: 1px solid var(--pppoe-border);
+    }
+
+    .pppoe-page .pppoe-router-picker--inline .select-wrapper,
+    .pppoe-page #pppoe-sync-btn {
+        width: 100%;
+    }
+}
+
+/* PPPoE Tabler normal reset: keep functionality classes, remove custom oversized UI. */
+body.layout-fluid-vertical .pppoe-page,
+.pppoe-page {
+    --pppoe-normal-border: var(--tblr-border-color, var(--app-border, #dce3ed));
+    --pppoe-normal-bg: var(--tblr-bg-surface, var(--app-surface, #ffffff));
+    --pppoe-normal-muted: var(--tblr-muted, var(--app-muted, #667085));
+    --pppoe-normal-radius: var(--tblr-border-radius, 4px);
+}
+
+body.layout-fluid-vertical .pppoe-page {
+    gap: 1rem !important;
+}
+
+.pppoe-page #pppoe-workbench.container-xl {
+    width: 100% !important;
+    max-width: 1320px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1rem !important;
+    padding-right: var(--tblr-gutter-x, 1rem) !important;
+    padding-left: var(--tblr-gutter-x, 1rem) !important;
+}
+
+.pppoe-page .pppoe-header {
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .pppoe-header .page-title,
+.pppoe-page .pppoe-header .page-title * {
+    text-align: left !important;
+}
+
+.pppoe-page .pppoe-header .eyebrow {
+    margin: 0 0 .125rem !important;
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .6875rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+}
+
+.pppoe-page .pppoe-header .page-title h1 {
+    margin: 0 !important;
+    color: var(--app-text, #1f2937) !important;
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+}
+
+.pppoe-page .pppoe-header .subtitle {
+    margin: .25rem 0 0 !important;
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .8125rem !important;
+    line-height: 1.4 !important;
+}
+
+.pppoe-page .pppoe-header-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: .5rem !important;
+}
+
+.pppoe-page .pppoe-sync-status {
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 1.75rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .5rem !important;
+    padding: .25rem .5rem !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    box-shadow: none !important;
+    font-size: .75rem !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+}
+
+.pppoe-page #pppoe-sync-btn,
+.pppoe-page #mt-info-refresh,
+.pppoe-page .btn,
+.pppoe-page .btn-sm {
+    min-height: 2rem !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .mikrotik-status-card,
+.pppoe-page .pppoe-summary-card,
+.pppoe-page .pppoe-accounts-card {
+    border: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--pppoe-normal-bg) !important;
+    background-image: none !important;
+    box-shadow: var(--tblr-box-shadow-card, 0 1px 2px rgba(15, 23, 42, .04)) !important;
+    overflow: hidden !important;
+    transform: none !important;
+}
+
+.pppoe-page .mikrotik-status-card::before,
+.pppoe-page .mikrotik-status-card::after,
+.pppoe-page .pppoe-summary-card::before,
+.pppoe-page .pppoe-summary-card::after,
+.pppoe-page .pppoe-accounts-card::before,
+.pppoe-page .pppoe-accounts-card::after {
+    content: none !important;
+    display: none !important;
+}
+
+.pppoe-page .mikrotik-status-card .status-card-header {
+    min-height: auto !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+    padding: .75rem 1rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .status-card-left,
+.pppoe-page .status-card-right {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: .5rem !important;
+}
+
+.pppoe-page .status-card-left::before {
+    content: none !important;
+    display: none !important;
+}
+
+.pppoe-page .status-dot {
+    width: .625rem !important;
+    min-width: .625rem !important;
+    height: .625rem !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .status-title,
+.pppoe-page .status-sub {
+    margin: 0 !important;
+}
+
+.pppoe-page .status-title {
+    color: var(--app-text, #1f2937) !important;
+    font-size: .875rem !important;
+    font-weight: 600 !important;
+    line-height: 1.25 !important;
+}
+
+.pppoe-page .status-sub,
+.pppoe-page .status-time {
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .75rem !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+.pppoe-page .pppoe-router-picker--inline {
+    display: flex !important;
+    align-items: center !important;
+    gap: .375rem !important;
+}
+
+.pppoe-page .pppoe-router-picker--inline label {
+    margin: 0 !important;
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+}
+
+.pppoe-page .pppoe-router-picker--inline .select-wrapper {
+    min-width: 11rem !important;
+    width: auto !important;
+}
+
+.pppoe-page .status-grid.card-body {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)) !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+.pppoe-page .status-item {
+    min-height: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: .625rem !important;
+    margin: 0 !important;
+    padding: .875rem 1rem !important;
+    border: 0 !important;
+    border-right: 1px solid var(--pppoe-normal-border) !important;
+    border-bottom: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .status-item:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .status-item .status-icon,
+.pppoe-page .status-icon.pill {
+    width: 1.75rem !important;
+    min-width: 1.75rem !important;
+    height: 1.75rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(32, 107, 196, .18) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)) !important;
+    color: var(--tblr-primary, #206bc4) !important;
+    box-shadow: none !important;
+    font-size: .875rem !important;
+}
+
+.pppoe-page .status-meta .label,
+.pppoe-page .pppoe-summary-card__label,
+.pppoe-page .pppoe-table thead th {
+    margin: 0 !important;
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .6875rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .04em !important;
+    line-height: 1.2 !important;
+    text-transform: uppercase !important;
+}
+
+.pppoe-page .status-meta .value {
+    margin: .125rem 0 0 !important;
+    color: var(--app-text, #1f2937) !important;
+    font-size: .875rem !important;
+    font-weight: 600 !important;
+    line-height: 1.25 !important;
+}
+
+.pppoe-page .usage-indicator {
+    height: .25rem !important;
+    margin-top: .375rem !important;
+    border-radius: 999px !important;
+    background: var(--tblr-bg-surface-secondary, #eef2f7) !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .pppoe-summary-strip {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)) !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+}
+
+.pppoe-page .pppoe-summary-card {
+    min-height: auto !important;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    column-gap: .625rem !important;
+    row-gap: .125rem !important;
+    padding: .875rem 1rem !important;
+}
+
+.pppoe-page .pppoe-summary-card:hover {
+    transform: none !important;
+    box-shadow: var(--tblr-box-shadow-card, 0 1px 2px rgba(15, 23, 42, .04)) !important;
+}
+
+.pppoe-page .pppoe-summary-card__icon {
+    grid-row: 1 / span 2 !important;
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(32, 107, 196, .18) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)) !important;
+    color: var(--tblr-primary, #206bc4) !important;
+    box-shadow: none !important;
+    font-size: .95rem !important;
+}
+
+.pppoe-page .pppoe-summary-card__value {
+    margin: .125rem 0 0 !important;
+    color: var(--app-text, #1f2937) !important;
+    font-size: 1.125rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+}
+
+.pppoe-page .pppoe-summary-card__value--good {
+    color: var(--tblr-success, #2fb344) !important;
+}
+
+.pppoe-page .pppoe-summary-card__value--neutral {
+    color: var(--tblr-muted, #667085) !important;
+}
+
+.pppoe-page .pppoe-summary-card__value--alert {
+    color: var(--tblr-danger, #d63939) !important;
+}
+
+.pppoe-page .pppoe-accounts-card > .panel-header {
+    min-height: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    margin: 0 !important;
+    padding: .75rem 1rem !important;
+    border-bottom: 1px solid var(--pppoe-normal-border) !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+}
+
+.pppoe-page .pppoe-accounts-card .card-title {
+    margin: 0 !important;
+    color: var(--app-text, #1f2937) !important;
+    font-size: .9375rem !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+}
+
+.pppoe-page .pppoe-toolbar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: .5rem !important;
+    margin: 0 !important;
+    padding: .75rem 1rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: 0 !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+.pppoe-page .pppoe-search-control {
+    flex: 1 1 18rem !important;
+    min-width: min(100%, 16rem) !important;
+    max-width: none !important;
+}
+
+.pppoe-page .pppoe-toolbar .filter-chips {
+    min-height: auto !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: .375rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .pppoe-toolbar .chip.btn {
+    min-height: 2rem !important;
+    padding: .25rem .625rem !important;
+    border: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--pppoe-normal-bg) !important;
+    color: var(--app-text, #1f2937) !important;
+    box-shadow: none !important;
+    font-size: .75rem !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
+}
+
+.pppoe-page .pppoe-toolbar .chip.btn.active {
+    border-color: var(--tblr-primary, #206bc4) !important;
+    background: var(--tblr-primary, #206bc4) !important;
+    color: #ffffff !important;
+}
+
+.pppoe-page .toolbar-actions,
+.pppoe-page .page-size-control {
+    display: flex !important;
+    align-items: center !important;
+    gap: .375rem !important;
+}
+
+.pppoe-page .page-size-control label {
+    margin: 0 !important;
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .75rem !important;
+    font-weight: 600 !important;
+}
+
+.pppoe-page .pppoe-table-wrapper {
+    overflow: auto !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .pppoe-table {
+    min-width: 960px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+}
+
+.pppoe-page .pppoe-table th,
+.pppoe-page .pppoe-table td {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: .625rem .75rem !important;
+    border-color: var(--pppoe-normal-border) !important;
+    font-size: .8125rem !important;
+    line-height: 1.35 !important;
+    vertical-align: middle !important;
+}
+
+.pppoe-page .pppoe-table thead th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 2 !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+.pppoe-page .pppoe-table th:last-child,
+.pppoe-page .pppoe-table td:last-child {
+    white-space: nowrap !important;
+}
+
+.pppoe-page .pppoe-customer {
+    display: flex !important;
+    align-items: center !important;
+    gap: .5rem !important;
+}
+
+.pppoe-page .pppoe-avatar {
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
+    background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)) !important;
+    color: var(--tblr-primary, #206bc4) !important;
+    box-shadow: none !important;
+    font-size: .75rem !important;
+    font-weight: 700 !important;
+}
+
+.pppoe-page .pppoe-name {
+    color: var(--app-text, #1f2937) !important;
+    font-size: .8125rem !important;
+    font-weight: 600 !important;
+    line-height: 1.25 !important;
+}
+
+.pppoe-page .pppoe-subtext,
+.pppoe-page .last-seen-cell,
+.pppoe-page .status-stack__meta {
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .75rem !important;
+    line-height: 1.3 !important;
+}
+
+.pppoe-page .pppoe-table .icon-btn.btn {
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem !important;
+    min-height: 2rem !important;
+    padding: 0 !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    box-shadow: none !important;
+}
+
+.pppoe-page .table-footer {
+    min-height: auto !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .75rem !important;
+    padding: .75rem 1rem !important;
+    border-top: 1px solid var(--pppoe-normal-border) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+.pppoe-page .pagination-pill,
+.pppoe-page .table-footer__right {
+    display: flex !important;
+    align-items: center !important;
+    gap: .5rem !important;
+}
+
+.pppoe-page .page-indicator,
+.pppoe-page #pppoe-count-label {
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .75rem !important;
+}
+
+#pppoe-edit-modal.tabler-form-modal,
+#pppoe-assign-modal.tabler-form-modal,
+#pppoe-generate-modal.tabler-form-modal {
+    --app-form-modal-width: 520px !important;
+}
+
+#pppoe-traffic-modal.tabler-form-modal {
+    --app-form-modal-width: 960px !important;
+}
+
+#pppoe-session-history-modal.tabler-form-modal {
+    --app-form-modal-width: 760px !important;
+}
+
+#pppoe-edit-modal .modal-container.modal-content,
+#pppoe-assign-modal .modal-container.modal-content,
+#pppoe-generate-modal .modal-container.modal-content,
+#pppoe-traffic-modal .modal-container.modal-content,
+#pppoe-session-history-modal .modal-container.modal-content {
+    width: min(var(--app-form-modal-width), calc(100vw - 2rem)) !important;
+    max-width: min(var(--app-form-modal-width), calc(100vw - 2rem)) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--pppoe-normal-bg) !important;
+    background-image: none !important;
+    box-shadow: var(--tblr-box-shadow-lg, 0 1rem 3rem rgba(15, 23, 42, .18)) !important;
+}
+
+#pppoe-edit-modal .modal-form,
+#pppoe-assign-modal .modal-form,
+#pppoe-generate-modal .modal-form {
+    padding: 0 !important;
+}
+
+#pppoe-edit-modal .modal-body,
+#pppoe-assign-modal .modal-body,
+#pppoe-generate-modal .modal-body,
+#pppoe-traffic-modal .modal-body,
+#pppoe-session-history-modal .modal-body {
+    padding: 1rem !important;
+}
+
+#pppoe-edit-modal .modal-form .modal-footer,
+#pppoe-assign-modal .modal-form .modal-footer,
+#pppoe-generate-modal .modal-form .modal-footer {
+    margin: 0 !important;
+}
+
+#pppoe-edit-modal .secure-input-wrap,
+#pppoe-assign-modal .secure-input-wrap {
+    display: flex !important;
+    align-items: center !important;
+    gap: .375rem !important;
+}
+
+#pppoe-edit-modal .secure-input-wrap .form-control,
+#pppoe-assign-modal .secure-input-wrap .form-control {
+    flex: 1 1 auto !important;
+}
+
+#pppoe-edit-modal .secure-input-wrap .btn,
+#pppoe-assign-modal .secure-input-wrap .btn {
+    flex: 0 0 auto !important;
+}
+
+.tabler-form-modal .pppoe-customer-search-field {
+    position: relative !important;
+    display: block !important;
+    margin-bottom: .5rem !important;
+}
+
+.tabler-form-modal .pppoe-customer-search-field .form-control {
+    padding-left: 2.25rem !important;
+}
+
+.tabler-form-modal .pppoe-customer-search-results {
+    position: absolute !important;
+    top: calc(100% + .25rem) !important;
+    right: 0 !important;
+    left: 0 !important;
+    z-index: 20 !important;
+    max-height: 16rem !important;
+    overflow: auto !important;
+    border: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--pppoe-normal-bg) !important;
+    box-shadow: var(--tblr-box-shadow-dropdown, 0 .5rem 1rem rgba(15, 23, 42, .12)) !important;
+}
+
+#pppoe-traffic-modal .modal-container--traffic {
+    border-radius: var(--pppoe-normal-radius) !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-modal {
+    background: transparent !important;
+    background-image: none !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-modal__sub {
+    margin: 0 0 .75rem !important;
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .8125rem !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-status-row {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .375rem !important;
+    margin: 0 0 .75rem !important;
+    padding: .25rem .5rem !important;
+    border: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    box-shadow: none !important;
+    font-size: .75rem !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-summary,
+#pppoe-traffic-modal .pppoe-traffic-panels {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)) !important;
+    gap: .75rem !important;
+    margin: 0 0 .75rem !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-summary__item,
+#pppoe-traffic-modal .pppoe-traffic-panel,
+#pppoe-traffic-modal .pppoe-traffic-footerbar {
+    min-height: auto !important;
+    padding: .875rem !important;
+    border: 1px solid var(--pppoe-normal-border) !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--pppoe-normal-bg) !important;
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-summary__icon {
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem !important;
+    border-radius: var(--pppoe-normal-radius) !important;
+    background: var(--tblr-primary-lt, rgba(32, 107, 196, .08)) !important;
+    color: var(--tblr-primary, #206bc4) !important;
+    box-shadow: none !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-summary__label,
+#pppoe-traffic-modal .pppoe-traffic-summary__meta {
+    color: var(--pppoe-normal-muted) !important;
+    font-size: .75rem !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-summary__item strong {
+    color: var(--app-text, #1f2937) !important;
+    font-size: .95rem !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-toolbar {
+    margin: 0 0 .75rem !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-panel__title {
+    margin: 0 0 .75rem !important;
+    color: var(--app-text, #1f2937) !important;
+    font-size: .875rem !important;
+    font-weight: 600 !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-panel canvas {
+    width: 100% !important;
+    height: 220px !important;
+    max-height: 220px !important;
+}
+
+#pppoe-traffic-modal .pppoe-traffic-footerbar {
+    margin: 0 !important;
+}
+
+#pppoe-session-history-modal .pppoe-session-history {
+    background: transparent !important;
+}
+
+#pppoe-session-history-modal .pppoe-session-history__table th,
+#pppoe-session-history-modal .pppoe-session-history__table td {
+    padding: .625rem .75rem !important;
+    font-size: .8125rem !important;
+}
+
+body.theme-dark .pppoe-page {
+    --pppoe-normal-border: var(--app-border, #2f3b4a);
+    --pppoe-normal-bg: var(--app-surface, #182433);
+    --pppoe-normal-muted: #94a3b8;
+}
+
+body.theme-dark .pppoe-page .pppoe-header .page-title h1,
+body.theme-dark .pppoe-page .status-title,
+body.theme-dark .pppoe-page .status-meta .value,
+body.theme-dark .pppoe-page .pppoe-summary-card__value,
+body.theme-dark .pppoe-page .pppoe-accounts-card .card-title,
+body.theme-dark .pppoe-page .pppoe-name,
+body.theme-dark #pppoe-traffic-modal .pppoe-traffic-summary__item strong,
+body.theme-dark #pppoe-traffic-modal .pppoe-traffic-panel__title {
+    color: var(--app-text, #f4f6fa) !important;
+}
+
+body.theme-dark .pppoe-page .pppoe-toolbar,
+body.theme-dark .pppoe-page .pppoe-table thead th,
+body.theme-dark .pppoe-page .table-footer,
+body.theme-dark #pppoe-traffic-modal .pppoe-traffic-status-row {
+    background: #151f2c !important;
+}
+
+body.theme-dark .pppoe-page .pppoe-toolbar .chip.btn,
+body.theme-dark .tabler-form-modal .pppoe-customer-search-results {
+    background: var(--app-surface, #182433) !important;
+    color: var(--app-text, #f4f6fa) !important;
+}
+
+@media (max-width: 1180px) {
+    .pppoe-page #pppoe-workbench.container-xl {
+        max-width: 100% !important;
+    }
+
+    .pppoe-page .pppoe-header,
+    .pppoe-page .pppoe-header-actions {
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+    }
+
+    .pppoe-page .pppoe-toolbar {
+        align-items: stretch !important;
+    }
+}
+
+@media (max-width: 700px) {
+    .pppoe-page #pppoe-workbench.container-xl {
+        padding-right: .75rem !important;
+        padding-left: .75rem !important;
+    }
+
+    .pppoe-page .pppoe-header,
+    .pppoe-page .pppoe-header-actions,
+    .pppoe-page .status-card-left,
+    .pppoe-page .status-card-right,
+    .pppoe-page .pppoe-router-picker--inline {
+        width: 100% !important;
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    .pppoe-page .pppoe-sync-status,
+    .pppoe-page #pppoe-sync-btn,
+    .pppoe-page .pppoe-router-picker--inline .select-wrapper,
+    .pppoe-page .pppoe-router-picker--inline .form-select {
+        width: 100% !important;
+    }
+
+    .pppoe-page .pppoe-toolbar .filter-chips,
+    .pppoe-page .toolbar-actions,
+    .pppoe-page .page-size-control {
+        width: 100% !important;
+    }
+
+    .pppoe-page .pppoe-toolbar .chip.btn {
+        flex: 1 1 auto !important;
+    }
+
+    #pppoe-traffic-modal .pppoe-traffic-panels {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* PPPoE Assign modal Tabler arrangement. */
+#pppoe-assign-modal.tabler-form-modal {
+    --app-form-modal-width: 640px !important;
+}
+
+#pppoe-assign-modal .modal-header {
+    align-items: center !important;
+    min-height: auto !important;
+    padding: .875rem 1rem !important;
+}
+
+#pppoe-assign-modal .modal-title {
+    max-width: calc(100% - 2.5rem) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+#pppoe-assign-modal .modal-body {
+    display: grid !important;
+    gap: 1rem !important;
+}
+
+#pppoe-assign-modal .pppoe-assign-card {
+    position: relative !important;
+    padding: .875rem !important;
+    border: 1px solid var(--pppoe-normal-border, var(--tblr-border-color, #dce3ed)) !important;
+    border-radius: var(--pppoe-normal-radius, var(--tblr-border-radius, 4px)) !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+#pppoe-assign-modal .pppoe-assign-search {
+    margin: 0 !important;
+}
+
+#pppoe-assign-modal .pppoe-assign-search .input-icon-addon {
+    color: var(--pppoe-normal-muted, var(--tblr-muted, #667085)) !important;
+}
+
+#pppoe-assign-modal .pppoe-assign-search i {
+    position: static !important;
+    left: auto !important;
+    pointer-events: auto !important;
+}
+
+#pppoe-assign-modal .pppoe-assign-search .form-control {
+    min-height: 2.25rem !important;
+    padding-left: 2.25rem !important;
+    background: var(--pppoe-normal-bg, #fff) !important;
+}
+
+#pppoe-assign-modal .form-hint {
+    margin-top: .5rem !important;
+    color: var(--pppoe-normal-muted, var(--tblr-muted, #667085)) !important;
+    font-size: .75rem !important;
+}
+
+#pppoe-assign-modal #pppoe-assign-customer {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+#pppoe-assign-modal .pppoe-customer-search-results {
+    top: calc(100% + .375rem) !important;
+    z-index: 50 !important;
+    max-height: 18rem !important;
+    padding: .25rem !important;
+}
+
+#pppoe-assign-modal .pppoe-customer-search-option,
+#pppoe-assign-modal .pppoe-customer-search-empty {
+    border-radius: var(--pppoe-normal-radius, var(--tblr-border-radius, 4px)) !important;
+}
+
+#pppoe-assign-modal .pppoe-assign-fields-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: .875rem !important;
+}
+
+#pppoe-assign-modal .form-field {
+    margin: 0 !important;
+}
+
+#pppoe-assign-modal .form-label {
+    margin-bottom: .375rem !important;
+    color: var(--app-text, #1f2937) !important;
+    font-size: .8125rem !important;
+}
+
+#pppoe-assign-modal .secure-input-wrap.input-group {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 0 !important;
+}
+
+#pppoe-assign-modal .secure-input-wrap.input-group .form-control {
+    min-width: 0 !important;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    font-family: var(--tblr-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace) !important;
+    font-size: .8125rem !important;
+}
+
+#pppoe-assign-modal .secure-input-wrap.input-group .secure-input-toggle {
+    width: 2.25rem !important;
+    min-width: 2.25rem !important;
+    height: auto !important;
+    min-height: 2.25rem !important;
+    margin-left: -1px !important;
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+}
+
+#pppoe-assign-modal #pppoe-assign-profile {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+}
+
+#pppoe-assign-modal .modal-footer {
+    gap: .5rem !important;
+    padding: .75rem 1rem !important;
+}
+
+#pppoe-assign-modal #pppoe-assign-unassign {
+    margin-right: auto !important;
+}
+
+body.theme-dark #pppoe-assign-modal .pppoe-assign-card,
+body.theme-dark #pppoe-assign-modal .secure-input-wrap.input-group .form-control,
+body.theme-dark #pppoe-assign-modal #pppoe-assign-profile {
+    background: #151f2c !important;
+}
+
+body.theme-dark #pppoe-assign-modal .form-label {
+    color: var(--app-text, #f4f6fa) !important;
+}
+
+@media (max-width: 700px) {
+    #pppoe-assign-modal .modal-title {
+        white-space: normal !important;
+    }
+
+    #pppoe-assign-modal .pppoe-assign-fields-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    #pppoe-assign-modal .modal-footer {
+        align-items: stretch !important;
+        flex-direction: column !important;
+    }
+
+    #pppoe-assign-modal .modal-footer .btn,
+    #pppoe-assign-modal #pppoe-assign-unassign {
+        width: 100% !important;
+        margin: 0 !important;
+    }
+}
+
+/* PPPoE modal backgrounds: use Tabler modal/backdrop colors instead of custom blurred overlay. */
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal {
+    --pppoe-modal-bg: var(--tblr-modal-bg, var(--tblr-bg-surface, #ffffff));
+    --pppoe-modal-color: var(--tblr-modal-color, var(--tblr-body-color, #1f2937));
+    --pppoe-modal-border: var(--tblr-modal-border-color, var(--tblr-border-color, #e5e7eb));
+    --pppoe-modal-footer-bg: var(--tblr-bg-surface-secondary, #f8fafc);
+    background: rgba(var(--tblr-dark-rgb, 31, 41, 55), .35) !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .modal-container.modal-content {
+    color: var(--pppoe-modal-color) !important;
+    border: var(--tblr-border-width, 1px) solid var(--pppoe-modal-border) !important;
+    border-radius: var(--tblr-modal-border-radius, var(--tblr-border-radius-lg, 8px)) !important;
+    background: var(--pppoe-modal-bg) !important;
+    background-color: var(--pppoe-modal-bg) !important;
+    background-image: none !important;
+    box-shadow: var(--tblr-box-shadow-lg, 0 1rem 3rem rgba(0, 0, 0, .175)) !important;
+}
+
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .modal-header,
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .modal-body {
+    color: var(--pppoe-modal-color) !important;
+    background: var(--pppoe-modal-bg) !important;
+    background-color: var(--pppoe-modal-bg) !important;
+    background-image: none !important;
+}
+
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .modal-header {
+    border-bottom-color: var(--pppoe-modal-border) !important;
+}
+
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .modal-footer {
+    color: var(--pppoe-modal-color) !important;
+    border-top-color: var(--pppoe-modal-border) !important;
+    background: var(--pppoe-modal-footer-bg) !important;
+    background-color: var(--pppoe-modal-footer-bg) !important;
+    background-image: none !important;
+}
+
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .pppoe-assign-card,
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .pppoe-traffic-status-row,
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .pppoe-traffic-summary__item,
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .pppoe-traffic-panel,
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .pppoe-traffic-footerbar {
+    border-color: var(--pppoe-modal-border) !important;
+    background: var(--pppoe-modal-footer-bg) !important;
+    background-color: var(--pppoe-modal-footer-bg) !important;
+    background-image: none !important;
+}
+
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .form-control[readonly],
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal .form-select[readonly],
+[id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal #pppoe-assign-profile {
+    background-color: var(--pppoe-modal-footer-bg) !important;
+}
+
+body.theme-dark [id^="pppoe-"][id$="-modal"].modal-overlay.tabler-form-modal {
+    --pppoe-modal-bg: var(--tblr-modal-bg, var(--app-surface, #182433));
+    --pppoe-modal-color: var(--tblr-modal-color, var(--app-text, #f4f6fa));
+    --pppoe-modal-border: var(--tblr-modal-border-color, var(--app-border, #2f3b4a));
+    --pppoe-modal-footer-bg: var(--tblr-bg-surface-secondary, #151f2c);
+    background: rgba(0, 0, 0, .5) !important;
+}

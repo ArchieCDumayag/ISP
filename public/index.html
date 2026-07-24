@@ -9,15 +9,15 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/dashboard.css?v=4.7">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <link rel="stylesheet" href="css/dashboard.css?v=5.0">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 
-<body>
-    <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
         <div id="sidebar"></div>
-        <div class="app-main">
+        <div class="app-main page-wrapper">
             <div id="topbar"></div>
             <main class="dashboard-main page">
                 <section class="page-header">
@@ -28,28 +28,28 @@
                     </div>
                 </section>
 
-                <section class="trend-summary" id="monthly-trend">
-                    <header class="trend-header">
+                <section class="card trend-summary tabler-dashboard-card area-performance-card" id="monthly-trend">
+                    <header class="card-header trend-header">
                         <div class="trend-header-copy">
                             <h2>Area performance</h2>
                             <p class="subtitle" id="trendScopeMeta">Switch the area to update the dashboard charts and summaries live.</p>
                         </div>
                         <div class="trend-filters" aria-label="Dashboard filters">
                             <label class="trend-filter" for="trendAreaFilter">
-                                <select id="trendAreaFilter" aria-label="Filter dashboard by area">
+                                <select class="form-select form-select-sm" id="trendAreaFilter" aria-label="Filter dashboard by area">
                                     <option value="">All areas</option>
                                 </select>
                             </label>
                             <label class="trend-filter" for="trendSourceMonthFilter">
-                                <select id="trendSourceMonthFilter" aria-label="Filter payment source chart by month">
+                                <select class="form-select form-select-sm" id="trendSourceMonthFilter" aria-label="Filter payment source chart by month">
                                     <option value="">All months</option>
                                 </select>
                             </label>
                         </div>
                     </header>
 
-                    <div class="trend-kpis" aria-label="Key performance indicators">
-                        <article class="trend-card trend-card--billed">
+                    <div class="card-body trend-kpis area-performance-kpis" aria-label="Key performance indicators">
+                        <article class="card card-sm trend-card trend-card--billed area-performance-stat">
                             <div class="card-top">
                                 <span class="card-icon"><i class="ti ti-file-invoice" aria-hidden="true"></i></span>
                                 <span class="card-label">Total Billed</span>
@@ -57,7 +57,7 @@
                             <p class="card-value" id="trendTotalBilled">&#8369;0</p>
                             <p class="card-meta" id="trendBilledMeta">Across selected period</p>
                         </article>
-                        <article class="trend-card trend-card--collected">
+                        <article class="card card-sm trend-card trend-card--collected area-performance-stat">
                             <div class="card-top">
                                 <span class="card-icon"><i class="ti ti-cash" aria-hidden="true"></i></span>
                                 <span class="card-label">Total Collected</span>
@@ -65,7 +65,7 @@
                             <p class="card-value" id="trendTotalCollected">&#8369;0</p>
                             <p class="card-meta" id="trendCollectedMeta">Cleared and posted</p>
                         </article>
-                        <article class="trend-card trend-card--rate">
+                        <article class="card card-sm trend-card trend-card--rate area-performance-stat">
                             <div class="card-top">
                                 <span class="card-icon"><i class="ti ti-chart-bar" aria-hidden="true"></i></span>
                                 <span class="card-label">Collection Rate</span>
@@ -73,7 +73,7 @@
                             <p class="card-value" id="trendCollectionRate">0%</p>
                             <p class="card-meta">Target <span class="target-pill">95%</span> | <span id="trendCollectionBadge" class="status-pill trend-collection-badge status-pill--neutral">Monitor</span></p>
                         </article>
-                        <article class="trend-card trend-card--subs">
+                        <article class="card card-sm trend-card trend-card--subs area-performance-stat">
                             <div class="card-top">
                                 <span class="card-icon"><i class="ti ti-users" aria-hidden="true"></i></span>
                                 <span class="card-label">Paying Subscribers</span>
@@ -81,7 +81,7 @@
                             <p class="card-value" id="trendPayingSubs">0</p>
                             <p class="card-meta" id="trendSubsMeta">Accounts with posted payments</p>
                         </article>
-                        <article class="trend-card trend-card--outstanding">
+                        <article class="card card-sm trend-card trend-card--outstanding area-performance-stat">
                             <div class="card-top">
                                 <span class="card-icon"><i class="ti ti-alert-triangle" aria-hidden="true"></i></span>
                                 <span class="card-label">Outstanding Balance</span>
@@ -93,28 +93,28 @@
                 </section>
 
                 <section class="trend-grid trend-grid--primary">
-                    <article class="panel trend-panel trend-panel--line">
-                        <header class="panel-header">
-                            <div class="trend-panel-copy trend-panel-copy--luxury">
+                    <article class="card trend-panel trend-panel--line">
+                        <header class="card-header panel-header">
+                            <div class="trend-panel-copy">
                                 <h2>Balance vs collected</h2>
                             </div>
                         </header>
-                        <div class="panel-body">
-                            <div class="trend-luxury-metrics" aria-label="Balance chart highlights">
-                                <article class="trend-luxury-metric trend-luxury-metric--balance">
-                                    <span class="trend-luxury-metric__label">Peak Balance</span>
-                                    <strong class="trend-luxury-metric__value" id="trendDailyPeakBalance">&#8369;0</strong>
-                                    <span class="trend-luxury-metric__meta" id="trendDailyPeakBalanceMeta">Waiting for balance movement.</span>
+                        <div class="card-body panel-body">
+                            <div class="trend-highlight-grid" aria-label="Balance chart highlights">
+                                <article class="card card-sm trend-highlight-card trend-highlight-card--balance">
+                                    <span class="trend-highlight-card__label">Peak Balance</span>
+                                    <strong class="trend-highlight-card__value" id="trendDailyPeakBalance">&#8369;0</strong>
+                                    <span class="trend-highlight-card__meta" id="trendDailyPeakBalanceMeta">Waiting for balance movement.</span>
                                 </article>
-                                <article class="trend-luxury-metric trend-luxury-metric--collected">
-                                    <span class="trend-luxury-metric__label">Peak Collected</span>
-                                    <strong class="trend-luxury-metric__value" id="trendDailyPeakCollected">&#8369;0</strong>
-                                    <span class="trend-luxury-metric__meta" id="trendDailyPeakCollectedMeta">Waiting for collection movement.</span>
+                                <article class="card card-sm trend-highlight-card trend-highlight-card--collected">
+                                    <span class="trend-highlight-card__label">Peak Collected</span>
+                                    <strong class="trend-highlight-card__value" id="trendDailyPeakCollected">&#8369;0</strong>
+                                    <span class="trend-highlight-card__meta" id="trendDailyPeakCollectedMeta">Waiting for collection movement.</span>
                                 </article>
-                                <article class="trend-luxury-metric trend-luxury-metric--spotlight">
-                                    <span class="trend-luxury-metric__label">Spotlight Month</span>
-                                    <strong class="trend-luxury-metric__value" id="trendDailySpotlight">No spotlight</strong>
-                                    <span class="trend-luxury-metric__meta" id="trendDailySpotlightMeta">Balance and collection details will appear here.</span>
+                                <article class="card card-sm trend-highlight-card trend-highlight-card--spotlight">
+                                    <span class="trend-highlight-card__label">Spotlight Month</span>
+                                    <strong class="trend-highlight-card__value" id="trendDailySpotlight">No spotlight</strong>
+                                    <span class="trend-highlight-card__meta" id="trendDailySpotlightMeta">Balance and collection details will appear here.</span>
                                 </article>
                             </div>
                             <div class="chart-wrapper chart-wrapper--tabler card tabler-card tabler-chart-card">
@@ -123,19 +123,19 @@
                         </div>
                     </article>
 
-                    <article class="panel trend-panel trend-panel--channels trend-panel--pie trend-panel--bar trend-panel--source-luxury">
-                        <header class="panel-header">
-                            <div class="trend-panel-copy trend-panel-copy--luxury">
+                    <article class="card trend-panel trend-panel--channels trend-panel--pie trend-panel--bar">
+                        <header class="card-header panel-header">
+                            <div class="trend-panel-copy">
                                 <h2>Admin vs collector vs GCash vs Xendit</h2>
                             </div>
                         </header>
-                        <div class="panel-body">
+                        <div class="card-body panel-body">
                             <div class="trend-chart-stack">
-                                <div class="chart-wrapper chart-wrapper--bar">
+                                <div class="chart-wrapper chart-wrapper--bar card tabler-card tabler-chart-card">
                                     <canvas id="trendChannelSourceBarChart" aria-label="Admin collector gcash xendit bar chart" role="img"></canvas>
                                 </div>
-                                <div class="trend-chart-meta trend-chart-meta--luxury">
-                                    <ul class="trend-chart-breakdown trend-chart-breakdown--luxury" id="trendSourceBreakdown">
+                                <div class="trend-chart-meta">
+                                    <ul class="trend-chart-breakdown" id="trendSourceBreakdown">
                                         <li class="trend-chart-breakdown__empty">Loading breakdown...</li>
                                     </ul>
                                 </div>
@@ -145,16 +145,16 @@
                 </section>
 
                 <section class="trend-grid trend-grid--insights">
-                    <article class="panel trend-panel trend-panel--channels trend-panel--pie">
-                        <header class="panel-header">
+                    <article class="card trend-panel trend-panel--channels trend-panel--pie">
+                        <header class="card-header panel-header">
                             <div>
                                 <h2>Paid vs unpaid vs advance</h2>
                                 <p>Subscriber balance distribution based on current account balances.</p>
                             </div>
                         </header>
-                        <div class="panel-body">
+                        <div class="card-body panel-body">
                             <div class="trend-chart-stack">
-                                <div class="chart-wrapper chart-wrapper--doughnut chart-wrapper--pie">
+                                <div class="chart-wrapper chart-wrapper--doughnut chart-wrapper--pie card tabler-card tabler-chart-card">
                                     <canvas id="trendBalancePieChart" aria-label="Paid unpaid advance pie chart" role="img"></canvas>
                                 </div>
                                 <div class="trend-chart-meta">
@@ -171,16 +171,16 @@
                         </div>
                     </article>
 
-                    <article class="panel trend-panel trend-panel--channels trend-panel--pie">
-                        <header class="panel-header">
+                    <article class="card trend-panel trend-panel--channels trend-panel--pie">
+                        <header class="card-header panel-header">
                             <div>
                                 <h2>Active vs inactive vs disabled</h2>
                                 <p>Customer status mix across all current subscriber records.</p>
                             </div>
                         </header>
-                        <div class="panel-body">
+                        <div class="card-body panel-body">
                             <div class="trend-chart-stack">
-                                <div class="chart-wrapper chart-wrapper--doughnut chart-wrapper--pie">
+                                <div class="chart-wrapper chart-wrapper--doughnut chart-wrapper--pie card tabler-card tabler-chart-card">
                                     <canvas id="trendStatusPieChart" aria-label="Active inactive disabled pie chart" role="img"></canvas>
                                 </div>
                                 <div class="trend-chart-meta">
@@ -203,7 +203,8 @@
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha256-s4B2di9zY7yekStouOA0gmeY213ya7YfAA7C56MTe8c=" crossorigin="anonymous"></script>
-    <script src="app.js?v=3.9"></script>
+    <script src="js/payment-current-bill.js?v=1.0"></script>
+    <script src="app.js?v=4.0"></script>
     <script src="layout.js?v=3.7"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>

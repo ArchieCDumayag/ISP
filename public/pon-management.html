@@ -10,12 +10,13 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/pon-management.css?v=2.8">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <link rel="stylesheet" href="css/pon-management-tabler.css?v=1.0">
     <script src="theme-init.js?v=2.6"></script>
 </head>
-<body>
-    <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
         <div id="sidebar"></div>
-        <div class="app-main">
+        <div class="app-main page-wrapper">
             <div id="topbar"></div>
             <main class="page pon-page">
                 <section class="page-header pon-header">
@@ -26,22 +27,24 @@
                     </div>
                 </section>
 
-                <section class="section-frame pon-panel">
-                    <header class="pon-panel__head">
+                <section class="card pon-panel">
+                    <header class="card-header pon-panel__head">
                         <div>
                             <h2>OLT Inventory</h2>
                             <p>Monitor OLT port capacity and click an OLT to expand its PON ports.</p>
                         </div>
-                        <button type="button" class="primary-btn" id="openOltModalBtn"><i class="ti ti-server" aria-hidden="true"></i> Add OLT</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="openOltModalBtn"><i class="ti ti-server" aria-hidden="true"></i> Add OLT</button>
                     </header>
-                    <div class="pon-toolbar">
-                        <div class="search-field">
-                            <i class="ti ti-search" aria-hidden="true"></i>
-                            <input id="oltSearch" type="search" placeholder="Search OLT, type, or site" aria-label="Search OLTs">
+                    <div class="card-body pon-toolbar">
+                        <div class="input-icon pon-search-control">
+                            <span class="input-icon-addon">
+                                <i class="ti ti-search" aria-hidden="true"></i>
+                            </span>
+                            <input id="oltSearch" class="form-control form-control-sm" type="search" placeholder="Search OLT, type, or site" aria-label="Search OLTs">
                         </div>
                     </div>
-                    <div class="table-wrapper">
-                        <table class="pon-table" aria-label="OLT table">
+                    <div class="table-responsive">
+                        <table class="table table-vcenter table-sm pon-table" aria-label="OLT table">
                             <thead>
                                 <tr>
                                     <th>OLT</th>
@@ -66,9 +69,7 @@
         <div class="pon-modal__content" role="dialog" aria-modal="true" aria-labelledby="oltModalTitle">
             <header class="pon-modal__header">
                 <h3 id="oltModalTitle"><i class="ti ti-server" aria-hidden="true"></i> Add OLT</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="oltModal" aria-label="Close OLT modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="oltModal" aria-label="Close OLT modal"></button>
             </header>
             <form id="oltForm" class="pon-form pon-form--modal" autocomplete="off">
                 <div class="pon-form__row">
@@ -106,14 +107,37 @@
         </div>
     </div>
 
+    <div class="pon-modal" id="ponPortNameModal" hidden>
+        <div class="pon-modal__backdrop" data-pon-modal-close="ponPortNameModal"></div>
+        <div class="pon-modal__content pon-modal__content--compact" role="dialog" aria-modal="true" aria-labelledby="ponPortNameModalTitle">
+            <header class="pon-modal__header">
+                <div>
+                    <h3 id="ponPortNameModalTitle"><i class="ti ti-pencil" aria-hidden="true"></i> Edit PON Port Name</h3>
+                    <p class="pon-modal__sub" id="ponPortNameMeta">Select a PON port.</p>
+                </div>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="ponPortNameModal" aria-label="Close PON port name modal"></button>
+            </header>
+            <form id="ponPortNameForm" class="pon-form pon-form--modal" autocomplete="off">
+                <input type="hidden" id="ponPortRefValue" name="ponPortRefValue">
+                <div class="pon-form__row">
+                    <label for="ponPortDisplayName">Port Name</label>
+                    <input id="ponPortDisplayName" class="form-control form-control-sm" name="ponPortDisplayName" type="text" maxlength="80" placeholder="Default: PON-1">
+                </div>
+                <span class="pon-help">Leave blank to use the default PON label.</span>
+                <div class="pon-modal__actions">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-pon-modal-close="ponPortNameModal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save Name</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="pon-modal" id="napModal" hidden>
         <div class="pon-modal__backdrop" data-pon-modal-close="napModal"></div>
         <div class="pon-modal__content" role="dialog" aria-modal="true" aria-labelledby="napModalTitle">
             <header class="pon-modal__header">
                 <h3 id="napModalTitle"><i class="ti ti-network" aria-hidden="true"></i> Add NAP</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="napModal" aria-label="Close NAP modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="napModal" aria-label="Close NAP modal"></button>
             </header>
             <form id="napForm" class="pon-form pon-form--modal" autocomplete="off">
                 <div class="pon-form__split">
@@ -162,9 +186,7 @@
                 </div>
                 <div class="pon-modal__header-actions">
                     <button type="button" class="pon-icon-btn pon-icon-btn--add" id="openNapFromPortBtn" title="Add NAP" aria-label="Add NAP"><i class="ti ti-plus" aria-hidden="true"></i></button>
-                    <button type="button" class="pon-modal__close" data-pon-modal-close="portNapModal" aria-label="Close port NAP modal">
-                        <i class="ti ti-x" aria-hidden="true"></i>
-                    </button>
+                    <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="portNapModal" aria-label="Close port NAP modal"></button>
                 </div>
             </header>
             <div class="table-wrapper">
@@ -193,9 +215,7 @@
         <div class="pon-modal__content pon-modal__content--wide pon-modal__content--subs" role="dialog" aria-modal="true" aria-labelledby="napSubscribersModalTitle">
             <header class="pon-modal__header">
                 <h3 id="napSubscribersModalTitle"><i class="ti ti-users" aria-hidden="true"></i> NAP Subscribers</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="napSubscribersModal" aria-label="Close NAP subscribers modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="napSubscribersModal" aria-label="Close NAP subscribers modal"></button>
             </header>
             <p class="pon-modal__sub" id="napSubscribersMeta">No NAP selected.</p>
             <div class="table-wrapper">
@@ -225,9 +245,7 @@
         <div class="pon-modal__content pon-modal__content--wide" role="dialog" aria-modal="true" aria-labelledby="napPortAssignTitle">
             <header class="pon-modal__header">
                 <h3 id="napPortAssignTitle"><i class="ti ti-user-plus" aria-hidden="true"></i> Assign Customer</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="napPortAssignModal" aria-label="Close assign customer modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="napPortAssignModal" aria-label="Close assign customer modal"></button>
             </header>
             <p class="pon-modal__sub" id="napPortAssignMeta">Select unassigned customer.</p>
             <div class="pon-toolbar">
@@ -263,9 +281,7 @@
         <div class="pon-modal__content pon-modal__content--compact" role="dialog" aria-modal="true" aria-labelledby="napOpticalTitle">
             <header class="pon-modal__header">
                 <h3 id="napOpticalTitle"><i class="ti ti-waveform" aria-hidden="true"></i> Set Optical Power</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="napOpticalModal" aria-label="Close optical power modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="napOpticalModal" aria-label="Close optical power modal"></button>
             </header>
             <p class="pon-modal__sub" id="napOpticalMeta">Set optical power for selected port.</p>
             <form id="napOpticalForm" class="pon-form pon-form--modal" autocomplete="off">
@@ -286,9 +302,7 @@
         <div class="pon-modal__content" role="dialog" aria-modal="true" aria-labelledby="napConfigModalTitle">
             <header class="pon-modal__header">
                 <h3 id="napConfigModalTitle"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> NAP Config</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="napConfigModal" aria-label="Close NAP config modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="napConfigModal" aria-label="Close NAP config modal"></button>
             </header>
             <form id="napConfigForm" class="pon-form pon-form--modal" autocomplete="off">
                 <div class="pon-form__split">
@@ -340,9 +354,7 @@
         <div class="pon-modal__content pon-modal__content--wide pon-modal__content--map" role="dialog" aria-modal="true" aria-labelledby="napMapModalTitle">
             <header class="pon-modal__header">
                 <h3 id="napMapModalTitle"><i class="ti ti-map-pin" aria-hidden="true"></i> Select Coordinate</h3>
-                <button type="button" class="pon-modal__close" data-pon-modal-close="napMapModal" aria-label="Close map modal">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+                <button type="button" class="btn-close pon-modal__close" data-pon-modal-close="napMapModal" aria-label="Close map modal"></button>
             </header>
             <div class="pon-map-toolbar">
                 <p class="pon-modal__sub">Click on the map to set coordinate.</p>
@@ -358,7 +370,7 @@
     <div class="toast" id="ponToast" role="status" aria-live="polite"></div>
 
     <script src="layout.js?v=3.7"></script>
-    <script src="js/pon-management.js?v=4.4"></script>
+    <script src="js/pon-management.js?v=4.5"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>
 </body>

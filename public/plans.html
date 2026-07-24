@@ -8,25 +8,14 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/plans.css?v=2.4">
-    <link rel="stylesheet" href="css/payments.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <link rel="stylesheet" href="css/plans-tabler.css?v=1.0">
     <script src="theme-init.js?v=2.6"></script>
-    <style>
-        /* Dynamic color for Plans heading based on theme */
-        [data-theme="dark"] .page-title h1 {
-            color: #ffffff !important;
-        }
-        [data-theme="light"] .page-title h1,
-        .page-title h1 {
-            color: #000000 !important;
-        }
-    </style>
 </head>
-<body>
-    <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
         <div id="sidebar"></div>
-        <div class="app-main">
+        <div class="app-main page-wrapper">
             <div id="topbar"></div>
             <main class="page plans-page">
                 <section class="page-header">
@@ -37,28 +26,34 @@
                     </div>
                 </section>
 
-                <section class="section-frame plan-category" id="postpaid">
-                    <header class="category-head" style="display:flex;justify-content:flex-end;align-items:center;">
-                        <button class="primary-btn" type="button" data-action="add-plan" data-category="postpaid"><i class="ti ti-plus" aria-hidden="true"></i> Add plan</button>
+                <section class="card plans-card" id="postpaid">
+                    <header class="card-header plans-card-header">
+                        <div>
+                            <h2 class="card-title mb-1">Plan list</h2>
+                            <p class="text-secondary mb-0">Manage postpaid and prepaid monthly plan pricing.</p>
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn btn-primary btn-sm" type="button" data-action="add-plan" data-category="postpaid"><i class="ti ti-plus" aria-hidden="true"></i> Add plan</button>
+                        </div>
                     </header>
-                    <div class="table-wrapper elevated">
-                        <table class="plans-table">
+                    <div class="table-responsive">
+                        <table class="table table-vcenter table-sm card-table plans-table">
                             <thead>
                                 <tr>
-                                    <th style="text-align:center;">ID</th>
+                                    <th class="text-center">ID</th>
                                     <th>Plan Name</th>
-                                    <th style="text-align:center;">Price</th>
-                                    <th style="text-align:center;">Router Profiles</th>
-                                    <th class="date-col" style="text-align:center;">Created</th>
-                                    <th class="date-col" style="text-align:center;">Updated</th>
-                                    <th style="text-align:center;">Total Clients</th>
+                                    <th class="text-center">Price</th>
+                                    <th class="text-center">Router Profiles</th>
+                                    <th class="date-col text-center">Created</th>
+                                    <th class="date-col text-center">Updated</th>
+                                    <th class="text-center">Total Clients</th>
                                     <th>Type</th>
-                                    <th class="col-actions" style="text-align:center;">Actions</th>
+                                    <th class="col-actions text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
                         </table>
-                        <div class="empty-state" id="emptyStatePlans" style="display:none;">
+                        <div class="empty-state p-4" id="emptyStatePlans" style="display:none;">
                             <i class="ti ti-box" aria-hidden="true"></i>
                             <p>No plans found.</p>
                         </div>
@@ -77,58 +72,57 @@
         </div>
     </div>
 
-    <div class="modal" id="planModal" aria-hidden="true" role="dialog" aria-labelledby="planModalTitle">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <h2 id="planModalTitle">Add plan</h2>
-                    <p class="modal-subtitle" id="planModalSubtitle">Postpaid plan</p>
+    <div class="modal tabler-form-modal" id="planModal" aria-hidden="true" role="dialog" aria-labelledby="planModalTitle">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="planModalTitle">Add plan</h2>
+                        <p class="modal-subtitle" id="planModalSubtitle">Postpaid plan</p>
+                    </div>
+                    <button class="btn-close" type="button" data-action="close-plan-modal" aria-label="Close"></button>
                 </div>
-                <button class="close-modal" type="button" data-action="close-plan-modal" aria-label="Close">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
-            </div>
-            <form class="plan-form" id="planForm">
-                <input type="hidden" name="planId">
-                <div class="form-grid">
-                    <div class="form-field">
-                        <label for="planCategory">Plan type</label>
-                        <select id="planCategory" name="category">
-                            <option value="postpaid">Postpaid</option>
-                            <option value="prepaid">Prepaid</option>
-                        </select>
-                    </div>
-                    <div class="form-field">
-                        <label for="planName">Plan name</label>
-                        <input type="text" id="planName" name="name" required>
-                    </div>
-                    <div class="form-field">
-                        <label for="planPrice">Price</label>
-                        <div class="input-with-addon">
-                            <span>&#8369;</span>
-                            <input type="number" id="planPrice" name="price" required min="0" step="1">
+                <form class="plan-form tabler-modal-form" id="planForm">
+                    <div class="modal-body">
+                        <input type="hidden" name="planId">
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label class="form-label" for="planCategory">Plan type</label>
+                                <select class="form-select" id="planCategory" name="category">
+                                    <option value="postpaid">Postpaid</option>
+                                    <option value="prepaid">Prepaid</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label class="form-label" for="planName">Plan name</label>
+                                <input class="form-control" type="text" id="planName" name="name" required>
+                            </div>
+                            <div class="form-field">
+                                <label class="form-label" for="planPrice">Monthly price</label>
+                                <div class="input-group input-group-flat">
+                                    <span class="input-group-text">&#8369;</span>
+                                    <input class="form-control" type="number" id="planPrice" name="price" required min="0" step="1">
+                                    <span class="input-group-text text-muted" id="planPriceSuffix">/ month</span>
+                                </div>
+                            </div>
+                            <div class="form-field span-two" id="planRouterBindingsField">
+                                <label class="form-label" for="planRouterBindings">Router profiles</label>
+                                <div id="planRouterBindings"></div>
+                            </div>
                         </div>
                     </div>
-                    <div class="form-field" id="planValidityField" style="display: none;">
-                        <label for="planValidity">Validity (days)</label>
-                        <input type="number" id="planValidity" name="validity" min="1" step="1">
+                    <div class="modal-footer form-actions">
+                        <button class="btn btn-link btn-sm" type="button" data-action="close-plan-modal">Cancel</button>
+                        <button class="btn btn-primary btn-sm" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save plan</button>
                     </div>
-                    <div class="form-field" style="grid-column: 1 / -1;">
-                        <label for="planRouterBindings">Router profiles</label>
-                        <div id="planRouterBindings"></div>
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button class="ghost-btn" type="button" data-action="close-plan-modal">Cancel</button>
-                    <button class="primary-btn" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save plan</button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 
     <div class="toast" id="planToast" role="status" aria-live="polite"></div>
 
-    <script src="plans.js?v=2.9"></script>
+    <script src="plans.js?v=3.1"></script>
     <script src="layout.js?v=3.7"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>

@@ -334,7 +334,7 @@ const prepareImport = async () => {
         planId: row.plan.id,
         planName: row.plan.name,
         planCategory: row.sourcePlanCategory,
-        planBilling: row.sourcePlanCategory === 'prepaid' ? 'Prepaid' : 'Monthly',
+        planBilling: 'Monthly',
         status: row.status,
         mikrotikId: row.routerId,
         pppoeMode: pppoeUsername ? 'manual' : '',

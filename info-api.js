@@ -310,10 +310,20 @@ async function loadPlans(branchId = null) {
       FROM plans
       ${branchId ? 'WHERE branch_id = ?' : ''}`;
     const [rows] = await query(sql, branchId ? [branchId] : []);
-    return rows || [];
+    return (rows || []).map((plan) => ({
+      ...plan,
+      priceSuffix: '/ month',
+      validity: null
+    }));
   }
   const data = await readJson(STORE_KEYS.plans, []);
-  return Array.isArray(data) ? data : [];
+  return Array.isArray(data)
+    ? data.map((plan) => ({
+      ...plan,
+      priceSuffix: '/ month',
+      validity: null
+    }))
+    : [];
 }
 
 async function loadCoverage(branchId = null) {

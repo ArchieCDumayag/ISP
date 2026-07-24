@@ -718,33 +718,11 @@ function resolveFirstBillingCharge(customer = {}, billDate, fullPlanAmount = 0) 
       skipInitialCharge: true
     };
   }
-  if (!activationDate || !(billDate instanceof Date) || isNaN(billDate) || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
-    return {
-      amount: roundMoney(planAmount),
-      prorated: false,
-      periodStart: null,
-      periodEnd: null
-    };
-  }
-
-  const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
-  const periodEnd = new Date(activationDate.getFullYear(), activationDate.getMonth() + 1, 0);
-  const activeDays = getInclusiveDayCount(activationDate, periodEnd);
-  const totalDays = getInclusiveDayCount(monthStart, periodEnd);
-  if (!activeDays || !totalDays || activeDays >= totalDays) {
-    return {
-      amount: roundMoney(planAmount),
-      prorated: false,
-      periodStart: null,
-      periodEnd: null
-    };
-  }
-
   return {
-    amount: roundMoney((planAmount / totalDays) * activeDays),
-    prorated: true,
-    periodStart: activationDate,
-    periodEnd
+    amount: roundMoney(planAmount),
+    prorated: false,
+    periodStart: null,
+    periodEnd: null
   };
 }
 
@@ -880,8 +858,7 @@ function resolvePlanCategory(customer, plans = []) {
 
 function resolvePlanBillingLabel(category = '', fallback = '') {
   const normalizedCategory = String(category || '').trim().toLowerCase();
-  if (normalizedCategory === 'prepaid') return 'Prepaid';
-  if (normalizedCategory === 'postpaid') return 'Monthly';
+  if (normalizedCategory === 'prepaid' || normalizedCategory === 'postpaid') return 'Monthly';
   return String(fallback || '').trim() || null;
 }
 
@@ -1649,16 +1626,13 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
       }
       continue;
     }
-    const chargeDescription = firstBillingCharge.prorated
-      ? `Monthly Recurring Charge (Prorated ${formatDateOnly(firstBillingCharge.periodStart)} to ${formatDateOnly(firstBillingCharge.periodEnd)})`
-      : 'Monthly Recurring Charge';
     const entry = {
       id: billId,
       amount: firstBillingCharge.amount,
       date: isoDate,
       kind: 'charge',
       reference: undefined,
-      description: chargeDescription,
+      description: 'Monthly Recurring Charge',
       type: 'charge',
       direction: 'debit',
       recordedAt: formatManilaDateTime(now) || new Date().toISOString(),

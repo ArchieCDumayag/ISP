@@ -1188,7 +1188,7 @@
         if (speedMatch) {
             return `${speedMatch[1]} ${speedMatch[2].toUpperCase()} plan`;
         }
-        return customer.planBilling || 'Monthly billing';
+        return 'Monthly billing';
     };
 
     const cleanPlanName = (value) => {
@@ -1270,7 +1270,7 @@
             setText('portalPlanNameDetail', planName);
             setText('portalPlanSpeed', buildPlanSpeedText(customer, currentPlan));
             setText('portalPlanAmount', formatCurrency(customer.planAmount || currentPlan?.price || 0));
-            setText('portalBillingCycle', customer.planBilling || 'Monthly');
+            setText('portalBillingCycle', 'Monthly');
             setText('portalArea', customer.area || 'Not set');
 
             applyStatus(customer.status || payload.status || 'active', state.amountDue);

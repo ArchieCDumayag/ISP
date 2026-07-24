@@ -1159,7 +1159,8 @@ const normalizeJsonCustomerExportRow = (customer = {}) => ({
 const normalizeJsonPlanExportRow = (plan = {}) => ({
     ...camelToSnakeRow(plan),
     plan_id: plan.id || plan.planId || plan.plan_id || '',
-    price_suffix: plan.priceSuffix || plan.price_suffix || '',
+    price_suffix: '/ month',
+    validity: '',
     created_at: plan.createdAt || plan.created_at || '',
     updated_at: plan.updatedAt || plan.updated_at || ''
 });
@@ -4631,8 +4632,8 @@ app.get('/api/public/plans', requireFeature('plans'), async (_req, res) => {
                 name: String(row?.name || row?.label || '').trim(),
                 description: String(row?.description || '').trim(),
                 profile: String(row?.profile || '').trim(),
-                priceSuffix: String(row?.priceSuffix || '').trim(),
-                validity: Number.isFinite(Number(row?.validity)) ? Number(row.validity) : null
+                priceSuffix: '/ month',
+                validity: null
             };
 
             if (Number.isFinite(priceNumber)) {
@@ -4640,7 +4641,6 @@ app.get('/api/public/plans', requireFeature('plans'), async (_req, res) => {
             }
             if (!plan.description) delete plan.description;
             if (!plan.profile) delete plan.profile;
-            if (!plan.priceSuffix) delete plan.priceSuffix;
             if (plan.validity == null) delete plan.validity;
 
             plans[category].push(plan);
@@ -5783,7 +5783,6 @@ app.post(
                 const planId = toNonEmptyString(pickRowValue(row, ['plan_id', 'planId', 'id']));
                 if (!planId) continue;
                 const price = toNullableNumber(pickRowValue(row, ['price']));
-                const validity = toNullableNumber(pickRowValue(row, ['validity']));
                 await connection.query(
                     `INSERT INTO plans (
                         branch_id, plan_id, name, label, category, description, profile,
@@ -5809,8 +5808,8 @@ app.post(
                         toNullableString(pickRowValue(row, ['description'])),
                         toNullableString(pickRowValue(row, ['profile'])),
                         price,
-                        toNullableString(pickRowValue(row, ['price_suffix', 'priceSuffix'])),
-                        Number.isFinite(validity) ? Math.trunc(validity) : null,
+                        '/ month',
+                        null,
                         toMysqlDateTime(pickRowValue(row, ['created_at', 'createdAt'])) || nowDateTime,
                         toMysqlDateTime(pickRowValue(row, ['updated_at', 'updatedAt'])) || nowDateTime
                     ]

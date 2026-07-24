@@ -54,6 +54,7 @@ const STORE_KEYS = {
     payments: 'payments',
     plans: 'plans'
 };
+const MONTHLY_PRICE_SUFFIX = '/ month';
 const PON_STATE_STORE_KEY = 'pon-state';
 const ACCOUNT_NUMBER_SETTINGS_KEY = 'account_number_settings';
 const ACCOUNT_TOTAL_DIGITS = 9;
@@ -1712,8 +1713,8 @@ const mapPlanRow = (row) => ({
     profile: row.profile || '',
     profileBindings: normalizePlanProfileBindings(row.profileBindings || row.profile_bindings),
     price: row.price != null ? Number(row.price) : 0,
-    priceSuffix: row.priceSuffix || '',
-    validity: row.validity != null ? Number(row.validity) : undefined,
+    priceSuffix: MONTHLY_PRICE_SUFFIX,
+    validity: undefined,
     createdAt: row.createdAt || undefined,
     updatedAt: row.updatedAt || undefined
 });
@@ -2290,7 +2291,18 @@ const readPlans = async (branchId = null) => {
         return (rows || []).map(mapPlanRow);
     }
     const data = await readJson(STORE_KEYS.plans, []);
-    return Array.isArray(data) ? data : [];
+    return Array.isArray(data)
+        ? data.map((plan) => {
+            const normalizedPlan = mapPlanRow({
+                ...plan,
+                id: plan?.id || plan?.planId || plan?.plan_id || ''
+            });
+            if (plan?.profileBindings || plan?.profile_bindings) {
+                normalizedPlan.profileBindings = normalizePlanProfileBindings(plan.profileBindings || plan.profile_bindings);
+            }
+            return normalizedPlan;
+        })
+        : [];
 };
 
 const computePaymentSummary = (history = []) => {
@@ -2563,8 +2575,7 @@ const deriveCustomerPlanSnapshot = ({
 };
 const resolvePlanBillingLabel = (category = '', fallback = '') => {
     const normalizedCategory = normalizePlanCategory(category);
-    if (normalizedCategory === 'prepaid') return 'Prepaid';
-    if (normalizedCategory === 'postpaid') return 'Monthly';
+    if (normalizedCategory === 'prepaid' || normalizedCategory === 'postpaid') return 'Monthly';
     return String(fallback || '').trim() || null;
 };
 const buildScheduledPrepaidPlanReset = () => ({
@@ -2940,8 +2951,7 @@ const buildImportedClientPlan = ({ planCategory = '', planValue = '', planAmount
         label: name,
         name,
         price: Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : 0,
-        priceSuffix: '/ month',
-        validity: 0,
+        priceSuffix: MONTHLY_PRICE_SUFFIX,
         createdAt: now,
         updatedAt: now
     };
@@ -2971,8 +2981,8 @@ const persistImportedPlans = async (plans = [], branchId = null) => {
                     plan.label || plan.name,
                     plan.category,
                     Number.isFinite(Number(plan.price)) ? Number(plan.price) : null,
-                    plan.priceSuffix || '/ month',
-                    Number.isFinite(Number(plan.validity)) ? Math.trunc(Number(plan.validity)) : 0,
+                    MONTHLY_PRICE_SUFFIX,
+                    null,
                     toMysqlDateTime(plan.createdAt) || nowDateTime,
                     toMysqlDateTime(plan.updatedAt) || nowDateTime
                 ]
@@ -3215,7 +3225,7 @@ const importClientListRecords = async ({ records = [], branchId, importedBy = nu
             planAmount: Number.isFinite(Number(plan.price))
                 ? Number(Number(plan.price).toFixed(2))
                 : (Number.isFinite(Number(record.planAmount)) ? Number(Number(record.planAmount).toFixed(2)) : null),
-            planBilling: category === 'prepaid' ? 'Prepaid' : 'Monthly',
+            planBilling: 'Monthly',
             planCategory: category,
             billDate,
             dueDate,
@@ -3305,8 +3315,8 @@ const sanitizePlanPayload = (plan) => {
         name: plan.name || '',
         category: plan.category || '',
         price: Number(plan.price) || 0,
-        priceSuffix: plan.priceSuffix || '',
-        validity: Number(plan.validity) || null,
+        priceSuffix: MONTHLY_PRICE_SUFFIX,
+        validity: null,
         profile: plan.profile || '',
         profileBindings: normalizePlanProfileBindings(plan.profileBindings || plan.profile_bindings)
     };
@@ -4693,9 +4703,7 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
     const incomingBillDate = incomingCategory === 'prepaid'
         ? initialBillDate
         : alignBillDateOnOrAfterActivationDate(initialBillDate, incomingActivationDate);
-    const planBilling = incomingCategory === 'prepaid'
-        ? 'Prepaid'
-        : (incomingCategory === 'postpaid' ? 'Monthly' : (payload?.planBilling || 'Monthly'));
+    const planBilling = 'Monthly';
     const incomingPlanName = String(planSnapshot.planName || '').trim();
     const incomingMikrotikId = resolveCustomerRouterId(payload);
     if (!incomingPlanName) {
@@ -4907,9 +4915,7 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         ? (payload?.activationDate ?? payload?.activation_date)
         : existing?.activationDate;
     const normalizedActivationDate = normalizeDateOnly(incomingActivationDateRaw);
-    const planBilling = incomingCategory === 'prepaid'
-        ? 'Prepaid'
-        : (incomingCategory === 'postpaid' ? 'Monthly' : (payload?.planBilling ?? existing.planBilling));
+    const planBilling = 'Monthly';
     const nextPlanName = String(planSnapshot.planName || '').trim();
     if (!nextPlanName) {
         throw createError(400, 'Plan is required.');

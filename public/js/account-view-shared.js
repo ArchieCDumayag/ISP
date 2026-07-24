@@ -1121,7 +1121,7 @@
     };
 
     const getBillingCycleDisplay = (customerData, planCategory) => {
-        if (planCategory === 'prepaid') return 'Prepaid';
+        if (planCategory === 'prepaid') return 'Monthly prepaid';
         const billDate = parseDate(customerData?.billDate);
         if (!billDate) return 'Not set';
         const day = billDate.getDate();
@@ -1302,11 +1302,11 @@
         const planCategoryLabel = titleCase(planCategory) || 'Postpaid';
         const planName = formatText(customerData?.planName);
         const matchedPlan = resolveMatchedPlan(customerData, planByName, normalizePlanName);
-        const planSuffix = String(matchedPlan?.priceSuffix || customerData?.planBilling || '').trim();
+        const planSuffix = '/ month';
         const planPriceValue = matchedPlan?.price ?? customerData?.planAmount ?? customerData?.planPrice ?? null;
         const planPrice = formatCurrency(planPriceValue);
         const planPriceDisplay = planPrice !== 'Not set' && planSuffix ? `${planPrice} ${planSuffix}` : planPrice;
-        const planBilling = formatText(planSuffix || customerData?.planBilling, '/ month');
+        const planBilling = 'Monthly';
 
         const billingCycle = getBillingCycleDisplay(customerData, planCategory);
         const billDateDisplay = typeof formatNextBillDate === 'function'

@@ -15,6 +15,7 @@ const STORE_KEYS = {
     plans: 'plans',
     customers: 'customers'
 };
+const MONTHLY_PRICE_SUFFIX = '/ month';
 
 const sanitizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 const toFiniteNumber = (value) => {
@@ -58,6 +59,7 @@ const resolveCategory = (rawCategory, plan) => {
     if (suffix.includes('/ day') || suffix.includes('/ week') || suffix.includes('/ hour')) return 'prepaid';
     return 'postpaid';
 };
+const normalizePlanPriceSuffix = () => MONTHLY_PRICE_SUFFIX;
 const normalizeLookupValue = (value) => sanitizeString(value).toLowerCase();
 const toHttpError = (error, fallbackMessage) => {
     if (error?.status || error?.statusCode) return error;
@@ -73,8 +75,8 @@ const mapPlanRow = (row) => ({
     profile: row.profile || '',
     profileBindings: normalizePlanProfileBindings(row.profileBindings || row.profile_bindings),
     price: row.price != null ? Number(row.price) : undefined,
-    priceSuffix: row.priceSuffix || row.price_suffix || '',
-    validity: row.validity != null ? Number(row.validity) : undefined,
+    priceSuffix: normalizePlanPriceSuffix(row.priceSuffix || row.price_suffix),
+    validity: undefined,
     createdAt: row.createdAt || row.created_at || undefined,
     updatedAt: row.updatedAt || row.updated_at || undefined
 });
@@ -170,10 +172,12 @@ async function loadPlans(branchId = null) {
             || (typeof legacySpeed === 'number' ? `${legacySpeed}${legacySpeedUnit ? ` ${legacySpeedUnit}` : ' Mbps'}` : '');
         const profileBindings = normalizePlanProfileBindings(safePlan.profileBindings || safePlan.profile_bindings);
         const price = toFiniteNumber(safePlan.price);
-        const priceSuffix = sanitizeString(safePlan.priceSuffix);
-        const validity = toFiniteNumber(safePlan.validity);
+        const legacyPriceSuffix = sanitizeString(safePlan.priceSuffix);
+        const legacyValidity = toFiniteNumber(safePlan.validity);
+        const priceSuffix = normalizePlanPriceSuffix(legacyPriceSuffix);
+        const validity = undefined;
         const benefits = normalizeBenefits(safePlan.benefits);
-        const category = resolveCategory(safePlan.category, { validity, priceSuffix });
+        const category = resolveCategory(safePlan.category, { validity: legacyValidity, priceSuffix: legacyPriceSuffix });
 
         const baseId = sanitizeString(safePlan.id) || `${category}-${slugify(label || name)}`;
         const id = ensureUniqueId(baseId, usedIds);
@@ -252,8 +256,8 @@ router.post('/', async (req, res, next) => {
         const profileBindings = normalizePlanProfileBindings(req.body.profileBindings);
         await validatePlanProfileBindings(profileBindings, branchId);
         const price = toFiniteNumber(req.body.price);
-        const priceSuffix = sanitizeString(req.body.priceSuffix);
-        const validity = toFiniteNumber(req.body.validity);
+        const priceSuffix = normalizePlanPriceSuffix(req.body.priceSuffix);
+        const validity = undefined;
         const benefits = normalizeBenefits(req.body.benefits);
 
         const preferredId = sanitizeString(req.body.id) || `${category}-${slugify(name)}`;
@@ -300,7 +304,7 @@ router.post('/', async (req, res, next) => {
                     serializePlanProfileBindings(profileBindings),
                     typeof price === 'number' ? price : null,
                     priceSuffix || null,
-                    typeof validity === 'number' ? validity : null,
+                    null,
                     timestamp.replace('T', ' ').slice(0, 19),
                     timestamp.replace('T', ' ').slice(0, 19)
                 ]
@@ -349,8 +353,8 @@ router.put('/:id', async (req, res, next) => {
         );
         await validatePlanProfileBindings(profileBindings, branchId);
         const price = toFiniteNumber(req.body.price ?? current.price);
-        const priceSuffix = sanitizeString(req.body.priceSuffix ?? current.priceSuffix);
-        const validity = toFiniteNumber(req.body.validity ?? current.validity);
+        const priceSuffix = normalizePlanPriceSuffix(req.body.priceSuffix ?? current.priceSuffix);
+        const validity = undefined;
         const benefitsSource = req.body.benefits ?? current.benefits;
         const benefits = normalizeBenefits(benefitsSource);
 
@@ -398,7 +402,7 @@ router.put('/:id', async (req, res, next) => {
                     serializePlanProfileBindings(profileBindings),
                     typeof price === 'number' ? price : null,
                     priceSuffix || null,
-                    typeof validity === 'number' ? validity : null,
+                    null,
                     timestamp.replace('T', ' ').slice(0, 19),
                     branchId,
                     planId

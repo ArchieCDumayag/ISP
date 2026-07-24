@@ -320,10 +320,8 @@
         shifted.setDate(Math.min(day, lastDay));
         return formatDateInputValue(shifted);
     };
-    const normalizeInitialPostpaidDraftDates = () => {
+    const normalizeInitialMonthlyDraftDates = () => {
         if (!draftForm) return;
-        const category = String(planCategorySelect?.value || 'postpaid').trim().toLowerCase();
-        if (category === 'prepaid') return;
         const activationDate = String(draftForm.elements.activationDate?.value || '').trim() || getTodayDateInputValue();
         const defaultBillDate = computeNextPostpaidCycleDate(activationDate);
         const currentBillDate = String(draftForm.elements.billDate?.value || '').trim();
@@ -724,7 +722,7 @@
             if (!enforceDraftBillDate() || !enforceDraftDueDate()) {
                 return;
             }
-            normalizeInitialPostpaidDraftDates();
+            normalizeInitialMonthlyDraftDates();
             const formData = new FormData(draftForm);
             const payload = Object.fromEntries(formData.entries());
             if (!String(payload.firstName || '').trim() || !String(payload.lastName || '').trim()) {
@@ -804,8 +802,8 @@
         techPppoeForm?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
     planSelect?.addEventListener('change', () => syncPlanFields(true));
-    planCategorySelect?.addEventListener('change', () => normalizeInitialPostpaidDraftDates());
-    draftForm?.elements?.activationDate?.addEventListener('change', () => normalizeInitialPostpaidDraftDates());
+    planCategorySelect?.addEventListener('change', () => normalizeInitialMonthlyDraftDates());
+    draftForm?.elements?.activationDate?.addEventListener('change', () => normalizeInitialMonthlyDraftDates());
     techPppoeCustomerSelect?.addEventListener('change', renderPppoeSelection);
     techPppoeRefreshBtn?.addEventListener('click', () => {
         loadInstallationCustomers({ preferredAccount: techPppoeCustomerSelect?.value || '' })

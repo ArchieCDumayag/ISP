@@ -84,13 +84,6 @@
         `;
     };
 
-    const formatValidity = (validity) => {
-        const numeric = Number(validity);
-        if (!Number.isFinite(numeric) || numeric <= 0) return '';
-        const days = Math.trunc(numeric);
-        return `${days} ${days === 1 ? 'day' : 'days'}`;
-    };
-
     const parseSpeedMetric = (plan) => {
         const candidates = [
             String(plan?.profile || '').trim(),
@@ -122,10 +115,9 @@
             ? `/apply-now.html?plan=${encodeURIComponent(planValue)}`
             : '/apply-now.html';
         const speedMetric = parseSpeedMetric(plan);
-        const validityLabel = formatValidity(plan?.validity);
-        const priceSuffix = String(plan?.priceSuffix || '').trim() || (isPrepaid ? (validityLabel ? `/${validityLabel}` : '/load') : '/month');
-        const detailLabel = isPrepaid ? 'Plan Validity:' : 'Required Upfront Fee:';
-        const detailCopy = isPrepaid ? (validityLabel || 'See plan details') : 'One Month Advance Payment';
+        const priceSuffix = '/ month';
+        const detailLabel = isPrepaid ? 'Billing Cycle:' : 'Required Upfront Fee:';
+        const detailCopy = isPrepaid ? 'Monthly prepaid' : 'One Month Advance Payment';
         const detailCopyClass = isPrepaid ? 'showcase-plan-card__fee-copy showcase-plan-card__fee-copy--plain' : 'showcase-plan-card__fee-copy';
         const speedMarkup = speedMetric.value
             ? `

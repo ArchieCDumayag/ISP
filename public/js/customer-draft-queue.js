@@ -524,14 +524,6 @@
     };
 
     const recomputeReviewDueDate = () => {
-        const category = normalizePlanCategory(reviewPlanCategory?.value || 'postpaid');
-        if (category === 'prepaid') {
-            const expiryRaw = String(reviewPrepaidExpirationInput?.value || '').trim();
-            const expiryDate = expiryRaw ? expiryRaw.slice(0, 10) : '';
-            if (reviewDueDateInput) reviewDueDateInput.value = expiryDate;
-            if (reviewDueDateDisplay) reviewDueDateDisplay.value = expiryDate;
-            return;
-        }
         const dueDate = computeDueDate(reviewBillDateInput?.value || '', reviewDueOffsetInput?.value || '');
         if (reviewDueDateInput) reviewDueDateInput.value = dueDate;
         if (reviewDueDateDisplay) reviewDueDateDisplay.value = dueDate;
@@ -539,19 +531,21 @@
 
     const applyReviewPlanCategoryUI = (category) => {
         const normalized = normalizePlanCategory(category);
-        const isPrepaid = normalized === 'prepaid';
         if (reviewPlanCategory) reviewPlanCategory.value = normalized;
-        if (reviewPrepaidExpirationField) reviewPrepaidExpirationField.style.display = isPrepaid ? '' : 'none';
-        if (reviewActivationDateField) reviewActivationDateField.style.display = isPrepaid ? 'none' : '';
-        if (reviewBillDateField) reviewBillDateField.style.display = isPrepaid ? 'none' : '';
-        if (reviewDueOffsetField) reviewDueOffsetField.style.display = isPrepaid ? 'none' : '';
-        if (reviewDueDateField) reviewDueDateField.style.display = isPrepaid ? 'none' : '';
-        if (reviewCreditLimitField) reviewCreditLimitField.style.display = isPrepaid ? 'none' : '';
-        if (reviewBillDateInput) reviewBillDateInput.required = !isPrepaid;
-        if (reviewDueOffsetInput) reviewDueOffsetInput.required = !isPrepaid;
-        if (reviewDueDateInput) reviewDueDateInput.required = !isPrepaid;
-        if (reviewPrepaidExpirationInput) reviewPrepaidExpirationInput.required = false;
-        if (!isPrepaid && reviewBillDateInput && !reviewBillDateInput.value) {
+        if (reviewPrepaidExpirationField) reviewPrepaidExpirationField.style.display = 'none';
+        if (reviewActivationDateField) reviewActivationDateField.style.display = '';
+        if (reviewBillDateField) reviewBillDateField.style.display = '';
+        if (reviewDueOffsetField) reviewDueOffsetField.style.display = '';
+        if (reviewDueDateField) reviewDueDateField.style.display = '';
+        if (reviewCreditLimitField) reviewCreditLimitField.style.display = '';
+        if (reviewBillDateInput) reviewBillDateInput.required = true;
+        if (reviewDueOffsetInput) reviewDueOffsetInput.required = true;
+        if (reviewDueDateInput) reviewDueDateInput.required = true;
+        if (reviewPrepaidExpirationInput) {
+            reviewPrepaidExpirationInput.required = false;
+            reviewPrepaidExpirationInput.value = '';
+        }
+        if (reviewBillDateInput && !reviewBillDateInput.value) {
             const activationDate = String(reviewForm?.elements?.activationDate?.value || '').trim() || getTodayDateInputValue();
             reviewBillDateInput.value = computeNextPostpaidCycleDate(activationDate);
         }
@@ -634,8 +628,8 @@
         if (category === 'prepaid') {
             const expiry = draft.prepaidExpirationAt || draft.dueDate || '';
             return {
-                display: 'Prepaid',
-                meta: expiry ? `Expires: ${formatDateTime(expiry)}` : 'No expiry date set'
+                display: 'Monthly prepaid',
+                meta: expiry ? `Due: ${formatDateTime(expiry)}` : 'No due date set'
             };
         }
         const billDate = String(draft.billDate || '').trim();
@@ -656,7 +650,7 @@
         const matchedPlan = findPlanMatch({ planId: draft.planId, planName });
         const metaParts = [];
         const amountText = formatPlanAmount(matchedPlan?.price ?? draft.planAmount);
-        const priceSuffix = String(matchedPlan?.priceSuffix || (normalizedCategory === 'prepaid' ? 'Prepaid' : 'Monthly')).trim();
+        const priceSuffix = '/ month';
         if (amountText) metaParts.push(amountText);
         if (priceSuffix) metaParts.push(priceSuffix);
         return {
@@ -853,25 +847,18 @@
         reviewForm.elements.planCategory.value = normalizePlanCategory(draft.planCategory || 'postpaid');
         reviewForm.elements.planAmount.value = draft.planAmount != null ? draft.planAmount : '';
         reviewForm.elements.activationDate.value = draft.activationDate || '';
-        const normalizedCategory = normalizePlanCategory(draft.planCategory || 'postpaid');
         const initialActivationDate = draft.activationDate || getTodayDateInputValue();
         const derivedDueOffset = deriveReviewDueOffset(draft);
         const draftBillDate = String(draft.billDate || '').trim();
-        const nextBillDate = normalizedCategory === 'prepaid'
-            ? (draftBillDate || '')
-            : (draftBillDate || computeNextPostpaidCycleDate(initialActivationDate));
+        const nextBillDate = draftBillDate || computeNextPostpaidCycleDate(initialActivationDate);
         reviewForm.elements.billDate.value = nextBillDate || getTodayDateInputValue();
         if (reviewBillDateInput) {
             reviewBillDateInput.dataset.originalValue = reviewForm.elements.billDate.value || '';
         }
         reviewForm.elements.dueOffset.value = derivedDueOffset;
-        const minimumFirstDueDate = normalizedCategory === 'prepaid'
-            ? String(draft.dueDate || '').trim()
-            : (computeDueDate(reviewForm.elements.billDate.value, derivedDueOffset) || reviewForm.elements.billDate.value || '');
+        const minimumFirstDueDate = computeDueDate(reviewForm.elements.billDate.value, derivedDueOffset) || reviewForm.elements.billDate.value || '';
         const draftDueDate = String(draft.dueDate || '').trim();
-        const nextDueDate = normalizedCategory === 'prepaid'
-            ? draftDueDate
-            : ((!draftDueDate || draftDueDate < minimumFirstDueDate) ? minimumFirstDueDate : draftDueDate);
+        const nextDueDate = (!draftDueDate || draftDueDate < minimumFirstDueDate) ? minimumFirstDueDate : draftDueDate;
         reviewForm.elements.dueDate.value = nextDueDate || '';
         if (reviewDueDateDisplay) reviewDueDateDisplay.value = nextDueDate || '';
         reviewForm.elements.creditLimit.value = draft.creditLimit != null ? draft.creditLimit : '';
@@ -917,7 +904,7 @@
             reviewForm.elements.area.focus();
             return;
         }
-        if (normalizePlanCategory(reviewPlanCategory?.value || 'postpaid') !== 'prepaid' && !enforceNonPastReviewBillDateSelection()) {
+        if (!enforceNonPastReviewBillDateSelection()) {
             recomputeReviewDueDate();
             return;
         }

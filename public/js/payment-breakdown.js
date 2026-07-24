@@ -268,33 +268,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 periodEnd: null
             };
         }
-        if (!activationDate || !billDate || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
-            return {
-                amount: roundMoney(planAmount),
-                isProrated: false,
-                periodStart: null,
-                periodEnd: null
-            };
-        }
-        const periodEnd = getMonthEndDate(activationDate);
-        const monthStartParts = getZonedDateParts(activationDate);
-        const periodStart = activationDate;
-        const monthStart = monthStartParts ? buildStableDate(monthStartParts.year, monthStartParts.month, 1) : null;
-        const activeDays = getInclusiveDayCount(periodStart, periodEnd);
-        const totalDays = getInclusiveDayCount(monthStart, periodEnd);
-        if (!activeDays || !totalDays || activeDays >= totalDays) {
-            return {
-                amount: roundMoney(planAmount),
-                isProrated: false,
-                periodStart: null,
-                periodEnd: null
-            };
-        }
         return {
-            amount: roundWholePeso((planAmount / totalDays) * activeDays),
-            isProrated: true,
-            periodStart,
-            periodEnd
+            amount: roundMoney(planAmount),
+            isProrated: false,
+            periodStart: null,
+            periodEnd: null
         };
     };
 
@@ -497,9 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const planBilling = String(record.planBilling || record.billing || '').trim();
         const planType = resolvePlanType(record);
-        if (planType === 'prepaid') {
-            return 'Prepaid';
-        }
+        if (planType === 'prepaid') return 'Monthly';
 
         const cycleDate = safeDate(record.billDate)
             || safeDate(record.dueDate)

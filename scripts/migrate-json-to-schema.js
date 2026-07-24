@@ -222,10 +222,7 @@ async function backfillCustomerPlanSnapshots() {
        END,
        c.plan_billing = CASE
          WHEN c.plan_billing IS NULL OR TRIM(c.plan_billing) = ''
-           THEN CASE
-             WHEN LOWER(COALESCE(p.category, '')) = 'prepaid' THEN 'Prepaid'
-             ELSE 'Monthly'
-           END
+           THEN 'Monthly'
          ELSE c.plan_billing
        END,
        c.plan_name = CASE

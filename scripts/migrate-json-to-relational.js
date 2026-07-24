@@ -237,8 +237,8 @@ async function upsertPlan(plan, branchId) {
       plan.profile || null,
       serializePlanProfileBindings(plan.profileBindings || plan.profile_bindings),
       plan.price != null ? Number(plan.price) : null,
-      plan.priceSuffix || null,
-      plan.validity != null ? Number(plan.validity) : null,
+      '/ month',
+      null,
       parseDateTime(plan.createdAt) || null,
       parseDateTime(plan.updatedAt) || null
     ]

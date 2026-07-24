@@ -316,7 +316,7 @@
                                     </span>
                                     <span>
                                         <span class="fw-semibold">New customer</span>
-                                        <span class="d-block text-secondary small">Use prorated first-bill computation.</span>
+                                        <span class="d-block text-secondary small">Use the full monthly first bill.</span>
                                     </span>
                                 </span>
                             </label>
@@ -328,7 +328,7 @@
                                     </span>
                                     <span>
                                         <span class="fw-semibold">Existing customer</span>
-                                        <span class="d-block text-secondary small">Use opening balance/advance only; no prorated first bill.</span>
+                                        <span class="d-block text-secondary small">Use opening balance/advance only; no generated first bill.</span>
                                     </span>
                                 </span>
                             </label>
@@ -348,7 +348,7 @@
                                 <small class="text-secondary">Adds an opening credit.</small>
                             </div>
                         </div>
-                        <small class="muted">Use only one. Current due is based on this opening amount; no prorated bill is added.</small>
+                        <small class="muted">Use only one. Current due is based on this opening amount; no first monthly bill is added.</small>
                     </div>
                     <div class="form-field" id="activationDateField">
                         <label for="activationDate">Activation Date</label>
@@ -369,9 +369,9 @@
                         <input type="hidden" id="dueDate" name="dueDate" required>
                     </div>
                     <div class="form-field" id="firstBillPeriodField">
-                        <label for="firstBillPeriodDisplay">First Bill (Prorated)</label>
+                        <label for="firstBillPeriodDisplay">First Bill</label>
                         <input type="text" id="firstBillPeriodDisplay" readonly>
-                        <small class="muted">First month is billed from activation date until month-end.</small>
+                        <small class="muted">First bill uses the full monthly plan amount.</small>
                     </div>
                     <div class="form-field" id="creditLimitField">
                         <label for="creditLimit">Credit Limit (amount)</label>
@@ -2653,16 +2653,10 @@
                     return;
                 }
 
-                const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || '')) || getTodayDateInputValue();
-                const periodEndValue = getMonthEndDateInputValue(activationValue);
-                const activeDays = getInclusiveDayCount(activationValue, periodEndValue);
-                const daysInMonth = getInclusiveDayCount(getMonthStartDateInputValue(activationValue), periodEndValue);
                 const selectedPlanAmount = getSelectedPlanAmount();
-                const proratedAmount = daysInMonth > 0 && selectedPlanAmount > 0
-                    ? roundWholePeso((selectedPlanAmount / daysInMonth) * activeDays)
-                    : 0;
-                const amountText = proratedAmount > 0 ? ` - ${formatPeso(proratedAmount)}` : '';
-                firstBillPeriodDisplay.value = `${formatPeriodDate(activationValue)} to ${formatPeriodDate(periodEndValue)}${amountText}`;
+                firstBillPeriodDisplay.value = selectedPlanAmount > 0
+                    ? `Full monthly charge - ${formatPeso(selectedPlanAmount)}`
+                    : 'Full monthly charge';
             }
 
             function applyPlanTypeBillingDefaults({ force = false } = {}) {
@@ -2752,7 +2746,7 @@
                         ? ''
                         : (
                             normalizedCategory === 'prepaid'
-                                ? 'Prepaid due date is auto-set to the 1st day of the activation month.'
+                                ? 'Prepaid monthly due date is auto-set to the 1st day of the activation month.'
                                 : 'Postpaid due date is auto-set to the last day of the activation month.'
                         );
                 }
@@ -3615,7 +3609,7 @@
             const formatDueBadge = (dueDate) => getDueStatus(dueDate).label;
 
             const getBillingCycleDisplay = (customer, planCategory) => {
-                if (planCategory === 'prepaid') return 'Prepaid';
+                if (planCategory === 'prepaid') return 'Monthly prepaid';
                 const billDate = parseDateInput(customer?.billDate);
                 if (billDate && !Number.isNaN(billDate)) {
                     const day = billDate.getDate();
@@ -6312,7 +6306,7 @@
                     const planCategory = resolveCustomerPlanCategory(customer);
 
                     if (planCategory === 'prepaid') {
-                        billingCycleDisplay = 'Prepaid';
+                        billingCycleDisplay = 'Monthly prepaid';
                         const prepaidDue = customer.dueDate || customer.billDate;
                         if (prepaidDue) {
                             billingCycleMeta = `Due: ${formatViewDate(prepaidDue, 'Not set')}`;
@@ -6349,7 +6343,7 @@
                     const matchedPlan = findCatalogPlan({ planId: customer.planId, planName: customer.planName }) || undefined;
                     const effectiveAmount = matchedPlan?.price ?? customer.planAmount ?? 0;
                     const amountDisplay = `\u20B1${(Number(effectiveAmount) || 0).toLocaleString()}`;
-                    const priceSuffix = (matchedPlan?.priceSuffix || customer.planBilling || '').toString().trim();
+                    const priceSuffix = '/ month';
 
                     // If plan is not in catalog, visually mark as legacy/invalid
                     const isLegacyPlan = !matchedPlan;

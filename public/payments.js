@@ -1162,33 +1162,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 skipInitialCharge: true
             };
         }
-        if (!activationDate || planAmount <= 0 || !isSameMonth(activationDate, cycleDate)) {
-            return {
-                amount: roundMoney(planAmount),
-                isProrated: false,
-                periodStart: null,
-                periodEnd: null,
-                skipInitialCharge: false
-            };
-        }
-        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
-        const monthEnd = getMonthEndDate(activationDate);
-        const activeDays = getInclusiveDayCount(activationDate, monthEnd);
-        const totalDays = getInclusiveDayCount(monthStart, monthEnd);
-        if (!activeDays || !totalDays || activeDays >= totalDays) {
-            return {
-                amount: roundMoney(planAmount),
-                isProrated: false,
-                periodStart: null,
-                periodEnd: null,
-                skipInitialCharge: false
-            };
-        }
         return {
-            amount: roundWholePeso((planAmount / totalDays) * activeDays),
-            isProrated: true,
-            periodStart: activationDate,
-            periodEnd: monthEnd,
+            amount: roundMoney(planAmount),
+            isProrated: false,
+            periodStart: null,
+            periodEnd: null,
             skipInitialCharge: false
         };
     };
@@ -1318,32 +1296,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 periodEnd: null
             };
         }
-        if (!activationDate || !billDate || planAmount <= 0 || !isSameMonth(activationDate, billDate)) {
-            return {
-                amount: roundMoney(planAmount),
-                isProrated: false,
-                periodStart: null,
-                periodEnd: null
-            };
-        }
-        const periodEnd = getMonthEndDate(activationDate);
-        const periodStart = activationDate;
-        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
-        const activeDays = getInclusiveDayCount(periodStart, periodEnd);
-        const totalDays = getInclusiveDayCount(monthStart, periodEnd);
-        if (!activeDays || !totalDays || activeDays >= totalDays) {
-            return {
-                amount: roundMoney(planAmount),
-                isProrated: false,
-                periodStart: null,
-                periodEnd: null
-            };
-        }
         return {
-            amount: roundWholePeso((planAmount / totalDays) * activeDays),
-            isProrated: true,
-            periodStart,
-            periodEnd
+            amount: roundMoney(planAmount),
+            isProrated: false,
+            periodStart: null,
+            periodEnd: null
         };
     };
     const resolveBreakdownPlanAmountForPayments = (customer = {}, overrideAmount = null) => {
@@ -3444,10 +3401,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > EPSILON;
 
             if (planCategory === 'prepaid') {
-                billingCycleDisplay = 'Prepaid';
+                billingCycleDisplay = 'Monthly prepaid';
                 const prepaidExpiry = customer.prepaidExpirationAt || customer.dueDate;
                 if (prepaidExpiry) {
-                    billingCycleMeta = `Expires: ${formatDateTime(prepaidExpiry, 'Not set')}`;
+                    billingCycleMeta = `Paid through: ${formatDateTime(prepaidExpiry, 'Not set')}`;
                 } else {
                     billingCycleMeta = 'No expiry set';
                 }
@@ -3488,12 +3445,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 ? 'Advance'
                 : (currentBillState.amount <= EPSILON
                     ? 'Paid'
-                    : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : (currentBillState.isProrated ? 'Prorated bill' : 'Current bill'))));
+                    : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : 'Current bill')));
             const postpaidBillMeta = !currentBillState.hasCurrentBreakdownRow
                 ? 'No current bill'
                 : currentBillState.amount < -EPSILON
                 ? (currentBillState.existingCustomerStart ? 'Opening advance' : 'Advance after current bill')
-                : (currentBillState.amount <= EPSILON ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.isProrated ? 'Prorated bill' : `Due ${dueForDisplay}`)));
+                : (currentBillState.amount <= EPSILON ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : `Due ${dueForDisplay}`));
             const currentBill = planCategory === 'prepaid'
                 ? `${balanceAmount}<br>${prepaidBillMeta}`
                 : `${balanceAmount}<br>${postpaidBillMeta}`;
@@ -3502,7 +3459,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const matchedPlan = customer.planName ? planByName.get(normalizePlanName(customer.planName)) : undefined;
             const effectiveAmount = matchedPlan?.price ?? customer.planAmount ?? 0;
             const amountDisplay = formatCurrency(Number(effectiveAmount) || 0);
-            const priceSuffix = (matchedPlan?.priceSuffix || customer.planBilling || '').toString().trim();
+            const priceSuffix = '/ month';
             const isLegacyPlan = !matchedPlan;
             const planPillClass = isLegacyPlan ? 'plan-pill accent' : 'plan-pill neutral';
             const planMetaText = isLegacyPlan

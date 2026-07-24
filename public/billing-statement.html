@@ -856,7 +856,7 @@
             <div class="block-body">
                 <ul class="statement-list" id="billNotes">
                     <li>No refunds once payment is posted.</li>
-                    <li>Service may be prorated for mid-cycle activation or disconnection.</li>
+                    <li>Plan charges are billed on a monthly cycle.</li>
                     <li>Late payments may incur penalties and service disruption.</li>
                 </ul>
             </div>
@@ -1757,13 +1757,7 @@
                 const startDate = parseDate(record?.billDate || customer?.billDate || issueDate);
                 if (!startDate) return '-';
 
-                let periodDays = Number(record?.billingDays || customer?.billingDays);
-                const billingKind = normalizeLower(record?.planBilling || customer?.planBilling);
-                if (!Number.isFinite(periodDays) || periodDays <= 0) {
-                    if (billingKind.includes('prepaid')) {
-                        periodDays = Number(record?.validity || customer?.validity || customer?.planValidity || 7);
-                    }
-                }
+                const periodDays = Number(record?.billingDays || customer?.billingDays);
 
                 let endDate;
                 if (Number.isFinite(periodDays) && periodDays > 0) {

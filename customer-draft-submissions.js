@@ -300,12 +300,8 @@ const applyPlanDefaults = (draft, plans = []) => {
     return normalizedDraft;
 };
 
-const applyPostpaidBillingDefaults = (draft = {}) => {
+const applyMonthlyBillingDefaults = (draft = {}) => {
     const normalizedDraft = { ...(draft || {}) };
-    const category = normalizePlanCategory(normalizedDraft.planCategory);
-    if (category === 'prepaid') {
-        return normalizedDraft;
-    }
 
     const today = getTodayDateInputValue();
     const activationDate = normalizeDateOnly(normalizedDraft.activationDate) || today;
@@ -895,7 +891,7 @@ technicianRouter.post('/', async (req, res, next) => {
             readPlans(req.technician.branchId),
             readCoverageAreaNames(req.technician.branchId)
         ]);
-        const draft = applyPostpaidBillingDefaults(
+        const draft = applyMonthlyBillingDefaults(
             applyPlanDefaults(normalizeDraftPayload(req.body || {}), plans)
         );
         validateDraftPayload(draft, { coverageAreas });

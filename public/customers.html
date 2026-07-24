@@ -316,7 +316,7 @@
                                     </span>
                                     <span>
                                         <span class="fw-semibold">New customer</span>
-                                        <span class="d-block text-secondary small">Use the full monthly first bill.</span>
+                                        <span class="d-block text-secondary small">Use prorated first-bill computation.</span>
                                     </span>
                                 </span>
                             </label>
@@ -328,7 +328,7 @@
                                     </span>
                                     <span>
                                         <span class="fw-semibold">Existing customer</span>
-                                        <span class="d-block text-secondary small">Use opening balance/advance only; no generated first bill.</span>
+                                        <span class="d-block text-secondary small">Use opening balance/advance only; no prorated first bill.</span>
                                     </span>
                                 </span>
                             </label>
@@ -348,7 +348,7 @@
                                 <small class="text-secondary">Adds an opening credit.</small>
                             </div>
                         </div>
-                        <small class="muted">Use only one. Current due is based on this opening amount; no first monthly bill is added.</small>
+                        <small class="muted">Use only one. Current due is based on this opening amount; no prorated bill is added.</small>
                     </div>
                     <div class="form-field" id="activationDateField">
                         <label for="activationDate">Activation Date</label>
@@ -369,9 +369,9 @@
                         <input type="hidden" id="dueDate" name="dueDate" required>
                     </div>
                     <div class="form-field" id="firstBillPeriodField">
-                        <label for="firstBillPeriodDisplay">First Bill</label>
+                        <label for="firstBillPeriodDisplay">First Bill (Prorated)</label>
                         <input type="text" id="firstBillPeriodDisplay" readonly>
-                        <small class="muted">First bill uses the full monthly plan amount.</small>
+                        <small class="muted">First month is billed from activation date until month-end.</small>
                     </div>
                     <div class="form-field" id="creditLimitField">
                         <label for="creditLimit">Credit Limit (amount)</label>
@@ -2653,10 +2653,17 @@
                     return;
                 }
 
+                const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || '')) || getTodayDateInputValue();
+                const periodEndValue = getMonthEndDateInputValue(activationValue);
+                const monthStartValue = getMonthStartDateInputValue(activationValue);
+                const activeDays = getInclusiveDayCount(activationValue, periodEndValue);
+                const daysInMonth = getInclusiveDayCount(monthStartValue, periodEndValue);
                 const selectedPlanAmount = getSelectedPlanAmount();
-                firstBillPeriodDisplay.value = selectedPlanAmount > 0
-                    ? `Full monthly charge - ${formatPeso(selectedPlanAmount)}`
-                    : 'Full monthly charge';
+                const proratedAmount = daysInMonth > 0 && selectedPlanAmount > 0
+                    ? roundWholePeso((selectedPlanAmount / daysInMonth) * activeDays)
+                    : 0;
+                const amountText = proratedAmount > 0 ? ` - ${formatPeso(proratedAmount)}` : '';
+                firstBillPeriodDisplay.value = `${formatPeriodDate(activationValue)} to ${formatPeriodDate(periodEndValue)}${amountText}`;
             }
 
             function applyPlanTypeBillingDefaults({ force = false } = {}) {

@@ -1162,11 +1162,33 @@ document.addEventListener('DOMContentLoaded', function () {
                 skipInitialCharge: true
             };
         }
+        if (!activationDate || planAmount <= 0 || !isSameMonth(activationDate, cycleDate)) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null,
+                skipInitialCharge: false
+            };
+        }
+        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+        const monthEnd = getMonthEndDate(activationDate);
+        const activeDays = getInclusiveDayCount(activationDate, monthEnd);
+        const totalDays = getInclusiveDayCount(monthStart, monthEnd);
+        if (!activeDays || !totalDays || activeDays >= totalDays) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null,
+                skipInitialCharge: false
+            };
+        }
         return {
-            amount: roundMoney(planAmount),
-            isProrated: false,
-            periodStart: null,
-            periodEnd: null,
+            amount: roundWholePeso((planAmount / totalDays) * activeDays),
+            isProrated: true,
+            periodStart: activationDate,
+            periodEnd: monthEnd,
             skipInitialCharge: false
         };
     };
@@ -1296,11 +1318,32 @@ document.addEventListener('DOMContentLoaded', function () {
                 periodEnd: null
             };
         }
+        if (!activationDate || !billDate || planAmount <= 0 || !isSameMonth(activationDate, billDate)) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+        const periodEnd = getMonthEndDate(activationDate);
+        const periodStart = activationDate;
+        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+        const activeDays = getInclusiveDayCount(periodStart, periodEnd);
+        const totalDays = getInclusiveDayCount(monthStart, periodEnd);
+        if (!activeDays || !totalDays || activeDays >= totalDays) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
         return {
-            amount: roundMoney(planAmount),
-            isProrated: false,
-            periodStart: null,
-            periodEnd: null
+            amount: roundWholePeso((planAmount / totalDays) * activeDays),
+            isProrated: true,
+            periodStart,
+            periodEnd
         };
     };
     const resolveBreakdownPlanAmountForPayments = (customer = {}, overrideAmount = null) => {
@@ -3445,12 +3488,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 ? 'Advance'
                 : (currentBillState.amount <= EPSILON
                     ? 'Paid'
-                    : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : 'Current bill')));
+                    : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : (currentBillState.isProrated ? 'Prorated bill' : 'Current bill'))));
             const postpaidBillMeta = !currentBillState.hasCurrentBreakdownRow
                 ? 'No current bill'
                 : currentBillState.amount < -EPSILON
                 ? (currentBillState.existingCustomerStart ? 'Opening advance' : 'Advance after current bill')
-                : (currentBillState.amount <= EPSILON ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : `Due ${dueForDisplay}`));
+                : (currentBillState.amount <= EPSILON ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.isProrated ? 'Prorated bill' : `Due ${dueForDisplay}`)));
             const currentBill = planCategory === 'prepaid'
                 ? `${balanceAmount}<br>${prepaidBillMeta}`
                 : `${balanceAmount}<br>${postpaidBillMeta}`;

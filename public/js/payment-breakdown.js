@@ -268,11 +268,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 periodEnd: null
             };
         }
+        if (!activationDate || !billDate || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+
+        const periodEnd = getMonthEndDate(activationDate);
+        const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+        const activeDays = getInclusiveDayCount(activationDate, periodEnd);
+        const totalDays = getInclusiveDayCount(monthStart, periodEnd);
+        if (!activeDays || !totalDays || activeDays >= totalDays) {
+            return {
+                amount: roundMoney(planAmount),
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null
+            };
+        }
+
         return {
-            amount: roundMoney(planAmount),
-            isProrated: false,
-            periodStart: null,
-            periodEnd: null
+            amount: roundWholePeso((planAmount / totalDays) * activeDays),
+            isProrated: true,
+            periodStart: activationDate,
+            periodEnd
         };
     };
 

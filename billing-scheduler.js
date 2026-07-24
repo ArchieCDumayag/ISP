@@ -677,6 +677,12 @@ function roundMoney(value) {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
+function roundWholePeso(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round(amount);
+}
+
 function isSameBillingMonth(left, right) {
   return Boolean(
     left instanceof Date
@@ -718,11 +724,33 @@ function resolveFirstBillingCharge(customer = {}, billDate, fullPlanAmount = 0) 
       skipInitialCharge: true
     };
   }
+  if (!activationDate || !(billDate instanceof Date) || isNaN(billDate) || planAmount <= 0 || !isSameBillingMonth(activationDate, billDate)) {
+    return {
+      amount: roundMoney(planAmount),
+      prorated: false,
+      periodStart: null,
+      periodEnd: null
+    };
+  }
+
+  const monthStart = new Date(activationDate.getFullYear(), activationDate.getMonth(), 1);
+  const periodEnd = new Date(activationDate.getFullYear(), activationDate.getMonth() + 1, 0);
+  const activeDays = getInclusiveDayCount(activationDate, periodEnd);
+  const totalDays = getInclusiveDayCount(monthStart, periodEnd);
+  if (!activeDays || !totalDays || activeDays >= totalDays) {
+    return {
+      amount: roundMoney(planAmount),
+      prorated: false,
+      periodStart: null,
+      periodEnd: null
+    };
+  }
+
   return {
-    amount: roundMoney(planAmount),
-    prorated: false,
-    periodStart: null,
-    periodEnd: null
+    amount: roundWholePeso((planAmount / totalDays) * activeDays),
+    prorated: true,
+    periodStart: activationDate,
+    periodEnd
   };
 }
 
@@ -1626,13 +1654,16 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
       }
       continue;
     }
+    const chargeDescription = firstBillingCharge.prorated
+      ? `Monthly Recurring Charge (Prorated ${formatDateOnly(firstBillingCharge.periodStart)} to ${formatDateOnly(firstBillingCharge.periodEnd)})`
+      : 'Monthly Recurring Charge';
     const entry = {
       id: billId,
       amount: firstBillingCharge.amount,
       date: isoDate,
       kind: 'charge',
       reference: undefined,
-      description: 'Monthly Recurring Charge',
+      description: chargeDescription,
       type: 'charge',
       direction: 'debit',
       recordedAt: formatManilaDateTime(now) || new Date().toISOString(),

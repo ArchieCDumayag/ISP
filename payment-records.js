@@ -4,6 +4,7 @@ const { readJson, writeJson } = require('./data-store');
 const customersModule = require('./customers');
 const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
 const { accountHasRole } = require('./role-utils');
+const { readBranchDisconnections, getAccountDisconnection } = require('./disconnection-store');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -129,7 +130,7 @@ const assertAdminUser = (req) => {
     return user;
 };
 
-const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null) => {
+const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null, disconnections = {}) => {
     if (!customer || typeof customer !== 'object') return null;
     const sanitizedCustomer = sanitizeCustomerForRecord(customer);
     if (!sanitizedCustomer) return null;
@@ -146,6 +147,7 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
         subscriberStatus,
         customerStatus: subscriberStatus,
         planCategory,
+        disconnection: getAccountDisconnection(disconnections, accountNumber),
         paymentBreakdownAdjustment: getPaymentBreakdownAdjustment(adjustments, branchId, accountNumber),
         ...summary,
         history: paymentHistory
@@ -228,15 +230,16 @@ function calculatePaymentSummary(history = [], creditLimit, planAmount) {
 router.get('/', async (req, res, next) => {
     try {
         const branchId = req.user?.branchId || null;
-        const [customers, payments, plans, adjustments] = await Promise.all([
+        const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
             readCustomers(branchId),
             readPayments(branchId),
             readPlans(branchId),
-            readPaymentBreakdownAdjustments()
+            readPaymentBreakdownAdjustments(),
+            readBranchDisconnections(branchId)
         ]);
 
         const paymentRecords = customers
-            .map((customer) => buildPaymentRecord(customer, payments, plans, adjustments, branchId))
+            .map((customer) => buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections))
             .filter(Boolean);
 
         res.json({ records: paymentRecords });
@@ -254,11 +257,12 @@ router.get('/:accountNumber', async (req, res, next) => {
         }
 
         const branchId = req.user?.branchId || null;
-        const [customers, payments, plans, adjustments] = await Promise.all([
+        const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
             readCustomers(branchId),
             readPayments(branchId),
             readPlans(branchId),
-            readPaymentBreakdownAdjustments()
+            readPaymentBreakdownAdjustments(),
+            readBranchDisconnections(branchId)
         ]);
 
         const customer = Array.isArray(customers)
@@ -268,7 +272,7 @@ router.get('/:accountNumber', async (req, res, next) => {
             return next(createError(404, 'Customer not found.'));
         }
 
-        const record = buildPaymentRecord(customer, payments, plans, adjustments, branchId);
+        const record = buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections);
         if (!record) {
             return next(createError(500, 'Failed to generate payment record.'));
         }

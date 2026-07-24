@@ -2524,16 +2524,56 @@
                 return isNaN(date) ? null : date;
             }
 
+            function getLastDayOfMonth(year, monthIndex) {
+                return new Date(year, monthIndex + 1, 0).getDate();
+            }
+
+            function isLastDayOfMonth(date) {
+                return Boolean(
+                    date instanceof Date
+                    && !Number.isNaN(date.getTime())
+                    && date.getDate() === getLastDayOfMonth(date.getFullYear(), date.getMonth())
+                );
+            }
+
+            function isThirtyFirstDay(date) {
+                return Boolean(
+                    date instanceof Date
+                    && !Number.isNaN(date.getTime())
+                    && date.getDate() === 31
+                );
+            }
+
+            function hasMonthEndBillingCycle(customer = {}) {
+                const text = String([
+                    customer?.billingCycle,
+                    customer?.billing_cycle,
+                    customer?.planBilling,
+                    customer?.billing
+                ].filter(Boolean).join(' ')).trim().toLowerCase();
+                return /\blast\b/.test(text) && /\bmonth\b/.test(text);
+            }
+
+            function usesMonthEndBillingCycle(customer = {}, referenceDate = null) {
+                const billDate = parseDateOnly(customer?.billDate);
+                const dueDate = parseDateOnly(customer?.dueDate);
+                return hasMonthEndBillingCycle(customer)
+                    || isThirtyFirstDay(referenceDate)
+                    || isThirtyFirstDay(billDate)
+                    || isThirtyFirstDay(dueDate);
+            }
+
             function alignBillDateOnOrAfterActivationDate(billDateValue, activationDateValue) {
                 const billDate = parseDateOnly(billDateValue);
                 const activationDate = parseDateOnly(activationDateValue);
                 if (!billDate) return '';
                 if (!activationDate || billDate >= activationDate) return formatDateISO(billDate);
 
-                const billDay = billDate.getDate();
+                const useMonthEnd = isLastDayOfMonth(billDate);
+                const billDay = useMonthEnd ? 31 : billDate.getDate();
                 const makeCycleDate = (year, monthIndex) => {
-                    const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-                    return new Date(year, monthIndex, Math.min(billDay, lastDay));
+                    const lastDay = getLastDayOfMonth(year, monthIndex);
+                    return new Date(year, monthIndex, useMonthEnd ? lastDay : Math.min(billDay, lastDay));
                 };
                 let candidate = makeCycleDate(activationDate.getFullYear(), activationDate.getMonth());
                 if (candidate < activationDate) {
@@ -3035,8 +3075,9 @@
                 });
             };
 
-            const buildMonthlyDate = (year, monthIndex, day) => {
-                const safeDay = Math.min(day, new Date(year, monthIndex + 1, 0).getDate());
+            const buildMonthlyDate = (year, monthIndex, day, monthEnd = false) => {
+                const lastDay = getLastDayOfMonth(year, monthIndex);
+                const safeDay = monthEnd ? lastDay : Math.min(day, lastDay);
                 return new Date(year, monthIndex, safeDay);
             };
 
@@ -3619,6 +3660,9 @@
                 if (planCategory === 'prepaid') return 'Monthly prepaid';
                 const billDate = parseDateInput(customer?.billDate);
                 if (billDate && !Number.isNaN(billDate)) {
+                    if (usesMonthEndBillingCycle(customer, billDate)) {
+                        return 'Every last of the month';
+                    }
                     const day = billDate.getDate();
                     const getOrdinalSuffix = (d) => {
                         if (d > 3 && d < 21) return 'th';
@@ -3641,16 +3685,18 @@
                 if (planCategory === 'prepaid') return formatViewDate(parsed);
                 const today = new Date();
                 const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const useMonthEnd = usesMonthEndBillingCycle(customer, parsed);
+                const cycleDay = useMonthEnd ? 31 : parsed.getDate();
                 let year = start.getFullYear();
                 let month = start.getMonth();
-                let candidate = buildMonthlyDate(year, month, parsed.getDate());
+                let candidate = buildMonthlyDate(year, month, cycleDay, useMonthEnd);
                 if (candidate < start) {
                     month += 1;
                     if (month > 11) {
                         month = 0;
                         year += 1;
                     }
-                    candidate = buildMonthlyDate(year, month, parsed.getDate());
+                    candidate = buildMonthlyDate(year, month, cycleDay, useMonthEnd);
                 }
                 return formatViewDate(candidate);
             };
@@ -3662,10 +3708,11 @@
 
                 const today = new Date();
                 const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                const baseDay = parsedDue.getDate();
+                const useMonthEnd = usesMonthEndBillingCycle(customer, parsedDue);
+                const baseDay = useMonthEnd ? 31 : parsedDue.getDate();
                 let year = parsedDue.getFullYear();
                 let month = parsedDue.getMonth();
-                let candidate = buildMonthlyDate(year, month, baseDay);
+                let candidate = buildMonthlyDate(year, month, baseDay, useMonthEnd);
 
                 while (candidate < start) {
                     month += 1;
@@ -3673,7 +3720,7 @@
                         month = 0;
                         year += 1;
                     }
-                    candidate = buildMonthlyDate(year, month, baseDay);
+                    candidate = buildMonthlyDate(year, month, baseDay, useMonthEnd);
                 }
 
                 return formatViewDate(candidate, 'Not set');
@@ -6321,7 +6368,6 @@
                             billingCycleMeta = 'No due date set';
                         }
                     } else if (billDate && !isNaN(billDate)) {
-                        const day = billDate.getDate();
                         const getOrdinalSuffix = (d) => {
                             if (d > 3 && d < 21) return 'th';
                             switch (d % 10) {
@@ -6332,7 +6378,12 @@
                         const balanceNumber = Number(customer?.balance);
                         const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < 0;
                         const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > 0;
-                        billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
+                        if (usesMonthEndBillingCycle(customer, billDate)) {
+                            billingCycleDisplay = 'Every last of the month';
+                        } else {
+                            const day = billDate.getDate();
+                            billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
+                        }
                         billingCycleMeta = `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;
                     }
 

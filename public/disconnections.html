@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Disconnections - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <link rel="stylesheet" href="css/disconnections.css?v=1.0">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+
+<body class="disconnections-body">
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page disconnections-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Billing Control</p>
+                        <h1>Disconnections</h1>
+                        <p class="subtitle">Accounts whose ending balance reached the credit limit and need admin decision.</p>
+                    </div>
+                    <div class="header-actions">
+                        <button type="button" class="btn btn-primary btn-sm" id="refreshDisconnectionsBtn">
+                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </section>
+
+                <section class="disconnection-metrics" aria-label="Disconnection summary">
+                    <article class="disconnection-metric">
+                        <span class="disconnection-metric__icon"><i class="ti ti-alert-triangle" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Needs Decision</span>
+                            <strong id="metricPending">0</strong>
+                        </div>
+                    </article>
+                    <article class="disconnection-metric">
+                        <span class="disconnection-metric__icon is-danger"><i class="ti ti-plug-off" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Disconnected</span>
+                            <strong id="metricDisconnected">0</strong>
+                        </div>
+                    </article>
+                    <article class="disconnection-metric">
+                        <span class="disconnection-metric__icon is-success"><i class="ti ti-user-check" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Kept Active</span>
+                            <strong id="metricKeptActive">0</strong>
+                        </div>
+                    </article>
+                    <article class="disconnection-metric">
+                        <span class="disconnection-metric__icon is-warning"><i class="ti ti-scale" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Total Over</span>
+                            <strong id="metricOverAmount">&#8369;0.00</strong>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="section-frame">
+                    <div class="section-toolbar disconnection-toolbar">
+                        <div class="search-field">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input id="disconnectionSearchInput" type="search" placeholder="Search account, name, area, PPPoE" aria-label="Search disconnections">
+                        </div>
+                        <div class="toolbar-inline-filters">
+                            <div class="page-size-control toolbar-filter-control">
+                                <label for="statusFilter">Status</label>
+                                <div class="select-wrapper">
+                                    <select id="statusFilter">
+                                        <option value="">All</option>
+                                        <option value="pending">Needs decision</option>
+                                        <option value="kept-active">Kept active</option>
+                                        <option value="disconnected">Disconnected</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control toolbar-filter-control">
+                                <label for="policyFilter">Billing</label>
+                                <div class="select-wrapper">
+                                    <select id="policyFilter">
+                                        <option value="">All</option>
+                                        <option value="stop">Stop next month</option>
+                                        <option value="continue">Continue billing</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper elevated">
+                        <table class="disconnection-table">
+                            <caption>Disconnection queue</caption>
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th>Subscriber</th>
+                                    <th>Plan</th>
+                                    <th class="is-num">Ending Balance</th>
+                                    <th class="is-num">Credit Limit</th>
+                                    <th class="is-num">Over</th>
+                                    <th>Status</th>
+                                    <th>Billing After Disconnect</th>
+                                    <th>PPPoE</th>
+                                    <th class="col-actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="disconnectionTableBody">
+                                <tr>
+                                    <td colspan="10" class="disconnection-empty">Loading disconnections...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer">
+                        <div class="footer-summary" id="disconnectionSummary">Loading...</div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div id="disconnectModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="disconnectModalTitle" aria-hidden="true">
+        <div class="modal-content disconnection-modal">
+            <div class="modal-header">
+                <div>
+                    <h2 id="disconnectModalTitle">Disconnect Subscriber</h2>
+                    <p class="modal-subtitle" id="disconnectModalSubtitle">Select billing behavior after disconnection.</p>
+                </div>
+                <button class="close-modal" type="button" data-close-disconnect aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="disconnectForm" class="disconnection-form">
+                <input type="hidden" id="disconnectAccountNumber">
+                <div class="disconnect-snapshot" id="disconnectSnapshot"></div>
+                <fieldset class="disconnection-policy-group">
+                    <legend>Billing After Disconnect</legend>
+                    <label class="disconnection-policy-option">
+                        <input type="radio" name="billingPolicy" value="stop" checked>
+                        <span>
+                            <strong>Stop next month</strong>
+                            <small>No new monthly bill after the current cycle.</small>
+                        </span>
+                    </label>
+                    <label class="disconnection-policy-option">
+                        <input type="radio" name="billingPolicy" value="continue">
+                        <span>
+                            <strong>Continue billing</strong>
+                            <small>Monthly billing continues while service is disconnected.</small>
+                        </span>
+                    </label>
+                </fieldset>
+                <div class="form-field">
+                    <label for="disconnectNotes">Notes</label>
+                    <textarea id="disconnectNotes" rows="3" placeholder="Optional admin note"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="ghost-btn" data-close-disconnect>Cancel</button>
+                    <button type="submit" class="primary-btn" id="confirmDisconnectBtn">
+                        <i class="ti ti-plug-off" aria-hidden="true"></i>
+                        Disconnect
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.8"></script>
+    <script src="js/disconnections.js?v=1.1"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.6"></script>
+</body>
+
+</html>

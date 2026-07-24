@@ -112,6 +112,15 @@
         if (!parts) return null;
         return buildStableDate(parts.year, parts.month, new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate());
     };
+    const hasMonthEndBillingCycle = (record = {}) => {
+        const text = String([
+            record.billingCycle,
+            record.billing_cycle,
+            record.planBilling,
+            record.billing
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return /\blast\b/.test(text) && /\bmonth\b/.test(text);
+    };
     const isSameBillingMonth = (left, right) => {
         const leftParts = getZonedDateParts(left);
         const rightParts = getZonedDateParts(right);
@@ -130,12 +139,17 @@
         return leftParts.day - rightParts.day;
     };
     const isBeforeBillingDate = (left, right) => compareBillingDateOnly(left, right) < 0;
+    const isOnOrBeforeBillingDate = (left, right) => compareBillingDateOnly(left, right) <= 0;
     const isBeforeBillingMonth = (left, right) => {
         const leftParts = getZonedDateParts(left);
         const rightParts = getZonedDateParts(right);
         if (!leftParts || !rightParts) return isBeforeBillingDate(left, right);
         if (leftParts.year !== rightParts.year) return leftParts.year < rightParts.year;
         return leftParts.month < rightParts.month;
+    };
+    const getTodayBillingDate = () => {
+        const parts = getZonedDateParts(new Date());
+        return parts ? buildStableDate(parts.year, parts.month, parts.day) : new Date();
     };
     const getInclusiveDayCount = (startDate, endDate) => {
         const startParts = getZonedDateParts(startDate);
@@ -591,6 +605,7 @@
         };
     };
     const resolveBillingDay = (record = {}, fallbackDate = null) => {
+        if (hasMonthEndBillingCycle(record)) return 31;
         const candidates = [
             safeDate(record.billDate),
             safeDate(record.dueDate),
@@ -730,6 +745,7 @@
         let currentMonth = startParts.month;
         let billDate = buildMonthlyDate(currentYear, currentMonth, billingDay);
         const lastBillDate = buildMonthlyDate(endParts.year, endParts.month, billingDay);
+        const todayBillingDate = getTodayBillingDate();
         let runningBalance = 0;
         let cursor = 0;
 
@@ -747,7 +763,11 @@
         }
 
         let guard = 0;
-        while (billDate <= lastBillDate && guard < MAX_SYNTHETIC_ROWS) {
+        while (
+            billDate <= lastBillDate
+            && isOnOrBeforeBillingDate(billDate, todayBillingDate)
+            && guard < MAX_SYNTHETIC_ROWS
+        ) {
             const nextParts = getNextMonthParts(currentYear, currentMonth);
             const nextBillDate = buildMonthlyDate(nextParts.year, nextParts.month, billingDay);
             const cycleCredits = [];

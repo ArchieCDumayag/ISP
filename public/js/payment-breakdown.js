@@ -204,6 +204,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return buildStableDate(parts.year, parts.month, new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate());
     };
 
+    const hasMonthEndBillingCycle = (record = {}) => {
+        const text = String([
+            record.billingCycle,
+            record.billing_cycle,
+            record.planBilling,
+            record.billing
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return /\blast\b/.test(text) && /\bmonth\b/.test(text);
+    };
+
     const isSameBillingMonth = (left, right) => {
         const leftParts = getZonedDateParts(left);
         const rightParts = getZonedDateParts(right);
@@ -229,12 +239,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const isBeforeBillingDate = (left, right) => compareBillingDateOnly(left, right) < 0;
+    const isOnOrBeforeBillingDate = (left, right) => compareBillingDateOnly(left, right) <= 0;
     const isBeforeBillingMonth = (left, right) => {
         const leftParts = getZonedDateParts(left);
         const rightParts = getZonedDateParts(right);
         if (!leftParts || !rightParts) return isBeforeBillingDate(left, right);
         if (leftParts.year !== rightParts.year) return leftParts.year < rightParts.year;
         return leftParts.month < rightParts.month;
+    };
+    const getTodayBillingDate = () => {
+        const parts = getZonedDateParts(new Date());
+        return parts ? buildStableDate(parts.year, parts.month, parts.day) : new Date();
     };
 
     const getInclusiveDayCount = (startDate, endDate) => {
@@ -902,6 +917,26 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
 
+    const getDisconnectionState = (record = {}) => {
+        const raw = record?.disconnection || null;
+        if (!raw || typeof raw !== 'object') return null;
+        if (normalizeText(raw.status) !== 'disconnected') return null;
+        const disconnectedAt = safeDate(raw.disconnectedAt || raw.decidedAt || raw.updatedAt);
+        if (!disconnectedAt) return null;
+        const billingPolicy = normalizeText(raw.billingPolicy) === 'continue' ? 'continue' : 'stop';
+        return {
+            disconnectedAt,
+            billingPolicy,
+            billingPolicyLabel: billingPolicy === 'continue' ? 'billing continues' : 'billing stops next month'
+        };
+    };
+
+    const getRowDisconnectionState = (record = {}, billDate = null) => {
+        const disconnection = getDisconnectionState(record);
+        if (!disconnection || !billDate || !isSameBillingMonth(disconnection.disconnectedAt, billDate)) return null;
+        return disconnection;
+    };
+
     const takeAutomaticReferral = (context, dueBeforeReferral) => {
         const available = Number(context?.automaticReferralRemaining) || 0;
         const base = Math.max(0, Number(dueBeforeReferral) || 0);
@@ -968,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const planType = resolvePlanType(record);
         const planTypeLabel = toTitleCase(planType);
         const billingCycle = resolveBillingCycleLabel(record, billDate);
+        const disconnection = getRowDisconnectionState(record, billDate);
         const planAmountDisplay = proration?.isProrated ? formatCurrencyNoCents(planAmount) : formatCurrency(planAmount);
         const billMetaParts = billMetaOverride
             ? [billMetaOverride]
@@ -1007,6 +1043,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 paymentMode,
                 paymentDateLabel: paymentDate ? formatDate(paymentDate, '-') : '-',
                 paymentStatus,
+                isDisconnected: Boolean(disconnection),
+                disconnectedAt: disconnection?.disconnectedAt || null,
+                disconnectionBillingPolicy: disconnection?.billingPolicy || '',
+                disconnectionBillingPolicyLabel: disconnection?.billingPolicyLabel || '',
                 balanceAfterPayment,
                 sourceType,
                 isFirstRow,
@@ -1021,6 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const resolveBillingDay = (record = {}, fallbackDate = null) => {
+        if (hasMonthEndBillingCycle(record)) return 31;
         const candidates = [
             safeDate(record.billDate),
             safeDate(record.dueDate),
@@ -1157,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let currentMonth = startParts.month;
         let billDate = buildMonthlyDate(currentYear, currentMonth, billingDay);
         const lastBillDate = buildMonthlyDate(endParts.year, endParts.month, billingDay);
+        const todayBillingDate = getTodayBillingDate();
         let runningBalance = 0;
         let cursor = 0;
 
@@ -1176,7 +1218,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let guard = 0;
-        while (billDate <= lastBillDate && guard < MAX_SYNTHETIC_ROWS) {
+        while (
+            billDate <= lastBillDate
+            && isOnOrBeforeBillingDate(billDate, todayBillingDate)
+            && guard < MAX_SYNTHETIC_ROWS
+        ) {
             const nextParts = getNextMonthParts(currentYear, currentMonth);
             const nextBillDate = buildMonthlyDate(nextParts.year, nextParts.month, billingDay);
             const cycleCredits = [];
@@ -1227,6 +1273,49 @@ document.addEventListener('DOMContentLoaded', () => {
         return rows;
     };
 
+    const appendDisconnectionMarkerRow = (record = {}, rows = []) => {
+        const disconnection = getDisconnectionState(record);
+        if (!disconnection) return rows;
+        const hasDisconnectionMonth = rows.some((row) => (
+            row?.billDate && isSameBillingMonth(row.billDate, disconnection.disconnectedAt)
+        ));
+        if (hasDisconnectionMonth) return rows;
+
+        const lastRow = rows.length ? rows[rows.length - 1] : null;
+        const balanceAfterPayment = roundMoney(Number(lastRow?.balanceAfterPayment) || 0);
+        const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
+        const planType = resolvePlanType(record);
+        const markerRow = {
+            billDate: disconnection.disconnectedAt,
+            billLabel: 'Disconnected',
+            billMeta: `Disconnected ${formatDate(disconnection.disconnectedAt, '')} - ${disconnection.billingPolicyLabel}`,
+            planType,
+            planTypeLabel: toTitleCase(planType),
+            billingCycle: resolveBillingCycleLabel(record, disconnection.disconnectedAt),
+            previousBalance: 0,
+            advance: 0,
+            referral: 0,
+            due: 0,
+            amountPaid: 0,
+            paymentMode: '-',
+            paymentDateLabel: formatDate(disconnection.disconnectedAt, '-'),
+            paymentStatus: balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid',
+            isDisconnected: true,
+            disconnectedAt: disconnection.disconnectedAt,
+            disconnectionBillingPolicy: disconnection.billingPolicy,
+            disconnectionBillingPolicyLabel: disconnection.billingPolicyLabel,
+            balanceAfterPayment,
+            sourceType: 'disconnection',
+            isFirstRow: false,
+            isProrated: false,
+            isAdjustmentEditable: false,
+            nextPreviousBalance: nextCarryOver.previousBalance,
+            nextAdvance: nextCarryOver.advance,
+            nextCarryOverType: nextCarryOver.type
+        };
+        return [...rows, markerRow];
+    };
+
     const buildBreakdownRows = (record = {}, customers = []) => {
         const entries = (Array.isArray(record.history) ? record.history : [])
             .map(normalizeEntry)
@@ -1245,7 +1334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rows = buildRowsFromMonthlyPlan(record, entries, context);
         }
 
-        return { rows, context };
+        return { rows: appendDisconnectionMarkerRow(record, rows), context };
     };
 
     const getAmountClass = (value) => {
@@ -1303,8 +1392,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const formatRowBillAmount = (value) => row.isProrated ? formatCurrencyNoCents(value) : formatCurrency(value);
             const previousBalanceCell = `<span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span>`;
             const advanceCell = `<span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span>`;
+            const rowClasses = [
+                row.isAdjustmentEditable ? 'is-first-adjustment-row' : '',
+                row.isDisconnected ? 'is-disconnected-row' : ''
+            ].filter(Boolean).join(' ');
+            const statusCell = row.isDisconnected
+                ? `<span class="breakdown-status is-disconnected">disconnected</span><span class="breakdown-status-note">${escapeHtml(row.disconnectionBillingPolicyLabel || '')}</span>`
+                : `<span class="breakdown-status is-${row.paymentStatus}">${escapeHtml(row.paymentStatus)}</span>`;
             return `
-            <tr${row.isAdjustmentEditable ? ' class="is-first-adjustment-row"' : ''}>
+            <tr${rowClasses ? ` class="${rowClasses}"` : ''}>
                 <td>
                     ${renderBillCell(row)}
                 </td>
@@ -1317,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span></td>
                 <td><span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span></td>
                 <td><span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span></td>
-                <td><span class="breakdown-status is-${row.paymentStatus}">${escapeHtml(row.paymentStatus)}</span></td>
+                <td>${statusCell}</td>
                 <td class="is-num"><span class="breakdown-amount ${getBalanceClass(row.balanceAfterPayment)}">${escapeHtml(formatBalance(row.balanceAfterPayment))}</span></td>
             </tr>
         `;

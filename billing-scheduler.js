@@ -19,6 +19,12 @@ const {
   normalizePppoeRouterId,
   normalizePppoeUsernameKey
 } = require('./pppoe-account-utils');
+const {
+  readBranchDisconnections,
+  getAccountDisconnection,
+  shouldContinueBillingAfterDisconnection,
+  shouldStopBillingAfterDisconnection
+} = require('./disconnection-store');
 
 const STORE_KEYS = {
   customers: 'customers',
@@ -202,6 +208,45 @@ function clampDay(year, monthIndex, day) {
   // monthIndex is 0-based; get last day of month by day 0 of next month
   const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
   return Math.min(day, lastDay);
+}
+
+function getLastDayOfMonth(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function isLastDayOfMonth(date) {
+  return Boolean(
+    date instanceof Date
+    && !isNaN(date)
+    && date.getDate() === getLastDayOfMonth(date.getFullYear(), date.getMonth())
+  );
+}
+
+function isThirtyFirstDay(date) {
+  return Boolean(date instanceof Date && !isNaN(date) && date.getDate() === 31);
+}
+
+function hasMonthEndBillingCycle(customer = {}) {
+  const text = String([
+    customer?.billingCycle,
+    customer?.billing_cycle,
+    customer?.planBilling,
+    customer?.billing
+  ].filter(Boolean).join(' ')).trim().toLowerCase();
+  return /\blast\b/.test(text) && /\bmonth\b/.test(text);
+}
+
+function usesMonthEndBillingCycle(customer = {}, referenceDate = null) {
+  const billDate = parseDateOnly(customer?.billDate) || parseDateTime(customer?.billDate);
+  const dueDate = parseDateOnly(customer?.dueDate) || parseDateTime(customer?.dueDate);
+  return hasMonthEndBillingCycle(customer)
+    || isThirtyFirstDay(referenceDate)
+    || isThirtyFirstDay(billDate)
+    || isThirtyFirstDay(dueDate);
+}
+
+function buildMonthlyCycleDate(year, monthIndex, day, monthEnd = false) {
+  return new Date(year, monthIndex, monthEnd ? getLastDayOfMonth(year, monthIndex) : clampDay(year, monthIndex, day));
 }
 
 function getManilaDateParts(now = new Date()) {
@@ -655,20 +700,17 @@ function resolveScheduledBillDate(customer, now = new Date()) {
     return explicitBillDate;
   }
 
-  const billDay = parseBillingDay(customer?.billDate) || 1;
-  return new Date(
-    todayLocal.getFullYear(),
-    todayLocal.getMonth(),
-    clampDay(todayLocal.getFullYear(), todayLocal.getMonth(), billDay)
-  );
+  const useMonthEnd = usesMonthEndBillingCycle(customer);
+  const billDay = useMonthEnd ? 31 : (parseBillingDay(customer?.billDate) || 1);
+  return buildMonthlyCycleDate(todayLocal.getFullYear(), todayLocal.getMonth(), billDay, useMonthEnd);
 }
 
-function advanceMonthlyCycleDate(baseDate, months = 1) {
+function advanceMonthlyCycleDate(baseDate, months = 1, monthEnd = false) {
   if (!(baseDate instanceof Date) || isNaN(baseDate)) return null;
   const year = baseDate.getFullYear();
   const month = baseDate.getMonth() + months;
-  const day = baseDate.getDate();
-  return new Date(year, month, clampDay(year, month, day));
+  const day = monthEnd ? 31 : baseDate.getDate();
+  return buildMonthlyCycleDate(year, month, day, monthEnd);
 }
 
 function roundMoney(value) {
@@ -754,18 +796,18 @@ function resolveFirstBillingCharge(customer = {}, billDate, fullPlanAmount = 0) 
   };
 }
 
-function alignBillDateOnOrAfterActivationDate(billDate, activationDateValue) {
+function alignBillDateOnOrAfterActivationDate(billDate, activationDateValue, monthEnd = false) {
   if (!(billDate instanceof Date) || isNaN(billDate)) return null;
   const activationDate = parseDateOnly(activationDateValue);
   if (!activationDate || billDate >= activationDate) return billDate;
 
-  const billDay = billDate.getDate();
+  const billDay = monthEnd ? 31 : billDate.getDate();
   let year = activationDate.getFullYear();
   let month = activationDate.getMonth();
-  let candidate = new Date(year, month, clampDay(year, month, billDay));
+  let candidate = buildMonthlyCycleDate(year, month, billDay, monthEnd);
   if (candidate < activationDate) {
     month += 1;
-    candidate = new Date(year, month, clampDay(year, month, billDay));
+    candidate = buildMonthlyCycleDate(year, month, billDay, monthEnd);
   }
   return candidate;
 }
@@ -787,7 +829,7 @@ function deriveDueOffset(customer = {}) {
 }
 
 function buildNextBillingCycleState(customer = {}, currentBillDate) {
-  const nextBillDate = advanceMonthlyCycleDate(currentBillDate, 1);
+  const nextBillDate = advanceMonthlyCycleDate(currentBillDate, 1, usesMonthEndBillingCycle(customer, currentBillDate));
   if (!nextBillDate) return null;
 
   const offset = deriveDueOffset(customer);
@@ -805,7 +847,11 @@ function buildNextBillingCycleState(customer = {}, currentBillDate) {
 }
 
 function buildActivationAlignedBillingCycleState(customer = {}, scheduledBillDate) {
-  const alignedBillDate = alignBillDateOnOrAfterActivationDate(scheduledBillDate, customer?.activationDate);
+  const alignedBillDate = alignBillDateOnOrAfterActivationDate(
+    scheduledBillDate,
+    customer?.activationDate,
+    usesMonthEndBillingCycle(customer, scheduledBillDate)
+  );
   if (!alignedBillDate) return null;
   if (alignedBillDate.getTime() === scheduledBillDate.getTime()) {
     return { billDate: scheduledBillDate, changed: false, state: null };
@@ -1149,22 +1195,6 @@ async function applyDueScheduledPrepaidPlanChangesForBranch(branchId, now = new 
   return { applied, pending };
 }
 
-function isOverCreditLimit(customer, paymentsForAccount = []) {
-  if (!customer) return false;
-  const balance = computeBalance(paymentsForAccount);
-  if (balance <= 0) return false;
-  const limitRaw = Number(customer.creditLimit);
-  const fallbackLimit = Number(customer.planAmount) || 0;
-  const creditLimit = Number.isFinite(limitRaw) && limitRaw >= 0 ? limitRaw : fallbackLimit;
-  if (creditLimit <= 0) return balance > 0;
-  return balance > creditLimit;
-}
-
-function isOverLimitNoPppoe(customer, paymentsForAccount = []) {
-  if (!customer) return false;
-  return isOverCreditLimit(customer, paymentsForAccount);
-}
-
 function shouldBlockBulkPppoeDisable({ disableTargets = [], secretsByName = new Map(), linkedCount = 0, routerId = '' } = {}) {
   if (PPPOE_ENFORCEMENT_ALLOW_BULK_DISABLE) return false;
   const targets = Array.from(disableTargets || []);
@@ -1326,7 +1356,6 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
     const creds = normalizeMikrotikCreds(group.router || {});
     if (!creds.address || !creds.username || !creds.password) continue;
 
-    const overdueUsers = [];
     const eligibleUsers = [];
     const ineligibleUsers = [];
     group.usernames.forEach((customer, unameLower) => {
@@ -1336,21 +1365,15 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
         ineligibleUsers.push(unameLower);
         return;
       }
-      const payHistory = payments?.[customer.accountNumber]?.history || [];
       const eligible = isServiceEligible(customer, plans, now);
       if (!eligible) {
         ineligibleUsers.push(unameLower);
         return;
       }
-      const planCategory = resolvePlanCategory(customer, plans);
-      if (planCategory !== 'prepaid' && isOverCreditLimit(customer, payHistory)) {
-        overdueUsers.push(unameLower);
-        return;
-      }
       eligibleUsers.push(unameLower);
     });
 
-    if (!overdueUsers.length && !eligibleUsers.length && !ineligibleUsers.length) {
+    if (!eligibleUsers.length && !ineligibleUsers.length) {
       continue;
     }
 
@@ -1371,7 +1394,7 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
       let disabledCount = 0;
       let enabledCount = 0;
       let disconnectedCount = 0;
-      const disableTargets = new Set([...overdueUsers, ...ineligibleUsers]);
+      const disableTargets = new Set(ineligibleUsers);
       const blockBulkDisable = shouldBlockBulkPppoeDisable({
         disableTargets,
         secretsByName,
@@ -1394,7 +1417,7 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
               operation: 'update',
               selector: `name=${match.name || target}`,
               payload: { disabled: 'true' },
-              reason: overdueUsers.includes(target) ? 'over-credit-limit' : 'ineligible-service'
+              reason: 'ineligible-service'
             });
             await secretMenu.where('name', match.name || target).update({ disabled: 'true' });
             disabledCount += 1;
@@ -1434,7 +1457,6 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
         }
       }
 
-      const overdueSet = new Set(overdueUsers);
       group.indices.forEach((idx) => {
         const cust = customers[idx];
         if (!cust) return;
@@ -1452,9 +1474,7 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
         const uname = String(cust.pppoeUsername || '').trim().toLowerCase();
         if (!uname) return;
         const eligible = isServiceEligible(cust, plans, now);
-        const planCategory = resolvePlanCategory(cust, plans);
-        const isOverdue = planCategory !== 'prepaid' && overdueSet.has(uname);
-        desiredStatus = eligible && !isOverdue ? STATUS_ACTIVE : STATUS_INACTIVE;
+        desiredStatus = eligible ? STATUS_ACTIVE : STATUS_INACTIVE;
         if (blockBulkDisable && desiredStatus !== STATUS_ACTIVE) {
           return;
         }
@@ -1522,6 +1542,7 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
   const customers = await readCustomers(branchId);
   const payments = await readPayments(branchId);
   const plans = await readPlans(branchId);
+  const disconnections = await readBranchDisconnections(branchId);
 
   const normalize = (s) => String(s || '').trim().toLowerCase();
   const planPriceByName = new Map();
@@ -1549,11 +1570,8 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
         return;
       }
       if (currentStatus.status === STATUS_ACTIVE) activeCustomersSeen += 1;
-      const planCategory = resolvePlanCategory(cust, plans);
-      const payHistory = payments?.[cust.accountNumber]?.history || [];
       const eligible = isServiceEligible(cust, plans, now);
-      const overdue = planCategory !== 'prepaid' && isOverLimitNoPppoe(cust, payHistory);
-      const desiredStatus = eligible && !overdue ? STATUS_ACTIVE : STATUS_INACTIVE;
+      const desiredStatus = eligible ? STATUS_ACTIVE : STATUS_INACTIVE;
       const downgrade = currentStatus.status === STATUS_ACTIVE && desiredStatus === STATUS_INACTIVE;
       if (downgrade) activeToInactiveCount += 1;
       if (currentStatus.status !== desiredStatus || currentStatus.statusMode !== STATUS_MODE_AUTO) {
@@ -1578,19 +1596,19 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
 
   for (let index = 0; index < customers.length; index += 1) {
     let customer = customers[index];
-    // Only bill active customers. Overdue accounts are handled by PPPoE enforcement.
+    const accountNumber = customer.accountNumber;
+    const disconnection = getAccountDisconnection(disconnections, accountNumber);
+    const continueDisconnectedBilling = shouldContinueBillingAfterDisconnection(disconnection);
+    const stopDisconnectedBilling = shouldStopBillingAfterDisconnection(disconnection);
+    if (stopDisconnectedBilling) continue;
+
+    // Active customers bill normally. Disconnected customers bill only when admin chose continue billing.
     const statusState = resolveCustomerStatusState(customer);
-    if (statusState.status !== STATUS_ACTIVE) continue;
+    if (statusState.status !== STATUS_ACTIVE && !continueDisconnectedBilling) continue;
     const planCategory = resolvePlanCategory(customer, plans);
     if (planCategory === 'prepaid') continue;
     if (!hasAssignedPlan(customer)) continue;
 
-    const payHistory = payments?.[customer.accountNumber]?.history || [];
-    if (isOverCreditLimit(customer, payHistory)) {
-      continue;
-    }
-
-    const accountNumber = customer.accountNumber;
     let planAmount = Number(customer.planAmount) || 0;
     if (planAmount <= 0 && customer.planName) {
       const lookup = planPriceByName.get(normalize(customer.planName));

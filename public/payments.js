@@ -892,8 +892,37 @@ document.addEventListener('DOMContentLoaded', function () {
         const diffMs = end.getTime() - start.getTime();
         return Math.round(diffMs / 86400000);
     };
-    const buildMonthlyDate = (year, monthIndex, day) => {
-        const safeDay = Math.min(day, new Date(year, monthIndex + 1, 0).getDate());
+    const getLastDayOfMonth = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate();
+    const isLastDayOfMonth = (date) => Boolean(
+        date instanceof Date
+        && !Number.isNaN(date.getTime())
+        && date.getDate() === getLastDayOfMonth(date.getFullYear(), date.getMonth())
+    );
+    const isThirtyFirstDay = (date) => Boolean(
+        date instanceof Date
+        && !Number.isNaN(date.getTime())
+        && date.getDate() === 31
+    );
+    const hasMonthEndBillingCycle = (customer = {}) => {
+        const text = String([
+            customer?.billingCycle,
+            customer?.billing_cycle,
+            customer?.planBilling,
+            customer?.billing
+        ].filter(Boolean).join(' ')).trim().toLowerCase();
+        return /\blast\b/.test(text) && /\bmonth\b/.test(text);
+    };
+    const usesMonthEndBillingCycle = (customer = {}, referenceDate = null) => {
+        const billDate = parseDateOnly(customer?.billDate);
+        const dueDate = parseDateOnly(customer?.dueDate);
+        return hasMonthEndBillingCycle(customer)
+            || isThirtyFirstDay(referenceDate)
+            || isThirtyFirstDay(billDate)
+            || isThirtyFirstDay(dueDate);
+    };
+    const buildMonthlyDate = (year, monthIndex, day, monthEnd = false) => {
+        const lastDay = getLastDayOfMonth(year, monthIndex);
+        const safeDay = monthEnd ? lastDay : Math.min(day, lastDay);
         return new Date(year, monthIndex, safeDay);
     };
     const getDueStatus = (dueDate) => {
@@ -919,10 +948,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const today = new Date();
         const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const baseDay = parsedDue.getDate();
+        const useMonthEnd = usesMonthEndBillingCycle(customer, parsedDue);
+        const baseDay = useMonthEnd ? 31 : parsedDue.getDate();
         let year = parsedDue.getFullYear();
         let month = parsedDue.getMonth();
-        let candidate = buildMonthlyDate(year, month, baseDay);
+        let candidate = buildMonthlyDate(year, month, baseDay, useMonthEnd);
 
         while (candidate < start) {
             month += 1;
@@ -930,7 +960,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 month = 0;
                 year += 1;
             }
-            candidate = buildMonthlyDate(year, month, baseDay);
+            candidate = buildMonthlyDate(year, month, baseDay, useMonthEnd);
         }
 
         return formatDate(candidate);
@@ -1273,12 +1303,17 @@ document.addEventListener('DOMContentLoaded', function () {
         return leftParts.day - rightParts.day;
     };
     const isBeforeBreakdownDateForPayments = (left, right) => compareBreakdownDateOnlyForPayments(left, right) < 0;
+    const isOnOrBeforeBreakdownDateForPayments = (left, right) => compareBreakdownDateOnlyForPayments(left, right) <= 0;
     const isBeforeBreakdownMonthForPayments = (left, right) => {
         const leftParts = getBreakdownDateParts(left);
         const rightParts = getBreakdownDateParts(right);
         if (!leftParts || !rightParts) return isBeforeBreakdownDateForPayments(left, right);
         if (leftParts.year !== rightParts.year) return leftParts.year < rightParts.year;
         return leftParts.month < rightParts.month;
+    };
+    const getTodayBreakdownDateForPayments = () => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
     };
     const buildBreakdownMonthlyDate = (year, month, billingDay) => {
         const parsedYear = Number(year);
@@ -1783,6 +1818,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     };
     const resolveBreakdownBillingDayForPayments = (customer = {}, fallbackDate = null) => {
+        if (hasMonthEndBillingCycle(customer)) return 31;
         const candidates = [
             safeBreakdownDate(customer.billDate),
             safeBreakdownDate(customer.dueDate),
@@ -1912,6 +1948,7 @@ document.addEventListener('DOMContentLoaded', function () {
         let currentMonth = startParts.month;
         let billDate = buildBreakdownMonthlyDate(currentYear, currentMonth, billingDay);
         const lastBillDate = buildBreakdownMonthlyDate(endParts.year, endParts.month, billingDay);
+        const todayBreakdownDate = getTodayBreakdownDateForPayments();
         let runningBalance = 0;
         let cursor = 0;
 
@@ -1931,7 +1968,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         let guard = 0;
-        while (billDate && lastBillDate && billDate <= lastBillDate && guard < MAX_SYNTHETIC_BREAKDOWN_ROWS) {
+        while (
+            billDate
+            && lastBillDate
+            && billDate <= lastBillDate
+            && isOnOrBeforeBreakdownDateForPayments(billDate, todayBreakdownDate)
+            && guard < MAX_SYNTHETIC_BREAKDOWN_ROWS
+        ) {
             const nextParts = getNextBreakdownMonthParts(currentYear, currentMonth);
             const nextBillDate = buildBreakdownMonthlyDate(nextParts.year, nextParts.month, billingDay);
             const cycleCredits = [];
@@ -2098,11 +2141,20 @@ document.addEventListener('DOMContentLoaded', function () {
         return fallbackState;
     };
     const getCustomerCycleDay = (customer = {}) => {
+        if (usesMonthEndBillingCycle(customer)) return 31;
         const billDate = parseDateOnly(customer?.billDate);
         if (billDate) return billDate.getDate();
         const dueDate = parseDateOnly(customer?.dueDate);
         if (dueDate) return dueDate.getDate();
         return null;
+    };
+    const matchesCustomerCycleDate = (customer = {}, targetDate = null) => {
+        if (!targetDate) return false;
+        if (usesMonthEndBillingCycle(customer, targetDate)) {
+            return isLastDayOfMonth(targetDate);
+        }
+        const cycleDay = getCustomerCycleDay(customer);
+        return Number.isInteger(cycleDay) && cycleDay === targetDate.getDate();
     };
     const matchesDueCycleFilter = (customer = {}, targetDateKey = '') => {
         if (!targetDateKey) return true;
@@ -2126,8 +2178,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (hasAnyMonthlyChargeEntry(customer)) return false;
 
-        const cycleDay = getCustomerCycleDay(customer);
-        return Number.isInteger(cycleDay) && cycleDay === targetDate.getDate();
+        return matchesCustomerCycleDate(customer, targetDate);
     };
 
     function ensureTransactionAmountFieldVisible() {
@@ -3452,12 +3503,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     billingCycleMeta = 'No expiry set';
                 }
             } else if (billDate && !isNaN(billDate)) {
-                const day = billDate.getDate();
                 const getOrdinalSuffix = (d) => {
                     if (d > 3 && d < 21) return 'th';
                     switch (d % 10) { case 1: return "st"; case 2: return "nd"; case 3: return "rd"; default: return "th"; }
                 };
-                billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
+                if (usesMonthEndBillingCycle(customer, billDate)) {
+                    billingCycleDisplay = 'Every last of the month';
+                } else {
+                    const day = billDate.getDate();
+                    billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
+                }
                 billingCycleMeta = currentBillState.currentBreakdownRow?.billDate
                     ? `Current due: ${formatDate(currentBillState.currentBreakdownRow.billDate)}`
                     : `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;

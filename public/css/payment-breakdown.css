@@ -92,6 +92,10 @@
     background: rgba(214, 57, 57, .12);
 }
 
+.is-disconnected-row td {
+    background: rgba(214, 57, 57, .035);
+}
+
 .subscriber-info-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -412,6 +416,20 @@
 .breakdown-status.is-unpaid {
     color: var(--tblr-danger, #d63939);
     background: rgba(214, 57, 57, .12);
+}
+
+.breakdown-status.is-disconnected {
+    color: var(--tblr-danger, #d63939);
+    background: rgba(214, 57, 57, .12);
+}
+
+.breakdown-status-note {
+    display: block;
+    margin-top: .2rem;
+    color: var(--tblr-secondary, #667085);
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 .payment-breakdown-empty-cell {

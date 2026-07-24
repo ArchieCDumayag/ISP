@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Referrals - Dante Point To Point Pisonet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
+    <link rel="stylesheet" href="css/referrals.css?v=1.0">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+
+<body class="referrals-body">
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page referrals-page">
+                <section class="page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Billing Control</p>
+                        <h1>Referrals</h1>
+                        <p class="subtitle">Track referral eligibility, successful payments, and earned bill discounts.</p>
+                    </div>
+                    <div class="header-actions">
+                        <button type="button" class="btn btn-primary btn-sm" id="refreshReferralsBtn">
+                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </section>
+
+                <section class="referral-metrics" aria-label="Referral summary">
+                    <article class="referral-metric">
+                        <span class="referral-metric__icon"><i class="ti ti-users-plus" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Total Referrals</span>
+                            <strong id="metricReferralTotal">0</strong>
+                        </div>
+                    </article>
+                    <article class="referral-metric">
+                        <span class="referral-metric__icon is-success"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Successful</span>
+                            <strong id="metricReferralSuccessful">0</strong>
+                        </div>
+                    </article>
+                    <article class="referral-metric">
+                        <span class="referral-metric__icon is-warning"><i class="ti ti-hourglass" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Waiting Payment</span>
+                            <strong id="metricReferralWaiting">0</strong>
+                        </div>
+                    </article>
+                    <article class="referral-metric">
+                        <span class="referral-metric__icon is-info"><i class="ti ti-gift" aria-hidden="true"></i></span>
+                        <div>
+                            <span>Discount Value</span>
+                            <strong id="metricReferralDiscount">&#8369;0.00</strong>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="section-frame">
+                    <div class="section-toolbar referral-toolbar">
+                        <div class="search-field">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input id="referralSearchInput" type="search" placeholder="Search referrer, customer, account" aria-label="Search referrals">
+                        </div>
+                        <div class="toolbar-inline-filters">
+                            <div class="page-size-control toolbar-filter-control">
+                                <label for="referralStatusFilter">Status</label>
+                                <div class="select-wrapper">
+                                    <select id="referralStatusFilter">
+                                        <option value="">All</option>
+                                        <option value="successful">Successful</option>
+                                        <option value="waiting-payment">Waiting payment</option>
+                                        <option value="pending">Pending</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="page-size-control toolbar-filter-control">
+                                <label for="referralSourceFilter">Source</label>
+                                <div class="select-wrapper">
+                                    <select id="referralSourceFilter">
+                                        <option value="">All</option>
+                                        <option value="customer">Customer</option>
+                                        <option value="agent">Agent</option>
+                                        <option value="external">External</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper elevated">
+                        <table class="referral-table">
+                            <caption>Referral ledger</caption>
+                            <thead>
+                                <tr>
+                                    <th>Referrer</th>
+                                    <th>Referred Customer</th>
+                                    <th>Source</th>
+                                    <th>Eligible Month</th>
+                                    <th>First Bill</th>
+                                    <th>Success Payment</th>
+                                    <th class="is-num">Discount</th>
+                                    <th>Status</th>
+                                    <th class="col-actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="referralTableBody">
+                                <tr>
+                                    <td colspan="9" class="referral-empty">Loading referrals...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer">
+                        <div class="footer-summary" id="referralSummary">Loading...</div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.8"></script>
+    <script src="js/referrals.js?v=1.0"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=1.6"></script>
+</body>
+
+</html>

@@ -377,6 +377,26 @@
                         <label for="creditLimit">Credit Limit (amount)</label>
                         <input type="number" id="creditLimit" name="creditLimit" min="0" step="1">
                     </div>
+                    <div class="form-field" id="referralSourceTypeField">
+                        <label for="referralSourceType">Invited By</label>
+                        <select id="referralSourceType" name="referralSourceType">
+                            <option value="">No referral</option>
+                            <option value="customer">Existing customer</option>
+                            <option value="agent">Agent</option>
+                        </select>
+                    </div>
+                    <div class="form-field" id="referralCustomerField" style="display: none;">
+                        <label for="referralCustomerAccountNumber">Referral Customer</label>
+                        <select id="referralCustomerAccountNumber" name="referralCustomerAccountNumber">
+                            <option value="">Select customer</option>
+                        </select>
+                    </div>
+                    <div class="form-field" id="referralAgentField" style="display: none;">
+                        <label for="referralAgentId">Referral Agent</label>
+                        <select id="referralAgentId" name="referralAgentId">
+                            <option value="">Select agent</option>
+                        </select>
+                    </div>
                 </div>
             </fieldset>
 
@@ -1107,7 +1127,15 @@
             const billDateLabel = document.querySelector('label[for="billDate"]');
             const dueDateLabel = document.querySelector('label[for="dueDateDisplay"]');
             const dueOffsetHelp = document.getElementById('dueOffsetHelp');
+            const referralSourceTypeSelect = document.getElementById('referralSourceType');
+            const referralCustomerField = document.getElementById('referralCustomerField');
+            const referralCustomerSelect = document.getElementById('referralCustomerAccountNumber');
+            const referralAgentField = document.getElementById('referralAgentField');
+            const referralAgentSelect = document.getElementById('referralAgentId');
             let coverageAreaNames = [];
+            let referralOptionCustomers = [];
+            let referralAgents = [];
+            let referralOptionsLoadPromise = null;
             let pppoeAccounts = [];
             let pppoeAccountsAll = [];
             let mikrotikRouters = [];
@@ -1906,6 +1934,175 @@
             let allCustomers = []; // In-memory store for customers
             let selectedCustomerIds = new Set();
             let bulkDeleteInProgress = false;
+
+            const getReferralCustomerName = (customer = {}, fallback = '') => {
+                const explicit = String(customer?.name || customer?.fullName || '').trim();
+                if (explicit) return explicit;
+                const fromParts = [customer?.firstName, customer?.lastName]
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                    .join(' ');
+                return fromParts || fallback || String(customer?.accountNumber || '').trim();
+            };
+
+            const findReferralCustomer = (accountNumber = '') => {
+                const target = String(accountNumber || '').trim();
+                if (!target) return null;
+                return [
+                    ...(Array.isArray(referralOptionCustomers) ? referralOptionCustomers : []),
+                    ...(Array.isArray(allCustomers) ? allCustomers : [])
+                ].find((customer) => String(customer?.accountNumber || '').trim() === target) || null;
+            };
+
+            const ensureSelectOption = (select, value, label) => {
+                if (!select || !value) return;
+                const hasOption = Array.from(select.options).some((option) => String(option.value || '') === String(value));
+                if (!hasOption) {
+                    select.appendChild(new Option(label || value, value));
+                }
+            };
+
+            const populateReferralCustomerOptions = (selectedValue = '', excludeAccount = '') => {
+                if (!referralCustomerSelect) return;
+                const selected = String(selectedValue || '').trim();
+                const exclude = String(excludeAccount || '').trim();
+                const sourceCustomers = (Array.isArray(referralOptionCustomers) && referralOptionCustomers.length)
+                    ? referralOptionCustomers
+                    : allCustomers;
+                referralCustomerSelect.innerHTML = '';
+                referralCustomerSelect.appendChild(new Option('Select customer', ''));
+                (Array.isArray(sourceCustomers) ? sourceCustomers : [])
+                    .filter((customer) => {
+                        const accountNumber = String(customer?.accountNumber || '').trim();
+                        return accountNumber && accountNumber !== exclude;
+                    })
+                    .sort((left, right) => getReferralCustomerName(left).localeCompare(getReferralCustomerName(right)))
+                    .forEach((customer) => {
+                        const accountNumber = String(customer.accountNumber || '').trim();
+                        const name = getReferralCustomerName(customer, accountNumber);
+                        const option = new Option(`${name} (${accountNumber})`, accountNumber);
+                        referralCustomerSelect.appendChild(option);
+                    });
+                if (selected && selected !== exclude) {
+                    ensureSelectOption(referralCustomerSelect, selected, `${getReferralCustomerName(findReferralCustomer(selected) || {}, selected)} (${selected})`);
+                    referralCustomerSelect.value = selected;
+                } else {
+                    referralCustomerSelect.value = '';
+                }
+            };
+
+            const populateReferralAgentOptions = (selectedValue = '') => {
+                if (!referralAgentSelect) return;
+                const selected = String(selectedValue || '').trim();
+                referralAgentSelect.innerHTML = '';
+                referralAgentSelect.appendChild(new Option('Select agent', ''));
+                (Array.isArray(referralAgents) ? referralAgents : [])
+                    .slice()
+                    .sort((left, right) => String(left?.name || left?.username || '').localeCompare(String(right?.name || right?.username || '')))
+                    .forEach((agent) => {
+                        const id = String(agent?.id || '').trim();
+                        if (!id) return;
+                        const name = String(agent?.name || agent?.username || id).trim();
+                        const role = String(agent?.role || '').trim();
+                        referralAgentSelect.appendChild(new Option(role ? `${name} (${role})` : name, id));
+                    });
+                if (selected) {
+                    const agent = referralAgents.find((entry) => String(entry?.id || '').trim() === selected) || null;
+                    ensureSelectOption(referralAgentSelect, selected, String(agent?.name || agent?.username || selected));
+                    referralAgentSelect.value = selected;
+                } else {
+                    referralAgentSelect.value = '';
+                }
+            };
+
+            const applyReferralSourceUi = () => {
+                const sourceType = String(referralSourceTypeSelect?.value || '').trim().toLowerCase();
+                if (referralCustomerField) referralCustomerField.style.display = sourceType === 'customer' ? '' : 'none';
+                if (referralAgentField) referralAgentField.style.display = sourceType === 'agent' ? '' : 'none';
+                if (referralCustomerSelect) {
+                    referralCustomerSelect.required = sourceType === 'customer';
+                    referralCustomerSelect.disabled = sourceType !== 'customer';
+                    if (sourceType !== 'customer') referralCustomerSelect.value = '';
+                }
+                if (referralAgentSelect) {
+                    referralAgentSelect.required = sourceType === 'agent';
+                    referralAgentSelect.disabled = sourceType !== 'agent';
+                    if (sourceType !== 'agent') referralAgentSelect.value = '';
+                }
+            };
+
+            const resetReferralFields = () => {
+                if (referralSourceTypeSelect) referralSourceTypeSelect.value = '';
+                populateReferralCustomerOptions('', String(acctInput?.value || '').trim());
+                populateReferralAgentOptions('');
+                applyReferralSourceUi();
+            };
+
+            const resolveReferralSourceTypeForCustomer = (customer = {}) => {
+                const explicit = String(
+                    customer.referralSourceType
+                    || customer.referral_source_type
+                    || customer.referredByType
+                    || customer.referred_by_type
+                    || ''
+                ).trim().toLowerCase();
+                if (explicit === 'customer' || explicit === 'agent') return explicit;
+                if (customer.referralCustomerAccountNumber || customer.referredByAccountNumber) return 'customer';
+                if (customer.referralAgentId || customer.referralAgentName) return 'agent';
+                return '';
+            };
+
+            const setReferralFieldsFromCustomer = (customerData = {}) => {
+                const sourceType = resolveReferralSourceTypeForCustomer(customerData);
+                if (referralSourceTypeSelect) referralSourceTypeSelect.value = sourceType;
+                const accountNumber = String(customerData?.accountNumber || customerData?.id || '').trim();
+                const referralCustomerAccount = String(
+                    customerData.referralCustomerAccountNumber
+                    || customerData.referral_customer_account_number
+                    || customerData.referredByAccountNumber
+                    || customerData.referred_by_account_number
+                    || ''
+                ).trim();
+                const referralAgentId = String(
+                    customerData.referralAgentId
+                    || customerData.referral_agent_id
+                    || customerData.referredByAgentId
+                    || customerData.referred_by_agent_id
+                    || ''
+                ).trim();
+                populateReferralCustomerOptions(referralCustomerAccount, accountNumber);
+                populateReferralAgentOptions(referralAgentId);
+                applyReferralSourceUi();
+            };
+
+            const loadReferralOptions = async ({ quiet = true } = {}) => {
+                if (referralOptionsLoadPromise) return referralOptionsLoadPromise;
+                referralOptionsLoadPromise = (async () => {
+                    try {
+                        const response = await fetch('/api/referrals/options', {
+                            credentials: 'include',
+                            cache: 'no-store'
+                        });
+                        const payload = await response.json().catch(() => ({}));
+                        if (!response.ok || payload?.ok === false) {
+                            throw new Error(payload?.error || payload?.message || 'Failed to load referral options.');
+                        }
+                        referralOptionCustomers = Array.isArray(payload.customers) ? payload.customers : [];
+                        referralAgents = Array.isArray(payload.agents) ? payload.agents : [];
+                    } catch (error) {
+                        referralOptionCustomers = Array.isArray(allCustomers) ? allCustomers : [];
+                        referralAgents = [];
+                        if (!quiet) showToast(error?.message || 'Unable to load referral options.');
+                    } finally {
+                        referralOptionsLoadPromise = null;
+                        const currentAccount = String(acctInput?.value || form?.dataset.editingId || '').trim();
+                        populateReferralCustomerOptions(referralCustomerSelect?.value || '', currentAccount);
+                        populateReferralAgentOptions(referralAgentSelect?.value || '');
+                        applyReferralSourceUi();
+                    }
+                })();
+                return referralOptionsLoadPromise;
+            };
 
             const getCurrentPageCustomerIds = () => {
                 const total = filteredCustomersState.length;
@@ -4276,6 +4473,8 @@
                 const accountNumber = String(customerData?.accountNumber || customerData?.id || '').trim();
                 setEditMode(accountNumber);
                 if (acctInput) acctInput.value = accountNumber;
+                setReferralFieldsFromCustomer(customerData);
+                void loadReferralOptions({ quiet: true });
 
                 const fullNameRaw = String(customerData?.name || '').trim();
                 let firstName = String(customerData?.firstName || '').trim();
@@ -4555,6 +4754,8 @@
                 setCustomerSubmitState(false);
                 clearEditMode();
                 form.reset();
+                resetReferralFields();
+                void loadReferralOptions({ quiet: true });
                 if (planSelect) {
                     planSelect.value = '';
                 }
@@ -4609,6 +4810,7 @@
                     .then(res => res.json())
                     .then(data => {
                         if (acctInput && data.accountNumber) acctInput.value = data.accountNumber;
+                        populateReferralCustomerOptions('', String(acctInput?.value || '').trim());
                         if (pppoeModeSelect && pppoeModeSelect.value === 'auto') applyPppoeMode('auto');
                     });
                 if (dueOffsetInput) dueOffsetInput.value = DEFAULT_DUE_OFFSET;
@@ -5421,6 +5623,7 @@
                     applyServiceStatus();
                 });
             }
+            referralSourceTypeSelect?.addEventListener('change', applyReferralSourceUi);
             if (billDateInput) {
                 billDateInput.addEventListener('change', () => {
                     enforceNonPastBillDateSelection();
@@ -5902,6 +6105,9 @@
                         String(entry?.accountNumber || entry?.id || '').trim() === targetId
                     )
                     : null;
+                const referralSourceType = String(formData.get('referralSourceType') || '').trim().toLowerCase();
+                const referralCustomerAccountNumber = String(formData.get('referralCustomerAccountNumber') || '').trim();
+                const referralAgentId = String(formData.get('referralAgentId') || '').trim();
                 const selectedNapId = normalizeNapValue(formData.get('napId'));
                 const selectedNapPort = parsePositiveInt(formData.get('napPort'));
                 if ((selectedNapId && !selectedNapPort) || (!selectedNapId && selectedNapPort)) {
@@ -5932,6 +6138,27 @@
                     planSelect?.focus();
                     setCustomerSubmitState(false);
                     return;
+                }
+                if (referralSourceType === 'customer') {
+                    if (!referralCustomerAccountNumber) {
+                        showToast('Select the referral customer.', 'error');
+                        referralCustomerSelect?.focus();
+                        setCustomerSubmitState(false);
+                        return;
+                    }
+                    if (referralCustomerAccountNumber === String(customerId || targetId || '').trim()) {
+                        showToast('Customer cannot refer their own account.', 'error');
+                        referralCustomerSelect?.focus();
+                        setCustomerSubmitState(false);
+                        return;
+                    }
+                } else if (referralSourceType === 'agent') {
+                    if (!referralAgentId) {
+                        showToast('Select the referral agent.', 'error');
+                        referralAgentSelect?.focus();
+                        setCustomerSubmitState(false);
+                        return;
+                    }
                 }
                 const fullNameDefault = `${(formData.get('firstName') || '').trim()} ${(formData.get('lastName') || '').trim()}`.trim();
                 const loginUsername = (formData.get('loginUsername') || '').trim() || fullNameDefault;
@@ -5991,6 +6218,19 @@
                     setCustomerSubmitState(false);
                     return;
                 }
+                const selectedReferralCustomer = referralSourceType === 'customer'
+                    ? findReferralCustomer(referralCustomerAccountNumber)
+                    : null;
+                const selectedReferralAgent = referralSourceType === 'agent'
+                    ? referralAgents.find((agent) => String(agent?.id || '').trim() === referralAgentId)
+                    : null;
+                const referralCustomerName = referralSourceType === 'customer'
+                    ? getReferralCustomerName(selectedReferralCustomer || {}, referralCustomerAccountNumber)
+                    : '';
+                const referralAgentName = referralSourceType === 'agent'
+                    ? String(selectedReferralAgent?.name || selectedReferralAgent?.username || referralAgentId).trim()
+                    : '';
+                const referredByName = referralCustomerName || referralAgentName || '';
                 const payload = {
                     accountNumber: customerId,
                     firstName: formData.get('firstName'),
@@ -6013,6 +6253,13 @@
                     opticalInfo,
                     remarks: formData.get('remarks'),
                     loginUsername,
+                    referralSourceType: referralSourceType === 'customer' || referralSourceType === 'agent' ? referralSourceType : '',
+                    referralCustomerAccountNumber: referralSourceType === 'customer' ? referralCustomerAccountNumber : '',
+                    referralCustomerName,
+                    referralAgentId: referralSourceType === 'agent' ? referralAgentId : '',
+                    referralAgentName,
+                    referredBy: referredByName,
+                    referredByAccountNumber: referralSourceType === 'customer' ? referralCustomerAccountNumber : '',
                 };
                 if (rawLoginPassword) {
                     payload.loginPassword = rawLoginPassword;
@@ -6541,6 +6788,8 @@
                     if (!response.ok) throw new Error('Failed to fetch from server');
                     const data = await response.json();
                     allCustomers = data.customers || []; // The API returns { customers: [...] }
+                    referralOptionCustomers = allCustomers.slice();
+                    populateReferralCustomerOptions(referralCustomerSelect?.value || '', String(acctInput?.value || form?.dataset.editingId || '').trim());
                     pruneSelectedCustomers(allCustomers);
                     if (pppoeAccounts.length) {
                         populatePppoeAccounts(pppoeAccounts);
@@ -6616,6 +6865,7 @@
             updateSelectedNapMapButtonState(null);
             void loadCoverageAreas();
             void loadPppoeAccounts();
+            void loadReferralOptions({ quiet: true });
             void loadPlans();
             const handledEmbeddedFlow = await initializeEmbeddedPaymentsFlow();
             if (!handledEmbeddedFlow) {

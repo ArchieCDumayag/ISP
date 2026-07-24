@@ -899,19 +899,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const createReferralContext = (record, entries, customers) => {
         const planAmount = resolvePlanAmount(record);
-        const referredCustomers = findReferredCustomers(record, customers);
         const explicitReferralTotal = sumEntries(entries.filter(isReferralCredit));
+        const referralDiscounts = explicitReferralTotal > EPSILON
+            ? []
+            : getAutomaticReferralDiscounts(record);
         const automaticReferralTotal = explicitReferralTotal > EPSILON
             ? 0
-            : roundMoney(Math.floor(referredCustomers.length / 2) * planAmount);
+            : roundMoney(referralDiscounts.length * (planAmount / 2));
 
         return {
             planAmount,
-            referredCustomers,
+            referredCustomers: referralDiscounts,
+            referralDiscounts,
             explicitReferralTotal,
             automaticReferralTotal,
             automaticReferralRemaining: automaticReferralTotal,
             automaticReferralApplied: 0,
+            usedReferralDiscountIds: new Set(),
             usedSyntheticBills: false,
             firstBillAdjustment: getFirstBillAdjustment(record)
         };
@@ -937,14 +941,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return disconnection;
     };
 
-    const takeAutomaticReferral = (context, dueBeforeReferral) => {
-        const available = Number(context?.automaticReferralRemaining) || 0;
-        const base = Math.max(0, Number(dueBeforeReferral) || 0);
-        if (available <= EPSILON || base <= EPSILON) return 0;
-        const applied = roundMoney(Math.min(available, base));
-        context.automaticReferralRemaining = roundMoney(available - applied);
-        context.automaticReferralApplied = roundMoney((Number(context.automaticReferralApplied) || 0) + applied);
-        return applied;
+    const normalizeReferralDiscountItem = (item = {}, index = 0) => {
+        const successAt = safeDate(
+            item.successAt
+            || item.success_at
+            || item.paidAt
+            || item.paymentDate
+            || item.date
+        );
+        if (!successAt) return null;
+        const id = String(
+            item.id
+            || item.referralId
+            || item.referral_id
+            || item.referredAccountNumber
+            || item.referred_account_number
+            || item.referredName
+            || `referral-${index}`
+        ).trim();
+        return {
+            id: id || `referral-${index}`,
+            referredAccountNumber: String(item.referredAccountNumber || item.referred_account_number || '').trim(),
+            referredName: String(item.referredName || item.referred_name || item.name || 'Referral').trim(),
+            eligibleMonth: String(item.eligibleMonth || item.eligible_month || '').trim(),
+            successAt
+        };
+    };
+
+    const getAutomaticReferralDiscounts = (record = {}) => {
+        const seen = new Set();
+        return (Array.isArray(record.referralDiscounts) ? record.referralDiscounts : [])
+            .map(normalizeReferralDiscountItem)
+            .filter(Boolean)
+            .filter((item) => {
+                if (seen.has(item.id)) return false;
+                seen.add(item.id);
+                return true;
+            })
+            .sort((left, right) => {
+                const dateDiff = compareBillingDateOnly(left.successAt, right.successAt);
+                if (dateDiff) return dateDiff;
+                return left.referredName.localeCompare(right.referredName);
+            });
+    };
+
+    const takeAutomaticReferral = (context, dueBeforeReferral, billDate, planAmount) => {
+        const discounts = Array.isArray(context?.referralDiscounts) ? context.referralDiscounts : [];
+        const unitAmount = roundMoney((Number(planAmount) || 0) / 2);
+        const monthlyPlanCap = Math.max(0, Number(planAmount) || 0);
+        let remaining = roundMoney(Math.min(Math.max(0, Number(dueBeforeReferral) || 0), monthlyPlanCap));
+        if (!discounts.length || unitAmount <= EPSILON || remaining <= EPSILON || !billDate) {
+            return { amount: 0, items: [] };
+        }
+
+        const usedIds = context.usedReferralDiscountIds || new Set();
+        context.usedReferralDiscountIds = usedIds;
+        const items = [];
+        let amount = 0;
+        let usedThisBill = 0;
+
+        discounts.forEach((item) => {
+            if (usedThisBill >= 2 || remaining <= EPSILON) return;
+            if (!item?.id || usedIds.has(item.id)) return;
+            if (!item.successAt || compareBillingDateOnly(item.successAt, billDate) > 0) return;
+
+            const applied = roundMoney(Math.min(unitAmount, remaining));
+            if (applied <= EPSILON) return;
+            usedIds.add(item.id);
+            usedThisBill += 1;
+            amount = roundMoney(amount + applied);
+            remaining = roundMoney(remaining - applied);
+            context.automaticReferralApplied = roundMoney((Number(context.automaticReferralApplied) || 0) + applied);
+            context.automaticReferralRemaining = roundMoney(Math.max(0, (Number(context.automaticReferralRemaining) || 0) - applied));
+            items.push({
+                id: item.id,
+                referredAccountNumber: item.referredAccountNumber,
+                referredName: item.referredName,
+                eligibleMonth: item.eligibleMonth,
+                successAt: item.successAt,
+                amount: applied
+            });
+        });
+
+        return { amount, items };
     };
 
     const createBreakdownRow = ({
@@ -988,9 +1067,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const explicitReferral = sumEntries(referralCredits);
         const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
         const automaticReferral = explicitReferral > EPSILON
-            ? 0
-            : takeAutomaticReferral(context, dueBeforeAutoReferral);
-        const referral = roundMoney(explicitReferral + automaticReferral);
+            ? { amount: 0, items: [] }
+            : takeAutomaticReferral(context, dueBeforeAutoReferral, billDate, planAmount);
+        const referral = roundMoney(explicitReferral + automaticReferral.amount);
         const rawDue = roundMoney(planAmount - advance + previousBalance - referral);
         const due = roundMoney(Math.max(0, rawDue));
         const amountPaid = sumEntries(paymentCredits);
@@ -1038,6 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 previousBalance,
                 advance,
                 referral,
+                referralDetails: automaticReferral.items,
                 due,
                 amountPaid,
                 paymentMode,
@@ -1381,6 +1461,29 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     };
 
+    const renderReferralCell = (row) => {
+        const details = Array.isArray(row.referralDetails) ? row.referralDetails : [];
+        const names = details
+            .map((item) => String(item?.referredName || item?.referredAccountNumber || '').trim())
+            .filter(Boolean);
+        const detailLabel = names.length
+            ? names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+            : '';
+        const detailTitle = details
+            .map((item) => {
+                const name = String(item?.referredName || item?.referredAccountNumber || 'Referral').trim();
+                const amount = Number(item?.amount) || 0;
+                return amount > EPSILON ? `${name}: ${formatCurrency(amount)}` : name;
+            })
+            .join(', ');
+        return `
+            <span class="breakdown-referral-cell">
+                <span class="breakdown-amount ${getCreditClass(row.referral)}">${formatCurrency(row.referral)}</span>
+                ${detailLabel ? `<span class="breakdown-referral-note" title="${escapeHtml(detailTitle)}">${escapeHtml(detailLabel)}</span>` : ''}
+            </span>
+        `;
+    };
+
     const renderRows = (rows = []) => {
         if (!tableBody) return;
         if (!rows.length) {
@@ -1408,7 +1511,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><span class="breakdown-cycle">${escapeHtml(row.billingCycle || '-')}</span></td>
                 <td class="is-num">${previousBalanceCell}</td>
                 <td class="is-num">${advanceCell}</td>
-                <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.referral)}">${formatCurrency(row.referral)}</span></td>
+                <td class="is-num">${renderReferralCell(row)}</td>
                 <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.due)}">${formatRowBillAmount(row.due)}</span></td>
                 <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span></td>
                 <td><span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span></td>
@@ -1475,12 +1578,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (metrics.referral) metrics.referral.textContent = formatCurrency(totalReferral);
         if (metrics.balance) metrics.balance.textContent = formatBalance(endingBalance);
 
-        const referralCount = Number(context.referredCustomers?.length) || 0;
+        const referralCount = Number(context.referralDiscounts?.length || context.referredCustomers?.length) || 0;
         const summaryParts = [
             `Showing ${formatCount(rows.length)} bill breakdown${rows.length === 1 ? '' : 's'}.`,
             `${formatCount(paidRows)} paid, ${formatCount(Math.max(0, rows.length - paidRows))} unpaid.`,
             referralCount
-                ? `${formatCount(referralCount)} referral${referralCount === 1 ? '' : 's'} found.`
+                ? `${formatCount(referralCount)} successful referral discount${referralCount === 1 ? '' : 's'} available.`
                 : 'No referral discount found.'
         ];
         if (context.usedSyntheticBills) {
@@ -1497,7 +1600,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const customerName = getCustomerName(record, account);
         const planAmount = resolvePlanAmount(record);
         const planName = resolvePlanLabel(record);
-        const referralCount = Number(context.referredCustomers?.length) || 0;
+        const referralCount = Number(context.referralDiscounts?.length || context.referredCustomers?.length) || 0;
         if (titleEl) titleEl.textContent = 'Payment Breakdown';
         if (addPaymentBtn) {
             addPaymentBtn.href = account
@@ -1511,7 +1614,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 customerName,
                 account ? `Account ${account}` : '',
                 `${planName} ${formatCurrency(planAmount)}`,
-                referralCount ? `${formatCount(referralCount)} referral${referralCount === 1 ? '' : 's'}` : ''
+                referralCount ? `${formatCount(referralCount)} successful referral discount${referralCount === 1 ? '' : 's'}` : ''
             ].filter(Boolean).join(' • ');
         }
     };

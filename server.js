@@ -23,6 +23,7 @@ const customersPublicRouter = customersModule.publicRouter || require('express')
 const getCustomerFromSession = customersModule.getCustomerFromSession;
 const paymentRecordsRouter = require('./payment-records');
 const disconnectionsRouter = require('./disconnections');
+const referralsRouter = require('./referrals');
 const coverageRouter = require('./api_coverage');
 const ponManagementRouter = require('./pon-management-api');
 const smsRouter = require('./sms');
@@ -1833,6 +1834,7 @@ const PROTECTED_PAGES = new Set([
     'customer-archive.html',
     'payments.html',
     'disconnections.html',
+    'referrals.html',
     'payment-history.html',
     'payment-breakdown.html',
     'expenses.html',
@@ -1872,6 +1874,7 @@ const FEATURE_PAGE_MAP = Object.freeze({
     'coverage-map.html': 'coverageMap',
     'payments.html': 'payments',
     'disconnections.html': 'payments',
+    'referrals.html': 'payments',
     'payment-history.html': 'paymentHistory',
     'payment-breakdown.html': 'paymentHistory',
     'payment-confirmation-queue.html': 'paymentConfirmationQueue',
@@ -4768,6 +4771,7 @@ if (paymentsWebhookHandler) {
 }
 app.use('/api/payments', requireAuth, requireFeature('payments'), paymentsRouter);
 app.use('/api/disconnections', requireAuth, requireFeature('payments'), disconnectionsRouter);
+app.use('/api/referrals', requireAuth, requireFeature('payments'), referralsRouter);
 app.use('/api/technician/customer-drafts/auth', requireFeature('customerDrafts'), customerDraftTechnicianAuthRouter);
 app.use('/api/technician/customer-drafts', requireFeature('customerDrafts'), customerDraftTechnicianRouter);
 app.use('/api/technician/installations', requireFeature('jobs'), technicianInstallationsRouter);

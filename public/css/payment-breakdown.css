@@ -349,6 +349,24 @@
     color: var(--tblr-secondary, #667085);
 }
 
+.breakdown-referral-cell {
+    display: inline-grid;
+    justify-items: end;
+    gap: .12rem;
+    max-width: 10rem;
+}
+
+.breakdown-referral-note {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--tblr-secondary, #667085);
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .breakdown-mode,
 .breakdown-date,
 .breakdown-type,

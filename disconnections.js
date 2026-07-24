@@ -7,6 +7,7 @@ const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter 
 const { connectMikrotikClient } = require('./mikrotik-client');
 const { auditMikrotikPppoeCommand } = require('./mikrotik-audit-log');
 const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
+const { buildReferralLedger, buildReferralDiscountMap } = require('./referral-engine');
 const {
   dedupePppoeAccounts,
   normalizePppoeRouterId,
@@ -139,13 +140,23 @@ const getHistoryForCustomer = (payments = {}, customer = {}) => {
   return Array.isArray(history) ? history : [];
 };
 
-const computeEndingBalance = ({ customer = {}, payments = {}, customers = [], adjustments = {}, branchId = null } = {}) => {
+const computeEndingBalance = ({
+  customer = {},
+  payments = {},
+  customers = [],
+  adjustments = {},
+  referralDiscountsByAccount = {},
+  branchId = null
+} = {}) => {
   const accountNumber = normalizeAccountNumber(customer.accountNumber);
   const history = getHistoryForCustomer(payments, customer);
   const adjustment = getPaymentBreakdownAdjustment(adjustments, branchId, accountNumber);
   const record = {
     ...customer,
     history,
+    referralDiscounts: Array.isArray(referralDiscountsByAccount?.[accountNumber])
+      ? referralDiscountsByAccount[accountNumber]
+      : (Array.isArray(customer.referralDiscounts) ? customer.referralDiscounts : []),
     paymentBreakdownAdjustment: adjustment
   };
   const breakdown = calculatePaymentBreakdownEndingBalance(record, customers);
@@ -170,6 +181,7 @@ const buildSnapshot = (customer = {}, payments = {}, context = {}) => {
     payments,
     customers: context.customers,
     adjustments: context.adjustments,
+    referralDiscountsByAccount: context.referralDiscountsByAccount,
     branchId: context.branchId
   });
   const balance = ending.balance;
@@ -433,7 +445,10 @@ router.get('/', async (req, res, next) => {
       readBranchDisconnections(branchId),
       readPaymentBreakdownAdjustments()
     ]);
-    const snapshotContext = { customers, adjustments, branchId };
+    const referralDiscountsByAccount = buildReferralDiscountMap(
+      buildReferralLedger({ customers, payments, now: new Date() })
+    );
+    const snapshotContext = { customers, adjustments, branchId, referralDiscountsByAccount };
 
     const items = [];
     for (const customer of Array.isArray(customers) ? customers : []) {
@@ -484,7 +499,10 @@ router.post('/:accountNumber/keep-active', async (req, res, next) => {
       readPaymentBreakdownAdjustments()
     ]);
     const customer = findCustomerOrThrow(customers, accountNumber);
-    const snapshot = buildSnapshot(customer, payments, { customers, adjustments, branchId });
+    const referralDiscountsByAccount = buildReferralDiscountMap(
+      buildReferralLedger({ customers, payments, now: new Date() })
+    );
+    const snapshot = buildSnapshot(customer, payments, { customers, adjustments, branchId, referralDiscountsByAccount });
     const now = new Date().toISOString();
     const decision = await upsertBranchDisconnection(branchId, accountNumber, {
       status: STATUS_KEPT_ACTIVE,
@@ -522,7 +540,10 @@ router.post('/:accountNumber/disconnect', async (req, res, next) => {
       readPaymentBreakdownAdjustments()
     ]);
     const customer = findCustomerOrThrow(customers, accountNumber);
-    const snapshot = buildSnapshot(customer, payments, { customers, adjustments, branchId });
+    const referralDiscountsByAccount = buildReferralDiscountMap(
+      buildReferralLedger({ customers, payments, now: new Date() })
+    );
+    const snapshot = buildSnapshot(customer, payments, { customers, adjustments, branchId, referralDiscountsByAccount });
     const pppoeResult = await disableCustomerPppoe(customer, branchId);
     const nextCustomer = await saveCustomerStatus(customer, branchId, STATUS_DISABLED);
     const now = new Date().toISOString();

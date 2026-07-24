@@ -5,6 +5,7 @@ const customersModule = require('./customers');
 const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
 const { accountHasRole } = require('./role-utils');
 const { readBranchDisconnections, getAccountDisconnection } = require('./disconnection-store');
+const { buildReferralLedger, buildReferralDiscountMap } = require('./referral-engine');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -130,7 +131,7 @@ const assertAdminUser = (req) => {
     return user;
 };
 
-const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null, disconnections = {}) => {
+const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null, disconnections = {}, referralDiscountsByAccount = {}) => {
     if (!customer || typeof customer !== 'object') return null;
     const sanitizedCustomer = sanitizeCustomerForRecord(customer);
     if (!sanitizedCustomer) return null;
@@ -148,6 +149,9 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
         customerStatus: subscriberStatus,
         planCategory,
         disconnection: getAccountDisconnection(disconnections, accountNumber),
+        referralDiscounts: Array.isArray(referralDiscountsByAccount?.[accountNumber])
+            ? referralDiscountsByAccount[accountNumber]
+            : [],
         paymentBreakdownAdjustment: getPaymentBreakdownAdjustment(adjustments, branchId, accountNumber),
         ...summary,
         history: paymentHistory
@@ -237,9 +241,12 @@ router.get('/', async (req, res, next) => {
             readPaymentBreakdownAdjustments(),
             readBranchDisconnections(branchId)
         ]);
+        const referralDiscountsByAccount = buildReferralDiscountMap(
+            buildReferralLedger({ customers, payments, now: new Date() })
+        );
 
         const paymentRecords = customers
-            .map((customer) => buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections))
+            .map((customer) => buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount))
             .filter(Boolean);
 
         res.json({ records: paymentRecords });
@@ -264,6 +271,9 @@ router.get('/:accountNumber', async (req, res, next) => {
             readPaymentBreakdownAdjustments(),
             readBranchDisconnections(branchId)
         ]);
+        const referralDiscountsByAccount = buildReferralDiscountMap(
+            buildReferralLedger({ customers, payments, now: new Date() })
+        );
 
         const customer = Array.isArray(customers)
             ? customers.find((entry) => String(entry?.accountNumber || '').trim() === accountNumber)
@@ -272,7 +282,7 @@ router.get('/:accountNumber', async (req, res, next) => {
             return next(createError(404, 'Customer not found.'));
         }
 
-        const record = buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections);
+        const record = buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount);
         if (!record) {
             return next(createError(500, 'Failed to generate payment record.'));
         }

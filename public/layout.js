@@ -58,6 +58,29 @@ applyFlavorMetadata({
     let dialogElements = null;
     let lastFocusedElement = null;
 
+    const normalizeFeedbackType = (type, fallback = 'info') => {
+        const raw = String(type || fallback).trim().toLowerCase();
+        if (raw === 'danger' || raw === 'error') return 'danger';
+        if (raw === 'warn' || raw === 'warning') return 'warning';
+        if (raw === 'success' || raw === 'ok') return 'success';
+        if (raw === 'primary' || raw === 'info') return raw;
+        return fallback;
+    };
+
+    const inferConfirmType = (message = '', title = '') => {
+        const text = `${title} ${message}`.toLowerCase();
+        if (/\b(delete|remove|archive|disconnect|clear|purge|permanent|cannot be undone)\b/.test(text)) return 'danger';
+        if (/\b(warning|cancel|replace|stop)\b/.test(text)) return 'warning';
+        return 'primary';
+    };
+
+    const iconForType = (type) => {
+        if (type === 'danger') return 'ti-alert-triangle';
+        if (type === 'warning') return 'ti-alert-circle';
+        if (type === 'success') return 'ti-circle-check';
+        return 'ti-info-circle';
+    };
+
     const ensureConfirmStyles = () => {
         if (document.getElementById('appConfirmStyles')) return;
         const style = document.createElement('style');
@@ -86,11 +109,13 @@ applyFlavorMetadata({
             #appConfirmBody {
                 white-space: pre-wrap;
             }
-            #appConfirmActions {
-                justify-content: flex-end;
+            #appConfirmOverlay .app-confirm-icon {
+                width: 3rem;
+                height: 3rem;
+                margin: 0 auto .75rem;
             }
-            body.theme-dark #appConfirmDialog {
-                color: #e2e8f0;
+            #appConfirmOverlay .app-confirm-cancel[hidden] {
+                display: none !important;
             }
         `;
         document.head.appendChild(style);
@@ -108,22 +133,39 @@ applyFlavorMetadata({
         overlay.innerHTML = `
             <div id="appConfirmDialog" class="modal-dialog modal-sm modal-dialog-centered" role="document">
                 <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 id="appConfirmHead" class="modal-title">Please confirm</h3>
+                    <div id="appConfirmStatus" class="modal-status bg-primary"></div>
+                    <div class="modal-body text-center py-4">
+                        <span id="appConfirmIcon" class="avatar avatar-lg bg-primary-lt text-primary app-confirm-icon">
+                            <i class="ti ti-info-circle" aria-hidden="true"></i>
+                        </span>
+                        <h3 id="appConfirmHead" class="modal-title mb-2">Please confirm</h3>
+                        <div id="appConfirmBody" class="text-secondary"></div>
                     </div>
-                    <div id="appConfirmBody" class="modal-body"></div>
                     <div id="appConfirmActions" class="modal-footer">
-                        <button type="button" class="app-confirm-btn cancel btn btn-outline-secondary" id="appConfirmCancel">Cancel</button>
-                        <button type="button" class="app-confirm-btn confirm btn btn-primary" id="appConfirmOk">OK</button>
+                        <div class="w-100">
+                            <div class="row g-2">
+                                <div class="col app-confirm-cancel">
+                                    <button type="button" class="app-confirm-btn cancel btn w-100 btn-outline-secondary" id="appConfirmCancel">Cancel</button>
+                                </div>
+                                <div class="col">
+                                    <button type="button" class="app-confirm-btn confirm btn w-100 btn-primary" id="appConfirmOk">OK</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
         document.body.appendChild(overlay);
+        const dialog = overlay.querySelector('#appConfirmDialog');
+        const status = overlay.querySelector('#appConfirmStatus');
+        const iconWrap = overlay.querySelector('#appConfirmIcon');
+        const icon = iconWrap?.querySelector('i') || null;
         const title = overlay.querySelector('#appConfirmHead');
         const message = overlay.querySelector('#appConfirmBody');
         const okButton = overlay.querySelector('#appConfirmOk');
         const cancelButton = overlay.querySelector('#appConfirmCancel');
+        const cancelCol = overlay.querySelector('.app-confirm-cancel');
 
         const resolveActive = (confirmed) => {
             if (!activeConfirm) return;
@@ -168,14 +210,14 @@ applyFlavorMetadata({
             }
         });
 
-        dialogElements = { overlay, title, message, okButton, cancelButton };
+        dialogElements = { overlay, dialog, status, iconWrap, icon, title, message, okButton, cancelButton, cancelCol };
         return dialogElements;
     };
 
     const queueNextConfirm = () => {
         if (activeConfirm || !confirmQueue.length) return;
         const next = confirmQueue.shift();
-        const { overlay, title, message, okButton, cancelButton } = ensureConfirmDialog();
+        const { overlay, dialog, status, iconWrap, icon, title, message, okButton, cancelButton, cancelCol } = ensureConfirmDialog();
         activeConfirm = next;
         if (document.activeElement && document.activeElement !== document.body) {
             lastFocusedElement = document.activeElement;
@@ -183,10 +225,25 @@ applyFlavorMetadata({
             lastFocusedElement = null;
         }
         const options = next.options || {};
-        title.textContent = options.title || 'Please confirm';
+        const heading = options.title || 'Please confirm';
+        const type = normalizeFeedbackType(options.type, inferConfirmType(next.message, heading));
+        const okClass = type === 'danger'
+            ? 'btn-danger'
+            : type === 'warning'
+                ? 'btn-warning'
+                : type === 'success'
+                    ? 'btn-success'
+                    : 'btn-primary';
+        if (dialog) dialog.setAttribute('data-alert-type', type);
+        if (status) status.className = `modal-status bg-${type}`;
+        if (iconWrap) iconWrap.className = `avatar avatar-lg bg-${type}-lt text-${type} app-confirm-icon`;
+        if (icon) icon.className = `ti ${iconForType(type)}`;
+        title.textContent = heading;
         message.textContent = String(next.message || '').trim() || 'Are you sure?';
         okButton.textContent = options.okText || 'OK';
+        okButton.className = `app-confirm-btn confirm btn w-100 ${okClass}`;
         cancelButton.textContent = options.cancelText || 'Cancel';
+        cancelCol.hidden = Boolean(options.hideCancel);
         overlay.classList.add('show');
         overlay.setAttribute('aria-hidden', 'false');
         setTimeout(() => okButton.focus({ preventScroll: true }), 0);
@@ -196,6 +253,29 @@ applyFlavorMetadata({
         confirmQueue.push({ message, options, resolve });
         queueNextConfirm();
     });
+})();
+
+(() => {
+    if (typeof window === 'undefined') return;
+    const nativeAlert = typeof window.alert === 'function' ? window.alert.bind(window) : null;
+    if (!window.appAlert && typeof window.appConfirm === 'function') {
+        window.appAlert = (message, options = {}) => window.appConfirm(message, {
+            title: options.title || 'Notice',
+            okText: options.okText || 'OK',
+            type: options.type || 'info',
+            hideCancel: true
+        }).then(() => undefined);
+    }
+    if (!window.__tablerAlertPatched) {
+        window.__tablerAlertPatched = true;
+        window.alert = (message) => {
+            if (typeof window.appAlert === 'function') {
+                void window.appAlert(message, { title: 'Notice', type: 'info' });
+                return undefined;
+            }
+            return nativeAlert ? nativeAlert(message) : undefined;
+        };
+    }
 })();
 
 (() => {
@@ -219,7 +299,7 @@ applyFlavorMetadata({
                 gap: 10px;
                 pointer-events: none;
             }
-            #appToastHost .app-toast.toast {
+            #appToastHost .app-toast.alert {
                 pointer-events: auto;
                 max-width: min(420px, calc(100vw - 36px));
                 border-radius: var(--tblr-border-radius-lg, 10px);
@@ -228,16 +308,17 @@ applyFlavorMetadata({
                 transform: translateY(10px);
                 transition: opacity 180ms ease, transform 180ms ease;
                 word-break: break-word;
+                margin: 0;
             }
-            #appToastHost .app-toast.toast.show {
+            #appToastHost .app-toast.alert.show {
                 opacity: 1;
                 transform: translateY(0);
             }
-            #appToastHost .app-toast .toast-body {
+            #appToastHost .app-toast .alert-message {
                 font-weight: 600;
                 line-height: 1.35;
             }
-            body.theme-dark #appToastHost .app-toast.toast {
+            body.theme-dark #appToastHost .app-toast.alert {
                 box-shadow: 0 20px 42px rgba(2, 6, 23, 0.55);
             }
             @media (max-width: 768px) {
@@ -247,12 +328,12 @@ applyFlavorMetadata({
                     bottom: 16px;
                     align-items: stretch;
                 }
-                #appToastHost .app-toast.toast {
+                #appToastHost .app-toast.alert {
                     max-width: none;
                 }
             }
             @media (prefers-reduced-motion: reduce) {
-                #appToastHost .app-toast.toast {
+                #appToastHost .app-toast.alert {
                     transition: none;
                     transform: none;
                 }
@@ -277,11 +358,18 @@ applyFlavorMetadata({
 
     const normalizeToastType = (type) => {
         const raw = String(type || 'info').toLowerCase();
-        if (raw === 'danger') return 'error';
+        if (raw === 'danger' || raw === 'error') return 'danger';
         if (raw === 'warn') return 'warning';
         if (raw === 'ok') return 'success';
-        if (raw === 'success' || raw === 'warning' || raw === 'error' || raw === 'info') return raw;
+        if (raw === 'success' || raw === 'warning' || raw === 'info' || raw === 'primary') return raw;
         return 'info';
+    };
+
+    const iconForToastType = (type) => {
+        if (type === 'success') return 'ti-circle-check';
+        if (type === 'warning') return 'ti-alert-circle';
+        if (type === 'danger') return 'ti-alert-triangle';
+        return 'ti-info-circle';
     };
 
     window.appToast = (message, options = {}) => {
@@ -296,29 +384,24 @@ applyFlavorMetadata({
 
         const host = ensureToastHost();
         const toast = document.createElement('div');
-        const toneClass = type === 'success'
-            ? 'text-bg-success'
-            : type === 'warning'
-                ? 'text-bg-warning'
-                : type === 'error'
-                    ? 'text-bg-danger'
-                    : 'text-bg-primary';
-        toast.className = `toast app-toast ${type} ${toneClass} border-0`;
+        const tone = type === 'primary' ? 'info' : type;
+        toast.className = `alert alert-important alert-${tone} alert-dismissible app-toast show`;
         toast.setAttribute('role', 'status');
         toast.setAttribute('aria-live', 'polite');
         toast.setAttribute('aria-atomic', 'true');
-        const toastRow = document.createElement('div');
-        toastRow.className = 'd-flex align-items-center';
-        const toastBody = document.createElement('div');
-        toastBody.className = 'toast-body';
-        toastBody.textContent = text;
+        const alertIcon = document.createElement('span');
+        alertIcon.className = 'alert-icon';
+        alertIcon.innerHTML = `<i class="ti ${iconForToastType(type)}" aria-hidden="true"></i>`;
+        const alertBody = document.createElement('div');
+        alertBody.className = 'alert-message';
+        alertBody.textContent = text;
         const closeButton = document.createElement('button');
         closeButton.type = 'button';
-        closeButton.className = `btn-close ${type === 'warning' ? '' : 'btn-close-white'} me-2 m-auto`;
+        closeButton.className = 'btn-close';
         closeButton.setAttribute('aria-label', 'Close notification');
-        toastRow.appendChild(toastBody);
-        toastRow.appendChild(closeButton);
-        toast.appendChild(toastRow);
+        toast.appendChild(alertIcon);
+        toast.appendChild(alertBody);
+        toast.appendChild(closeButton);
         host.appendChild(toast);
 
         let closed = false;

@@ -78,8 +78,12 @@
         if (!container) return;
         if (heroPlanCount) heroPlanCount.textContent = '0';
         container.innerHTML = `
-            <div class="empty-state">
-                <p class="empty-state__copy">${escapeHtml(message || 'No postpaid plans available right now.')}</p>
+            <div class="empty public-pricing-empty">
+                <div class="empty-icon">
+                    <i class="ti ti-tags-off" aria-hidden="true"></i>
+                </div>
+                <p class="empty-title">No plans published</p>
+                <p class="empty-subtitle text-secondary">${escapeHtml(message || 'No postpaid plans available right now.')}</p>
             </div>
         `;
     };
@@ -109,48 +113,74 @@
     const renderPlanCard = (plan, index, category) => {
         const animateDelay = ['delay-1', 'delay-2', 'delay-3'][index % 3];
         const isPrepaid = category === 'prepaid';
+        const tone = isPrepaid ? 'teal' : 'primary';
+        const categoryLabel = isPrepaid ? 'Prepaid' : 'Postpaid';
         const planValue = String(plan?.name || plan?.label || '').trim();
         const title = String(plan?.label || plan?.name || (isPrepaid ? 'Prepaid Plan' : 'Postpaid Plan')).trim();
         const applyHref = planValue
             ? `/apply-now.html?plan=${encodeURIComponent(planValue)}`
             : '/apply-now.html';
         const speedMetric = parseSpeedMetric(plan);
-        const priceSuffix = '/ month';
-        const detailLabel = isPrepaid ? 'Billing Cycle:' : 'Required Upfront Fee:';
-        const detailCopy = isPrepaid ? 'Monthly prepaid' : 'One Month Advance Payment';
-        const detailCopyClass = isPrepaid ? 'showcase-plan-card__fee-copy showcase-plan-card__fee-copy--plain' : 'showcase-plan-card__fee-copy';
+        const speedLabel = speedMetric.value
+            ? `${speedMetric.value} ${speedMetric.unit}`
+            : 'Plan speed based on selected package';
+        const detailCopy = isPrepaid ? 'Monthly prepaid billing' : 'Monthly postpaid billing';
+        const upfrontCopy = isPrepaid ? 'Pay before the service cycle' : 'One month advance payment';
         const speedMarkup = speedMetric.value
             ? `
-                <div class="showcase-plan-card__speed">
+                <div class="showcase-plan-card__speed public-pricing-card__speed">
                     <span class="showcase-plan-card__speed-value">${escapeHtml(speedMetric.value)}</span>
                     <span class="showcase-plan-card__speed-unit">${escapeHtml(speedMetric.unit)}</span>
                 </div>
             `
             : `
-                <div class="showcase-plan-card__speed showcase-plan-card__speed--fallback">
-                    <span class="showcase-plan-card__speed-fallback">${escapeHtml(title)}</span>
+                <div class="showcase-plan-card__speed showcase-plan-card__speed--fallback public-pricing-card__speed">
+                    <span class="showcase-plan-card__speed-fallback">Monthly service</span>
                 </div>
             `;
 
         if (heroPlanCount) heroPlanCount.textContent = '';
 
         return `
-            <article class="showcase-plan-card" data-animate="${animateDelay}" data-card-index="${escapeHtml(index)}">
-                <div class="showcase-plan-card__head">
-                    <h3 class="showcase-plan-card__label">${escapeHtml(title.toUpperCase())}</h3>
-                    <span class="showcase-plan-card__rule" aria-hidden="true"></span>
+            <article class="card showcase-plan-card public-pricing-card public-pricing-card--${escapeHtml(categoryLabel.toLowerCase())}${index === 0 ? ' public-pricing-card--featured' : ''}" data-animate="${animateDelay}" data-card-index="${escapeHtml(index)}">
+                ${index === 0 ? `<div class="ribbon bg-${tone}">Featured</div>` : ''}
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between gap-3">
+                        <div class="min-w-0">
+                            <span class="badge bg-${tone}-lt text-${tone} mb-2">${escapeHtml(categoryLabel)}</span>
+                            <h3 class="card-title public-pricing-card__title">${escapeHtml(title)}</h3>
+                        </div>
+                        <span class="avatar bg-${tone}-lt text-${tone}" aria-hidden="true">
+                            <i class="ti ${isPrepaid ? 'ti-wallet' : 'ti-receipt'}"></i>
+                        </span>
+                    </div>
+                    ${speedMarkup}
+                    <div class="showcase-plan-card__price-row public-pricing-card__price-row">
+                        <span class="showcase-plan-card__price">${escapeHtml(formatPrice(plan?.price))}</span>
+                        <span class="showcase-plan-card__frequency">per month</span>
+                    </div>
+                    <ul class="list-unstyled public-pricing-list">
+                        <li>
+                            <i class="ti ti-check text-success" aria-hidden="true"></i>
+                            <span>${escapeHtml(speedLabel)}</span>
+                        </li>
+                        <li>
+                            <i class="ti ti-check text-success" aria-hidden="true"></i>
+                            <span>${escapeHtml(detailCopy)}</span>
+                        </li>
+                        <li>
+                            <i class="ti ti-check text-success" aria-hidden="true"></i>
+                            <span>${escapeHtml(upfrontCopy)}</span>
+                        </li>
+                    </ul>
+                    <div class="public-pricing-card__actions">
+                        <a class="btn btn-${tone} showcase-plan-card__button" href="${applyHref}">
+                            <i class="ti ti-user-plus" aria-hidden="true"></i>
+                            Apply Now
+                        </a>
+                        <a class="btn btn-link showcase-plan-card__foot-link" href="#public-footer-support">Contact support</a>
+                    </div>
                 </div>
-                ${speedMarkup}
-                <div class="showcase-plan-card__fee">
-                    <span class="showcase-plan-card__fee-label">${escapeHtml(detailLabel)}</span>
-                    <span class="${detailCopyClass}">${escapeHtml(detailCopy)}</span>
-                </div>
-                <div class="showcase-plan-card__price-row">
-                    <span class="showcase-plan-card__price">${escapeHtml(formatPrice(plan?.price))}</span>
-                    <span class="showcase-plan-card__frequency">${escapeHtml(priceSuffix)}</span>
-                </div>
-                <a class="showcase-plan-card__button" href="${applyHref}">Apply Now</a>
-                <a class="showcase-plan-card__foot-link" href="#public-footer-support">Contact support</a>
             </article>
         `;
     };
@@ -160,16 +190,16 @@
 
         return `
             <div class="plan-carousel" data-plan-carousel data-plan-count="${escapeHtml(plans.length)}">
-                <button class="plan-carousel__nav plan-carousel__nav--prev" type="button" aria-label="Previous ${escapeHtml(label)} plans" data-carousel-prev>
-                    <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+                <button class="btn btn-icon btn-outline-secondary plan-carousel__nav plan-carousel__nav--prev" type="button" aria-label="Previous ${escapeHtml(label)} plans" data-carousel-prev>
+                    <i class="ti ti-chevron-left" aria-hidden="true"></i>
                 </button>
                 <div class="plan-carousel__viewport" data-carousel-viewport>
                     <div class="showcase-plan-grid plan-carousel__track" data-carousel-track>
                         ${plans.map((plan, index) => renderPlanCard(plan, index, category)).join('')}
                     </div>
                 </div>
-                <button class="plan-carousel__nav plan-carousel__nav--next" type="button" aria-label="Next ${escapeHtml(label)} plans" data-carousel-next>
-                    <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                <button class="btn btn-icon btn-outline-secondary plan-carousel__nav plan-carousel__nav--next" type="button" aria-label="Next ${escapeHtml(label)} plans" data-carousel-next>
+                    <i class="ti ti-chevron-right" aria-hidden="true"></i>
                 </button>
             </div>
         `;

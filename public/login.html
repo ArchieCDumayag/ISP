@@ -14,113 +14,106 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="css/login.css?v=1.6">
     <script src="theme-init.js?v=2.6"></script>
-    <link rel="stylesheet" href="css/tabler-app.css?v=2.4">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.3">
 </head>
 
-<body class="login-body">
-    <main class="login-shell">
-        <section class="login-panel">
-            <header class="login-brand">
-                <span class="brand-logo" aria-hidden="true">
-                    <img src="/img/business-logo.svg" alt="" class="brand-logo-img" loading="lazy">
-                </span>
-                <div>
-                    <p class="brand-lockup"><span data-login-business-name>Dante Fiber</span><em>Billing Console</em></p>
-                    <h1>Welcome back</h1>
-                    <p class="brand-subtitle" id="loginBrandSubtitle">Sign in to manage subscribers, billing, and network health.</p>
+<body class="login-body login-body--tabler border-top-wide border-primary">
+    <main class="login-shell page page-center">
+        <div class="container container-tight py-4">
+            <section class="login-panel card card-md tabler-auth-card">
+                <div class="card-body">
+                    <header class="login-brand text-center">
+                        <span class="brand-logo avatar avatar-xl bg-white shadow-sm" aria-hidden="true">
+                            <img src="/img/business-logo.svg" alt="" class="brand-logo-img avatar-img" loading="lazy">
+                        </span>
+                        <p class="brand-lockup"><span data-login-business-name>Dante Fiber</span></p>
+                        <h1 class="card-title h2">Welcome back</h1>
+                        <p class="brand-subtitle text-secondary" id="loginBrandSubtitle">Sign in to manage subscribers, billing, and network health.</p>
+                    </header>
+
+                    <form class="login-form" autocomplete="on" method="post" action="/api/auth/login">
+                        <div class="form-group mb-3">
+                            <label class="form-label" for="login-email">Email or username</label>
+                            <div class="input-icon">
+                                <span class="input-icon-addon"><i class="ti ti-user" aria-hidden="true"></i></span>
+                                <input class="form-control" type="text" id="login-email" name="email" autocomplete="username" placeholder="Enter email or username" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label class="form-label" for="login-password">Password</label>
+                            <div class="input-icon password-field">
+                                <span class="input-icon-addon"><i class="ti ti-lock" aria-hidden="true"></i></span>
+                                <input class="form-control" type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter your password" required>
+                                <button type="button" class="toggle-password btn btn-icon btn-ghost-secondary" aria-label="Toggle password visibility">
+                                    <i class="ti ti-eye" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            <div class="form-meta mt-2">
+                                <label class="remember-toggle form-check">
+                                    <input class="form-check-input" type="checkbox" id="remember-me" name="remember" autocomplete="off" checked>
+                                    <span class="form-check-label">Keep me signed in</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-danger login-error" id="loginError" role="alert" aria-live="polite" hidden>
+                            <i class="ti ti-alert-circle" aria-hidden="true"></i>
+                            <span id="loginErrorText"></span>
+                        </div>
+
+                        <div class="form-footer">
+                            <button type="submit" class="primary-btn login-btn btn btn-primary w-100">
+                                <i class="ti ti-login-2" aria-hidden="true"></i>
+                                Log In
+                            </button>
+                        </div>
+
+                        <div class="alert alert-info login-access" aria-label="Need account access">
+                            <span class="avatar bg-info-lt text-info" aria-hidden="true"><i class="ti ti-shield-half"></i></span>
+                            <div>
+                                <strong>Need access?</strong>
+                                <div class="text-secondary">Contact your system administrator.</div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
-            </header>
-
-            <form class="login-form" autocomplete="on" method="post" action="/api/auth/login">
-                <div class="form-group">
-                    <label for="login-email">Email or username</label>
-                    <div class="input-icon">
-                        <i class="ti ti-user" aria-hidden="true"></i>
-                        <input type="text" id="login-email" name="email" autocomplete="username" placeholder="Enter email or username" required>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="login-password">Password</label>
-                    <div class="input-icon password-field">
-                        <i class="ti ti-lock" aria-hidden="true"></i>
-                        <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Enter your password" required>
-                        <button type="button" class="toggle-password" aria-label="Toggle password visibility">
-                            <i class="ti ti-eye" aria-hidden="true"></i>
-                        </button>
-                    </div>
-                    <div class="form-meta">
-                        <label class="remember-toggle">
-                            <input type="checkbox" id="remember-me" name="remember" autocomplete="off" checked>
-                            <span>Keep me signed in</span>
-                        </label>
-                    </div>
-                </div>
-
-                <button type="submit" class="primary-btn login-btn">
-                    <i class="ti ti-login-2" aria-hidden="true"></i>
-                    Log In
-                </button>
-
-                <div class="login-divider"><span>or</span></div>
-
-                <div class="login-error" id="loginError" role="alert" aria-live="polite" hidden>
-                    <i class="ti ti-alert-circle" aria-hidden="true"></i>
-                    <span id="loginErrorText"></span>
-                </div>
-
-                <div class="access-card" aria-label="Need account access">
-                    <span class="access-card__icon"><i class="ti ti-shield-half" aria-hidden="true"></i></span>
-                    <p><strong>Need access?</strong><span>Contact your system administrator.</span></p>
-                </div>
-            </form>
-        </section>
-
-        <section class="login-hero">
-            <div class="hero-content">
-                <h2>Operate faster with a single console</h2>
-                <p>Everything you need to run and grow your fiber network.</p>
-                <ul>
-                    <li><i class="ti ti-circle-check" aria-hidden="true"></i> Track collections and invoices in one place.</li>
-                    <li><i class="ti ti-circle-check" aria-hidden="true"></i> Schedule SMS updates for outages instantly.</li>
-                    <li><i class="ti ti-circle-check" aria-hidden="true"></i> Monitor subscriber growth and plan performance.</li>
-                </ul>
-            </div>
-            <div class="hero-illustration" aria-hidden="true">
-                <span class="network-line network-line--one"></span>
-                <span class="network-line network-line--two"></span>
-                <span class="network-dot network-dot--one"></span>
-                <span class="network-dot network-dot--two"></span>
-                <span class="network-dot network-dot--three"></span>
-                <span class="pulse"></span>
-                <span class="pulse delayed"></span>
-                <i class="ti ti-wifi" aria-hidden="true"></i>
-            </div>
-        </section>
+            </section>
+        </div>
     </main>
 
-    <div class="reset-overlay" id="resetOverlay" hidden>
-        <div class="reset-card">
-            <h2>Change default admin credentials</h2>
-            <p>Default admin credentials detected. Please set a new username and password before continuing.</p>
+    <div class="reset-overlay modal modal-blur" id="resetOverlay" data-tabler-modal data-tabler-modal-size="sm" tabindex="-1" aria-labelledby="resetTitle" hidden>
+        <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+            <div class="reset-card modal-content">
+                <div class="modal-status bg-warning"></div>
+                <div class="modal-header">
+                    <h2 class="modal-title" id="resetTitle">Change default admin credentials</h2>
+                </div>
+                <div class="modal-body">
+                    <p class="text-secondary mb-3">Default admin credentials detected. Please set a new username and password before continuing.</p>
 
-            <div class="reset-field">
-                <label for="resetUsername">New username</label>
-                <input type="text" id="resetUsername">
-            </div>
-            <div class="reset-field">
-                <label for="resetPassword">New password</label>
-                <input type="password" id="resetPassword">
-            </div>
-            <div class="reset-field">
-                <label for="resetPasswordConfirm">Confirm new password</label>
-                <input type="password" id="resetPasswordConfirm">
-            </div>
+                    <div class="reset-field mb-3">
+                        <label class="form-label" for="resetUsername">New username</label>
+                        <input class="form-control" type="text" id="resetUsername">
+                    </div>
+                    <div class="reset-field mb-3">
+                        <label class="form-label" for="resetPassword">New password</label>
+                        <input class="form-control" type="password" id="resetPassword">
+                    </div>
+                    <div class="reset-field mb-0">
+                        <label class="form-label" for="resetPasswordConfirm">Confirm new password</label>
+                        <input class="form-control" type="password" id="resetPasswordConfirm">
+                    </div>
 
-            <p class="reset-error" id="resetError"></p>
+                    <div class="invalid-feedback d-block reset-error" id="resetError"></div>
+                </div>
 
-            <div class="reset-actions">
-                <button type="button" class="primary-btn" id="resetSaveBtn">Save and continue</button>
+                <div class="modal-footer reset-actions">
+                    <button type="button" class="primary-btn btn btn-primary w-100" id="resetSaveBtn">
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i>
+                        Save and continue
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -146,6 +139,8 @@
         const DEFAULT_LOGIN_LOGO = '/img/business-logo.svg';
         const DEFAULT_LOGIN_NEXT = '/index.html';
         const SAVED_LOGIN_USERNAME_KEY = 'billing-saved-login-username';
+        const RESET_SAVE_IDLE_HTML = '<i class="ti ti-device-floppy" aria-hidden="true"></i> Save and continue';
+        const RESET_SAVE_BUSY_HTML = '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Saving...';
         const loginBrandSubtitle = document.getElementById('loginBrandSubtitle');
 
         const applyLoginLogo = (logoUrl) => {
@@ -309,7 +304,7 @@
                 password: resetPassword.value
             };
             resetSaveBtn.disabled = true;
-            resetSaveBtn.textContent = 'Saving...';
+            resetSaveBtn.innerHTML = RESET_SAVE_BUSY_HTML;
             try {
                 const res = await fetch(`/api/accounts/${encodeURIComponent(pendingUser.id)}`, {
                     method: 'PUT',
@@ -326,7 +321,7 @@
                 setResetError(err.message || 'Unable to update credentials.');
             } finally {
                 resetSaveBtn.disabled = false;
-                resetSaveBtn.textContent = 'Save and continue';
+                resetSaveBtn.innerHTML = RESET_SAVE_IDLE_HTML;
             }
         });
 
@@ -389,7 +384,7 @@
         });
     </script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
-    <script src="js/tabler-enhance.js?v=1.7"></script>
+    <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 
 </html>

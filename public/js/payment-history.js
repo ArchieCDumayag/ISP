@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextBtn = document.getElementById('paymentHistoryNext');
     const importBtn = document.getElementById('paymentHistoryImportBtn');
     const importFileInput = document.getElementById('paymentHistoryImportFile');
+    const exportMonthInput = document.getElementById('paymentHistoryExportMonth');
+    const exportBtn = document.getElementById('paymentHistoryExportBtn');
     const backupBtn = document.getElementById('paymentHistoryBackupBtn');
     const clearBtn = document.getElementById('paymentHistoryClearBtn');
     const metricEntriesEl = document.getElementById('historyMetricEntries');
@@ -307,6 +309,43 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
     const canUseBrowserFallback = (error) => ![401, 403].includes(Number(error?.status));
+    const getCurrentMonthValue = () => {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: appTimeZone,
+            year: 'numeric',
+            month: '2-digit'
+        }).formatToParts(new Date());
+        const year = parts.find((part) => part.type === 'year')?.value;
+        const month = parts.find((part) => part.type === 'month')?.value;
+        return year && month ? `${year}-${month}` : new Date().toISOString().slice(0, 7);
+    };
+    const parseFilenameFromDisposition = (raw = '') => {
+        const header = String(raw || '');
+        const utf8Match = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+        if (utf8Match?.[1]) {
+            try {
+                return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ''));
+            } catch {
+                return utf8Match[1].trim().replace(/^"|"$/g, '');
+            }
+        }
+        const plainMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i);
+        return plainMatch?.[2]?.trim() || '';
+    };
+    const downloadBlob = (blob, filename) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    if (exportMonthInput && !exportMonthInput.value) {
+        exportMonthInput.value = getCurrentMonthValue();
+    }
 
     function populateAreaFilter(rows) {
         if (!areaFilter) return;
@@ -477,7 +516,12 @@ document.addEventListener('DOMContentLoaded', () => {
             tableBody.innerHTML = `
                 <tr class="payment-history-empty-row">
                     <td colspan="7" class="payment-history-empty-cell">
-                        <span class="payment-history-empty-message">No payment history matched the current filters.</span>
+                        <div class="empty">
+                            <div class="empty-icon">
+                                <i class="ti ti-receipt-off"></i>
+                            </div>
+                            <p class="empty-title">No payment history matched the current filters.</p>
+                        </div>
                     </td>
                 </tr>
             `;
@@ -486,43 +530,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 const signedAmount = formatCurrency(row.amount);
                 const subscriberInitials = escapeHtml(getInitials(row.subscriber));
                 const referenceLine = row.reference
-                    ? `<span class="payment-history-primary">${escapeHtml(row.reference)}</span>`
-                    : '<span class="payment-history-secondary">No reference</span>';
+                    ? `<span class="fw-semibold">${escapeHtml(row.reference)}</span>`
+                    : '<span class="text-secondary">No reference</span>';
                 const orLine = row.orNumber
-                    ? `<span class="payment-history-secondary">OR: ${escapeHtml(row.orNumber)}</span>`
-                    : '<span class="payment-history-secondary">OR: N/A</span>';
+                    ? `<span class="text-secondary">OR: ${escapeHtml(row.orNumber)}</span>`
+                    : '<span class="text-secondary">OR: N/A</span>';
                 const methodLine = row.paymentMethodLabel
-                    ? `<span class="payment-history-secondary">Payment: ${escapeHtml(row.paymentMethodLabel)}</span>`
+                    ? `<span class="badge bg-secondary-lt text-secondary">${escapeHtml(row.paymentMethodLabel)}</span>`
                     : '';
                 const noteLine = row.notes
-                    ? `<span class="payment-history-secondary payment-history-note">${escapeHtml(row.notes)}</span>`
+                    ? `<span class="payment-history-note text-secondary">${escapeHtml(row.notes)}</span>`
                     : '';
                 const printButton = row.accountNumber
-                    ? `<button type="button" class="ghost-icon payment-history-print" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" data-reference="${escapeHtml(row.reference || row.orNumber || '')}" aria-label="Reprint thermal receipt" title="Reprint thermal receipt"><i class="fa-solid fa-receipt"></i></button>`
+                    ? `<button type="button" class="payment-history-print btn btn-icon btn-ghost-secondary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" data-reference="${escapeHtml(row.reference || row.orNumber || '')}" aria-label="Reprint thermal receipt" title="Reprint thermal receipt"><i class="ti ti-receipt"></i></button>`
                     : '';
                 const deleteButton = row.entryId
-                    ? `<button type="button" class="ghost-icon danger payment-history-delete" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="fa-solid fa-trash"></i></button>`
-                    : '<span class="payment-history-secondary">-</span>';
+                    ? `<button type="button" class="payment-history-delete btn btn-icon btn-ghost-danger btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="ti ti-trash"></i></button>`
+                    : '<span class="text-secondary">-</span>';
 
                 return `
                     <tr>
                         <td>
                             <div class="payment-history-stack">
-                                <span class="payment-history-primary">${escapeHtml(row.displayDate)}</span>
-                                <span class="payment-history-secondary">${escapeHtml(row.dateKey || 'No date')}</span>
+                                <span class="fw-semibold">${escapeHtml(row.displayDate)}</span>
+                                <span class="text-secondary">${escapeHtml(row.dateKey || 'No date')}</span>
                             </div>
                         </td>
                         <td>
                             <div class="subscriber">
-                                <span class="avatar">${subscriberInitials}</span>
+                                <span class="avatar avatar-sm bg-primary-lt text-primary">${subscriberInitials}</span>
                                 <div class="subscriber-details">
-                                    <p class="subscriber-name">${escapeHtml(row.subscriber)}</p>
-                                    <p class="subscriber-meta">Account # ${escapeHtml(row.accountNumber || 'N/A')}</p>
+                                    <p class="subscriber-name mb-0 fw-semibold">${escapeHtml(row.subscriber)}</p>
+                                    <p class="subscriber-meta mb-0 text-secondary">Account # ${escapeHtml(row.accountNumber || 'N/A')}</p>
                                 </div>
                             </div>
                         </td>
                         <td>${escapeHtml(row.area)}</td>
-                        <td class="is-num"><span class="payment-history-amount is-credit">${escapeHtml(signedAmount)}</span></td>
+                        <td class="is-num"><span class="payment-history-amount text-success fw-semibold">${escapeHtml(signedAmount)}</span></td>
                         <td>
                             <div class="payment-history-stack">
                                 ${referenceLine}
@@ -532,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </td>
                         <td>
                             <div class="payment-history-stack">
-                                <span class="payment-history-primary">${escapeHtml(row.recordedByLabel)}</span>
+                                <span class="fw-semibold">${escapeHtml(row.recordedByLabel)}</span>
                                 ${noteLine}
                             </div>
                         </td>
@@ -651,6 +695,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function exportPaymentHistoryExcel() {
+        const monthValue = String(exportMonthInput?.value || '').trim();
+        if (!/^\d{4}-\d{2}$/.test(monthValue)) {
+            showToast('Select a month to export.', 'error');
+            exportMonthInput?.focus();
+            return;
+        }
+
+        setButtonBusy(exportBtn, true);
+        try {
+            const response = await fetch(`/api/payments/export-excel?month=${encodeURIComponent(monthValue)}`, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload?.error || payload?.message || 'Failed to export payment history.');
+            }
+            const blob = await response.blob();
+            const filename = parseFilenameFromDisposition(response.headers.get('content-disposition'))
+                || `payment-history-${monthValue}.xlsx`;
+            downloadBlob(blob, filename);
+            showToast(`Payment history exported: ${filename}`, 'success');
+        } catch (error) {
+            showToast(error.message || 'Failed to export payment history.', 'error');
+        } finally {
+            setButtonBusy(exportBtn, false);
+        }
+    }
+
     async function deleteEntriesFromPayments(payments = {}) {
         const entries = [];
         Object.entries(payments || {}).forEach(([accountNumber, record]) => {
@@ -754,7 +828,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 tableBody.innerHTML = `
                     <tr class="payment-history-empty-row">
                         <td colspan="7" class="payment-history-empty-cell">
-                            <span class="payment-history-empty-message">${escapeHtml(error.message || 'Failed to load payment history.')}</span>
+                            <div class="empty">
+                                <div class="empty-icon text-danger">
+                                    <i class="ti ti-alert-circle"></i>
+                                </div>
+                                <p class="empty-title">${escapeHtml(error.message || 'Failed to load payment history.')}</p>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -779,6 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     importFileInput?.addEventListener('change', () => {
         void importPaymentHistoryFromFile(importFileInput.files?.[0] || null);
     });
+    exportBtn?.addEventListener('click', exportPaymentHistoryExcel);
     backupBtn?.addEventListener('click', backupPaymentRecords);
     clearBtn?.addEventListener('click', clearPaymentRecords);
     tableBody?.addEventListener('click', async (event) => {

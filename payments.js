@@ -1994,6 +1994,413 @@ async function maybeAdvanceCustomerDueDate(accountNumber, paymentEntry, branchId
     }
 }
 
+const PAYMENT_EXPORT_MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+const PAYMENT_EXPORT_MONEY_FORMAT = '#,##0.00;\\(#,##0.00\\)';
+const PAYMENT_EXPORT_PESO_FORMAT = '[$₱]#,##0.00';
+const PAYMENT_EXPORT_DATE_FORMAT = 'd mmm yyyy';
+const PAYMENT_EXPORT_MONTH_FORMAT = 'mmmm yyyy';
+
+const normalizePaymentExportText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+const normalizePaymentExportKey = (value) => normalizePaymentExportText(value).toLowerCase();
+const roundPaymentExportMoney = (value) => {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0;
+};
+
+const parsePaymentExportMonth = (value) => {
+    const match = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
+    if (!match) {
+        throw createError(400, 'Select a valid export month.');
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+        throw createError(400, 'Select a valid export month.');
+    }
+    const monthName = PAYMENT_EXPORT_MONTH_NAMES[month - 1];
+    const paddedMonth = pad2(month);
+    return {
+        year,
+        month,
+        paddedMonth,
+        value: `${year}-${paddedMonth}`,
+        title: `${monthName} ${year}`,
+        sheetToken: `${monthName.toUpperCase()}${year}`,
+        firstDate: new Date(year, month - 1, 1)
+    };
+};
+
+const safePaymentExportSheetName = (value, fallback) => {
+    const text = normalizePaymentExportText(value).replace(/[\\/?*[\]:]/g, ' ').replace(/\s+/g, ' ').trim();
+    return (text || fallback).slice(0, 31);
+};
+
+const getPaymentExportCustomerName = (customer = {}, accountNumber = '', paymentRecord = {}) => {
+    const firstName = normalizePaymentExportText(customer?.firstName);
+    const lastName = normalizePaymentExportText(customer?.lastName);
+    const fullName = [firstName, lastName].filter(Boolean).join(' ');
+    const lastFirstName = [lastName, firstName].filter(Boolean).join(', ');
+    const fallback = normalizePaymentExportText(
+        customer?.name
+        || customer?.fullName
+        || paymentRecord?.customerName
+        || paymentRecord?.name
+        || ''
+    );
+    return (lastName && firstName ? lastFirstName : fullName) || fallback || `Account ${accountNumber}`;
+};
+
+const getPaymentExportArea = (customer = {}, paymentRecord = {}) => normalizePaymentExportText(
+    customer?.area
+    || customer?.coverageArea
+    || customer?.cluster
+    || customer?.barangay
+    || paymentRecord?.area
+    || paymentRecord?.coverageArea
+    || ''
+);
+
+const formatPaymentExportRecorderLabel = (entry = {}) => {
+    if (typeof entry?.recordedBy === 'string') {
+        const recordedByText = normalizePaymentExportText(entry.recordedBy);
+        if (recordedByText) return recordedByText;
+    }
+    const recorder = entry?.recordedBy || {};
+    const name = normalizePaymentExportText(recorder?.name || recorder?.username || entry?.recordedByName || entry?.recordedByUsername);
+    const role = normalizePaymentExportKey(recorder?.role || entry?.recordedByRole);
+    const roles = role.split(/[,/|;]+|\s+\+\s+|\s+and\s+/i).map((item) => item.trim()).filter(Boolean);
+    if (name && roles.includes('collector')) return `${name} (Collector)`;
+    if (name && roles.includes('admin')) return `${name} (Admin)`;
+    if (name && role) return `${name} (${role.charAt(0).toUpperCase()}${role.slice(1)})`;
+    if (name) return name;
+
+    const method = normalizePaymentExportText(
+        entry?.paymentMethod
+        || entry?.payment_method
+        || entry?.method
+        || entry?.channel
+        || entry?.paymentChannel
+        || entry?.payment_channel
+        || ''
+    );
+    if (entry?.xenditId || entry?.xendit_id) return 'Xendit';
+    return method || 'System';
+};
+
+const resolvePaymentExportMethodLabel = (entry = {}) => {
+    const rawMethod = normalizePaymentExportText(
+        entry?.paymentMethod
+        || entry?.payment_method
+        || entry?.method
+        || entry?.channel
+        || entry?.paymentChannel
+        || entry?.payment_channel
+        || entry?.channelCode
+        || entry?.channel_code
+        || ''
+    );
+    const normalized = normalizePaymentExportKey(rawMethod).replace(/[\s-]+/g, '_');
+
+    if (normalized.includes('gcash') || normalized.includes('ph_gcash')) return 'GCash';
+    if (normalized === 'cash' || normalized.includes('_cash') || normalized.includes('cash_')) return 'Cash';
+    if (entry?.xenditId || entry?.xendit_id) return rawMethod || 'Xendit';
+    return rawMethod || 'Cash';
+};
+
+const resolvePaymentExportMethodKey = (methodLabel) => (
+    normalizePaymentExportKey(methodLabel).includes('gcash') ? 'gcash' : 'cash'
+);
+
+const sumPaymentExportRows = (rows = []) => roundPaymentExportMoney(
+    (Array.isArray(rows) ? rows : []).reduce((sum, row) => sum + (Number(row?.amount) || 0), 0)
+);
+
+const buildPaymentExportDateSummary = (rows = []) => {
+    const totals = new Map();
+    const recorders = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+        if (!row?.dateKey) return;
+        totals.set(row.dateKey, roundPaymentExportMoney((totals.get(row.dateKey) || 0) + (Number(row.amount) || 0)));
+        const recorder = normalizePaymentExportText(row.recorderLabel);
+        if (recorder) {
+            if (!recorders.has(row.dateKey)) recorders.set(row.dateKey, new Set());
+            recorders.get(row.dateKey).add(recorder);
+        }
+    });
+    return { totals, recorders };
+};
+
+const buildPaymentExportRows = (payments = {}, customers = [], monthInfo) => {
+    const customerMap = new Map(
+        (Array.isArray(customers) ? customers : []).map((customer) => [
+            String(customer?.accountNumber || '').trim(),
+            customer
+        ])
+    );
+    const rows = [];
+    const monthPrefix = `${monthInfo.year}-${monthInfo.paddedMonth}-`;
+
+    Object.entries(payments || {}).forEach(([accountNumber, paymentRecord]) => {
+        const account = String(accountNumber || '').trim();
+        const customer = customerMap.get(account) || {};
+        const subscriber = getPaymentExportCustomerName(customer, account, paymentRecord);
+        const area = getPaymentExportArea(customer, paymentRecord);
+
+        getEffectivePaymentEntries(paymentRecord?.history || []).forEach((rawEntry, index) => {
+            const entry = normalizePaymentEntry(rawEntry || {});
+            const kind = normalizePaymentExportKey(entry?.kind);
+            const direction = normalizePaymentExportKey(entry?.direction);
+            if (!(kind === 'payment' && direction === 'credit')) return;
+
+            const amount = roundPaymentExportMoney(Math.abs(Number(entry?.amount) || 0));
+            if (amount <= 0) return;
+
+            const rawDate = entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || entry?.created_at || '';
+            const dateKey = toPaymentDateOnly(rawDate);
+            if (!dateKey || !dateKey.startsWith(monthPrefix)) return;
+
+            const methodLabel = resolvePaymentExportMethodLabel(entry);
+            const reference = normalizePaymentExportText(entry?.reference || entry?.ref || '');
+            const orNumber = normalizePaymentExportText(entry?.orNumber || entry?.or_number || '');
+            rows.push({
+                id: String(entry?.id || `${account}-${dateKey}-${index}`),
+                accountNumber: account,
+                subscriber,
+                area,
+                dateKey,
+                date: parseDateOnly(dateKey),
+                amount,
+                methodLabel,
+                methodKey: resolvePaymentExportMethodKey(methodLabel),
+                reference,
+                orNumber,
+                recorderLabel: formatPaymentExportRecorderLabel(entry)
+            });
+        });
+    });
+
+    rows.sort((left, right) => {
+        if (left.dateKey !== right.dateKey) return String(left.dateKey).localeCompare(String(right.dateKey));
+        if (left.subscriber !== right.subscriber) {
+            return String(left.subscriber).localeCompare(String(right.subscriber), undefined, {
+                sensitivity: 'base',
+                numeric: true
+            });
+        }
+        if (left.accountNumber !== right.accountNumber) return String(left.accountNumber).localeCompare(String(right.accountNumber));
+        return String(left.id).localeCompare(String(right.id));
+    });
+
+    return {
+        allRows: rows,
+        cashRows: rows.filter((row) => row.methodKey !== 'gcash'),
+        gcashRows: rows.filter((row) => row.methodKey === 'gcash')
+    };
+};
+
+const paymentExportRange = (xlsx, value) => xlsx.utils.decode_range(value);
+const paymentExportSetFormulaCell = (sheet, address, formula, value = 0, format = PAYMENT_EXPORT_MONEY_FORMAT) => {
+    sheet[address] = {
+        t: 'n',
+        f: formula,
+        v: roundPaymentExportMoney(value),
+        z: format
+    };
+};
+const paymentExportSetNumberCell = (sheet, address, value = 0, format = PAYMENT_EXPORT_MONEY_FORMAT) => {
+    sheet[address] = {
+        t: 'n',
+        v: roundPaymentExportMoney(value),
+        z: format
+    };
+};
+const paymentExportSetDateCell = (sheet, address, value, format = PAYMENT_EXPORT_DATE_FORMAT) => {
+    if (!(value instanceof Date) || Number.isNaN(value.getTime())) return;
+    sheet[address] = {
+        t: 'd',
+        v: value,
+        z: format
+    };
+};
+
+const createCashPaymentExportSheet = (xlsx, rows = [], monthInfo) => {
+    const dataRowCount = Math.max(rows.length, 1);
+    const lastExcelRow = 5 + dataRowCount;
+    const rowCount = 5 + dataRowCount;
+    const columnCount = 10;
+    const aoa = Array.from({ length: rowCount }, () => Array(columnCount).fill(''));
+    const incomeTotal = sumPaymentExportRows(rows);
+    const { totals, recorders } = buildPaymentExportDateSummary(rows);
+    const seenDates = new Set();
+
+    aoa[0][0] = monthInfo.title;
+    aoa[0][7] = 'Cash On Hand';
+    aoa[2][0] = 'Expense';
+    aoa[2][3] = 'Income';
+    aoa[3][0] = 'Date';
+    aoa[3][1] = 'Particulars';
+    aoa[3][2] = 'Amount';
+    aoa[3][3] = 'Date';
+    aoa[3][4] = 'Category';
+    aoa[3][5] = 'Area';
+    aoa[3][6] = 'Particulars';
+    aoa[3][7] = 'Amount';
+    aoa[4][0] = 'Total';
+    aoa[4][3] = 'Total';
+
+    rows.forEach((row, index) => {
+        const sheetRow = 5 + index;
+        const firstForDate = row.dateKey && !seenDates.has(row.dateKey);
+        if (firstForDate) seenDates.add(row.dateKey);
+
+        aoa[sheetRow][3] = firstForDate ? row.date : '';
+        aoa[sheetRow][4] = row.methodLabel || 'Cash';
+        aoa[sheetRow][5] = row.area;
+        aoa[sheetRow][6] = row.subscriber;
+        aoa[sheetRow][7] = row.amount;
+        aoa[sheetRow][8] = firstForDate ? totals.get(row.dateKey) || '' : '';
+        aoa[sheetRow][9] = firstForDate && recorders.has(row.dateKey)
+            ? Array.from(recorders.get(row.dateKey)).join('/')
+            : '';
+    });
+
+    const sheet = xlsx.utils.aoa_to_sheet(aoa, { cellDates: true });
+    paymentExportSetDateCell(sheet, 'A1', monthInfo.firstDate, PAYMENT_EXPORT_MONTH_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'H2', 'H5-C5', incomeTotal, PAYMENT_EXPORT_MONEY_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'C5', `SUM(C6:C${lastExcelRow})`, 0, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'H5', `SUM(H6:H${lastExcelRow})`, incomeTotal, PAYMENT_EXPORT_MONEY_FORMAT);
+    rows.forEach((row, index) => {
+        const excelRow = 6 + index;
+        if (sheet[`D${excelRow}`]) paymentExportSetDateCell(sheet, `D${excelRow}`, row.date);
+        if (sheet[`H${excelRow}`]) paymentExportSetNumberCell(sheet, `H${excelRow}`, row.amount, PAYMENT_EXPORT_MONEY_FORMAT);
+        if (sheet[`I${excelRow}`]) paymentExportSetNumberCell(sheet, `I${excelRow}`, sheet[`I${excelRow}`].v, PAYMENT_EXPORT_MONEY_FORMAT);
+    });
+    sheet['!merges'] = [
+        paymentExportRange(xlsx, 'A1:G2'),
+        paymentExportRange(xlsx, 'A3:C3'),
+        paymentExportRange(xlsx, 'D3:H3'),
+        paymentExportRange(xlsx, 'A5:B5'),
+        paymentExportRange(xlsx, 'D5:G5')
+    ];
+    sheet['!cols'] = [
+        { wch: 13 }, { wch: 32 }, { wch: 12 }, { wch: 13 }, { wch: 18 },
+        { wch: 16 }, { wch: 46 }, { wch: 12 }, { wch: 12 }, { wch: 18 }
+    ];
+    return sheet;
+};
+
+const createGcashPaymentExportSheet = (xlsx, rows = [], monthInfo) => {
+    const dataRowCount = Math.max(rows.length, 1);
+    const lastExcelRow = 6 + dataRowCount;
+    const rowCount = 6 + dataRowCount;
+    const columnCount = 12;
+    const aoa = Array.from({ length: rowCount }, () => Array(columnCount).fill(''));
+    const incomeTotal = sumPaymentExportRows(rows);
+    const { recorders } = buildPaymentExportDateSummary(rows);
+    const seenDates = new Set();
+
+    aoa[0][0] = monthInfo.title;
+    aoa[0][11] = 'Balance';
+    aoa[1][0] = '3J GCash';
+    aoa[2][0] = 'Expense';
+    aoa[2][7] = 'Gcash No.';
+    aoa[3][0] = 'Date';
+    aoa[3][1] = ' Category';
+    aoa[3][2] = 'Ref. No.';
+    aoa[3][3] = 'Particulars';
+    aoa[3][4] = 'Other Expense';
+    aoa[3][5] = 'Amount';
+    aoa[3][6] = 'Date';
+    aoa[3][8] = 'Reference Number';
+    aoa[3][9] = 'Particulars';
+    aoa[3][10] = 'Other Income';
+    aoa[3][11] = '3J Payment';
+    aoa[4][0] = 'TOTAL';
+    aoa[4][6] = 'TOTAL';
+    aoa[5][0] = 'Total';
+    aoa[5][4] = 0;
+    aoa[5][9] = 'Total';
+    aoa[5][10] = 0;
+
+    rows.forEach((row, index) => {
+        const sheetRow = 6 + index;
+        const firstForDate = row.dateKey && !seenDates.has(row.dateKey);
+        if (firstForDate) seenDates.add(row.dateKey);
+
+        aoa[sheetRow][6] = firstForDate ? row.date : '';
+        aoa[sheetRow][7] = firstForDate && recorders.has(row.dateKey)
+            ? Array.from(recorders.get(row.dateKey)).join('/')
+            : '';
+        aoa[sheetRow][8] = row.reference || row.orNumber;
+        aoa[sheetRow][9] = row.subscriber;
+        aoa[sheetRow][11] = row.amount;
+    });
+
+    const sheet = xlsx.utils.aoa_to_sheet(aoa, { cellDates: true });
+    paymentExportSetFormulaCell(sheet, 'L2', 'L5-F5', incomeTotal, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'F5', 'F6', 0, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'F6', `SUM(F7:F${lastExcelRow})`, 0, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'L5', 'L6', incomeTotal, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetFormulaCell(sheet, 'L6', `SUM(L7:L${lastExcelRow})`, incomeTotal, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetNumberCell(sheet, 'E6', 0, PAYMENT_EXPORT_PESO_FORMAT);
+    paymentExportSetNumberCell(sheet, 'K6', 0, PAYMENT_EXPORT_MONEY_FORMAT);
+    rows.forEach((row, index) => {
+        const excelRow = 7 + index;
+        if (sheet[`G${excelRow}`]) paymentExportSetDateCell(sheet, `G${excelRow}`, row.date);
+        if (sheet[`L${excelRow}`]) paymentExportSetNumberCell(sheet, `L${excelRow}`, row.amount, PAYMENT_EXPORT_MONEY_FORMAT);
+    });
+    sheet['!merges'] = [
+        paymentExportRange(xlsx, 'A1:J1'),
+        paymentExportRange(xlsx, 'A2:J2'),
+        paymentExportRange(xlsx, 'A3:F3'),
+        paymentExportRange(xlsx, 'J3:L3'),
+        paymentExportRange(xlsx, 'A5:E5'),
+        paymentExportRange(xlsx, 'G5:K5'),
+        paymentExportRange(xlsx, 'A6:D6')
+    ];
+    sheet['!cols'] = [
+        { wch: 18 }, { wch: 19 }, { wch: 17 }, { wch: 38 },
+        { wch: 16 }, { wch: 18 }, { wch: 19 }, { wch: 14 },
+        { wch: 21 }, { wch: 46 }, { wch: 15 }, { wch: 21 }
+    ];
+    return sheet;
+};
+
+const createPaymentHistoryExportWorkbook = ({ payments = {}, customers = [], monthInfo }) => {
+    const xlsx = getPaymentImportXlsxModule();
+    const workbook = xlsx.utils.book_new();
+    const groupedRows = buildPaymentExportRows(payments, customers, monthInfo);
+    const cashSheetName = safePaymentExportSheetName(`CASH ${monthInfo.sheetToken}`, 'CASH');
+    const gcashSheetName = safePaymentExportSheetName(`GCASH ${monthInfo.sheetToken}`, 'GCASH');
+
+    xlsx.utils.book_append_sheet(
+        workbook,
+        createCashPaymentExportSheet(xlsx, groupedRows.cashRows, monthInfo),
+        cashSheetName
+    );
+    xlsx.utils.book_append_sheet(
+        workbook,
+        createGcashPaymentExportSheet(xlsx, groupedRows.gcashRows, monthInfo),
+        gcashSheetName
+    );
+
+    return {
+        buffer: xlsx.write(workbook, {
+            type: 'buffer',
+            bookType: 'xlsx',
+            compression: true
+        }),
+        counts: {
+            cash: groupedRows.cashRows.length,
+            gcash: groupedRows.gcashRows.length,
+            total: groupedRows.allRows.length
+        }
+    };
+};
+
 // GET /api/payments - Get all payment records
 router.get('/', async (req, res, next) => {
     try {
@@ -2081,6 +2488,35 @@ router.post('/import-excel', express.raw({
         });
     } catch (error) {
         next(error?.status ? error : createError(500, 'Failed to import payment records from Excel.'));
+    }
+});
+
+// GET /api/payments/export-excel - Export monthly Cash/GCash payment history workbook
+router.get('/export-excel', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const monthInfo = parsePaymentExportMonth(req.query?.month);
+        const [payments, customers] = await Promise.all([
+            readPayments(branchId),
+            readCustomers(branchId)
+        ]);
+        const { buffer, counts } = createPaymentHistoryExportWorkbook({
+            payments,
+            customers,
+            monthInfo
+        });
+        const filename = `payment-history-${monthInfo.value}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('X-Payment-Export-Cash-Count', String(counts.cash));
+        res.setHeader('X-Payment-Export-Gcash-Count', String(counts.gcash));
+        res.setHeader('X-Payment-Export-Total-Count', String(counts.total));
+        res.setHeader('Content-Length', String(buffer.length));
+        res.send(buffer);
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to export payment history.'));
     }
 });
 

@@ -8,162 +8,184 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-history.css?v=3.5">
-    <link rel="stylesheet" href="css/tabler-app.css?v=2.4">
+    <link rel="stylesheet" href="css/payment-history.css?v=4.1">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.5">
     <script src="theme-init.js?v=2.6"></script>
 </head>
-<body class="payment-history-body">
+<body class="payment-history-body payment-history-body--tabler">
     <div class="app-shell">
         <div id="sidebar"></div>
         <div class="app-main">
             <div id="topbar"></div>
             <main class="page payment-history-page">
-                <section class="page-header">
+                <section class="page-header d-print-none">
                     <div class="page-title">
                         <h1>Payment History</h1>
+                    </div>
+                    <div class="header-actions payment-history-header-actions" aria-label="Payment history import and export actions">
+                        <div class="payment-history-export-field">
+                            <label class="form-label" for="paymentHistoryExportMonth">Export month</label>
+                            <input class="form-control" type="month" id="paymentHistoryExportMonth" aria-label="Export payment history month">
+                        </div>
+                        <button type="button" class="payment-history-export-btn btn btn-primary" id="paymentHistoryExportBtn">
+                            <i class="ti ti-file-export" aria-hidden="true"></i>
+                            Export Excel
+                        </button>
+                        <button type="button" class="payment-history-small-btn btn btn-outline-secondary" id="paymentHistoryImportBtn">
+                            <i class="ti ti-file-spreadsheet" aria-hidden="true"></i>
+                            Import Cash/GCash
+                        </button>
+                        <input
+                            type="file"
+                            class="payment-history-import-input visually-hidden"
+                            id="paymentHistoryImportFile"
+                            accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            aria-label="Import Cash or GCash payment records Excel file"
+                        >
                     </div>
                 </section>
 
                 <section class="page-insights">
-                    <div class="payment-history-metrics" aria-label="Payment history summary">
-                        <article class="payment-history-metric">
-                            <span class="payment-history-metric__icon">
-                                <i class="ti ti-receipt" aria-hidden="true"></i>
-                            </span>
-                            <div class="payment-history-metric__body">
-                                <p class="payment-history-metric__label">Entries</p>
-                                <strong class="payment-history-metric__value" id="historyMetricEntries">0</strong>
-                                <p class="payment-history-metric__meta">Posted payment logs in result</p>
-                            </div>
-                        </article>
-                        <article class="payment-history-metric payment-history-metric--success">
-                            <span class="payment-history-metric__icon">
-                                <i class="ti ti-cash" aria-hidden="true"></i>
-                            </span>
-                            <div class="payment-history-metric__body">
-                                <p class="payment-history-metric__label">Payments Collected</p>
-                                <strong class="payment-history-metric__value" id="historyMetricPayments">&#8369;0.00</strong>
-                                <p class="payment-history-metric__meta">Collected payments only</p>
-                            </div>
-                        </article>
-                        <article class="payment-history-metric payment-history-metric--warning">
-                            <span class="payment-history-metric__icon">
-                                <i class="ti ti-hash" aria-hidden="true"></i>
-                            </span>
-                            <div class="payment-history-metric__body">
-                                <p class="payment-history-metric__label">With Reference</p>
-                                <strong class="payment-history-metric__value" id="historyMetricReferences">0</strong>
-                                <p class="payment-history-metric__meta">Payments with reference or OR no.</p>
-                            </div>
-                        </article>
-                        <article class="payment-history-metric payment-history-metric--info">
-                            <span class="payment-history-metric__icon">
-                                <i class="ti ti-users" aria-hidden="true"></i>
-                            </span>
-                            <div class="payment-history-metric__body">
-                                <p class="payment-history-metric__label">Accounts Touched</p>
-                                <strong class="payment-history-metric__value" id="historyMetricAccounts">0</strong>
-                                <p class="payment-history-metric__meta">Unique accounts in current result</p>
-                            </div>
-                        </article>
+                    <div class="payment-history-metrics row row-cards" aria-label="Payment history summary">
+                        <div class="col-sm-6 col-lg-3">
+                            <article class="payment-history-metric card">
+                                <div class="card-body">
+                                    <span class="avatar bg-primary-lt text-primary" aria-hidden="true">
+                                        <i class="ti ti-receipt"></i>
+                                    </span>
+                                    <div class="payment-history-metric__body">
+                                        <p class="payment-history-metric__label text-secondary">Entries</p>
+                                        <strong class="payment-history-metric__value" id="historyMetricEntries">0</strong>
+                                        <p class="payment-history-metric__meta text-secondary">Posted payment logs in result</p>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <article class="payment-history-metric card">
+                                <div class="card-body">
+                                    <span class="avatar bg-success-lt text-success" aria-hidden="true">
+                                        <i class="ti ti-cash"></i>
+                                    </span>
+                                    <div class="payment-history-metric__body">
+                                        <p class="payment-history-metric__label text-secondary">Payments Collected</p>
+                                        <strong class="payment-history-metric__value" id="historyMetricPayments">&#8369;0.00</strong>
+                                        <p class="payment-history-metric__meta text-secondary">Collected payments only</p>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <article class="payment-history-metric card">
+                                <div class="card-body">
+                                    <span class="avatar bg-warning-lt text-warning" aria-hidden="true">
+                                        <i class="ti ti-hash"></i>
+                                    </span>
+                                    <div class="payment-history-metric__body">
+                                        <p class="payment-history-metric__label text-secondary">With Reference</p>
+                                        <strong class="payment-history-metric__value" id="historyMetricReferences">0</strong>
+                                        <p class="payment-history-metric__meta text-secondary">Payments with reference or OR no.</p>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <article class="payment-history-metric card">
+                                <div class="card-body">
+                                    <span class="avatar bg-info-lt text-info" aria-hidden="true">
+                                        <i class="ti ti-users"></i>
+                                    </span>
+                                    <div class="payment-history-metric__body">
+                                        <p class="payment-history-metric__label text-secondary">Accounts Touched</p>
+                                        <strong class="payment-history-metric__value" id="historyMetricAccounts">0</strong>
+                                        <p class="payment-history-metric__meta text-secondary">Unique accounts in current result</p>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
                     </div>
                 </section>
 
-                <section class="section-frame">
-                    <div class="section-toolbar payment-history-toolbar">
-                        <div class="search-field payment-history-search">
-                            <i class="ti ti-search" aria-hidden="true"></i>
-                            <input
-                                type="search"
-                                id="paymentHistorySearch"
-                                placeholder="Search payments"
-                                aria-label="Search payment history"
-                            >
-                        </div>
+                <section class="section-frame card payment-history-card">
+                    <div class="card-header section-toolbar payment-history-toolbar">
+                        <div class="payment-history-toolbar-grid">
+                            <div class="search-field payment-history-search">
+                                <label class="form-label" for="paymentHistorySearch">Search</label>
+                                <div class="input-icon">
+                                    <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                                    <input
+                                        class="form-control"
+                                        type="search"
+                                        id="paymentHistorySearch"
+                                        placeholder="Search payments"
+                                        aria-label="Search payment history"
+                                    >
+                                </div>
+                            </div>
 
-                        <div class="toolbar-inline-filters payment-history-inline-filters" aria-label="Payment history filters">
-                            <div class="toolbar-filter-control toolbar-filter-control--date">
-                                <label for="paymentHistoryStartDate">Start</label>
-                                <input type="date" id="paymentHistoryStartDate">
-                            </div>
-                            <div class="toolbar-filter-control toolbar-filter-control--date">
-                                <label for="paymentHistoryEndDate">End</label>
-                                <input type="date" id="paymentHistoryEndDate">
-                            </div>
-                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--area">
-                                <label for="paymentHistoryArea">Area</label>
-                                <div class="select-wrapper">
-                                    <select id="paymentHistoryArea">
+                            <div class="toolbar-inline-filters payment-history-inline-filters" aria-label="Payment history filters">
+                                <div class="toolbar-filter-control toolbar-filter-control--date">
+                                    <label class="form-label" for="paymentHistoryStartDate">Start</label>
+                                    <input class="form-control" type="date" id="paymentHistoryStartDate">
+                                </div>
+                                <div class="toolbar-filter-control toolbar-filter-control--date">
+                                    <label class="form-label" for="paymentHistoryEndDate">End</label>
+                                    <input class="form-control" type="date" id="paymentHistoryEndDate">
+                                </div>
+                                <div class="page-size-control toolbar-filter-control toolbar-filter-control--area">
+                                    <label class="form-label" for="paymentHistoryArea">Area</label>
+                                    <select class="form-select" id="paymentHistoryArea">
                                         <option value="">Areas</option>
                                     </select>
                                 </div>
-                            </div>
-                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--method">
-                                <label for="paymentHistoryMethod">Payment</label>
-                                <div class="select-wrapper">
-                                    <select id="paymentHistoryMethod">
+                                <div class="page-size-control toolbar-filter-control toolbar-filter-control--method">
+                                    <label class="form-label" for="paymentHistoryMethod">Payment</label>
+                                    <select class="form-select" id="paymentHistoryMethod">
                                         <option value="">All methods</option>
                                         <option value="cash">Cash</option>
                                         <option value="gcash">GCash</option>
                                     </select>
                                 </div>
-                            </div>
-                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--recipient">
-                                <label for="paymentHistoryRecordedBy">Paid to</label>
-                                <div class="select-wrapper">
-                                    <select id="paymentHistoryRecordedBy">
+                                <div class="page-size-control toolbar-filter-control toolbar-filter-control--recipient">
+                                    <label class="form-label" for="paymentHistoryRecordedBy">Paid to</label>
+                                    <select class="form-select" id="paymentHistoryRecordedBy">
                                         <option value="">All recipients</option>
                                     </select>
                                 </div>
-                            </div>
-                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
-                                <label for="paymentHistorySort">Sort</label>
-                                <div class="select-wrapper">
-                                    <select id="paymentHistorySort">
+                                <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
+                                    <label class="form-label" for="paymentHistorySort">Sort</label>
+                                    <select class="form-select" id="paymentHistorySort">
                                         <option value="newOld" selected>Newest</option>
                                         <option value="oldNew">Oldest</option>
                                         <option value="amountHighLow">High Amt</option>
                                         <option value="amountLowHigh">Low Amt</option>
                                     </select>
                                 </div>
-                            </div>
-                            <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
-                                <label for="paymentHistoryPageSize">Show</label>
-                                <div class="select-wrapper">
-                                    <select id="paymentHistoryPageSize">
+                                <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
+                                    <label class="form-label" for="paymentHistoryPageSize">Show</label>
+                                    <select class="form-select" id="paymentHistoryPageSize">
                                         <option value="25" selected>25</option>
                                         <option value="50">50</option>
                                         <option value="100">100</option>
                                     </select>
                                 </div>
                             </div>
-                        </div>
 
-                        <div class="payment-history-admin-actions" aria-label="Payment record actions">
-                            <button type="button" class="payment-history-small-btn" id="paymentHistoryImportBtn">
-                                <i class="ti ti-file-spreadsheet" aria-hidden="true"></i>
-                                Import Cash/GCash
-                            </button>
-                            <input
-                                type="file"
-                                class="payment-history-import-input"
-                                id="paymentHistoryImportFile"
-                                accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                aria-label="Import Cash or GCash payment records Excel file"
-                            >
-                            <button type="button" class="payment-history-small-btn" id="paymentHistoryBackupBtn">
-                                <i class="ti ti-download" aria-hidden="true"></i>
-                                Backup
-                            </button>
-                            <button type="button" class="payment-history-small-btn payment-history-small-btn--danger" id="paymentHistoryClearBtn">
-                                <i class="ti ti-trash" aria-hidden="true"></i>
-                                Clear
-                            </button>
+                            <div class="payment-history-admin-actions btn-list" aria-label="Payment record actions">
+                                <button type="button" class="payment-history-small-btn btn btn-outline-secondary btn-sm" id="paymentHistoryBackupBtn">
+                                    <i class="ti ti-download" aria-hidden="true"></i>
+                                    Backup
+                                </button>
+                                <button type="button" class="payment-history-small-btn payment-history-small-btn--danger btn btn-outline-danger btn-sm" id="paymentHistoryClearBtn">
+                                    <i class="ti ti-trash" aria-hidden="true"></i>
+                                    Clear
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="table-wrapper elevated">
-                        <table class="payment-history-table" aria-label="Payment history table">
+                    <div class="table-wrapper table-responsive tabler-table-wrap">
+                        <table class="payment-history-table table table-vcenter table-hover card-table tabler-table" aria-label="Payment history table">
                             <caption>Payment history records</caption>
                             <thead>
                                 <tr>
@@ -179,19 +201,28 @@
                             <tbody id="paymentHistoryTableBody">
                                 <tr class="payment-history-empty-row">
                                     <td colspan="7" class="payment-history-empty-cell">
-                                        <span class="payment-history-empty-message">Loading payment history...</span>
+                                        <div class="empty">
+                                            <div class="empty-icon">
+                                                <i class="ti ti-loader-2 ti-spin"></i>
+                                            </div>
+                                            <p class="empty-title">Loading payment history...</p>
+                                        </div>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <div class="table-footer">
+                    <div class="table-footer card-footer">
                         <div class="footer-summary" id="paymentHistorySummary">Loading payment history...</div>
                         <div class="footer-controls">
-                            <button type="button" class="footer-btn" id="paymentHistoryPrev" aria-label="Previous page" disabled><</button>
+                            <button type="button" class="footer-btn btn btn-icon btn-outline-secondary btn-sm" id="paymentHistoryPrev" aria-label="Previous page" disabled>
+                                <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                            </button>
                             <span class="footer-page-info" id="paymentHistoryPageInfo">Page 1 of 1</span>
-                            <button type="button" class="footer-btn" id="paymentHistoryNext" aria-label="Next page" disabled>></button>
+                            <button type="button" class="footer-btn btn btn-icon btn-outline-secondary btn-sm" id="paymentHistoryNext" aria-label="Next page" disabled>
+                                <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                            </button>
                         </div>
                     </div>
                 </section>
@@ -200,8 +231,8 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/payment-history.js?v=1.9"></script>
+    <script src="js/payment-history.js?v=2.1"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
-    <script src="js/tabler-enhance.js?v=1.7"></script>
+    <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>

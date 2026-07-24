@@ -182,6 +182,45 @@ document.addEventListener('DOMContentLoaded', () => {
         || document.documentElement?.dataset.theme === 'dark'
     );
 
+    const readCssVar = (name, fallback) => {
+        const rootValue = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        const bodyValue = getComputedStyle(document.body).getPropertyValue(name).trim();
+        return bodyValue || rootValue || fallback;
+    };
+
+    const applyTablerChartDefaults = () => {
+        if (typeof Chart === 'undefined') return;
+        const bodyStyles = getComputedStyle(document.body);
+        const textColor = readCssVar('--app-text', '#182433');
+        const mutedColor = readCssVar('--app-muted', '#667085');
+        const borderColor = readCssVar('--app-border', '#dce3ed');
+        const surfaceColor = readCssVar('--app-surface', '#ffffff');
+        const primaryColor = readCssVar('--app-primary', '#206bc4');
+        Chart.defaults.font.family = bodyStyles.fontFamily || Chart.defaults.font.family;
+        Chart.defaults.color = mutedColor;
+        Chart.defaults.borderColor = borderColor;
+        Chart.defaults.elements.line.borderWidth = 2;
+        Chart.defaults.elements.line.tension = 0.35;
+        Chart.defaults.elements.point.radius = 3;
+        Chart.defaults.elements.point.hoverRadius = 5;
+        Chart.defaults.elements.point.borderWidth = 2;
+        Chart.defaults.elements.bar.borderRadius = 4;
+        Chart.defaults.plugins.legend.labels.usePointStyle = true;
+        Chart.defaults.plugins.legend.labels.pointStyle = 'circle';
+        Chart.defaults.plugins.legend.labels.color = mutedColor;
+        Chart.defaults.plugins.legend.labels.boxWidth = 8;
+        Chart.defaults.plugins.legend.labels.boxHeight = 8;
+        Chart.defaults.plugins.tooltip.backgroundColor = isDarkThemeActive() ? 'rgba(7, 12, 24, 0.96)' : surfaceColor;
+        Chart.defaults.plugins.tooltip.titleColor = isDarkThemeActive() ? '#bfdbfe' : primaryColor;
+        Chart.defaults.plugins.tooltip.bodyColor = textColor;
+        Chart.defaults.plugins.tooltip.borderColor = borderColor;
+        Chart.defaults.plugins.tooltip.borderWidth = 1;
+        Chart.defaults.plugins.tooltip.cornerRadius = 8;
+        Chart.defaults.plugins.tooltip.padding = 12;
+    };
+
+    applyTablerChartDefaults();
+
     const getTrendDailyChartPalette = () => {
         if (isDarkThemeActive()) {
             return {

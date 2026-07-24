@@ -251,6 +251,43 @@
     '.input-icon-wrapper',
     '.topbar-search'
   ].join(',');
+  const inputGroupSelector = [
+    '.input-group',
+    '.input-group-field',
+    '.input-with-icon',
+    '.input-icon-wrapper',
+    '.secure-input-wrap',
+    '.select-wrapper',
+    '.amount-field',
+    '.date-field',
+    '.time-field',
+    '.search-field',
+    '.payment-history-search',
+    '.customer-search-field',
+    '.pppoe-customer-search-field',
+    '.genieacs-search-field'
+  ].join(',');
+  const formGridSelector = [
+    '.form-grid',
+    '.profile-edit-form__grid',
+    '.automation-form-grid',
+    '.modal-form-grid',
+    '.settings-grid',
+    '.filter-grid',
+    '.quick-payment-grid',
+    '.customer-form-grid',
+    '.pppoe-assign-fields-grid'
+  ].join(',');
+  const formFeedbackSelector = [
+    '.invalid-feedback',
+    '.valid-feedback',
+    '.field-error',
+    '.error-message',
+    '.success-message',
+    '.validation-message',
+    '.form-error',
+    '.form-success'
+  ].join(',');
   const listContainerSelector = [
     'ul',
     'ol',
@@ -345,6 +382,59 @@
     '.warning-message',
     '.error-banner',
     '.empty-state'
+  ].join(',');
+  const chartRootSelector = [
+    '.chart-wrapper',
+    '.chart-wrapper--tabler',
+    '.chart-wrapper--luxury',
+    '.chart-wrapper--bar',
+    '.chart-wrapper--pie',
+    '.chart-wrapper--doughnut',
+    '.bar-chart',
+    '.trend-panel:has(canvas)',
+    '.trend-panel:has(.chart-wrapper)',
+    '.dashboard-card:has(canvas)',
+    '.report-card:has(canvas)',
+    '.stat-card:has(canvas)',
+    'canvas'
+  ].join(',');
+  const avatarSelector = [
+    '.avatar',
+    '.profile-avatar',
+    '.logo-chip',
+    '.brand-logo',
+    '.profile-modal__branding-logo',
+    '.profile-edit-logo__preview',
+    '.subscriber-info-avatar',
+    '.collector-avatar',
+    '.collection-history-avatar',
+    '.pppoe-avatar',
+    '.tech-avatar',
+    '.queue-customer-avatar',
+    '.quick-pay-avatar',
+    '.payment-locked-customer__avatar',
+    '.subscriber-avatar',
+    '.portal-avatar-button'
+  ].join(',');
+  const dropdownSelector = [
+    '.dropdown',
+    '.dropdown-menu',
+    '.public-nav__dropdown',
+    '.public-nav__dropdown-toggle',
+    '.public-nav__dropdown-menu',
+    '.public-nav__dropdown-link',
+    '.filter-checklist',
+    '.filter-checklist__trigger',
+    '.filter-checklist__panel',
+    '.filter-checklist__panel-head',
+    '.filter-checklist__option',
+    '.filter-checklist__empty',
+    '.customer-search-list',
+    '.customer-search-option',
+    '.pppoe-customer-search-results',
+    '.pppoe-customer-search-option',
+    '.select-wrapper',
+    'select'
   ].join(',');
 
   const addClasses = (element, classes) => {
@@ -487,14 +577,91 @@
     }
   };
 
+  const tableActionSelector = [
+    '.row-actions',
+    '.table-actions',
+    '.action-buttons',
+    '.actions',
+    '.btn-list',
+    '[data-table-actions]'
+  ].join(',');
+
+  const numericColumnPattern = /\b(amount|balance|total|price|fee|cost|paid|discount|credit|debit|qty|quantity|count|mbps|gb|peso|php|rate|salary|cash|bill|due)\b/i;
+
+  const looksNumericCell = (cell) => {
+    const text = String(cell?.textContent || '').trim();
+    if (!text) return false;
+    return /^[-+]?(\u20b1|\$)?\s*[\d,]+(?:\.\d+)?(?:\s*(mbps|gb|%))?$/i.test(text);
+  };
+
+  const enhanceTableRows = (table) => {
+    if (!table) return;
+    const headerCells = Array.from(table.tHead?.rows?.[0]?.cells || table.querySelectorAll('thead th'));
+    const numericIndexes = new Set();
+    headerCells.forEach((th, index) => {
+      th.setAttribute('scope', th.getAttribute('scope') || 'col');
+      addClasses(th, 'tabler-table__heading');
+      const headerText = String(th.textContent || '').trim();
+      if (numericColumnPattern.test(headerText)) {
+        numericIndexes.add(index);
+        addClasses(th, 'text-end tabler-table__numeric');
+      }
+      if (th.matches('[data-sort], .sortable, [aria-sort]') || th.querySelector('[data-sort], .sort-icon, .sort-indicator')) {
+        addClasses(th, 'tabler-table__sortable');
+        th.setAttribute('aria-sort', th.getAttribute('aria-sort') || 'none');
+      }
+    });
+
+    table.querySelectorAll('tbody tr').forEach((row) => {
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      row.classList.toggle('table-active', Boolean(checkbox?.checked));
+      const cells = Array.from(row.cells || []);
+      const isEmptyRow = cells.length === 1 && (
+        cells[0].hasAttribute('colspan') ||
+        cells[0].matches('.empty, .empty-state, [data-empty-state]')
+      );
+      if (isEmptyRow) {
+        addClasses(cells[0], 'text-center text-secondary py-5 tabler-table__empty');
+        return;
+      }
+      cells.forEach((cell, index) => {
+        if (numericIndexes.has(index) || looksNumericCell(cell)) addClasses(cell, 'text-end tabler-table__numeric');
+        if (cell.querySelector(tableActionSelector) || cell.querySelector('button, a.btn, .btn, [role="button"]')) {
+          addClasses(cell, 'text-end text-nowrap tabler-table__actions');
+        }
+      });
+    });
+  };
+
   const enhanceTable = (table) => {
-    if (!table || processed.has(table)) return;
-    processed.add(table);
-    addClasses(table, 'table table-vcenter table-hover');
-    const parent = table.parentElement;
-    if (parent && !parent.classList.contains('table-responsive') && parent.tagName !== 'BODY') {
-      parent.classList.add('table-responsive');
+    if (!table) return;
+    const firstRun = !processed.has(table);
+    if (firstRun) {
+      processed.add(table);
+      addClasses(table, 'table table-vcenter table-hover card-table tabler-table');
+      table.querySelectorAll('caption').forEach((caption) => addClasses(caption, 'caption-top text-secondary'));
+      const parent = table.parentElement;
+      if (parent && parent.tagName !== 'BODY') {
+        addClasses(parent, 'table-responsive tabler-table-wrap');
+        const tableLabel = table.getAttribute('aria-label') ||
+          String(table.querySelector('caption')?.textContent || '').trim() ||
+          String(table.closest('section, main, .card, .section-frame')?.querySelector('h1, h2, h3')?.textContent || '').trim();
+        if (tableLabel && !parent.getAttribute('aria-label')) {
+          parent.setAttribute('aria-label', tableLabel);
+        }
+        if (parent.getAttribute('aria-label')) {
+          parent.setAttribute('role', parent.getAttribute('role') || 'region');
+          parent.setAttribute('tabindex', parent.getAttribute('tabindex') || '0');
+        }
+      }
+      table.addEventListener('change', (event) => {
+        const input = event.target;
+        if (!input?.matches?.('input[type="checkbox"]')) return;
+        const row = input.closest('tbody tr');
+        if (row) row.classList.toggle('table-active', input.checked);
+      });
     }
+    enhanceTableRows(table);
   };
 
   const queryAll = (root, selector) => {
@@ -541,8 +708,12 @@
       input.getAttribute('role') === 'switch' ||
       input.classList.contains('switch-input') ||
       input.classList.contains('status-switch-input') ||
+      input.classList.contains('toggle-input') ||
+      label?.classList.contains('switch') ||
+      label?.classList.contains('switch-line') ||
       label?.classList.contains('switch-field') ||
-      label?.classList.contains('status-switch-field')
+      label?.classList.contains('status-switch-field') ||
+      input.closest('.switch, .switch-line, .switch-field, .status-switch-field')
     ));
   };
 
@@ -571,6 +742,8 @@
         child !== input &&
         child.tagName === 'SPAN' &&
         !child.classList.contains('ti') &&
+        !child.classList.contains('switch-slider') &&
+        !child.classList.contains('tabler-switch-slider') &&
         !child.classList.contains('status-switch-state') &&
         !child.classList.contains('status-switch-indicator')
       ));
@@ -637,8 +810,15 @@
     const valid = control.getAttribute('aria-invalid') === 'false' ||
       control.classList.contains('valid') ||
       control.closest('.field-valid, .has-success, .is-success');
-    if (invalid) addClasses(control, 'is-invalid');
-    if (valid && !invalid) addClasses(control, 'is-valid');
+    const field = control.closest(fieldContainerSelector);
+    if (invalid) {
+      addClasses(control, 'is-invalid');
+      if (field) addClasses(field, 'tabler-field--invalid');
+    }
+    if (valid && !invalid) {
+      addClasses(control, 'is-valid');
+      if (field) addClasses(field, 'tabler-field--valid');
+    }
   };
 
   const enhanceTextInput = (input) => {
@@ -646,12 +826,17 @@
     const type = getInputType(input);
     if (buttonLikeInputTypes.has(type)) return;
 
+    addClasses(input, 'tabler-control');
     if (type === 'range') {
-      addClasses(input, 'form-range');
+      addClasses(input, 'form-range tabler-range');
       removeClasses(input, 'form-control');
     } else {
       addClasses(input, 'form-control');
-      if (type === 'color') addClasses(input, 'form-control-color');
+      if (type === 'color') addClasses(input, 'form-control-color tabler-color-input');
+      if (type === 'file') addClasses(input, 'tabler-file-input');
+      if (type === 'date' || type === 'datetime-local' || type === 'month' || type === 'time' || type === 'week') addClasses(input, 'tabler-date-input');
+      if (type === 'number') addClasses(input, 'tabler-number-input');
+      if (type === 'password') addClasses(input, 'tabler-password-input');
     }
 
     markControlLabels(input);
@@ -659,13 +844,14 @@
   };
 
   const enhanceTextArea = (textarea) => {
-    addClasses(textarea, 'form-control');
+    addClasses(textarea, 'form-control tabler-control tabler-textarea');
     markControlLabels(textarea);
     syncValidationState(textarea);
   };
 
   const enhanceSelect = (select) => {
-    addClasses(select, 'form-select');
+    addClasses(select, 'form-select tabler-control tabler-select tabler-dropdown-select');
+    if (select.multiple || Number(select.getAttribute('size') || 0) > 1) addClasses(select, 'tabler-select--multiple');
     markControlLabels(select);
     syncValidationState(select);
   };
@@ -673,16 +859,27 @@
   const enhanceSelectGroups = (root) => {
     queryAll(root, selectGroupSelector).forEach((group) => {
       if (!group.querySelector('input[type="checkbox"], input[type="radio"]')) return;
-      addClasses(group, 'form-selectgroup form-selectgroup-pills');
+      addClasses(group, 'form-selectgroup form-selectgroup-pills tabler-selectgroup');
       group.querySelectorAll('label').forEach((label) => {
         const input = label.querySelector('input[type="checkbox"], input[type="radio"]');
         if (!input || isSwitchInput(input)) return;
-        addClasses(label, 'form-selectgroup-item');
+        addClasses(label, 'form-selectgroup-item tabler-selectgroup-item');
         removeClasses(label, 'form-check');
         addClasses(input, 'form-selectgroup-input');
         removeClasses(input, 'form-check-input');
-        ensureLabelContentClass(label, input, 'form-selectgroup-label');
+        addClasses(ensureLabelContentClass(label, input, 'form-selectgroup-label'), 'tabler-selectgroup-label');
       });
+    });
+  };
+
+  const hasChoiceLabelContent = (container, input) => {
+    if (!container) return false;
+    return Array.from(container.childNodes).some((node) => {
+      if (node === input) return false;
+      if (node.nodeType === Node.TEXT_NODE) return Boolean(node.textContent.trim());
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      if (node.matches('input[type="checkbox"], input[type="radio"], .switch-slider, .tabler-switch-slider, .status-switch-indicator')) return false;
+      return Boolean(String(node.textContent || '').trim()) || Boolean(node.querySelector?.('span, strong, small, i, svg'));
     });
   };
 
@@ -692,14 +889,22 @@
     if (label?.classList.contains('form-selectgroup-item')) {
       addClasses(input, 'form-selectgroup-input');
       removeClasses(input, 'form-check-input');
-      ensureLabelContentClass(label, input, 'form-selectgroup-label');
+      addClasses(ensureLabelContentClass(label, input, 'form-selectgroup-label'), 'tabler-selectgroup-label');
       return;
     }
 
-    addClasses(input, 'form-check-input');
+    const switchLike = isSwitchInput(input);
+    addClasses(input, switchLike ? 'form-check-input tabler-switch-input' : 'form-check-input tabler-check-input');
+    if (switchLike) input.setAttribute('role', input.getAttribute('role') || 'switch');
     if (label) {
-      addClasses(label, isSwitchInput(input) ? 'form-check form-switch' : 'form-check');
-      ensureLabelContentClass(label, input, 'form-check-label');
+      addClasses(label, switchLike ? 'form-check form-switch tabler-check tabler-switch' : 'form-check tabler-check');
+      label.querySelectorAll('.switch-slider').forEach((slider) => {
+        addClasses(slider, 'tabler-switch-slider');
+        slider.setAttribute('aria-hidden', 'true');
+      });
+      if (!switchLike || hasChoiceLabelContent(label, input)) {
+        addClasses(ensureLabelContentClass(label, input, 'form-check-label'), switchLike ? 'tabler-switch-label' : 'tabler-check-label');
+      }
       if (label.closest(checkListContainerSelector)) {
         addClasses(label, 'list-group-item');
         if (!input.disabled) addClasses(label, 'list-group-item-action');
@@ -710,13 +915,13 @@
     const parent = input.parentElement;
     const choiceCount = parent?.querySelectorAll?.('input[type="checkbox"], input[type="radio"]').length || 0;
     if (parent && choiceCount === 1 && !parent.matches('td, th, .input-group-text')) {
-      addClasses(parent, isSwitchInput(input) ? 'form-check form-switch' : 'form-check');
+      addClasses(parent, switchLike ? 'form-check form-switch tabler-check tabler-switch' : 'form-check tabler-check');
       const textLabel = Array.from(parent.children).find((child) => (
         child !== input &&
         !child.matches('input, button, select, textarea') &&
         !child.querySelector('input, button, select, textarea')
       ));
-      if (textLabel) addClasses(textLabel, 'form-check-label');
+      if (textLabel) addClasses(textLabel, switchLike ? 'form-check-label tabler-switch-label' : 'form-check-label tabler-check-label');
     }
   };
 
@@ -775,11 +980,92 @@
     });
   };
 
+  const enhanceInputGroups = (root) => {
+    queryAll(root, inputGroupSelector).forEach((wrapper) => {
+      if (!wrapper || wrapper.closest('.sidebar, .topbar, datalist')) return;
+      addClasses(wrapper, 'tabler-input-group');
+      if (wrapper.matches('.input-group, .secure-input-wrap')) addClasses(wrapper, 'input-group');
+      if (wrapper.matches('.input-with-icon, .input-icon-wrapper, .secure-input-wrap') || wrapper.querySelector(':scope > i, :scope > .ti')) {
+        addClasses(wrapper, 'input-icon tabler-input-icon');
+      }
+      if (wrapper.matches('.select-wrapper')) addClasses(wrapper, 'tabler-select-wrap');
+      wrapper.querySelectorAll('.input-group-text, .input-addon, .prefix, .suffix, .currency-prefix, .unit-suffix')
+        .forEach((addon) => addClasses(addon, 'input-group-text tabler-input-addon'));
+      wrapper.querySelectorAll('button, a.btn, [role="button"]').forEach(enhanceButton);
+    });
+  };
+
+  const enhanceFormFeedback = (root) => {
+    queryAll(root, formFeedbackSelector).forEach((message) => {
+      if (!message || message.closest('.sidebar, .topbar')) return;
+      if (!message.closest('form, .tabler-form, .tabler-form-modal, .modal, .modal-overlay, .profile-edit-modal, .reset-overlay')) return;
+      addClasses(message, 'tabler-form-feedback');
+      const tokens = getElementTokenText(message);
+      if (message.classList.contains('success-message') || message.classList.contains('form-success') || /\b(success|valid|saved|complete)\b/.test(tokens)) {
+        addClasses(message, 'valid-feedback d-block');
+      } else {
+        addClasses(message, 'invalid-feedback d-block');
+      }
+    });
+  };
+
+  const enhanceDropdown = (element) => {
+    if (!element || element.closest('.sidebar-menu')) return;
+
+    if (element.matches('select')) {
+      addClasses(element, 'form-select tabler-control tabler-select tabler-dropdown-select');
+      element.closest('.select-wrapper')?.classList.add('tabler-select-wrap', 'tabler-dropdown');
+      return;
+    }
+
+    if (element.matches('.select-wrapper')) {
+      addClasses(element, 'tabler-select-wrap tabler-dropdown');
+      element.querySelectorAll('select').forEach(enhanceSelect);
+      return;
+    }
+
+    if (element.matches('.public-nav__dropdown, .filter-checklist, .dropdown')) {
+      addClasses(element, 'dropdown tabler-dropdown');
+      return;
+    }
+
+    if (element.matches('.public-nav__dropdown-toggle, .filter-checklist__trigger')) {
+      addClasses(element, 'dropdown-toggle tabler-dropdown-toggle');
+      if (element.matches('button')) addClasses(element, 'btn btn-outline-secondary');
+      if (!element.getAttribute('aria-haspopup')) element.setAttribute('aria-haspopup', 'true');
+      return;
+    }
+
+    if (element.matches('.public-nav__dropdown-menu, .filter-checklist__panel, .customer-search-list, .pppoe-customer-search-results, .dropdown-menu')) {
+      addClasses(element, 'dropdown-menu tabler-dropdown-menu');
+      if (element.matches('.customer-search-list, .pppoe-customer-search-results')) addClasses(element, 'tabler-results-dropdown');
+      return;
+    }
+
+    if (element.matches('.filter-checklist__panel-head')) {
+      addClasses(element, 'dropdown-header tabler-dropdown-header');
+      return;
+    }
+
+    if (element.matches('.public-nav__dropdown-link, .filter-checklist__option, .customer-search-option, .pppoe-customer-search-option')) {
+      addClasses(element, 'dropdown-item tabler-dropdown-item');
+      if (element.matches('label') && element.querySelector('input[type="checkbox"], input[type="radio"]')) addClasses(element, 'form-check tabler-check');
+      return;
+    }
+
+    if (element.matches('.filter-checklist__empty')) addClasses(element, 'dropdown-item-text text-secondary tabler-dropdown-empty');
+  };
+
+  const enhanceDropdowns = (root) => {
+    queryAll(root, dropdownSelector).forEach(enhanceDropdown);
+  };
+
   const enhanceFormStructure = (root) => {
     queryAll(root, 'form').forEach((form) => addClasses(form, 'tabler-form'));
     queryAll(root, 'fieldset').forEach((fieldset) => addClasses(fieldset, 'form-fieldset'));
     queryAll(root, 'legend').forEach((legend) => addClasses(legend, 'form-label'));
-    queryAll(root, fieldContainerSelector).forEach((field) => addClasses(field, 'mb-3'));
+    queryAll(root, formGridSelector).forEach((grid) => addClasses(grid, 'tabler-form-grid'));
+    queryAll(root, fieldContainerSelector).forEach((field) => addClasses(field, 'mb-3 tabler-form-field'));
     queryAll(root, hintSelector).forEach((hint) => addClasses(hint, 'form-hint'));
     queryAll(root, '.secure-input-wrap, .input-with-icon, .input-icon-wrapper')
       .forEach((wrapper) => addClasses(wrapper, 'input-icon tabler-input-icon'));
@@ -798,7 +1084,9 @@
     queryAll(root, 'select').forEach(enhanceSelect);
     enhanceSelectGroups(root);
     queryAll(root, 'input[type="checkbox"], input[type="radio"]').forEach(enhanceChoiceInput);
+    enhanceInputGroups(root);
     enhanceSearchBars(root);
+    enhanceFormFeedback(root);
     enhanceStandaloneLabels(root);
   };
 
@@ -1225,6 +1513,7 @@
   const enhanceCards = (root) => {
     queryAll(root, tablerCardSelector).forEach((card) => {
       if (!card || card.closest('.sidebar, .topbar, .dropdown-menu')) return;
+      if (card.matches('table')) return;
       addClasses(card, 'card tabler-card');
       if (card.matches('.metric, .metric-card, .payment-history-metric, .stat-card, .stats-card, .summary-card, .collector-stat')) {
         addClasses(card, 'tabler-metric-card');
@@ -1232,6 +1521,154 @@
       if (card.matches('.section-frame')) addClasses(card, 'tabler-section-card');
       if (card.matches('.chart-wrapper--tabler, .chart-wrapper--luxury')) addClasses(card, 'tabler-chart-card');
       if (card.matches('.login-panel, .login-card, .reset-card')) addClasses(card, 'tabler-auth-card');
+    });
+  };
+
+  const resolveChartContainer = (element) => {
+    if (!element) return null;
+    if (element.matches('canvas')) {
+      return element.closest('.chart-wrapper, .bar-chart, .trend-panel, .dashboard-card, .report-card, .stat-card') ||
+        element.parentElement;
+    }
+    return element;
+  };
+
+  const enhanceChart = (element) => {
+    const container = resolveChartContainer(element);
+    if (!container || container.closest('.sidebar, .topbar')) return;
+
+    addClasses(container, 'tabler-chart');
+    if (container.matches('.chart-wrapper, .chart-wrapper--tabler, .chart-wrapper--luxury, .chart-wrapper--bar, .chart-wrapper--pie, .chart-wrapper--doughnut, .bar-chart')) {
+      addClasses(container, 'card tabler-card tabler-chart-card');
+    }
+    if (container.matches('.trend-panel, .dashboard-card, .report-card, .stat-card')) {
+      addClasses(container, 'card tabler-card tabler-chart-panel');
+    }
+    if (container.matches('.chart-wrapper--pie, .chart-wrapper--doughnut') || container.querySelector('canvas[id*="Pie"], canvas[id*="Doughnut"]')) {
+      addClasses(container, 'tabler-chart--pie');
+    }
+    if (container.matches('.chart-wrapper--bar, .bar-chart') || container.querySelector('canvas[id*="Bar"], canvas[id*="Daily"]')) {
+      addClasses(container, 'tabler-chart--bar');
+    }
+    if (container.querySelector('canvas[id*="Line"], canvas[id*="Monthly"]')) {
+      addClasses(container, 'tabler-chart--line');
+    }
+
+    container.querySelectorAll('canvas').forEach((canvas) => {
+      addClasses(canvas, 'tabler-chart-canvas');
+      canvas.setAttribute('role', canvas.getAttribute('role') || 'img');
+      if (!canvas.getAttribute('aria-label')) {
+        const title = container.closest('.trend-panel, .card, section')?.querySelector('h1, h2, h3')?.textContent?.trim();
+        if (title) canvas.setAttribute('aria-label', `${title} chart`);
+      }
+    });
+
+    container.querySelectorAll('.chart-empty-msg').forEach((message) => {
+      addClasses(message, 'empty tabler-empty tabler-chart-empty');
+    });
+  };
+
+  const enhanceCharts = (root) => {
+    queryAll(root, chartRootSelector).forEach(enhanceChart);
+    queryAll(root, '.trend-chart-meta, .trend-chart-total, .trend-chart-breakdown, .trend-highlight-grid, .trend-luxury-metrics')
+      .forEach((element) => addClasses(element, 'tabler-chart-meta'));
+    queryAll(root, '.trend-highlight-card, .trend-luxury-metric, .trend-chart-total, .trend-chart-breakdown-item, .trend-chart-breakdown__empty, .trend-chart-insight')
+      .forEach((element) => addClasses(element, 'card tabler-card tabler-chart-stat'));
+    queryAll(root, '.trend-chart-breakdown-swatch').forEach((swatch) => addClasses(swatch, 'badge'));
+  };
+
+  const avatarToneMap = {
+    1: 'primary',
+    2: 'purple',
+    3: 'orange',
+    4: 'teal'
+  };
+
+  const getAvatarTone = (avatar) => {
+    if (!avatar) return 'primary';
+    const explicitTones = ['primary', 'secondary', 'success', 'danger', 'warning', 'info', 'blue', 'azure', 'indigo', 'purple', 'pink', 'red', 'orange', 'yellow', 'lime', 'green', 'teal', 'cyan'];
+    const explicitTone = explicitTones.find((tone) => (
+      avatar.classList.contains(`bg-${tone}-lt`) ||
+      avatar.classList.contains(`text-${tone}`)
+    ));
+    if (explicitTone) return explicitTone;
+    if (avatar.classList.contains('collector-avatar--tone-2') || avatar.classList.contains('collection-history-avatar--tone-2')) return avatarToneMap[2];
+    if (avatar.classList.contains('collector-avatar--tone-3') || avatar.classList.contains('collection-history-avatar--tone-3')) return avatarToneMap[3];
+    if (avatar.classList.contains('collector-avatar--tone-4') || avatar.classList.contains('collection-history-avatar--tone-4')) return avatarToneMap[4];
+    const tokens = getElementTokenText(avatar);
+    const text = String(avatar.textContent || '').toLowerCase();
+    const combined = `${tokens} ${text}`;
+    if (/(danger|error|failed|fail|reject|rejected|inactive|unpaid|overdue|offline|disabled|disconnect|disconnected|delete|remove)/.test(combined)) return 'danger';
+    if (/(warning|warn|pending|partial|review|attention|queued|draft|hold)/.test(combined)) return 'warning';
+    if (/(success|active|paid|online|complete|completed|approved|connected|ok|valid)/.test(combined)) return 'success';
+    if (/(teal|cyan|portal|quick|sms|subscriber)/.test(combined)) return 'teal';
+    return 'primary';
+  };
+
+  const avatarSizeClass = (avatar) => {
+    if (!avatar) return '';
+    if (avatar.classList.contains('avatar-xl') || avatar.classList.contains('quick-pay-avatar') || avatar.classList.contains('portal-avatar-button')) return 'avatar-xl';
+    if (
+      avatar.classList.contains('avatar-lg') ||
+      avatar.classList.contains('app-confirm-icon') ||
+      avatar.classList.contains('view-profile-card') ||
+      avatar.closest('.view-profile-header, .profile-modal__branding')
+    ) {
+      return 'avatar-lg';
+    }
+    if (
+      avatar.classList.contains('avatar-sm') ||
+      avatar.classList.contains('profile-avatar') ||
+      avatar.classList.contains('logo-chip') ||
+      avatar.classList.contains('brand-logo') ||
+      avatar.classList.contains('pppoe-avatar') ||
+      avatar.classList.contains('tech-avatar') ||
+      avatar.classList.contains('queue-customer-avatar') ||
+      avatar.classList.contains('payment-locked-customer__avatar') ||
+      avatar.classList.contains('collection-history-avatar')
+    ) {
+      return 'avatar-sm';
+    }
+    return '';
+  };
+
+  const enhanceAvatar = (avatar) => {
+    if (!avatar || avatar.matches('img, svg, i')) return;
+    addClasses(avatar, 'avatar tabler-avatar');
+
+    const size = avatarSizeClass(avatar);
+    if (size) addClasses(avatar, size);
+
+    const tone = getAvatarTone(avatar);
+    const toneClasses = `bg-${tone}-lt text-${tone}`;
+    const existingTone = avatar.dataset.tablerAvatarTone;
+    if (existingTone !== tone || !toneClasses.split(/\s+/).every((className) => avatar.classList.contains(className))) {
+      removeClasses(avatar, 'bg-primary-lt bg-secondary-lt bg-success-lt bg-danger-lt bg-warning-lt bg-info-lt bg-blue-lt bg-azure-lt bg-indigo-lt bg-purple-lt bg-pink-lt bg-red-lt bg-orange-lt bg-yellow-lt bg-lime-lt bg-green-lt bg-teal-lt bg-cyan-lt text-primary text-secondary text-success text-danger text-warning text-info text-blue text-azure text-indigo text-purple text-pink text-red text-orange text-yellow text-lime text-green text-teal text-cyan text-white');
+      addClasses(avatar, toneClasses);
+      avatar.dataset.tablerAvatarTone = tone;
+    }
+
+    if (avatar.matches('button, a')) {
+      addClasses(avatar, 'btn btn-icon tabler-avatar-button');
+      if (!avatar.getAttribute('aria-label')) avatar.setAttribute('aria-label', 'Open account menu');
+    } else if (!avatar.getAttribute('aria-label') && !avatar.querySelector('img')) {
+      avatar.setAttribute('aria-hidden', avatar.getAttribute('aria-hidden') || 'true');
+    }
+
+    avatar.querySelectorAll('img').forEach((img) => {
+      addClasses(img, 'avatar-img');
+      img.setAttribute('alt', img.getAttribute('alt') || '');
+    });
+    avatar.querySelectorAll('i').forEach((icon) => {
+      mapIconElement(icon);
+      icon.setAttribute('aria-hidden', icon.getAttribute('aria-hidden') || 'true');
+    });
+  };
+
+  const enhanceAvatars = (root) => {
+    queryAll(root, avatarSelector).forEach((avatar) => {
+      if (!avatar || avatar.closest('.sidebar-menu')) return;
+      enhanceAvatar(avatar);
     });
   };
 
@@ -1315,9 +1752,12 @@
     enhanceCards(root);
     enhanceToolbars(root);
     enhanceForms(root);
+    enhanceDropdowns(root);
     enhanceLists(root);
     fitFloatingLists(root);
     enhanceModals(root);
+    enhanceCharts(root);
+    enhanceAvatars(root);
     enhanceTabs(root);
     enhanceChips(root);
     enhanceAlerts(root);

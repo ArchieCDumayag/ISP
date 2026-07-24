@@ -56,6 +56,8 @@ const readPaymentBreakdownAdjustments = async () => {
 const sanitizeText = (value) => String(value || '').trim();
 const normalizeAccountNumber = (value) => sanitizeText(value);
 const branchAdjustmentKey = (branchId = null) => String(branchId || 'global');
+const MONTH_KEY_RE = /^(\d{4})-(\d{2})$/;
+const DATE_PREFIX_RE = /^(\d{4})-(\d{2})-\d{2}/;
 const roundMoney = (value) => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return 0;
@@ -71,13 +73,114 @@ const hasAdjustmentAmount = (value) => {
   if (typeof value === 'string' && !value.trim()) return false;
   return Number.isFinite(Number(value));
 };
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
+const normalizeAdjustmentMonthKey = (value) => {
+  const text = sanitizeText(value).slice(0, 160);
+  const match = text.match(MONTH_KEY_RE) || text.match(DATE_PREFIX_RE);
+  if (!match) return '';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return '';
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+};
+const resolveRawFirstBillAdjustment = (adjustment = {}) => {
+  if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) return {};
+  if (adjustment.firstBill && typeof adjustment.firstBill === 'object') return adjustment.firstBill;
+  const firstBillFields = [
+    'previousBalance',
+    'advance',
+    'referral',
+    'due',
+    'referralName',
+    'referredName',
+    'referralClientName',
+    'referralAccountNumber',
+    'referredAccountNumber'
+  ];
+  return firstBillFields.some((field) => hasOwn(adjustment, field)) ? adjustment : {};
+};
+const sanitizeMonthlyReferralAdjustments = (input = {}) => {
+  const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return Object.entries(source).reduce((acc, [key, value]) => {
+    const item = value && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : { referral: value };
+    const monthKey = normalizeAdjustmentMonthKey(
+      item.monthKey
+      || item.billingMonth
+      || item.billMonth
+      || key
+    );
+    const referralValue = item.referral ?? item.amount ?? item.discount;
+    if (!monthKey || !hasAdjustmentAmount(referralValue)) return acc;
+    const referralName = sanitizeText(
+      item.referralName
+      || item.referredName
+      || item.referralClientName
+      || item.name
+    ).slice(0, 160);
+    const referralAccountNumber = sanitizeText(
+      item.referralAccountNumber
+      || item.referredAccountNumber
+      || item.accountNumber
+    ).slice(0, 160);
+    acc[monthKey] = {
+      monthKey,
+      referral: normalizeAdjustmentAmount(referralValue)
+    };
+    if (referralName) acc[monthKey].referralName = referralName;
+    if (referralAccountNumber) acc[monthKey].referralAccountNumber = referralAccountNumber;
+    return acc;
+  }, {});
+};
+const sanitizePlanChangeAdjustments = (input = []) => {
+  const list = Array.isArray(input)
+    ? input
+    : Object.values(input && typeof input === 'object' ? input : {});
+  const byMonth = new Map();
+  list.forEach((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    const effectiveMonth = normalizeAdjustmentMonthKey(
+      value.effectiveMonth
+      || value.monthKey
+      || value.billingMonth
+      || value.billMonth
+    );
+    const planAmount = normalizeAdjustmentAmount(value.planAmount ?? value.amount ?? value.price);
+    if (!effectiveMonth || planAmount <= 0) return;
+    const planCategory = sanitizeText(value.planCategory || value.category || value.planType).toLowerCase();
+    const entry = {
+      effectiveMonth,
+      planId: sanitizeText(value.planId || value.id).slice(0, 160),
+      planName: sanitizeText(value.planName || value.name || value.label).slice(0, 160) || 'Adjusted plan',
+      planAmount
+    };
+    if (planCategory === 'prepaid' || planCategory === 'postpaid') {
+      entry.planCategory = planCategory;
+    }
+    byMonth.set(effectiveMonth, entry);
+  });
+  return Array.from(byMonth.values()).sort((left, right) => (
+    left.effectiveMonth.localeCompare(right.effectiveMonth)
+  ));
+};
 const sanitizePaymentBreakdownAdjustment = (adjustment = {}) => {
-  const firstBill = adjustment?.firstBill || adjustment || {};
+  const firstBill = resolveRawFirstBillAdjustment(adjustment);
   const sanitized = {
     firstBill: {
       previousBalance: normalizeAdjustmentAmount(firstBill.previousBalance),
       advance: normalizeAdjustmentAmount(firstBill.advance)
-    }
+    },
+    monthlyReferrals: sanitizeMonthlyReferralAdjustments(
+      adjustment?.monthlyReferrals
+      || adjustment?.referralAdjustments
+      || adjustment?.monthlyReferralAdjustments
+    ),
+    planChanges: sanitizePlanChangeAdjustments(
+      adjustment?.planChanges
+      || adjustment?.scheduledPlanChanges
+      || adjustment?.planChangeAdjustments
+    )
   };
   if (hasAdjustmentAmount(firstBill.referral)) {
     sanitized.firstBill.referral = normalizeAdjustmentAmount(firstBill.referral);
@@ -431,6 +534,87 @@ const disableCustomerPppoe = async (customer = {}, branchId = null) => {
   }
 };
 
+const enableCustomerPppoe = async (customer = {}, branchId = null) => {
+  const username = sanitizeText(customer.pppoeUsername);
+  if (!username) {
+    return { enabled: false, warning: 'Customer has no PPPoE username.' };
+  }
+
+  let settings;
+  try {
+    settings = await loadIntegrationSettings(branchId);
+  } catch (error) {
+    return { enabled: false, warning: `Unable to load MikroTik settings: ${error?.message || error}` };
+  }
+  if (!settings?.mikrotik?.enabled) {
+    return { enabled: false, warning: 'MikroTik integration is disabled.' };
+  }
+
+  const routerId = resolveCustomerRouterId(customer, settings);
+  const routerConfig = resolveMikrotikRouter(settings, routerId);
+  const creds = normalizeRouterCredentials(routerConfig || {});
+  if (!creds.address || !creds.username || !creds.password) {
+    return { enabled: false, warning: 'Missing MikroTik router credentials.' };
+  }
+
+  let client = null;
+  try {
+    const connection = await connectMikrotikClient(creds, {
+      keepalive: false,
+      timeout: 8000,
+      label: `admin-reconnect:${username}`
+    });
+    client = connection.client;
+    const api = connection.api;
+    const secretMenu = api.menu('/ppp secret');
+    const secrets = await secretMenu.get().catch(() => []);
+    const usernameKey = normalizePppoeUsernameKey(username);
+    const matchedSecret = (Array.isArray(secrets) ? secrets : []).find((secret) => (
+      normalizePppoeUsernameKey(secret.name || secret.user || secret.username) === usernameKey
+    ));
+    if (!matchedSecret) {
+      return { enabled: false, warning: `PPPoE "${username}" was not found on MikroTik.` };
+    }
+
+    const secretName = sanitizeText(matchedSecret.name || matchedSecret.user || username);
+    const alreadyEnabled = sanitizeText(matchedSecret.disabled).toLowerCase() !== 'true';
+    if (!alreadyEnabled) {
+      await auditMikrotikPppoeCommand({
+        branchId,
+        source: 'admin-reconnection-page',
+        routerId,
+        username: secretName,
+        secretId: sanitizeText(matchedSecret['.id'] || matchedSecret.id),
+        operation: 'update',
+        selector: `name=${secretName}`,
+        payload: { disabled: 'false' },
+        reason: 'admin-reconnect-subscriber'
+      });
+      await secretMenu.where('name', secretName).update({ disabled: 'false' });
+    }
+
+    const refreshedSecrets = await secretMenu.get().catch(() => secrets);
+    const refreshedActive = await api.menu('/ppp active').get().catch(() => []);
+    const accounts = buildPppoeAccounts(refreshedSecrets, refreshedActive, routerId);
+    const mergedAccounts = mergeAccountsForRouter(settings, routerId, accounts);
+    await saveIntegrationSettings({
+      ...settings,
+      pppoe: { ...(settings.pppoe || {}), accounts: mergedAccounts }
+    }, branchId);
+
+    return { enabled: true, warning: '' };
+  } catch (error) {
+    return {
+      enabled: false,
+      warning: `Failed to enable PPPoE "${username}": ${error?.message || error}`
+    };
+  } finally {
+    if (client && typeof client.close === 'function') {
+      await client.close().catch(() => {});
+    }
+  }
+};
+
 const saveCustomerStatus = async (customer = {}, branchId = null, status = STATUS_DISABLED) => {
   const accountNumber = normalizeAccountNumber(customer.accountNumber);
   const nextCustomer = {
@@ -594,6 +778,40 @@ router.post('/:accountNumber/disconnect', async (req, res, next) => {
     });
   } catch (error) {
     next(error?.status ? error : createError(500, 'Failed to disconnect customer.'));
+  }
+});
+
+router.post('/:accountNumber/reconnect', async (req, res, next) => {
+  try {
+    const user = assertAdminUser(req);
+    const branchId = user.branchId || null;
+    const accountNumber = normalizeAccountNumber(req.params.accountNumber);
+    const customers = await readCustomers(branchId);
+    const customer = findCustomerOrThrow(customers, accountNumber);
+    const pppoeResult = await enableCustomerPppoe(customer, branchId);
+    const nextCustomer = await saveCustomerStatus(customer, branchId, STATUS_ACTIVE);
+    const now = new Date().toISOString();
+    const decision = await upsertBranchDisconnection(branchId, accountNumber, {
+      status: STATUS_KEPT_ACTIVE,
+      billingPolicy: BILLING_POLICY_CONTINUE,
+      hitCreditLimitAt: null,
+      disconnectedAt: null,
+      decidedAt: now,
+      notes: sanitizeText(req.body?.notes),
+      pppoeWarning: sanitizeText(pppoeResult.warning),
+      decidedBy: actorFromUser(user)
+    });
+
+    triggerBranchServiceRefresh(branchId, 'admin-reconnection');
+    res.json({
+      ok: true,
+      decision,
+      customerStatus: nextCustomer.status,
+      pppoe: pppoeResult,
+      warning: pppoeResult.warning || undefined
+    });
+  } catch (error) {
+    next(error?.status ? error : createError(500, 'Failed to reconnect customer.'));
   }
 });
 

@@ -316,6 +316,10 @@
     background: rgba(32, 107, 196, .035);
 }
 
+.is-referral-adjustment-row td {
+    background: rgba(47, 179, 68, .04);
+}
+
 .breakdown-adjustment-field {
     display: inline-grid;
     justify-items: start;
@@ -334,6 +338,19 @@
 
 .breakdown-adjustment-name-input {
     width: 13rem;
+    max-width: 100%;
+    font-weight: 700;
+}
+
+.breakdown-adjustment-month-input {
+    width: 10rem;
+    max-width: 100%;
+    font-weight: 700;
+}
+
+.breakdown-adjustment-plan-select,
+.breakdown-adjustment-subscriber-select {
+    width: 18rem;
     max-width: 100%;
     font-weight: 700;
 }
@@ -360,6 +377,12 @@
     justify-items: end;
     gap: .12rem;
     max-width: 10rem;
+}
+
+.breakdown-referral-edit {
+    width: 1.75rem;
+    height: 1.75rem;
+    justify-self: end;
 }
 
 .breakdown-referral-note {
@@ -492,6 +515,9 @@
     }
 
     .breakdown-adjustment-input,
+    .breakdown-adjustment-month-input,
+    .breakdown-adjustment-plan-select,
+    .breakdown-adjustment-subscriber-select,
     .payment-breakdown-toolbar-actions .btn,
     .breakdown-adjustment-toolbar .btn {
         width: 100%;

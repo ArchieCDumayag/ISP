@@ -3,6 +3,8 @@
     const appTimeZone = window.__APP_TIMEZONE__ || 'Asia/Manila';
     const utcOffsetSuffix = 'Z';
     const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+    const MONTH_KEY_RE = /^(\d{4})-(\d{2})$/;
+    const DATE_PREFIX_RE = /^(\d{4})-(\d{2})-\d{2}/;
     const SQL_DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
     const ISO_DATETIME_NO_TZ_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
     const EPSILON = 0.005;
@@ -49,8 +51,34 @@
     };
     const toOptionalAdjustmentAmount = (value) => (hasAmountOverride(value) ? toAdjustmentAmount(value) : null);
     const toAdjustmentDisplayText = (value) => String(value || '').trim().slice(0, 160);
+    const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
+    const normalizeAdjustmentMonthKey = (value) => {
+        const text = toAdjustmentDisplayText(value);
+        const match = text.match(MONTH_KEY_RE) || text.match(DATE_PREFIX_RE);
+        if (!match) return '';
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return '';
+        return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+    };
+    const resolveRawFirstBillAdjustment = (adjustment = {}) => {
+        if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) return {};
+        if (adjustment.firstBill && typeof adjustment.firstBill === 'object') return adjustment.firstBill;
+        const firstBillFields = [
+            'previousBalance',
+            'advance',
+            'referral',
+            'due',
+            'referralName',
+            'referredName',
+            'referralClientName',
+            'referralAccountNumber',
+            'referredAccountNumber'
+        ];
+        return firstBillFields.some((field) => hasOwn(adjustment, field)) ? adjustment : {};
+    };
     const normalizeFirstBillAdjustment = (adjustment = null) => {
-        const firstBill = adjustment?.firstBill || adjustment || null;
+        const firstBill = resolveRawFirstBillAdjustment(adjustment);
         if (!firstBill || typeof firstBill !== 'object') return null;
         return {
             previousBalance: toAdjustmentAmount(firstBill.previousBalance),
@@ -68,12 +96,96 @@
             )
         };
     };
-    const getFirstBillAdjustment = (record = {}) => normalizeFirstBillAdjustment(
+    const normalizeMonthlyReferralAdjustments = (input = {}) => {
+        const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+        return Object.entries(source).reduce((acc, [key, value]) => {
+            const item = value && typeof value === 'object' && !Array.isArray(value)
+                ? value
+                : { referral: value };
+            const monthKey = normalizeAdjustmentMonthKey(
+                item.monthKey
+                || item.billingMonth
+                || item.billMonth
+                || key
+            );
+            const referralValue = item.referral ?? item.amount ?? item.discount;
+            if (!monthKey || !hasAmountOverride(referralValue)) return acc;
+            const referralName = toAdjustmentDisplayText(
+                item.referralName
+                || item.referredName
+                || item.referralClientName
+                || item.name
+            );
+            const referralAccountNumber = toAdjustmentDisplayText(
+                item.referralAccountNumber
+                || item.referredAccountNumber
+                || item.accountNumber
+            );
+            acc[monthKey] = {
+                monthKey,
+                referral: toAdjustmentAmount(referralValue)
+            };
+            if (referralName) acc[monthKey].referralName = referralName;
+            if (referralAccountNumber) acc[monthKey].referralAccountNumber = referralAccountNumber;
+            return acc;
+        }, {});
+    };
+    const normalizePlanChangeAdjustments = (input = []) => {
+        const list = Array.isArray(input)
+            ? input
+            : Object.values(input && typeof input === 'object' ? input : {});
+        const byMonth = new Map();
+        list.forEach((value) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+            const effectiveMonth = normalizeAdjustmentMonthKey(
+                value.effectiveMonth
+                || value.monthKey
+                || value.billingMonth
+                || value.billMonth
+            );
+            const planAmount = toAdjustmentAmount(value.planAmount ?? value.amount ?? value.price);
+            if (!effectiveMonth || planAmount <= 0) return;
+            const planCategory = toAdjustmentDisplayText(value.planCategory || value.category || value.planType).toLowerCase();
+            const entry = {
+                effectiveMonth,
+                planId: toAdjustmentDisplayText(value.planId || value.id),
+                planName: toAdjustmentDisplayText(value.planName || value.name || value.label) || 'Adjusted plan',
+                planAmount
+            };
+            if (planCategory === 'prepaid' || planCategory === 'postpaid') {
+                entry.planCategory = planCategory;
+            }
+            byMonth.set(effectiveMonth, entry);
+        });
+        return Array.from(byMonth.values()).sort((left, right) => (
+            left.effectiveMonth.localeCompare(right.effectiveMonth)
+        ));
+    };
+    const normalizePaymentBreakdownAdjustment = (adjustment = null) => {
+        if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) {
+            return { firstBill: null, monthlyReferrals: {}, planChanges: [] };
+        }
+        return {
+            firstBill: normalizeFirstBillAdjustment(adjustment),
+            monthlyReferrals: normalizeMonthlyReferralAdjustments(
+                adjustment.monthlyReferrals
+                || adjustment.referralAdjustments
+                || adjustment.monthlyReferralAdjustments
+            ),
+            planChanges: normalizePlanChangeAdjustments(
+                adjustment.planChanges
+                || adjustment.scheduledPlanChanges
+                || adjustment.planChangeAdjustments
+            )
+        };
+    };
+    const getPaymentBreakdownAdjustment = (record = {}) => normalizePaymentBreakdownAdjustment(
         record.paymentBreakdownAdjustment
         || record.breakdownAdjustment
         || record.firstBillAdjustment
         || null
     );
+    const getFirstBillAdjustment = (record = {}) => getPaymentBreakdownAdjustment(record).firstBill;
 
     const parseDateOnlyParts = (value) => {
         const raw = String(value ?? '').trim();
@@ -115,6 +227,11 @@
         const day = Number(parts.find((part) => part.type === 'day')?.value || 0);
         if (!year || !month || !day) return null;
         return { year, month, day };
+    };
+    const getBillingMonthKey = (date) => {
+        const parts = getZonedDateParts(date);
+        if (!parts) return '';
+        return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}`;
     };
     const buildMonthlyDate = (year, month, billingDay) => {
         const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -302,6 +419,15 @@
         const planName = normalizeText(record.planName || record.plan);
         if (planName.includes('prepaid')) return 'prepaid';
         return 'postpaid';
+    };
+    const getDisconnectionState = (record = {}) => {
+        const raw = record?.disconnection || null;
+        if (!raw || typeof raw !== 'object') return null;
+        if (normalizeText(raw.status) !== 'disconnected') return null;
+        const disconnectedAt = safeDate(raw.disconnectedAt || raw.decidedAt || raw.updatedAt);
+        if (!disconnectedAt) return null;
+        const billingPolicy = normalizeText(raw.billingPolicy) === 'continue' ? 'continue' : 'stop';
+        return { disconnectedAt, billingPolicy };
     };
     const isExistingCustomerStart = (record = {}) => {
         const raw = normalizeText(
@@ -530,6 +656,7 @@
         return ignored;
     };
     const createReferralContext = (record, entries, customers) => {
+        const breakdownAdjustment = getPaymentBreakdownAdjustment(record);
         const planAmount = resolvePlanAmount(record);
         const explicitReferralTotal = sumEntries(entries.filter(isReferralCredit));
         const referralDiscounts = explicitReferralTotal > EPSILON
@@ -548,8 +675,28 @@
             automaticReferralRemaining: automaticReferralTotal,
             automaticReferralApplied: 0,
             usedReferralDiscountIds: new Set(),
-            firstBillAdjustment: getFirstBillAdjustment(record)
+            firstBillAdjustment: breakdownAdjustment.firstBill,
+            monthlyReferralAdjustments: breakdownAdjustment.monthlyReferrals,
+            planChanges: breakdownAdjustment.planChanges
         };
+    };
+    const getMonthlyReferralAdjustment = (context = {}, billDate = null, isFirstRow = false) => {
+        if (isFirstRow || !billDate) return null;
+        const monthKey = getBillingMonthKey(billDate);
+        if (!monthKey) return null;
+        const adjustment = context?.monthlyReferralAdjustments?.[monthKey] || null;
+        return adjustment && typeof adjustment === 'object' ? adjustment : null;
+    };
+    const resolvePlanChangeForMonth = (context = {}, billDate = null) => {
+        const monthKey = getBillingMonthKey(billDate);
+        if (!monthKey) return null;
+        const changes = Array.isArray(context?.planChanges) ? context.planChanges : [];
+        let selected = null;
+        changes.forEach((change) => {
+            if (!change?.effectiveMonth || change.effectiveMonth > monthKey) return;
+            selected = change;
+        });
+        return selected;
     };
     const normalizeReferralDiscountItem = (item = {}, index = 0) => {
         const successAt = safeDate(
@@ -633,12 +780,12 @@
 
         return { amount, items };
     };
-    const buildManualReferralDetails = (adjustment = {}, amount = 0) => {
+    const buildManualReferralDetails = (adjustment = {}, amount = 0, fallbackId = 'manual-referral') => {
         const applied = roundMoney(Math.max(0, Number(amount) || 0));
         if (applied <= EPSILON) return [];
         const referredName = toAdjustmentDisplayText(adjustment.referralName) || 'Manual referral';
         return [{
-            id: 'manual-first-bill-referral',
+            id: fallbackId,
             referredAccountNumber: toAdjustmentDisplayText(adjustment.referralAccountNumber),
             referredName,
             amount: applied,
@@ -658,9 +805,14 @@
         advanceOverride = null,
         openingPreviousBalance = false,
         openingAdvance = false,
-        isFirstRow = false
+        isFirstRow = false,
+        planOverride = null
     }) => {
         const firstBillAdjustment = isFirstRow ? normalizeFirstBillAdjustment(context?.firstBillAdjustment) : null;
+        const monthlyReferralAdjustment = getMonthlyReferralAdjustment(context, billDate, isFirstRow);
+        const referralAdjustment = firstBillAdjustment && hasAmountOverride(firstBillAdjustment.referral)
+            ? firstBillAdjustment
+            : monthlyReferralAdjustment;
         const effectivePreviousBalanceOverride = firstBillAdjustment ? firstBillAdjustment.previousBalance : previousBalanceOverride;
         const effectiveAdvanceOverride = firstBillAdjustment ? firstBillAdjustment.advance : advanceOverride;
         const hasPreviousBalanceOverride = hasAmountOverride(effectivePreviousBalanceOverride);
@@ -676,9 +828,9 @@
         const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
         const explicitReferral = sumEntries(referralCredits);
         const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
-        const hasReferralOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.referral));
+        const hasReferralOverride = Boolean(referralAdjustment && hasAmountOverride(referralAdjustment.referral));
         const referralOverride = hasReferralOverride
-            ? roundMoney(Math.max(0, Number(firstBillAdjustment.referral) || 0))
+            ? roundMoney(Math.max(0, Number(referralAdjustment.referral) || 0))
             : 0;
         const automaticReferral = explicitReferral > EPSILON
             ? { amount: 0, items: [] }
@@ -692,7 +844,7 @@
             ? referralOverride
             : roundMoney(explicitReferral + automaticReferral.amount);
         const referralDetails = hasReferralOverride
-            ? buildManualReferralDetails(firstBillAdjustment, referral)
+            ? buildManualReferralDetails(referralAdjustment, referral, firstBillAdjustment ? 'manual-first-bill-referral' : `manual-referral-${getBillingMonthKey(billDate)}`)
             : automaticReferral.items;
         const computedRawDue = roundMoney(planAmount - advance + previousBalance - referral);
         const hasDueOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.due));
@@ -707,18 +859,20 @@
         return {
             row: {
                 billDate,
+                planAmount,
                 previousBalance,
                 advance,
                 referral,
                 referralDetails,
                 due,
                 isReferralOverride: hasReferralOverride,
+                isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
                 isDueOverride: hasDueOverride,
                 amountPaid,
                 paymentStatus: balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid',
                 balanceAfterPayment,
                 sourceType,
-                planType: resolvePlanType(record),
+                planType: normalizePlanTypeValue(planOverride?.planCategory) || resolvePlanType(record),
                 isFirstRow,
                 isProrated: Boolean(proration?.isProrated),
                 periodStart: proration?.periodStart || null,
@@ -869,7 +1023,17 @@
         let currentYear = startParts.year;
         let currentMonth = startParts.month;
         let billDate = buildMonthlyDate(currentYear, currentMonth, billingDay);
-        const lastBillDate = buildMonthlyDate(endParts.year, endParts.month, billingDay);
+        let lastBillDate = buildMonthlyDate(endParts.year, endParts.month, billingDay);
+        const disconnection = getDisconnectionState(record);
+        if (disconnection?.billingPolicy === 'stop') {
+            const disconnectionParts = getZonedDateParts(disconnection.disconnectedAt);
+            const disconnectionBillDate = disconnectionParts
+                ? buildMonthlyDate(disconnectionParts.year, disconnectionParts.month, billingDay)
+                : null;
+            if (disconnectionBillDate && disconnectionBillDate < lastBillDate) {
+                lastBillDate = disconnectionBillDate;
+            }
+        }
         const todayBillingDate = getTodayBillingDate();
         let runningBalance = 0;
         let cursor = 0;
@@ -919,7 +1083,9 @@
                 cursor += 1;
             }
 
-            const proration = resolveFirstMonthProration(record, billDate, planAmount);
+            const planChange = resolvePlanChangeForMonth(context, billDate);
+            const effectivePlanAmount = planChange ? planChange.planAmount : planAmount;
+            const proration = resolveFirstMonthProration(record, billDate, effectivePlanAmount);
             const result = createBreakdownRow({
                 record,
                 billDate,
@@ -929,7 +1095,8 @@
                 context,
                 sourceType: 'monthly',
                 proration: proration.isProrated ? proration : null,
-                isFirstRow: rows.length === 0
+                isFirstRow: rows.length === 0,
+                planOverride: planChange
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;

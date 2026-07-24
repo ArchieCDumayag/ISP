@@ -1271,8 +1271,34 @@ document.addEventListener('DOMContentLoaded', function () {
         hasBreakdownAmountOverride(value) ? toBreakdownAdjustmentAmount(value) : null
     );
     const toBreakdownAdjustmentText = (value) => String(value || '').trim().slice(0, 160);
+    const hasOwnBreakdownAdjustmentField = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
+    const normalizeBreakdownMonthKeyForPayments = (value) => {
+        const text = toBreakdownAdjustmentText(value);
+        const match = text.match(/^(\d{4})-(\d{2})$/) || text.match(/^(\d{4})-(\d{2})-\d{2}/);
+        if (!match) return '';
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return '';
+        return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+    };
+    const resolveRawFirstBillAdjustmentForPayments = (adjustment = {}) => {
+        if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) return {};
+        if (adjustment.firstBill && typeof adjustment.firstBill === 'object') return adjustment.firstBill;
+        const firstBillFields = [
+            'previousBalance',
+            'advance',
+            'referral',
+            'due',
+            'referralName',
+            'referredName',
+            'referralClientName',
+            'referralAccountNumber',
+            'referredAccountNumber'
+        ];
+        return firstBillFields.some((field) => hasOwnBreakdownAdjustmentField(adjustment, field)) ? adjustment : {};
+    };
     const normalizeFirstBillAdjustmentForPayments = (adjustment = null) => {
-        const firstBill = adjustment?.firstBill || adjustment || null;
+        const firstBill = resolveRawFirstBillAdjustmentForPayments(adjustment);
         if (!firstBill || typeof firstBill !== 'object') return null;
         return {
             previousBalance: toBreakdownAdjustmentAmount(firstBill.previousBalance),
@@ -1290,12 +1316,96 @@ document.addEventListener('DOMContentLoaded', function () {
             )
         };
     };
-    const getFirstBillAdjustmentForPayments = (customer = {}) => normalizeFirstBillAdjustmentForPayments(
+    const normalizeMonthlyReferralAdjustmentsForPayments = (input = {}) => {
+        const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+        return Object.entries(source).reduce((acc, [key, value]) => {
+            const item = value && typeof value === 'object' && !Array.isArray(value)
+                ? value
+                : { referral: value };
+            const monthKey = normalizeBreakdownMonthKeyForPayments(
+                item.monthKey
+                || item.billingMonth
+                || item.billMonth
+                || key
+            );
+            const referralValue = item.referral ?? item.amount ?? item.discount;
+            if (!monthKey || !hasBreakdownAmountOverride(referralValue)) return acc;
+            const referralName = toBreakdownAdjustmentText(
+                item.referralName
+                || item.referredName
+                || item.referralClientName
+                || item.name
+            );
+            const referralAccountNumber = toBreakdownAdjustmentText(
+                item.referralAccountNumber
+                || item.referredAccountNumber
+                || item.accountNumber
+            );
+            acc[monthKey] = {
+                monthKey,
+                referral: toBreakdownAdjustmentAmount(referralValue)
+            };
+            if (referralName) acc[monthKey].referralName = referralName;
+            if (referralAccountNumber) acc[monthKey].referralAccountNumber = referralAccountNumber;
+            return acc;
+        }, {});
+    };
+    const normalizePlanChangeAdjustmentsForPayments = (input = []) => {
+        const list = Array.isArray(input)
+            ? input
+            : Object.values(input && typeof input === 'object' ? input : {});
+        const byMonth = new Map();
+        list.forEach((value) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+            const effectiveMonth = normalizeBreakdownMonthKeyForPayments(
+                value.effectiveMonth
+                || value.monthKey
+                || value.billingMonth
+                || value.billMonth
+            );
+            const planAmount = toBreakdownAdjustmentAmount(value.planAmount ?? value.amount ?? value.price);
+            if (!effectiveMonth || planAmount <= 0) return;
+            const planCategory = toBreakdownAdjustmentText(value.planCategory || value.category || value.planType).toLowerCase();
+            const entry = {
+                effectiveMonth,
+                planId: toBreakdownAdjustmentText(value.planId || value.id),
+                planName: toBreakdownAdjustmentText(value.planName || value.name || value.label) || 'Adjusted plan',
+                planAmount
+            };
+            if (planCategory === 'prepaid' || planCategory === 'postpaid') {
+                entry.planCategory = planCategory;
+            }
+            byMonth.set(effectiveMonth, entry);
+        });
+        return Array.from(byMonth.values()).sort((left, right) => (
+            left.effectiveMonth.localeCompare(right.effectiveMonth)
+        ));
+    };
+    const normalizePaymentBreakdownAdjustmentForPayments = (adjustment = null) => {
+        if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) {
+            return { firstBill: null, monthlyReferrals: {}, planChanges: [] };
+        }
+        return {
+            firstBill: normalizeFirstBillAdjustmentForPayments(adjustment),
+            monthlyReferrals: normalizeMonthlyReferralAdjustmentsForPayments(
+                adjustment.monthlyReferrals
+                || adjustment.referralAdjustments
+                || adjustment.monthlyReferralAdjustments
+            ),
+            planChanges: normalizePlanChangeAdjustmentsForPayments(
+                adjustment.planChanges
+                || adjustment.scheduledPlanChanges
+                || adjustment.planChangeAdjustments
+            )
+        };
+    };
+    const getPaymentBreakdownAdjustmentForPayments = (customer = {}) => normalizePaymentBreakdownAdjustmentForPayments(
         customer.paymentBreakdownAdjustment
         || customer.breakdownAdjustment
         || customer.firstBillAdjustment
         || null
     );
+    const getFirstBillAdjustmentForPayments = (customer = {}) => getPaymentBreakdownAdjustmentForPayments(customer).firstBill;
     const safeBreakdownDate = (value) => parseTimestampValue(value);
     const getBreakdownDateParts = (date) => {
         if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
@@ -1304,6 +1414,11 @@ document.addEventListener('DOMContentLoaded', function () {
             month: date.getMonth() + 1,
             day: date.getDate()
         };
+    };
+    const getBreakdownMonthKeyForPayments = (date) => {
+        const parts = getBreakdownDateParts(date);
+        if (!parts) return '';
+        return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}`;
     };
     const compareBreakdownDateOnlyForPayments = (left, right) => {
         const leftParts = getBreakdownDateParts(left);
@@ -1450,6 +1565,15 @@ document.addEventListener('DOMContentLoaded', function () {
         const planName = normalizeBreakdownText(customer.planName || customer.plan);
         if (planName.includes('prepaid')) return 'prepaid';
         return resolvePlanCategory(customer);
+    };
+    const getDisconnectionStateForPayments = (customer = {}) => {
+        const raw = customer?.disconnection || null;
+        if (!raw || typeof raw !== 'object') return null;
+        if (normalizeBreakdownText(raw.status) !== 'disconnected') return null;
+        const disconnectedAt = safeBreakdownDate(raw.disconnectedAt || raw.decidedAt || raw.updatedAt);
+        if (!disconnectedAt) return null;
+        const billingPolicy = normalizeBreakdownText(raw.billingPolicy) === 'continue' ? 'continue' : 'stop';
+        return { disconnectedAt, billingPolicy };
     };
     const resolveBreakdownDirectionForPayments = (entry = {}) => {
         if (isOpeningPreviousBalanceRawForPayments(entry)) return 'debit';
@@ -1733,6 +1857,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return roundMoney(balance);
     };
     const createBreakdownReferralContextForPayments = (customer, entries, customers) => {
+        const breakdownAdjustment = getPaymentBreakdownAdjustmentForPayments(customer);
         const planAmount = getPlanAmountForCustomer(customer);
         const explicitReferralTotal = sumBreakdownEntriesForPayments(entries.filter(isReferralCreditForPayments));
         const referralDiscounts = explicitReferralTotal > EPSILON
@@ -1752,8 +1877,28 @@ document.addEventListener('DOMContentLoaded', function () {
             automaticReferralApplied: 0,
             usedReferralDiscountIds: new Set(),
             usedSyntheticBills: false,
-            firstBillAdjustment: getFirstBillAdjustmentForPayments(customer)
+            firstBillAdjustment: breakdownAdjustment.firstBill,
+            monthlyReferralAdjustments: breakdownAdjustment.monthlyReferrals,
+            planChanges: breakdownAdjustment.planChanges
         };
+    };
+    const getMonthlyReferralAdjustmentForPayments = (context = {}, billDate = null, isFirstRow = false) => {
+        if (isFirstRow || !billDate) return null;
+        const monthKey = getBreakdownMonthKeyForPayments(billDate);
+        if (!monthKey) return null;
+        const adjustment = context?.monthlyReferralAdjustments?.[monthKey] || null;
+        return adjustment && typeof adjustment === 'object' ? adjustment : null;
+    };
+    const resolvePlanChangeForBreakdownMonth = (context = {}, billDate = null) => {
+        const monthKey = getBreakdownMonthKeyForPayments(billDate);
+        if (!monthKey) return null;
+        const changes = Array.isArray(context?.planChanges) ? context.planChanges : [];
+        let selected = null;
+        changes.forEach((change) => {
+            if (!change?.effectiveMonth || change.effectiveMonth > monthKey) return;
+            selected = change;
+        });
+        return selected;
     };
     const normalizeReferralDiscountItemForPayments = (item = {}, index = 0) => {
         const successAt = safeBreakdownDate(
@@ -1837,12 +1982,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return { amount, items };
     };
-    const buildManualReferralDetailsForPayments = (adjustment = {}, amount = 0) => {
+    const buildManualReferralDetailsForPayments = (adjustment = {}, amount = 0, fallbackId = 'manual-referral') => {
         const applied = roundMoney(Math.max(0, Number(amount) || 0));
         if (applied <= EPSILON) return [];
         const referredName = toBreakdownAdjustmentText(adjustment.referralName) || 'Manual referral';
         return [{
-            id: 'manual-first-bill-referral',
+            id: fallbackId,
             referredAccountNumber: toBreakdownAdjustmentText(adjustment.referralAccountNumber),
             referredName,
             amount: applied,
@@ -1862,9 +2007,14 @@ document.addEventListener('DOMContentLoaded', function () {
         advanceOverride = null,
         openingPreviousBalance = false,
         openingAdvance = false,
-        isFirstRow = false
+        isFirstRow = false,
+        planOverride = null
     }) => {
         const firstBillAdjustment = isFirstRow ? normalizeFirstBillAdjustmentForPayments(context?.firstBillAdjustment) : null;
+        const monthlyReferralAdjustment = getMonthlyReferralAdjustmentForPayments(context, billDate, isFirstRow);
+        const referralAdjustment = firstBillAdjustment && hasBreakdownAmountOverride(firstBillAdjustment.referral)
+            ? firstBillAdjustment
+            : monthlyReferralAdjustment;
         const effectivePreviousBalanceOverride = firstBillAdjustment
             ? firstBillAdjustment.previousBalance
             : previousBalanceOverride;
@@ -1884,9 +2034,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCreditForPayments(entry));
         const explicitReferral = sumBreakdownEntriesForPayments(referralCredits);
         const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
-        const hasReferralOverride = Boolean(firstBillAdjustment && hasBreakdownAmountOverride(firstBillAdjustment.referral));
+        const hasReferralOverride = Boolean(referralAdjustment && hasBreakdownAmountOverride(referralAdjustment.referral));
         const referralOverride = hasReferralOverride
-            ? roundMoney(Math.max(0, Number(firstBillAdjustment.referral) || 0))
+            ? roundMoney(Math.max(0, Number(referralAdjustment.referral) || 0))
             : 0;
         const automaticReferral = explicitReferral > EPSILON
             ? { amount: 0, items: [] }
@@ -1900,7 +2050,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ? referralOverride
             : roundMoney(explicitReferral + automaticReferral.amount);
         const referralDetails = hasReferralOverride
-            ? buildManualReferralDetailsForPayments(firstBillAdjustment, referral)
+            ? buildManualReferralDetailsForPayments(referralAdjustment, referral, firstBillAdjustment ? 'manual-first-bill-referral' : `manual-referral-${getBreakdownMonthKeyForPayments(billDate)}`)
             : automaticReferral.items;
         const computedRawDue = roundMoney(planAmount - advance + previousBalance - referral);
         const hasDueOverride = Boolean(firstBillAdjustment && hasBreakdownAmountOverride(firstBillAdjustment.due));
@@ -1922,12 +2072,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 referralDetails,
                 due,
                 isReferralOverride: hasReferralOverride,
+                isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
                 isDueOverride: hasDueOverride,
                 amountPaid,
                 paymentStatus: balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid',
                 balanceAfterPayment,
                 sourceType,
-                planType: resolveBreakdownPlanTypeForPayments(customer),
+                planType: normalizeBreakdownPlanType(planOverride?.planCategory) || resolveBreakdownPlanTypeForPayments(customer),
                 isFirstRow,
                 isAdjustmentEditable: isFirstRow,
                 isProrated: Boolean(proration?.isProrated),
@@ -2072,7 +2223,17 @@ document.addEventListener('DOMContentLoaded', function () {
         let currentYear = startParts.year;
         let currentMonth = startParts.month;
         let billDate = buildBreakdownMonthlyDate(currentYear, currentMonth, billingDay);
-        const lastBillDate = buildBreakdownMonthlyDate(endParts.year, endParts.month, billingDay);
+        let lastBillDate = buildBreakdownMonthlyDate(endParts.year, endParts.month, billingDay);
+        const disconnection = getDisconnectionStateForPayments(customer);
+        if (disconnection?.billingPolicy === 'stop') {
+            const disconnectionParts = getBreakdownDateParts(disconnection.disconnectedAt);
+            const disconnectionBillDate = disconnectionParts
+                ? buildBreakdownMonthlyDate(disconnectionParts.year, disconnectionParts.month, billingDay)
+                : null;
+            if (disconnectionBillDate && disconnectionBillDate < lastBillDate) {
+                lastBillDate = disconnectionBillDate;
+            }
+        }
         const todayBreakdownDate = getTodayBreakdownDateForPayments();
         let runningBalance = 0;
         let cursor = 0;
@@ -2126,7 +2287,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 cursor += 1;
             }
 
-            const proration = resolveFirstMonthProrationForPayments(customer, billDate, planAmount);
+            const planChange = resolvePlanChangeForBreakdownMonth(context, billDate);
+            const effectivePlanAmount = planChange ? planChange.planAmount : planAmount;
+            const proration = resolveFirstMonthProrationForPayments(customer, billDate, effectivePlanAmount);
             const result = createBreakdownRowForPayments({
                 customer,
                 billDate,
@@ -2136,7 +2299,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 context,
                 sourceType: 'monthly',
                 proration: proration.isProrated ? proration : null,
-                isFirstRow: rows.length === 0
+                isFirstRow: rows.length === 0,
+                planOverride: planChange
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;

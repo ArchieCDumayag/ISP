@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-breakdown.css?v=2.0">
+    <link rel="stylesheet" href="css/payment-breakdown.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -153,6 +153,35 @@
                                 <i class="ti ti-adjustments" aria-hidden="true"></i>
                                 Edit first bill
                             </button>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-primary"
+                                id="breakdownPlanToggle"
+                                aria-controls="breakdownPlanToolbar"
+                                aria-expanded="false"
+                                hidden
+                            >
+                                <i class="ti ti-arrows-exchange" aria-hidden="true"></i>
+                                Change plan
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-danger"
+                                id="breakdownDisconnectBtn"
+                                hidden
+                            >
+                                <i class="ti ti-plug-off" aria-hidden="true"></i>
+                                Disconnect
+                            </button>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-success"
+                                id="breakdownReconnectBtn"
+                                hidden
+                            >
+                                <i class="ti ti-plug-connected" aria-hidden="true"></i>
+                                Reconnect
+                            </button>
                         </div>
                         <form class="card breakdown-adjustment-toolbar tabler-form" id="breakdownAdjustmentToolbar" hidden>
                             <div class="card-body">
@@ -227,6 +256,80 @@
                                 </div>
                             </div>
                         </form>
+                        <form class="card breakdown-adjustment-toolbar tabler-form" id="breakdownPlanToolbar" hidden>
+                            <div class="card-body">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-12 col-lg-auto breakdown-adjustment-toolbar__copy">
+                                        <span class="breakdown-adjustment-toolbar__label">Future plan change</span>
+                                        <strong>Applies from selected month forward</strong>
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownPlanEffectiveMonth">Effective Month</label>
+                                        <input
+                                            type="month"
+                                            class="form-control form-control-sm breakdown-adjustment-month-input"
+                                            id="breakdownPlanEffectiveMonth"
+                                        >
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownPlanSelect">New Plan</label>
+                                        <select
+                                            class="form-select form-select-sm breakdown-adjustment-plan-select"
+                                            id="breakdownPlanSelect"
+                                        ></select>
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <button type="submit" class="btn btn-sm btn-primary w-100" id="breakdownPlanSave">
+                                            Save plan change
+                                        </button>
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="breakdownPlanCancel">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                        <form class="card breakdown-adjustment-toolbar tabler-form" id="breakdownReferralToolbar" hidden>
+                            <div class="card-body">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-12 col-lg-auto breakdown-adjustment-toolbar__copy">
+                                        <span class="breakdown-adjustment-toolbar__label">Previous month referral</span>
+                                        <strong id="breakdownReferralMonth">Selected month</strong>
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralSubscriber">Referred Subscriber</label>
+                                        <select
+                                            class="form-select form-select-sm breakdown-adjustment-subscriber-select"
+                                            id="breakdownReferralSubscriber"
+                                        ></select>
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralAmount">Referral Amount</label>
+                                        <input
+                                            type="number"
+                                            class="form-control form-control-sm breakdown-adjustment-input"
+                                            id="breakdownReferralAmount"
+                                            min="0"
+                                            step="0.01"
+                                            inputmode="decimal"
+                                            placeholder="0.00"
+                                        >
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <button type="submit" class="btn btn-sm btn-primary w-100" id="breakdownReferralSave">
+                                            Save referral
+                                        </button>
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="breakdownReferralCancel">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
                     </div>
 
                     <div class="table-wrapper elevated">
@@ -267,7 +370,7 @@
     </div>
 
     <script src="layout.js?v=3.8"></script>
-    <script src="js/payment-breakdown.js?v=3.2"></script>
+    <script src="js/payment-breakdown.js?v=3.4"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>
 </body>

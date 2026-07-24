@@ -39,12 +39,25 @@ const hasAmountOverride = (value) => {
   if (typeof value === 'string' && !value.trim()) return false;
   return Number.isFinite(Number(value));
 };
+const toOptionalEditableAmount = (value) => (hasAmountOverride(value) ? toEditableAmount(value) : null);
+const toAdjustmentDisplayText = (value) => String(value || '').trim().slice(0, 160);
 const normalizeFirstBillAdjustment = (adjustment = null) => {
   const firstBill = adjustment?.firstBill || adjustment || null;
   if (!firstBill || typeof firstBill !== 'object') return null;
   return {
     previousBalance: toEditableAmount(firstBill.previousBalance),
-    advance: toEditableAmount(firstBill.advance)
+    advance: toEditableAmount(firstBill.advance),
+    referral: toOptionalEditableAmount(firstBill.referral),
+    due: toOptionalEditableAmount(firstBill.due),
+    referralName: toAdjustmentDisplayText(
+      firstBill.referralName
+      || firstBill.referredName
+      || firstBill.referralClientName
+    ),
+    referralAccountNumber: toAdjustmentDisplayText(
+      firstBill.referralAccountNumber
+      || firstBill.referredAccountNumber
+    )
   };
 };
 const getFirstBillAdjustment = (record = {}) => normalizeFirstBillAdjustment(
@@ -709,6 +722,19 @@ const takeAutomaticReferral = (context, dueBeforeReferral, billDate, planAmount)
   return { amount, items };
 };
 
+const buildManualReferralDetails = (adjustment = {}, amount = 0) => {
+  const applied = roundMoney(Math.max(0, Number(amount) || 0));
+  if (applied <= EPSILON) return [];
+  const referredName = toAdjustmentDisplayText(adjustment.referralName) || 'Manual referral';
+  return [{
+    id: 'manual-first-bill-referral',
+    referredAccountNumber: toAdjustmentDisplayText(adjustment.referralAccountNumber),
+    referredName,
+    amount: applied,
+    manual: true
+  }];
+};
+
 const createBreakdownRow = ({
   record,
   billDate,
@@ -742,11 +768,30 @@ const createBreakdownRow = ({
   const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
   const explicitReferral = sumEntries(referralCredits);
   const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
+  const hasReferralOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.referral));
+  const referralOverride = hasReferralOverride
+    ? roundMoney(Math.max(0, Number(firstBillAdjustment.referral) || 0))
+    : 0;
   const automaticReferral = explicitReferral > EPSILON
     ? { amount: 0, items: [] }
-    : takeAutomaticReferral(context, dueBeforeAutoReferral, billDate, planAmount);
-  const referral = roundMoney(explicitReferral + automaticReferral.amount);
-  const rawDue = roundMoney(planAmount - advance + previousBalance - referral);
+    : takeAutomaticReferral(
+      context,
+      hasReferralOverride ? referralOverride : dueBeforeAutoReferral,
+      billDate,
+      planAmount
+    );
+  const referral = hasReferralOverride
+    ? referralOverride
+    : roundMoney(explicitReferral + automaticReferral.amount);
+  const referralDetails = hasReferralOverride
+    ? buildManualReferralDetails(firstBillAdjustment, referral)
+    : automaticReferral.items;
+  const computedRawDue = roundMoney(planAmount - advance + previousBalance - referral);
+  const hasDueOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.due));
+  const rawDue = hasDueOverride
+    ? roundMoney(Math.max(0, Number(firstBillAdjustment.due) || 0))
+    : computedRawDue;
+  const due = roundMoney(Math.max(0, rawDue));
   const amountPaid = sumEntries(paymentCredits);
   const balanceAfterPayment = roundMoney(rawDue - amountPaid);
   const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
@@ -757,7 +802,10 @@ const createBreakdownRow = ({
       previousBalance,
       advance,
       referral,
-      referralDetails: automaticReferral.items,
+      referralDetails,
+      due,
+      isReferralOverride: hasReferralOverride,
+      isDueOverride: hasDueOverride,
       amountPaid,
       balanceAfterPayment,
       isFirstRow,

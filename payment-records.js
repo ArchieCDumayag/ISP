@@ -109,14 +109,38 @@ const normalizeAdjustmentAmount = (value) => {
     if (!Number.isFinite(parsed) || parsed < 0) return 0;
     return Number(parsed.toFixed(2));
 };
+const hasAdjustmentAmount = (value) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string' && !value.trim()) return false;
+    return Number.isFinite(Number(value));
+};
+const sanitizeAdjustmentText = (value) => String(value || '').trim().slice(0, 160);
 const sanitizePaymentBreakdownAdjustment = (adjustment = {}) => {
     const firstBill = adjustment?.firstBill || adjustment || {};
-    return {
+    const sanitized = {
         firstBill: {
             previousBalance: normalizeAdjustmentAmount(firstBill.previousBalance),
             advance: normalizeAdjustmentAmount(firstBill.advance)
         }
     };
+    if (hasAdjustmentAmount(firstBill.referral)) {
+        sanitized.firstBill.referral = normalizeAdjustmentAmount(firstBill.referral);
+    }
+    if (hasAdjustmentAmount(firstBill.due)) {
+        sanitized.firstBill.due = normalizeAdjustmentAmount(firstBill.due);
+    }
+    const referralName = sanitizeAdjustmentText(
+        firstBill.referralName
+        || firstBill.referredName
+        || firstBill.referralClientName
+    );
+    const referralAccountNumber = sanitizeAdjustmentText(
+        firstBill.referralAccountNumber
+        || firstBill.referredAccountNumber
+    );
+    if (referralName) sanitized.firstBill.referralName = referralName;
+    if (referralAccountNumber) sanitized.firstBill.referralAccountNumber = referralAccountNumber;
+    return sanitized;
 };
 const getPaymentBreakdownAdjustment = (adjustments = {}, branchId = null, accountNumber = '') => {
     const branchBucket = adjustments?.[branchAdjustmentKey(branchId)] || {};

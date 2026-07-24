@@ -332,6 +332,12 @@
     font-variant-numeric: tabular-nums;
 }
 
+.breakdown-adjustment-name-input {
+    width: 13rem;
+    max-width: 100%;
+    font-weight: 700;
+}
+
 .breakdown-amount {
     white-space: nowrap;
     font-weight: 700;

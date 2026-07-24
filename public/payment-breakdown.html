@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-breakdown.css?v=1.9">
+    <link rel="stylesheet" href="css/payment-breakdown.css?v=2.0">
     <link rel="stylesheet" href="css/tabler-app.css?v=2.3">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -185,6 +185,40 @@
                                             placeholder="0.00"
                                         >
                                     </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentReferral">Referral</label>
+                                        <input
+                                            type="number"
+                                            class="form-control form-control-sm breakdown-adjustment-input"
+                                            id="breakdownAdjustmentReferral"
+                                            min="0"
+                                            step="0.01"
+                                            inputmode="decimal"
+                                            placeholder="0.00"
+                                        >
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentReferralName">Referred Client</label>
+                                        <input
+                                            type="text"
+                                            class="form-control form-control-sm breakdown-adjustment-name-input"
+                                            id="breakdownAdjustmentReferralName"
+                                            maxlength="160"
+                                            placeholder="Client name"
+                                        >
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentDue">Due</label>
+                                        <input
+                                            type="number"
+                                            class="form-control form-control-sm breakdown-adjustment-input"
+                                            id="breakdownAdjustmentDue"
+                                            min="0"
+                                            step="0.01"
+                                            inputmode="decimal"
+                                            placeholder="0.00"
+                                        >
+                                    </div>
                                     <div class="col-12 col-lg-auto">
                                         <button type="submit" class="btn btn-sm btn-primary w-100" id="breakdownAdjustmentSave">
                                             Save adjustment
@@ -233,7 +267,7 @@
     </div>
 
     <script src="layout.js?v=3.8"></script>
-    <script src="js/payment-breakdown.js?v=3.1"></script>
+    <script src="js/payment-breakdown.js?v=3.2"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=1.6"></script>
 </body>

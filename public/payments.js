@@ -1267,12 +1267,27 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof value === 'string' && !value.trim()) return false;
         return Number.isFinite(Number(value));
     };
+    const toOptionalBreakdownAdjustmentAmount = (value) => (
+        hasBreakdownAmountOverride(value) ? toBreakdownAdjustmentAmount(value) : null
+    );
+    const toBreakdownAdjustmentText = (value) => String(value || '').trim().slice(0, 160);
     const normalizeFirstBillAdjustmentForPayments = (adjustment = null) => {
         const firstBill = adjustment?.firstBill || adjustment || null;
         if (!firstBill || typeof firstBill !== 'object') return null;
         return {
             previousBalance: toBreakdownAdjustmentAmount(firstBill.previousBalance),
-            advance: toBreakdownAdjustmentAmount(firstBill.advance)
+            advance: toBreakdownAdjustmentAmount(firstBill.advance),
+            referral: toOptionalBreakdownAdjustmentAmount(firstBill.referral),
+            due: toOptionalBreakdownAdjustmentAmount(firstBill.due),
+            referralName: toBreakdownAdjustmentText(
+                firstBill.referralName
+                || firstBill.referredName
+                || firstBill.referralClientName
+            ),
+            referralAccountNumber: toBreakdownAdjustmentText(
+                firstBill.referralAccountNumber
+                || firstBill.referredAccountNumber
+            )
         };
     };
     const getFirstBillAdjustmentForPayments = (customer = {}) => normalizeFirstBillAdjustmentForPayments(
@@ -1822,6 +1837,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return { amount, items };
     };
+    const buildManualReferralDetailsForPayments = (adjustment = {}, amount = 0) => {
+        const applied = roundMoney(Math.max(0, Number(amount) || 0));
+        if (applied <= EPSILON) return [];
+        const referredName = toBreakdownAdjustmentText(adjustment.referralName) || 'Manual referral';
+        return [{
+            id: 'manual-first-bill-referral',
+            referredAccountNumber: toBreakdownAdjustmentText(adjustment.referralAccountNumber),
+            referredName,
+            amount: applied,
+            manual: true
+        }];
+    };
     const createBreakdownRowForPayments = ({
         customer,
         billDate,
@@ -1857,11 +1884,29 @@ document.addEventListener('DOMContentLoaded', function () {
         const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCreditForPayments(entry));
         const explicitReferral = sumBreakdownEntriesForPayments(referralCredits);
         const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
+        const hasReferralOverride = Boolean(firstBillAdjustment && hasBreakdownAmountOverride(firstBillAdjustment.referral));
+        const referralOverride = hasReferralOverride
+            ? roundMoney(Math.max(0, Number(firstBillAdjustment.referral) || 0))
+            : 0;
         const automaticReferral = explicitReferral > EPSILON
             ? { amount: 0, items: [] }
-            : takeAutomaticReferralForPayments(context, dueBeforeAutoReferral, billDate, planAmount);
-        const referral = roundMoney(explicitReferral + automaticReferral.amount);
-        const rawDue = roundMoney(planAmount - advance + previousBalance - referral);
+            : takeAutomaticReferralForPayments(
+                context,
+                hasReferralOverride ? referralOverride : dueBeforeAutoReferral,
+                billDate,
+                planAmount
+            );
+        const referral = hasReferralOverride
+            ? referralOverride
+            : roundMoney(explicitReferral + automaticReferral.amount);
+        const referralDetails = hasReferralOverride
+            ? buildManualReferralDetailsForPayments(firstBillAdjustment, referral)
+            : automaticReferral.items;
+        const computedRawDue = roundMoney(planAmount - advance + previousBalance - referral);
+        const hasDueOverride = Boolean(firstBillAdjustment && hasBreakdownAmountOverride(firstBillAdjustment.due));
+        const rawDue = hasDueOverride
+            ? roundMoney(Math.max(0, Number(firstBillAdjustment.due) || 0))
+            : computedRawDue;
         const due = roundMoney(Math.max(0, rawDue));
         const amountPaid = sumBreakdownEntriesForPayments(paymentCredits);
         const balanceAfterPayment = roundMoney(rawDue - amountPaid);
@@ -1874,8 +1919,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 previousBalance,
                 advance,
                 referral,
-                referralDetails: automaticReferral.items,
+                referralDetails,
                 due,
+                isReferralOverride: hasReferralOverride,
+                isDueOverride: hasDueOverride,
                 amountPaid,
                 paymentStatus: balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid',
                 balanceAfterPayment,

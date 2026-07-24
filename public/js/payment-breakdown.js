@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
         month: document.getElementById('breakdownAdjustmentMonth'),
         previousBalance: document.getElementById('breakdownAdjustmentPreviousBalance'),
         advance: document.getElementById('breakdownAdjustmentAdvance'),
+        referral: document.getElementById('breakdownAdjustmentReferral'),
+        referralName: document.getElementById('breakdownAdjustmentReferralName'),
+        due: document.getElementById('breakdownAdjustmentDue'),
         save: document.getElementById('breakdownAdjustmentSave')
     };
     const subscriberInfo = {
@@ -114,16 +117,41 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof value === 'string' && !value.trim()) return false;
         return Number.isFinite(Number(value));
     };
+    const toOptionalEditableAmount = (value) => (hasAmountOverride(value) ? toEditableAmount(value) : null);
+    const toAdjustmentDisplayText = (value) => String(value || '').trim().slice(0, 160);
     const formatEditableAmount = (value) => {
         const amount = toEditableAmount(value);
         return amount ? amount.toFixed(2) : '';
+    };
+    const setAdjustmentInputValue = (input, value) => {
+        if (!input) return;
+        const nextValue = String(value || '');
+        input.value = nextValue;
+        input.dataset.originalValue = nextValue;
+        delete input.dataset.dirty;
+    };
+    const isAdjustmentInputDirty = (input) => {
+        if (!input) return false;
+        if (input.dataset.dirty === 'true') return true;
+        return String(input.value || '') !== String(input.dataset.originalValue || '');
     };
     const normalizeFirstBillAdjustment = (adjustment = null) => {
         const firstBill = adjustment?.firstBill || adjustment || null;
         if (!firstBill || typeof firstBill !== 'object') return null;
         return {
             previousBalance: toEditableAmount(firstBill.previousBalance),
-            advance: toEditableAmount(firstBill.advance)
+            advance: toEditableAmount(firstBill.advance),
+            referral: toOptionalEditableAmount(firstBill.referral),
+            due: toOptionalEditableAmount(firstBill.due),
+            referralName: toAdjustmentDisplayText(
+                firstBill.referralName
+                || firstBill.referredName
+                || firstBill.referralClientName
+            ),
+            referralAccountNumber: toAdjustmentDisplayText(
+                firstBill.referralAccountNumber
+                || firstBill.referredAccountNumber
+            )
         };
     };
     const getFirstBillAdjustment = (record = {}) => normalizeFirstBillAdjustment(
@@ -1026,6 +1054,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return { amount, items };
     };
 
+    const buildManualReferralDetails = (adjustment = {}, amount = 0) => {
+        const applied = roundMoney(Math.max(0, Number(amount) || 0));
+        if (applied <= EPSILON) return [];
+        const referredName = toAdjustmentDisplayText(adjustment.referralName) || 'Manual referral';
+        return [{
+            id: 'manual-first-bill-referral',
+            referredAccountNumber: toAdjustmentDisplayText(adjustment.referralAccountNumber),
+            referredName,
+            amount: applied,
+            manual: true
+        }];
+    };
+
     const createBreakdownRow = ({
         record,
         billDate,
@@ -1066,11 +1107,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
         const explicitReferral = sumEntries(referralCredits);
         const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
+        const hasReferralOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.referral));
+        const referralOverride = hasReferralOverride
+            ? roundMoney(Math.max(0, Number(firstBillAdjustment.referral) || 0))
+            : 0;
         const automaticReferral = explicitReferral > EPSILON
             ? { amount: 0, items: [] }
-            : takeAutomaticReferral(context, dueBeforeAutoReferral, billDate, planAmount);
-        const referral = roundMoney(explicitReferral + automaticReferral.amount);
-        const rawDue = roundMoney(planAmount - advance + previousBalance - referral);
+            : takeAutomaticReferral(
+                context,
+                hasReferralOverride ? referralOverride : dueBeforeAutoReferral,
+                billDate,
+                planAmount
+            );
+        const referral = hasReferralOverride
+            ? referralOverride
+            : roundMoney(explicitReferral + automaticReferral.amount);
+        const referralDetails = hasReferralOverride
+            ? buildManualReferralDetails(firstBillAdjustment, referral)
+            : automaticReferral.items;
+        const computedRawDue = roundMoney(planAmount - advance + previousBalance - referral);
+        const hasDueOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.due));
+        const rawDue = hasDueOverride
+            ? roundMoney(Math.max(0, Number(firstBillAdjustment.due) || 0))
+            : computedRawDue;
         const due = roundMoney(Math.max(0, rawDue));
         const amountPaid = sumEntries(paymentCredits);
         const paymentMode = paymentModeOverride || (amountPaid > EPSILON ? resolvePaymentModeSummary(paymentCredits) : '-');
@@ -1117,8 +1176,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 previousBalance,
                 advance,
                 referral,
-                referralDetails: automaticReferral.items,
+                referralDetails,
                 due,
+                isReferralOverride: hasReferralOverride,
+                isDueOverride: hasDueOverride,
                 amountPaid,
                 paymentMode,
                 paymentDateLabel: paymentDate ? formatDate(paymentDate, '-') : '-',
@@ -1463,11 +1524,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderReferralCell = (row) => {
         const details = Array.isArray(row.referralDetails) ? row.referralDetails : [];
-        const names = details
-            .map((item) => String(item?.referredName || item?.referredAccountNumber || '').trim())
+        const labels = details
+            .map((item) => {
+                const name = String(item?.referredName || item?.referredAccountNumber || '').trim();
+                const amount = Number(item?.amount) || 0;
+                if (!name) return '';
+                return amount > EPSILON ? `${name} - ${formatCurrency(amount)}` : name;
+            })
             .filter(Boolean);
-        const detailLabel = names.length
-            ? names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+        const detailLabel = labels.length
+            ? labels.slice(0, 2).join(', ') + (labels.length > 2 ? ` +${labels.length - 2}` : '')
             : '';
         const detailTitle = details
             .map((item) => {
@@ -1550,12 +1616,27 @@ document.addEventListener('DOMContentLoaded', () => {
             adjustmentToolbar.month.textContent = `${firstRow.billLabel || 'First bill'} only`;
         }
         if (adjustmentToolbar.previousBalance) {
-            adjustmentToolbar.previousBalance.value = formatEditableAmount(firstRow.previousBalance);
+            setAdjustmentInputValue(adjustmentToolbar.previousBalance, formatEditableAmount(firstRow.previousBalance));
             adjustmentToolbar.previousBalance.disabled = state.savingAdjustment;
         }
         if (adjustmentToolbar.advance) {
-            adjustmentToolbar.advance.value = formatEditableAmount(firstRow.advance);
+            setAdjustmentInputValue(adjustmentToolbar.advance, formatEditableAmount(firstRow.advance));
             adjustmentToolbar.advance.disabled = state.savingAdjustment;
+        }
+        if (adjustmentToolbar.referral) {
+            setAdjustmentInputValue(adjustmentToolbar.referral, formatEditableAmount(firstRow.referral));
+            adjustmentToolbar.referral.disabled = state.savingAdjustment;
+        }
+        if (adjustmentToolbar.referralName) {
+            const referralNames = (Array.isArray(firstRow.referralDetails) ? firstRow.referralDetails : [])
+                .map((item) => String(item?.referredName || item?.referredAccountNumber || '').trim())
+                .filter(Boolean);
+            setAdjustmentInputValue(adjustmentToolbar.referralName, referralNames.join(', '));
+            adjustmentToolbar.referralName.disabled = state.savingAdjustment;
+        }
+        if (adjustmentToolbar.due) {
+            setAdjustmentInputValue(adjustmentToolbar.due, formatEditableAmount(firstRow.due));
+            adjustmentToolbar.due.disabled = state.savingAdjustment;
         }
         if (adjustmentToolbar.save) {
             adjustmentToolbar.save.disabled = state.savingAdjustment;
@@ -1629,10 +1710,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const readFirstBillAdjustmentInputs = () => {
-        return {
+        const adjustment = {
             previousBalance: toEditableAmount(adjustmentToolbar.previousBalance?.value),
             advance: toEditableAmount(adjustmentToolbar.advance?.value)
         };
+        const savedFirstBill = normalizeFirstBillAdjustment(
+            state.record?.paymentBreakdownAdjustment
+            || state.record?.breakdownAdjustment
+            || state.record?.firstBillAdjustment
+            || null
+        );
+        const hasSavedReferralOverride = hasAmountOverride(savedFirstBill?.referral);
+        const hasSavedDueOverride = hasAmountOverride(savedFirstBill?.due);
+        const referralChanged = isAdjustmentInputDirty(adjustmentToolbar.referral)
+            || isAdjustmentInputDirty(adjustmentToolbar.referralName);
+        if (hasSavedReferralOverride || referralChanged) {
+            adjustment.referral = toEditableAmount(adjustmentToolbar.referral?.value);
+            adjustment.referralName = toAdjustmentDisplayText(adjustmentToolbar.referralName?.value);
+        }
+        if (hasSavedDueOverride || isAdjustmentInputDirty(adjustmentToolbar.due)) {
+            adjustment.due = toEditableAmount(adjustmentToolbar.due?.value);
+        }
+        return adjustment;
     };
 
     const applyLoadedBreakdown = (record, customers) => {
@@ -1712,6 +1811,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.adjustmentToolbarOpen) {
             adjustmentToolbar.previousBalance?.focus();
         }
+    });
+
+    [
+        adjustmentToolbar.referral,
+        adjustmentToolbar.referralName,
+        adjustmentToolbar.due
+    ].forEach((input) => {
+        input?.addEventListener('input', () => {
+            input.dataset.dirty = 'true';
+        });
     });
 
     adjustmentToolbar.form?.addEventListener('submit', (event) => {

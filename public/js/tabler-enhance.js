@@ -176,6 +176,7 @@
 
   const processed = new WeakSet();
   const processedFormModals = new WeakSet();
+  const modalSizeClasses = 'modal-sm modal-lg modal-xl modal-full-width modal-fullscreen'.split(' ');
   const buttonLikeInputTypes = new Set(['button', 'submit', 'reset', 'image', 'hidden']);
   const fieldContainerSelector = [
     '.form-field',
@@ -866,21 +867,87 @@
     return Array.from(element.children).filter((child) => child.matches(selector));
   };
 
-  const collectFormModals = (root) => {
-    const selector = '.modal, .modal-overlay, .profile-edit-modal, .profile-modal, [role="dialog"]';
+  const modalRootSelector = [
+    '.modal',
+    '.modal-overlay',
+    '.profile-edit-modal',
+    '.profile-modal',
+    '.logs-modal',
+    '.account-browser-player',
+    '.account-wifi-modal',
+    '.account-devices-modal',
+    '[data-tabler-modal]'
+  ].join(',');
+
+  const modalContentSelector = [
+    ':scope > .modal-dialog > .modal-content',
+    ':scope > .modal-content',
+    ':scope > .modal-container',
+    ':scope > .profile-edit-modal__content',
+    ':scope > .profile-modal__content',
+    ':scope > .logs-modal__content',
+    ':scope > .account-browser-player__panel',
+    ':scope > .account-wifi-modal__dialog',
+    ':scope > .account-devices-modal__dialog'
+  ].join(',');
+
+  const modalHeaderSelector = [
+    ':scope > .modal-header',
+    ':scope > .profile-edit-modal__header',
+    ':scope > .profile-modal__header',
+    ':scope > .logs-modal__header',
+    ':scope > .account-browser-player__header',
+    ':scope > .account-wifi-modal__header',
+    ':scope > .account-devices-modal__header'
+  ].join(',');
+
+  const modalBodySelector = [
+    ':scope > .modal-body',
+    ':scope > .profile-edit-form',
+    ':scope > .profile-modal__body',
+    ':scope > .logs-modal__body',
+    ':scope > .account-browser-player__body',
+    ':scope > .account-devices-modal__table-wrap'
+  ].join(',');
+
+  const modalFooterSelector = [
+    ':scope > .modal-footer',
+    ':scope > .form-actions',
+    ':scope > .profile-edit-modal__footer',
+    ':scope > .profile-modal__footer',
+    ':scope > .logs-modal__footer',
+    ':scope > .account-wifi-modal__actions'
+  ].join(',');
+
+  const modalCloseSelector = [
+    '.modal-close',
+    '.close-modal',
+    '.close-btn',
+    '.logs-modal__close',
+    '.profile-modal__close',
+    '.profile-edit-modal__close',
+    '.account-browser-player__close',
+    '.account-wifi-modal__close',
+    '.account-devices-modal__close',
+    '[data-modal-close]',
+    '[data-dismiss="modal"]',
+    '[data-bs-dismiss="modal"]',
+    '[data-browser-player-close]',
+    '[data-account-wifi-close]',
+    '[data-account-devices-close]'
+  ].join(',');
+
+  const collectModals = (root) => {
     const modals = new Set();
-    if (root.nodeType === 1 && root.matches(selector)) modals.add(root);
-    root.querySelectorAll(selector).forEach((modal) => modals.add(modal));
-    return Array.from(modals).filter((modal) => modal.querySelector('form'));
+    if (!root) return [];
+    if (root.nodeType === 1 && root.matches(modalRootSelector)) modals.add(root);
+    root.querySelectorAll?.(modalRootSelector).forEach((modal) => modals.add(modal));
+    return Array.from(modals);
   };
 
   const resolveModalContent = (modal) => {
     if (!modal) return null;
-    return modal.querySelector(':scope > .modal-dialog > .modal-content') ||
-      modal.querySelector(':scope > .modal-content') ||
-      modal.querySelector(':scope > .modal-container') ||
-      modal.querySelector(':scope > .profile-edit-modal__content') ||
-      modal.querySelector(':scope > .profile-modal__content') ||
+    return modal.querySelector(modalContentSelector) ||
       modal.firstElementChild;
   };
 
@@ -894,18 +961,8 @@
       content.before(dialog);
       dialog.appendChild(content);
     }
-    addClasses(dialog, 'modal-dialog');
+    addClasses(dialog, 'modal-dialog modal-dialog-centered');
     dialog.setAttribute('role', dialog.getAttribute('role') || 'document');
-    const compact = content.classList.contains('modal-compact') ||
-      content.classList.contains('modal-sm') ||
-      modal.classList.contains('modal-compact') ||
-      modal.classList.contains('modal-sm');
-    if (compact) {
-      addClasses(dialog, 'modal-sm');
-      removeClasses(dialog, 'modal-lg');
-    } else {
-      addClasses(dialog, 'modal-lg');
-    }
     return dialog;
   };
 
@@ -929,7 +986,7 @@
     addClasses(form, 'tabler-modal-form');
 
     const directBodies = getScopedChildren(form, '.modal-body');
-    const directFooters = getScopedChildren(form, '.modal-footer, .form-actions');
+    const directFooters = getScopedChildren(form, '.modal-footer, .form-actions, .account-wifi-modal__actions');
     directFooters.forEach((footer) => addClasses(footer, 'modal-footer'));
 
     if (directBodies.length) return;
@@ -946,57 +1003,165 @@
     bodyChildren.forEach((child) => body.appendChild(child));
   };
 
-  const enhanceFormModal = (modal) => {
-    if (!modal) return;
-    modal.dataset.tablerFormModal = 'true';
-    addClasses(modal, 'tabler-form-modal');
-    modal.setAttribute('role', modal.getAttribute('role') || 'dialog');
-    modal.setAttribute('aria-modal', modal.getAttribute('aria-modal') || 'true');
-    if (!modal.hasAttribute('tabindex')) modal.setAttribute('tabindex', '-1');
+  const getExplicitModalSize = (modal, content) => {
+    const explicit = [
+      modal?.dataset?.tablerModalSize,
+      modal?.dataset?.modalSize,
+      modal?.dataset?.size,
+      content?.dataset?.tablerModalSize,
+      content?.dataset?.modalSize,
+      content?.dataset?.size
+    ].find(Boolean);
+    const value = String(explicit || '').trim().toLowerCase();
+    if (!value) return '';
+    if (/^(sm|small|compact)$/.test(value)) return 'sm';
+    if (/^(lg|large)$/.test(value)) return 'lg';
+    if (/^(xl|wide)$/.test(value)) return 'xl';
+    if (/^(full|full-width|fullwidth|fullscreen)$/.test(value)) return 'full';
+    return '';
+  };
 
-    const content = resolveModalContent(modal);
-    if (!content) return;
-    addClasses(content, 'modal-content');
-    ensureModalDialog(modal, content);
-    resetModalContentLayout(content);
+  const getModalTokens = (modal, content) => [
+    getElementTokenText(modal),
+    getElementTokenText(content)
+  ].filter(Boolean).join(' ');
 
-    const header = content.querySelector(':scope > .modal-header') || content.querySelector('.modal-header');
+  const inferModalSize = (modal, content) => {
+    const explicit = getExplicitModalSize(modal, content);
+    if (explicit) return explicit;
+
+    const tokens = getModalTokens(modal, content);
+    const classHas = (className) => modal.classList.contains(className) || content.classList.contains(className);
+    if (classHas('modal-full-width') || classHas('modal-fullscreen')) return 'full';
+    if (classHas('modal-xl') || classHas('modal-wide')) return 'xl';
+    if (classHas('modal-lg') || classHas('modal-large')) return 'lg';
+    if (classHas('modal-sm') || classHas('modal-compact')) return 'sm';
+    if (/(full-width|fullwidth|fullscreen|full-screen|map|coverage|browser-player|customer-add-embed|iframe|statement-preview)/.test(tokens)) return 'full';
+    if (/(small|compact|confirm|delete|remove|credit-override|status|password|login|pin)/.test(tokens)) return 'sm';
+    if (/(wide|history|ledger|breakdown|traffic|session|integration|details|customer-view|payments-view|preview|devices|queue|import|\btable\b|draft|payment-modal)/.test(tokens)) return 'xl';
+    if (modal.querySelector('form')) return 'lg';
+    return 'default';
+  };
+
+  const shouldScrollModal = (modal, content) => {
+    const tokens = getModalTokens(modal, content);
+    if (/(scroll|scrollable|history|ledger|breakdown|traffic|session|details|view|preview|devices|queue|import|\btable\b|list)/.test(tokens)) return true;
+    if (modal.querySelector('form')) return true;
+    if (content.querySelector('table, .table-responsive, iframe, .list-group, .logs-modal__list, .history-modal-body, .subscriber-scroll')) return true;
+    return String(content.textContent || '').trim().length > 900 ||
+      Array.from(content.children || []).filter((child) => !child.matches('.modal-header, .modal-footer, .modal-status')).length > 5;
+  };
+
+  const syncModalSize = (dialog, size) => {
+    if (!dialog) return;
+    modalSizeClasses.forEach((className) => dialog.classList.remove(className));
+    if (size === 'sm') addClasses(dialog, 'modal-sm');
+    if (size === 'lg') addClasses(dialog, 'modal-lg');
+    if (size === 'xl') addClasses(dialog, 'modal-xl');
+    if (size === 'full') addClasses(dialog, 'modal-full-width');
+  };
+
+  const syncModalKindClasses = (modal, hasForm, scrollable, size, hasFrame) => {
+    removeClasses(modal, 'tabler-modal--form tabler-modal--simple tabler-modal--scrollable tabler-modal--full-width tabler-modal--small tabler-modal--iframe');
+    addClasses(modal, hasForm ? 'tabler-modal--form tabler-form-modal' : 'tabler-modal--simple');
+    if (!hasForm) removeClasses(modal, 'tabler-form-modal');
+    if (scrollable) addClasses(modal, 'tabler-modal--scrollable');
+    if (size === 'full') addClasses(modal, 'tabler-modal--full-width');
+    if (size === 'sm') addClasses(modal, 'tabler-modal--small');
+    if (hasFrame) addClasses(modal, 'tabler-modal--iframe');
+    const kind = hasForm ? 'form' : size === 'full' ? 'full-width' : size === 'sm' ? 'small' : scrollable ? 'scrollable' : 'simple';
+    modal.dataset.tablerModalKind = kind;
+  };
+
+  const normalizeModalRegions = (modal, content) => {
+    const header = content.querySelector(modalHeaderSelector);
     if (header) {
       addClasses(header, 'modal-header');
       const title = header.querySelector('h1, h2, h3, h4, h5, h6');
       if (title) addClasses(title, 'modal-title');
-      header.querySelectorAll('.modal-close, .close-modal, .close-btn, [data-modal-close]').forEach((button) => {
+      header.querySelectorAll(modalCloseSelector).forEach((button) => {
+        if (!button.matches('button, a')) return;
         addClasses(button, 'btn-close');
         removeClasses(button, 'btn btn-icon btn-ghost-secondary btn-outline-secondary');
         button.setAttribute('aria-label', button.getAttribute('aria-label') || 'Close');
-        if (!button.textContent.trim() || button.querySelector('.ti')) {
+        if (button.matches('button') && !button.getAttribute('type')) button.setAttribute('type', 'button');
+        const text = button.textContent.trim();
+        if (!text || text === 'x' || text === 'X' || text.charCodeAt(0) === 215 || button.querySelector('.ti')) {
           button.innerHTML = '';
         }
       });
     }
 
-    content.querySelectorAll('form').forEach((form) => addClasses(form, 'tabler-modal-form'));
-    getScopedChildren(content, 'form').forEach(normalizeDirectForm);
-    content.querySelectorAll('.form-actions').forEach((footer) => addClasses(footer, 'modal-footer'));
-    content.querySelectorAll('.modal-footer').forEach((footer) => {
+    content.querySelectorAll(modalFooterSelector).forEach((footer) => addClasses(footer, 'modal-footer'));
+    content.querySelectorAll('.modal-footer, .form-actions').forEach((footer) => {
       addClasses(footer, 'modal-footer');
       footer.querySelectorAll('button, a').forEach((button) => addClasses(button, 'btn'));
     });
-    content.querySelectorAll('.modal-body form, .modal-body .modal-form, .modal-body .customer-form, .modal-body .plan-form, .modal-body .job-form')
-      .forEach((form) => addClasses(form, 'tabler-modal-form'));
+
+    content.querySelectorAll(modalBodySelector).forEach((body) => addClasses(body, 'modal-body'));
+
+    if (
+      !content.querySelector(':scope > .modal-body') &&
+      !content.querySelector(':scope > form')
+    ) {
+      const bodyChildren = Array.from(content.children).filter((child) => (
+        !child.classList.contains('modal-header') &&
+        !child.classList.contains('modal-footer') &&
+        !child.classList.contains('modal-status')
+      ));
+      if (bodyChildren.length) {
+        const body = document.createElement('div');
+        body.className = 'modal-body';
+        content.insertBefore(body, bodyChildren[0]);
+        bodyChildren.forEach((child) => body.appendChild(child));
+      }
+    }
 
     modal.querySelectorAll('.form-field, .form-group, .reset-field').forEach((field) => addClasses(field, 'mb-3'));
     modal.querySelectorAll('label:not(.form-check):not(.btn):not(.form-selectgroup-item):not(.switch-field):not(.status-switch-field)')
       .forEach((label) => {
         if (shouldUseFormLabel(label)) addClasses(label, 'form-label');
       });
+  };
+
+  const enhanceModal = (modal) => {
+    if (!modal) return;
+    const content = resolveModalContent(modal);
+    if (!content) return;
+
+    addClasses(modal, 'tabler-modal');
+    if (modal.classList.contains('modal')) addClasses(modal, 'modal-blur');
+    addClasses(content, 'modal-content');
+    const dialog = ensureModalDialog(modal, content);
+    resetModalContentLayout(content);
+    normalizeModalRegions(modal, content);
+
+    const hasNestedDialog = content.matches('[role="dialog"]') || Boolean(content.querySelector('[role="dialog"]'));
+    if (!hasNestedDialog) {
+      modal.setAttribute('role', modal.getAttribute('role') || 'dialog');
+      modal.setAttribute('aria-modal', modal.getAttribute('aria-modal') || 'true');
+    }
+    if (modal.matches('.modal, .modal-overlay') && !modal.hasAttribute('tabindex')) modal.setAttribute('tabindex', '-1');
+
+    content.querySelectorAll('form').forEach((form) => addClasses(form, 'tabler-modal-form'));
+    getScopedChildren(content, 'form').forEach(normalizeDirectForm);
+    content.querySelectorAll('.modal-body form, .modal-body .modal-form, .modal-body .customer-form, .modal-body .plan-form, .modal-body .job-form')
+      .forEach((form) => addClasses(form, 'tabler-modal-form'));
+
+    const hasForm = Boolean(modal.querySelector('form'));
+    const hasFrame = Boolean(content.querySelector(':scope > iframe, :scope > .modal-body > iframe, .account-browser-player__frame'));
+    const size = inferModalSize(modal, content);
+    const scrollable = shouldScrollModal(modal, content);
+    syncModalSize(dialog, size);
+    dialog?.classList.toggle('modal-dialog-scrollable', scrollable);
+    syncModalKindClasses(modal, hasForm, scrollable, size, hasFrame);
 
     processedFormModals.add(modal);
   };
 
-  const enhanceFormModals = (root) => {
-    collectFormModals(root).forEach((modal) => {
-      enhanceFormModal(modal);
+  const enhanceModals = (root) => {
+    collectModals(root).forEach((modal) => {
+      enhanceModal(modal);
     });
   };
 
@@ -1152,7 +1317,7 @@
     enhanceForms(root);
     enhanceLists(root);
     fitFloatingLists(root);
-    enhanceFormModals(root);
+    enhanceModals(root);
     enhanceTabs(root);
     enhanceChips(root);
     enhanceAlerts(root);

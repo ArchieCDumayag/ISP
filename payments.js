@@ -740,6 +740,39 @@ const inferPaymentImportDateFromSheetName = (sheetName = '') => {
     return month ? paymentImportDateOnlyFromParts(year, month, 1) : '';
 };
 const parsePaymentImportDateOnly = (rawValue, displayValue = '', fallbackYear = new Date().getFullYear()) => {
+    const text = normalizePaymentImportText(displayValue || (!(rawValue instanceof Date) && typeof rawValue !== 'number' ? rawValue : ''));
+    if (/^total$/i.test(text)) return '';
+
+    if (text) {
+        const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+        if (isoMatch) return paymentImportDateOnlyFromParts(isoMatch[1], isoMatch[2], isoMatch[3]);
+
+        const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (slashMatch) return paymentImportDateOnlyFromParts(slashMatch[3], slashMatch[1], slashMatch[2]);
+
+        const dayMonthNameMatch = text.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,9})(?:[-/\s,]+(\d{2,4}))?$/);
+        if (dayMonthNameMatch) {
+            const month = PAYMENT_IMPORT_MONTH_LOOKUP[String(dayMonthNameMatch[2] || '').toLowerCase()];
+            if (month) {
+                return paymentImportDateOnlyFromParts(dayMonthNameMatch[3] || fallbackYear, month, dayMonthNameMatch[1]);
+            }
+        }
+
+        const monthDayNameMatch = text.match(/^([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s+(\d{2,4}))?$/);
+        if (monthDayNameMatch) {
+            const month = PAYMENT_IMPORT_MONTH_LOOKUP[String(monthDayNameMatch[1] || '').toLowerCase()];
+            if (month) {
+                return paymentImportDateOnlyFromParts(monthDayNameMatch[3] || fallbackYear, month, monthDayNameMatch[2]);
+            }
+        }
+
+        const parsedTime = Date.parse(text);
+        if (!Number.isNaN(parsedTime)) {
+            const parsed = new Date(parsedTime);
+            return paymentImportDateOnlyFromParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+        }
+    }
+
     if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
         return paymentImportDateOnlyFromParts(rawValue.getFullYear(), rawValue.getMonth() + 1, rawValue.getDate());
     }
@@ -750,37 +783,6 @@ const parsePaymentImportDateOnly = (rawValue, displayValue = '', fallbackYear = 
         if (parsed?.y && parsed?.m && parsed?.d) {
             return paymentImportDateOnlyFromParts(parsed.y, parsed.m, parsed.d);
         }
-    }
-
-    const text = normalizePaymentImportText(displayValue || rawValue);
-    if (!text || /^total$/i.test(text)) return '';
-
-    const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
-    if (isoMatch) return paymentImportDateOnlyFromParts(isoMatch[1], isoMatch[2], isoMatch[3]);
-
-    const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    if (slashMatch) return paymentImportDateOnlyFromParts(slashMatch[3], slashMatch[1], slashMatch[2]);
-
-    const dayMonthNameMatch = text.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,9})(?:[-/\s,]+(\d{2,4}))?$/);
-    if (dayMonthNameMatch) {
-        const month = PAYMENT_IMPORT_MONTH_LOOKUP[String(dayMonthNameMatch[2] || '').toLowerCase()];
-        if (month) {
-            return paymentImportDateOnlyFromParts(dayMonthNameMatch[3] || fallbackYear, month, dayMonthNameMatch[1]);
-        }
-    }
-
-    const monthDayNameMatch = text.match(/^([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s+(\d{2,4}))?$/);
-    if (monthDayNameMatch) {
-        const month = PAYMENT_IMPORT_MONTH_LOOKUP[String(monthDayNameMatch[1] || '').toLowerCase()];
-        if (month) {
-            return paymentImportDateOnlyFromParts(monthDayNameMatch[3] || fallbackYear, month, monthDayNameMatch[2]);
-        }
-    }
-
-    const parsedTime = Date.parse(text);
-    if (!Number.isNaN(parsedTime)) {
-        const parsed = new Date(parsedTime);
-        return paymentImportDateOnlyFromParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
     }
 
     return '';
@@ -812,6 +814,11 @@ const paymentImportCellReferenceText = (xlsx, sheet, row, col) => {
         }
     }
     return normalizePaymentImportText(item.w ?? item.v ?? '');
+};
+const paymentImportCellAccountText = (xlsx, sheet, row, col) => {
+    const item = paymentImportCell(xlsx, sheet, row, col);
+    if (!item) return '';
+    return formatPaymentImportAccountNumber(item.v ?? item.w ?? '');
 };
 const formatPaymentImportAccountNumber = (value) => {
     if (typeof value === 'number' && Number.isFinite(value)) return String(Math.trunc(value));
@@ -1020,20 +1027,74 @@ const resolvePaymentImportAccount = (lookup, rawName, area = '') => {
     }
     return { accountNumber: '', customer: null, ambiguous: false };
 };
+const resolvePaymentImportAccountFromRow = (lookup, { accountNumber = '', rawName = '', area = '' } = {}) => {
+    const account = formatPaymentImportAccountNumber(accountNumber);
+    if (!account) {
+        return {
+            accountNumber: '',
+            customer: null,
+            ambiguous: false,
+            missingAccountNumber: true
+        };
+    }
+    return {
+        accountNumber: lookup.customerByAccount.has(account) ? account : '',
+        customer: lookup.customerByAccount.get(account) || null,
+        ambiguous: false,
+        accountNumberHint: account,
+        rawName
+    };
+};
 const resolvePaymentImportSheetMethod = (sheetName = '') => {
     const name = String(sheetName || '').trim();
     if (/^CASH(?:\b|\s)/i.test(name)) return 'Cash';
     if (/^G(?:CASH|ASH)(?:\b|\s)/i.test(name)) return 'GCash';
     return '';
 };
+const findPaymentImportHeaderCol = (xlsx, sheet, row, startCol, endCol, aliases = []) => {
+    const wanted = new Set(aliases.map(normalizePaymentImportHeaderKey).filter(Boolean));
+    if (!wanted.size) return -1;
+    for (let col = startCol; col <= endCol; col += 1) {
+        if (wanted.has(normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, col)))) {
+            return col;
+        }
+    }
+    return -1;
+};
+const hasPaymentImportHeaderCol = (xlsx, sheet, row, startCol, endCol, aliases = []) => (
+    findPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, aliases) >= 0
+);
+const getPaymentImportDateHeaderCols = (xlsx, sheet, row) => {
+    const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
+    const endCol = Math.min(range.e.c, 18);
+    const cols = [];
+    for (let col = 0; col <= endCol; col += 1) {
+        if (normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, col)) === 'date') {
+            cols.push(col);
+        }
+    }
+    return cols;
+};
+const hasPaymentImportIncomeHeaders = (xlsx, sheet, row, dateCol, method) => {
+    if (!Number.isInteger(dateCol) || dateCol < 0) return false;
+    const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
+    const startCol = dateCol + 1;
+    const endCol = Math.min(range.e.c, dateCol + (method === 'Cash' ? 8 : 9));
+    const hasCommonHeaders = hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Account Number', 'Account No', 'Account #'])
+        && hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Particulars'])
+        && hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Amount', 'Payment', '3J Payment']);
+    if (!hasCommonHeaders) return false;
+    if (method !== 'GCash') return true;
+    return hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Reference Number', 'Ref. No.', 'Ref No']);
+};
+const findPaymentImportIncomeDateCol = (xlsx, sheet, headerRow, method) => {
+    const dateCols = getPaymentImportDateHeaderCols(xlsx, sheet, headerRow);
+    return dateCols.find((dateCol) => hasPaymentImportIncomeHeaders(xlsx, sheet, headerRow, dateCol, method)) ?? -1;
+};
 const findPaymentImportCashHeader = (xlsx, sheet) => {
     const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
     for (let row = range.s.r; row <= Math.min(range.e.r, 24); row += 1) {
-        if (
-            normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 3)) === 'date'
-            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 6)) === 'particulars'
-            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 7)) === 'amount'
-        ) {
+        if (findPaymentImportIncomeDateCol(xlsx, sheet, row, 'Cash') >= 0) {
             return row;
         }
     }
@@ -1042,16 +1103,46 @@ const findPaymentImportCashHeader = (xlsx, sheet) => {
 const findPaymentImportGcashHeader = (xlsx, sheet) => {
     const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
     for (let row = range.s.r; row <= Math.min(range.e.r, 24); row += 1) {
-        if (
-            normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 6)) === 'date'
-            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 8)) === 'referencenumber'
-            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 9)) === 'particulars'
-            && normalizePaymentImportHeaderKey(paymentImportCellText(xlsx, sheet, row, 11)) === '3jpayment'
-        ) {
+        if (findPaymentImportIncomeDateCol(xlsx, sheet, row, 'GCash') >= 0) {
             return row;
         }
     }
     return -1;
+};
+const resolvePaymentImportSectionColumns = (xlsx, sheet, headerRow, method) => {
+    const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
+    const fallbackIncomeDateCol = method === 'Cash' ? 3 : 6;
+    const incomeDateCol = findPaymentImportIncomeDateCol(xlsx, sheet, headerRow, method);
+    const resolvedIncomeDateCol = incomeDateCol >= 0 ? incomeDateCol : fallbackIncomeDateCol;
+    const incomeStartCol = resolvedIncomeDateCol + 1;
+    const incomeEndCol = Math.min(range.e.c, resolvedIncomeDateCol + (method === 'Cash' ? 8 : 9));
+
+    if (method === 'Cash') {
+        const collectorCol = findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Collector', 'Collected By']);
+        return {
+            income: {
+                dateCol: resolvedIncomeDateCol,
+                categoryCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Category']),
+                areaCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Area', 'Area / Cluster']),
+                accountCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Account Number', 'Account No', 'Account #']),
+                particularsCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Particulars']),
+                amountCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Amount', 'Payment']),
+                collectorCol: collectorCol >= 0 ? collectorCol : resolvedIncomeDateCol + 6
+            }
+        };
+    }
+
+    const gcashAccountCol = findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Gcash Account', 'Gcash No.', 'GCash No']);
+    return {
+        income: {
+            dateCol: resolvedIncomeDateCol,
+            gcashAccountCol: gcashAccountCol >= 0 ? gcashAccountCol : incomeStartCol,
+            referenceCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Reference Number', 'Ref. No.', 'Ref No']),
+            accountCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Account Number', 'Account No', 'Account #']),
+            particularsCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['Particulars']),
+            amountCol: findPaymentImportHeaderCol(xlsx, sheet, headerRow, incomeStartCol, incomeEndCol, ['3J Payment', 'Amount', 'Payment'])
+        }
+    };
 };
 const paymentImportSheetSlug = (value) => normalizePaymentImportNameKey(value)
     .replace(/\s+/g, '-')
@@ -1063,6 +1154,19 @@ const buildPaymentImportReference = ({ sheetName, rowNumber, method }) => {
     const methodToken = method === 'GCash' ? 'GC' : 'CA';
     return `CF2026-${methodToken}-${sheetToken}-${String(rowNumber).padStart(4, '0')}`.slice(0, REF_MAX_LENGTH);
 };
+const getPaymentImportCustomerDisplayName = (customer = {}, fallback = '') => normalizePaymentImportText(
+    customer?.name
+    || customer?.fullName
+    || [
+        customer?.lastName && customer?.firstName ? `${customer.lastName}, ${customer.firstName}` : '',
+        customer?.middleName
+    ].filter(Boolean).join(' ')
+    || [
+        customer?.firstName,
+        customer?.lastName
+    ].filter(Boolean).join(' ')
+    || fallback
+);
 const buildPaymentImportEntry = ({
     accountNumber,
     customer,
@@ -1075,21 +1179,24 @@ const buildPaymentImportEntry = ({
     area,
     category,
     originalReference,
+    accountNumberFromWorkbook,
+    gcashAccount,
     collector,
     importedBy
 }) => {
     const methodSlug = method === 'GCash' ? 'gcash' : 'cash';
     const sourceKey = `${sheetName}|${rowNumber}|${accountNumber}|${amount.toFixed(2)}|${methodSlug}`;
-    const reference = buildPaymentImportReference({ sheetName, rowNumber, method });
-    const customerName = normalizePaymentImportText(customer?.name || customer?.fullName || [
-        customer?.firstName,
-        customer?.lastName
-    ].filter(Boolean).join(' '));
+    const generatedReference = buildPaymentImportReference({ sheetName, rowNumber, method });
+    const workbookReference = sanitizeString(originalReference).slice(0, REF_MAX_LENGTH);
+    const reference = method === 'GCash' && workbookReference ? workbookReference : generatedReference;
+    const customerName = getPaymentImportCustomerDisplayName(customer, rawName);
     const descriptionParts = [
         `Imported ${method} payment from ${sheetName}`,
         `Excel row ${rowNumber}`,
+        accountNumberFromWorkbook ? `Account number: ${accountNumberFromWorkbook}` : '',
         category ? `Category: ${category}` : '',
         area ? `Area: ${area}` : '',
+        gcashAccount ? `GCash account: ${gcashAccount}` : '',
         collector ? `Collector: ${collector}` : '',
         originalReference ? `Workbook ref: ${originalReference}` : '',
         rawName && rawName !== customerName ? `Workbook name: ${rawName}` : ''
@@ -1119,10 +1226,23 @@ const buildPaymentImportEntry = ({
         payer: customerName || rawName || recorderName,
         status: 'paid',
         paymentMethod: method,
+        gcashAccount: gcashAccount || undefined,
         fingerprint: `${accountNumber}|${reference}|payment|${amount.toFixed(2)}`,
         importedFrom: sheetName
     };
 };
+const paymentImportOptionalCellText = (xlsx, sheet, row, col) => (
+    Number.isInteger(col) && col >= 0 ? paymentImportCellText(xlsx, sheet, row, col) : ''
+);
+const paymentImportOptionalCellRaw = (xlsx, sheet, row, col) => (
+    Number.isInteger(col) && col >= 0 ? paymentImportCellRaw(xlsx, sheet, row, col) : undefined
+);
+const paymentImportOptionalReferenceText = (xlsx, sheet, row, col) => (
+    Number.isInteger(col) && col >= 0 ? paymentImportCellReferenceText(xlsx, sheet, row, col) : ''
+);
+const paymentImportOptionalAccountText = (xlsx, sheet, row, col) => (
+    Number.isInteger(col) && col >= 0 ? paymentImportCellAccountText(xlsx, sheet, row, col) : ''
+);
 const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) => {
     const xlsx = getPaymentImportXlsxModule();
     const workbook = xlsx.read(Buffer.from(buffer || []), {
@@ -1146,47 +1266,67 @@ const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) =
         const headerRow = method === 'Cash'
             ? findPaymentImportCashHeader(xlsx, sheet)
             : findPaymentImportGcashHeader(xlsx, sheet);
-        bySheet[sheetName] = { parsed: 0, matched: 0, skipped: 0, totalAmount: 0, method };
+        bySheet[sheetName] = {
+            parsed: 0,
+            matched: 0,
+            skipped: 0,
+            totalAmount: 0,
+            method
+        };
 
         if (headerRow < 0) {
             bySheet[sheetName].skipped += 1;
             skippedCount += 1;
-            skipped.push({ sheetName, reason: 'Payment header not found' });
+            skipped.push({ sheetName, reason: 'Cash/GCash import header not found' });
             return;
         }
 
+        const columns = resolvePaymentImportSectionColumns(xlsx, sheet, headerRow, method);
         const fallbackYear = inferPaymentImportYear(sheetName);
-        let lastDate = inferPaymentImportDateFromSheetName(sheetName);
+        let lastIncomeDate = inferPaymentImportDateFromSheetName(sheetName);
         let lastCollector = '';
+        let lastGcashAccount = '';
 
-        for (let row = headerRow + 2; row <= range.e.r; row += 1) {
-            const dateCol = method === 'Cash' ? 3 : 6;
-            const rawDate = paymentImportCellRaw(xlsx, sheet, row, dateCol);
-            const dateText = paymentImportCellText(xlsx, sheet, row, dateCol);
-            const parsedDate = parsePaymentImportDateOnly(rawDate, dateText, fallbackYear);
-            if (parsedDate) lastDate = parsedDate;
+        for (let row = headerRow + 1; row <= range.e.r; row += 1) {
+            const incomeRawDate = paymentImportOptionalCellRaw(xlsx, sheet, row, columns.income.dateCol);
+            const incomeDateText = paymentImportOptionalCellText(xlsx, sheet, row, columns.income.dateCol);
+            const parsedIncomeDate = parsePaymentImportDateOnly(incomeRawDate, incomeDateText, fallbackYear);
+            if (parsedIncomeDate) lastIncomeDate = parsedIncomeDate;
 
-            const collectorText = method === 'Cash'
-                ? paymentImportCellText(xlsx, sheet, row, 9)
-                : paymentImportCellText(xlsx, sheet, row, 7);
-            if (collectorText && !/^gcash\s*no\.?$/i.test(collectorText)) lastCollector = collectorText;
+            if (method === 'Cash') {
+                const collectorText = paymentImportOptionalCellText(xlsx, sheet, row, columns.income.collectorCol);
+                if (collectorText && !/^collector$/i.test(collectorText)) lastCollector = collectorText;
+            } else {
+                const gcashAccountText = paymentImportOptionalCellText(xlsx, sheet, row, columns.income.gcashAccountCol);
+                if (gcashAccountText && !/^gcash\s*no\.?$/i.test(gcashAccountText)) {
+                    lastGcashAccount = gcashAccountText;
+                }
+            }
 
-            const rawName = method === 'Cash'
-                ? paymentImportCellText(xlsx, sheet, row, 6)
-                : paymentImportCellText(xlsx, sheet, row, 9);
-            const amount = method === 'Cash'
-                ? parsePaymentImportAmount(paymentImportCellRaw(xlsx, sheet, row, 7), paymentImportCellText(xlsx, sheet, row, 7))
-                : parsePaymentImportAmount(paymentImportCellRaw(xlsx, sheet, row, 11), paymentImportCellText(xlsx, sheet, row, 11));
+            const rawName = paymentImportOptionalCellText(xlsx, sheet, row, columns.income.particularsCol);
+            const accountNumberFromWorkbook = paymentImportOptionalAccountText(xlsx, sheet, row, columns.income.accountCol);
+            const amount = parsePaymentImportAmount(
+                paymentImportOptionalCellRaw(xlsx, sheet, row, columns.income.amountCol),
+                paymentImportOptionalCellText(xlsx, sheet, row, columns.income.amountCol)
+            );
 
-            if (!rawName || /^total$/i.test(rawName) || !Number.isFinite(amount) || amount <= 0) continue;
+            if ((!rawName && !accountNumberFromWorkbook) || /^total$/i.test(rawName) || !Number.isFinite(amount) || amount <= 0) continue;
             bySheet[sheetName].parsed += 1;
 
-            const area = method === 'Cash' ? paymentImportCellText(xlsx, sheet, row, 5) : '';
-            const category = method === 'Cash' ? paymentImportCellText(xlsx, sheet, row, 4) : '';
-            const originalReference = method === 'GCash'
-                ? paymentImportCellReferenceText(xlsx, sheet, row, 8)
+            const area = method === 'Cash'
+                ? paymentImportOptionalCellText(xlsx, sheet, row, columns.income.areaCol)
                 : '';
-            const resolved = resolvePaymentImportAccount(lookup, rawName, area);
+            const category = method === 'Cash'
+                ? paymentImportOptionalCellText(xlsx, sheet, row, columns.income.categoryCol)
+                : '';
+            const originalReference = method === 'GCash'
+                ? paymentImportOptionalReferenceText(xlsx, sheet, row, columns.income.referenceCol)
+                : '';
+            const resolved = resolvePaymentImportAccountFromRow(lookup, {
+                accountNumber: accountNumberFromWorkbook,
+                rawName,
+                area
+            });
 
             if (!resolved.accountNumber) {
                 bySheet[sheetName].skipped += 1;
@@ -1196,8 +1336,11 @@ const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) =
                         sheetName,
                         rowNumber: row + 1,
                         amount,
-                        reason: resolved.ambiguous ? 'Ambiguous customer name' : 'Customer not found',
+                        reason: resolved.missingAccountNumber
+                            ? 'Account number is required'
+                            : (resolved.ambiguous ? 'Ambiguous customer name' : 'Customer not found'),
                         customerName: rawName,
+                        accountNumber: accountNumberFromWorkbook || resolved.accountNumberHint || '',
                         area
                     });
                 }
@@ -1210,18 +1353,20 @@ const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) =
                 sheetName,
                 rowNumber: row + 1,
                 method,
-                date: lastDate,
+                date: lastIncomeDate,
                 amount,
                 rawName,
                 area,
                 category,
                 originalReference,
-                collector: lastCollector,
+                accountNumberFromWorkbook,
+                gcashAccount: method === 'GCash' ? lastGcashAccount : '',
+                collector: method === 'Cash' ? lastCollector : lastGcashAccount,
                 importedBy
             });
             records.push({
                 accountNumber: resolved.accountNumber,
-                customerName: normalizePaymentImportText(resolved.customer?.name || resolved.customer?.fullName || rawName),
+                customerName: getPaymentImportCustomerDisplayName(resolved.customer, rawName),
                 area: normalizePaymentImportText(resolved.customer?.area || resolved.customer?.coverageArea || area),
                 sheetName,
                 rowNumber: row + 1,
@@ -1283,7 +1428,7 @@ const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = nu
     const customers = await readCustomers(scopedBranchId);
     const parsed = parsePaymentImportWorkbook(buffer, customers, importedBy);
     if (!parsed.records.length) {
-        throw createError(400, 'No importable Cash or GCash payment records found.');
+        throw createError(400, 'No importable Cash or GCash income payment records found. Account Number is required for every imported payment row.');
     }
 
     const relational = await isRelationalReady();
@@ -1999,9 +2144,7 @@ const PAYMENT_EXPORT_MONTH_NAMES = [
     'July', 'August', 'September', 'October', 'November', 'December'
 ];
 const PAYMENT_EXPORT_MONEY_FORMAT = '#,##0.00;\\(#,##0.00\\)';
-const PAYMENT_EXPORT_PESO_FORMAT = '[$₱]#,##0.00';
 const PAYMENT_EXPORT_DATE_FORMAT = 'd mmm yyyy';
-const PAYMENT_EXPORT_MONTH_FORMAT = 'mmmm yyyy';
 
 const normalizePaymentExportText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const normalizePaymentExportKey = (value) => normalizePaymentExportText(value).toLowerCase();
@@ -2118,21 +2261,6 @@ const sumPaymentExportRows = (rows = []) => roundPaymentExportMoney(
     (Array.isArray(rows) ? rows : []).reduce((sum, row) => sum + (Number(row?.amount) || 0), 0)
 );
 
-const buildPaymentExportDateSummary = (rows = []) => {
-    const totals = new Map();
-    const recorders = new Map();
-    (Array.isArray(rows) ? rows : []).forEach((row) => {
-        if (!row?.dateKey) return;
-        totals.set(row.dateKey, roundPaymentExportMoney((totals.get(row.dateKey) || 0) + (Number(row.amount) || 0)));
-        const recorder = normalizePaymentExportText(row.recorderLabel);
-        if (recorder) {
-            if (!recorders.has(row.dateKey)) recorders.set(row.dateKey, new Set());
-            recorders.get(row.dateKey).add(recorder);
-        }
-    });
-    return { totals, recorders };
-};
-
 const buildPaymentExportRows = (payments = {}, customers = [], monthInfo) => {
     const customerMap = new Map(
         (Array.isArray(customers) ? customers : []).map((customer) => [
@@ -2165,6 +2293,15 @@ const buildPaymentExportRows = (payments = {}, customers = [], monthInfo) => {
             const methodLabel = resolvePaymentExportMethodLabel(entry);
             const reference = normalizePaymentExportText(entry?.reference || entry?.ref || '');
             const orNumber = normalizePaymentExportText(entry?.orNumber || entry?.or_number || '');
+            const gcashAccount = normalizePaymentExportText(
+                entry?.gcashAccount
+                || entry?.gcash_account
+                || entry?.gcashNo
+                || entry?.gcash_no
+                || entry?.gcashNumber
+                || entry?.gcash_number
+                || ''
+            );
             rows.push({
                 id: String(entry?.id || `${account}-${dateKey}-${index}`),
                 accountNumber: account,
@@ -2177,6 +2314,7 @@ const buildPaymentExportRows = (payments = {}, customers = [], monthInfo) => {
                 methodKey: resolvePaymentExportMethodKey(methodLabel),
                 reference,
                 orNumber,
+                gcashAccount,
                 recorderLabel: formatPaymentExportRecorderLabel(entry)
             });
         });
@@ -2201,15 +2339,6 @@ const buildPaymentExportRows = (payments = {}, customers = [], monthInfo) => {
     };
 };
 
-const paymentExportRange = (xlsx, value) => xlsx.utils.decode_range(value);
-const paymentExportSetFormulaCell = (sheet, address, formula, value = 0, format = PAYMENT_EXPORT_MONEY_FORMAT) => {
-    sheet[address] = {
-        t: 'n',
-        f: formula,
-        v: roundPaymentExportMoney(value),
-        z: format
-    };
-};
 const paymentExportSetNumberCell = (sheet, address, value = 0, format = PAYMENT_EXPORT_MONEY_FORMAT) => {
     sheet[address] = {
         t: 'n',
@@ -2228,143 +2357,96 @@ const paymentExportSetDateCell = (sheet, address, value, format = PAYMENT_EXPORT
 
 const createCashPaymentExportSheet = (xlsx, rows = [], monthInfo) => {
     const dataRowCount = Math.max(rows.length, 1);
-    const lastExcelRow = 5 + dataRowCount;
-    const rowCount = 5 + dataRowCount;
-    const columnCount = 10;
+    const rowCount = 2 + dataRowCount;
+    const columnCount = 11;
     const aoa = Array.from({ length: rowCount }, () => Array(columnCount).fill(''));
     const incomeTotal = sumPaymentExportRows(rows);
-    const { totals, recorders } = buildPaymentExportDateSummary(rows);
-    const seenDates = new Set();
 
-    aoa[0][0] = monthInfo.title;
-    aoa[0][7] = 'Cash On Hand';
-    aoa[2][0] = 'Expense';
-    aoa[2][3] = 'Income';
-    aoa[3][0] = 'Date';
-    aoa[3][1] = 'Particulars';
-    aoa[3][2] = 'Amount';
-    aoa[3][3] = 'Date';
-    aoa[3][4] = 'Category';
-    aoa[3][5] = 'Area';
-    aoa[3][6] = 'Particulars';
-    aoa[3][7] = 'Amount';
-    aoa[4][0] = 'Total';
-    aoa[4][3] = 'Total';
+    aoa[0][0] = 'Expense';
+    aoa[0][4] = 'Income';
+    aoa[0][9] = 'TOTAL INCOME';
+    aoa[1][0] = 'Date';
+    aoa[1][1] = 'Category';
+    aoa[1][2] = 'Particulars';
+    aoa[1][3] = 'Amount';
+    aoa[1][4] = 'Date';
+    aoa[1][5] = 'Account Number';
+    aoa[1][6] = 'Particulars';
+    aoa[1][7] = 'Amount';
+    aoa[1][8] = 'Collector';
+    aoa[1][9] = 'TOTAL EXPENSE';
 
     rows.forEach((row, index) => {
-        const sheetRow = 5 + index;
-        const firstForDate = row.dateKey && !seenDates.has(row.dateKey);
-        if (firstForDate) seenDates.add(row.dateKey);
-
-        aoa[sheetRow][3] = firstForDate ? row.date : '';
-        aoa[sheetRow][4] = row.methodLabel || 'Cash';
-        aoa[sheetRow][5] = row.area;
+        const sheetRow = 2 + index;
+        aoa[sheetRow][4] = row.date;
+        aoa[sheetRow][5] = row.accountNumber;
         aoa[sheetRow][6] = row.subscriber;
         aoa[sheetRow][7] = row.amount;
-        aoa[sheetRow][8] = firstForDate ? totals.get(row.dateKey) || '' : '';
-        aoa[sheetRow][9] = firstForDate && recorders.has(row.dateKey)
-            ? Array.from(recorders.get(row.dateKey)).join('/')
-            : '';
+        aoa[sheetRow][8] = row.recorderLabel;
     });
 
     const sheet = xlsx.utils.aoa_to_sheet(aoa, { cellDates: true });
-    paymentExportSetDateCell(sheet, 'A1', monthInfo.firstDate, PAYMENT_EXPORT_MONTH_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'H2', 'H5-C5', incomeTotal, PAYMENT_EXPORT_MONEY_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'C5', `SUM(C6:C${lastExcelRow})`, 0, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'H5', `SUM(H6:H${lastExcelRow})`, incomeTotal, PAYMENT_EXPORT_MONEY_FORMAT);
+    paymentExportSetNumberCell(sheet, 'K1', incomeTotal, PAYMENT_EXPORT_MONEY_FORMAT);
+    paymentExportSetNumberCell(sheet, 'K2', 0, '0');
     rows.forEach((row, index) => {
-        const excelRow = 6 + index;
-        if (sheet[`D${excelRow}`]) paymentExportSetDateCell(sheet, `D${excelRow}`, row.date);
+        const excelRow = 3 + index;
+        if (sheet[`E${excelRow}`]) paymentExportSetDateCell(sheet, `E${excelRow}`, row.date);
         if (sheet[`H${excelRow}`]) paymentExportSetNumberCell(sheet, `H${excelRow}`, row.amount, PAYMENT_EXPORT_MONEY_FORMAT);
-        if (sheet[`I${excelRow}`]) paymentExportSetNumberCell(sheet, `I${excelRow}`, sheet[`I${excelRow}`].v, PAYMENT_EXPORT_MONEY_FORMAT);
     });
-    sheet['!merges'] = [
-        paymentExportRange(xlsx, 'A1:G2'),
-        paymentExportRange(xlsx, 'A3:C3'),
-        paymentExportRange(xlsx, 'D3:H3'),
-        paymentExportRange(xlsx, 'A5:B5'),
-        paymentExportRange(xlsx, 'D5:G5')
-    ];
     sheet['!cols'] = [
-        { wch: 13 }, { wch: 32 }, { wch: 12 }, { wch: 13 }, { wch: 18 },
-        { wch: 16 }, { wch: 46 }, { wch: 12 }, { wch: 12 }, { wch: 18 }
+        { wch: 13.25 }, { wch: 13.25 }, { wch: 32.25 }, { wch: 12.25 },
+        { wch: 13.25 }, { wch: 16.25 }, { wch: 46.25 }, { wch: 12.25 },
+        { wch: 12.25 }, { wch: 18.25 }, { wch: 9.25 }
     ];
     return sheet;
 };
 
 const createGcashPaymentExportSheet = (xlsx, rows = [], monthInfo) => {
     const dataRowCount = Math.max(rows.length, 1);
-    const lastExcelRow = 6 + dataRowCount;
-    const rowCount = 6 + dataRowCount;
-    const columnCount = 12;
+    const rowCount = 2 + dataRowCount;
+    const columnCount = 13;
     const aoa = Array.from({ length: rowCount }, () => Array(columnCount).fill(''));
     const incomeTotal = sumPaymentExportRows(rows);
-    const { recorders } = buildPaymentExportDateSummary(rows);
-    const seenDates = new Set();
 
-    aoa[0][0] = monthInfo.title;
-    aoa[0][11] = 'Balance';
-    aoa[1][0] = '3J GCash';
-    aoa[2][0] = 'Expense';
-    aoa[2][7] = 'Gcash No.';
-    aoa[3][0] = 'Date';
-    aoa[3][1] = ' Category';
-    aoa[3][2] = 'Ref. No.';
-    aoa[3][3] = 'Particulars';
-    aoa[3][4] = 'Other Expense';
-    aoa[3][5] = 'Amount';
-    aoa[3][6] = 'Date';
-    aoa[3][8] = 'Reference Number';
-    aoa[3][9] = 'Particulars';
-    aoa[3][10] = 'Other Income';
-    aoa[3][11] = '3J Payment';
-    aoa[4][0] = 'TOTAL';
-    aoa[4][6] = 'TOTAL';
-    aoa[5][0] = 'Total';
-    aoa[5][4] = 0;
-    aoa[5][9] = 'Total';
-    aoa[5][10] = 0;
+    aoa[0][0] = 'Expense';
+    aoa[0][5] = 'Income';
+    aoa[0][11] = 'TOTAL INCOME';
+    aoa[1][0] = 'Date';
+    aoa[1][1] = ' Category';
+    aoa[1][2] = 'Reference Number';
+    aoa[1][3] = 'Particulars';
+    aoa[1][4] = 'Amount';
+    aoa[1][5] = 'Date';
+    aoa[1][6] = 'Gcash Account';
+    aoa[1][7] = 'Reference Number';
+    aoa[1][8] = 'Account Number';
+    aoa[1][9] = 'Particulars';
+    aoa[1][10] = 'Amount';
+    aoa[1][11] = 'TOTAL EXPENSE';
 
     rows.forEach((row, index) => {
-        const sheetRow = 6 + index;
-        const firstForDate = row.dateKey && !seenDates.has(row.dateKey);
-        if (firstForDate) seenDates.add(row.dateKey);
-
-        aoa[sheetRow][6] = firstForDate ? row.date : '';
-        aoa[sheetRow][7] = firstForDate && recorders.has(row.dateKey)
-            ? Array.from(recorders.get(row.dateKey)).join('/')
-            : '';
-        aoa[sheetRow][8] = row.reference || row.orNumber;
+        const sheetRow = 2 + index;
+        aoa[sheetRow][5] = row.date;
+        aoa[sheetRow][6] = row.gcashAccount || row.recorderLabel;
+        aoa[sheetRow][7] = row.reference || row.orNumber;
+        aoa[sheetRow][8] = row.accountNumber;
         aoa[sheetRow][9] = row.subscriber;
-        aoa[sheetRow][11] = row.amount;
+        aoa[sheetRow][10] = row.amount;
     });
 
     const sheet = xlsx.utils.aoa_to_sheet(aoa, { cellDates: true });
-    paymentExportSetFormulaCell(sheet, 'L2', 'L5-F5', incomeTotal, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'F5', 'F6', 0, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'F6', `SUM(F7:F${lastExcelRow})`, 0, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'L5', 'L6', incomeTotal, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetFormulaCell(sheet, 'L6', `SUM(L7:L${lastExcelRow})`, incomeTotal, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetNumberCell(sheet, 'E6', 0, PAYMENT_EXPORT_PESO_FORMAT);
-    paymentExportSetNumberCell(sheet, 'K6', 0, PAYMENT_EXPORT_MONEY_FORMAT);
+    paymentExportSetNumberCell(sheet, 'M1', incomeTotal, PAYMENT_EXPORT_MONEY_FORMAT);
+    paymentExportSetNumberCell(sheet, 'M2', 0, PAYMENT_EXPORT_MONEY_FORMAT);
     rows.forEach((row, index) => {
-        const excelRow = 7 + index;
-        if (sheet[`G${excelRow}`]) paymentExportSetDateCell(sheet, `G${excelRow}`, row.date);
-        if (sheet[`L${excelRow}`]) paymentExportSetNumberCell(sheet, `L${excelRow}`, row.amount, PAYMENT_EXPORT_MONEY_FORMAT);
+        const excelRow = 3 + index;
+        if (sheet[`F${excelRow}`]) paymentExportSetDateCell(sheet, `F${excelRow}`, row.date);
+        if (sheet[`K${excelRow}`]) paymentExportSetNumberCell(sheet, `K${excelRow}`, row.amount, PAYMENT_EXPORT_MONEY_FORMAT);
     });
-    sheet['!merges'] = [
-        paymentExportRange(xlsx, 'A1:J1'),
-        paymentExportRange(xlsx, 'A2:J2'),
-        paymentExportRange(xlsx, 'A3:F3'),
-        paymentExportRange(xlsx, 'J3:L3'),
-        paymentExportRange(xlsx, 'A5:E5'),
-        paymentExportRange(xlsx, 'G5:K5'),
-        paymentExportRange(xlsx, 'A6:D6')
-    ];
     sheet['!cols'] = [
-        { wch: 18 }, { wch: 19 }, { wch: 17 }, { wch: 38 },
-        { wch: 16 }, { wch: 18 }, { wch: 19 }, { wch: 14 },
-        { wch: 21 }, { wch: 46 }, { wch: 15 }, { wch: 21 }
+        { wch: 18.25 }, { wch: 19.25 }, { wch: 17.25 }, { wch: 38.25 },
+        { wch: 18.25 }, { wch: 19.25 }, { wch: 33.25 }, { wch: 29.5 },
+        { wch: 21.25 }, { wch: 46.25 }, { wch: 21.25 }, { wch: 14.38 },
+        { wch: 11.63 }
     ];
     return sheet;
 };

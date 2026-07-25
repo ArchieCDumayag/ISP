@@ -655,6 +655,63 @@ const deleteCustomerArchivePermanently = async (archiveId, {
     };
 };
 
+const deleteAllCustomerArchivesPermanently = async ({
+    branchId
+} = {}) => {
+    const safeBranchId = Number(branchId);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
+        throw createError(400, 'Branch ID is required.');
+    }
+
+    if (!await isRelationalReady()) {
+        const rows = await readJsonArchiveRows();
+        const deletedRows = [];
+        const keptRows = [];
+        rows.forEach((row) => {
+            if (Number(row.branch_id) === safeBranchId && !row.restored_at) {
+                deletedRows.push(row);
+            } else {
+                keptRows.push(row);
+            }
+        });
+        if (!deletedRows.length) {
+            return { deletedCount: 0 };
+        }
+        await writeJsonArchiveRows(keptRows);
+        const proofFilePaths = deletedRows.flatMap((row) =>
+            normalizeStringArray(parseJsonText(row?.proof_file_paths_json || '[]', []))
+        );
+        deleteLocalFiles(proofFilePaths);
+        return { deletedCount: deletedRows.length };
+    }
+
+    await ensureCustomerArchivesTable();
+
+    const [rows] = await query(
+        `SELECT proof_file_paths_json AS proofFilePathsJson
+         FROM ${CUSTOMER_ARCHIVES_TABLE}
+         WHERE branch_id = ?
+           AND restored_at IS NULL`,
+        [safeBranchId]
+    );
+    const items = Array.isArray(rows) ? rows : [];
+    if (!items.length) {
+        return { deletedCount: 0 };
+    }
+    const proofFilePaths = items.flatMap((row) =>
+        normalizeStringArray(parseJsonText(row?.proofFilePathsJson || '[]', []))
+    );
+
+    const [result] = await query(
+        `DELETE FROM ${CUSTOMER_ARCHIVES_TABLE}
+         WHERE branch_id = ?
+           AND restored_at IS NULL`,
+        [safeBranchId]
+    );
+    deleteLocalFiles(proofFilePaths);
+    return { deletedCount: Number(result?.affectedRows || items.length || 0) };
+};
+
 const purgeExpiredCustomerArchives = async () => {
     if (!await isRelationalReady()) {
         const rows = await readJsonArchiveRows();
@@ -743,6 +800,7 @@ module.exports = {
     getCustomerArchiveById,
     markCustomerArchiveRestored,
     deleteCustomerArchivePermanently,
+    deleteAllCustomerArchivesPermanently,
     purgeExpiredCustomerArchives,
     scheduleCustomerArchiveCleanup
 };

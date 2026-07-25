@@ -366,6 +366,24 @@ router.put('/:id', async (req, res, next) => {
     }
 });
 
+router.delete('/', async (req, res, next) => {
+    try {
+        if (!await isRelationalReady()) {
+            const items = await readExpenseItems(req.branchId);
+            await writeExpenseItems(req.branchId, []);
+            return res.json({ ok: true, deletedCount: items.length });
+        }
+
+        const [result] = await query(
+            'DELETE FROM finance_expenses WHERE branch_id = ?',
+            [req.branchId]
+        );
+        return res.json({ ok: true, deletedCount: Number(result?.affectedRows || 0) });
+    } catch (error) {
+        return next(error);
+    }
+});
+
 router.delete('/:id', async (req, res, next) => {
     try {
         const entryId = toSafeText(req.params?.id, 80);

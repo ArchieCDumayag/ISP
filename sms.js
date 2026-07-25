@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const { query } = require('./db');
 const { ensureSmsSchema } = require('./sms-schema');
+const { isJsonStorageMode } = require('./storage-mode');
 const {
   STATUS_FAILED,
   STATUS_SENT,
@@ -13,6 +14,14 @@ const {
 } = require('./sms-delivery');
 
 const router = express.Router();
+
+router.use((req, res, next) => {
+  if (!isJsonStorageMode()) return next();
+  return res.status(503).json({
+    ok: false,
+    error: 'SMS tools require MySQL storage. JSON file storage mode does not use the SMS database schema.'
+  });
+});
 
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
 

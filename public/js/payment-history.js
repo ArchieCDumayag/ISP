@@ -24,6 +24,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportBtn = document.getElementById('paymentHistoryExportBtn');
     const backupBtn = document.getElementById('paymentHistoryBackupBtn');
     const clearBtn = document.getElementById('paymentHistoryClearBtn');
+    const unmatchedBtn = document.getElementById('paymentHistoryUnmatchedBtn');
+    const unmatchedBadge = document.getElementById('paymentHistoryUnmatchedBadge');
+    const unmatchedModalEl = document.getElementById('paymentHistoryUnmatchedModal');
+    const unmatchedModalBody = document.getElementById('paymentHistoryUnmatchedBody');
+    const unmatchedModalSummary = document.getElementById('paymentHistoryUnmatchedSummary');
+    const unmatchedRefreshBtn = document.getElementById('paymentHistoryUnmatchedRefreshBtn');
+    const unmatchedCustomerList = document.getElementById('paymentHistoryUnmatchedCustomerList');
     const metricEntriesEl = document.getElementById('historyMetricEntries');
     const metricPaymentsEl = document.getElementById('historyMetricPayments');
     const metricReferencesEl = document.getElementById('historyMetricReferences');
@@ -60,6 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         allRows: [],
         filteredRows: [],
+        customers: [],
+        unmatchedRows: [],
+        unmatchedCustomerValues: new Map(),
         page: 1,
         pageSize: Number(pageSizeSelect?.value) || 25
     };
@@ -266,13 +276,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const imported = Number(payload.imported) || 0;
         const duplicates = Number(payload.duplicates) || 0;
         const skipped = Number(payload.skipped) || 0;
+        const unmatchedQueued = Number(payload.unmatchedQueued) || 0;
         const cash = Number(payload?.methods?.cash) || 0;
         const gcash = Number(payload?.methods?.gcash) || 0;
         const importedText = `${formatCount(imported)} ${imported === 1 ? 'payment' : 'payments'}`;
         const methodText = `Cash ${formatCount(cash)}, GCash ${formatCount(gcash)}`;
         const extras = [];
         if (duplicates) extras.push(`${formatCount(duplicates)} duplicate${duplicates === 1 ? '' : 's'} skipped`);
-        if (skipped) extras.push(`${formatCount(skipped)} unmatched row${skipped === 1 ? '' : 's'} skipped`);
+        if (unmatchedQueued) {
+            extras.push(`${formatCount(unmatchedQueued)} unmatched row${unmatchedQueued === 1 ? '' : 's'} ready for review`);
+        } else if (skipped) {
+            extras.push(`${formatCount(skipped)} unmatched row${skipped === 1 ? '' : 's'} skipped`);
+        }
         return `Imported ${importedText} (${methodText})${extras.length ? `. ${extras.join('; ')}.` : '.'}`;
     };
     const countEntriesInPayments = (payments = {}) => Object.values(payments || {}).reduce((sum, record) => (
@@ -346,6 +361,304 @@ document.addEventListener('DOMContentLoaded', () => {
     if (exportMonthInput && !exportMonthInput.value) {
         exportMonthInput.value = getCurrentMonthValue();
     }
+
+    const getCustomerAccountNumber = (customer) => String(customer?.accountNumber || '').trim();
+    const buildUnmatchedCustomerValue = (customer) => {
+        const accountNumber = getCustomerAccountNumber(customer);
+        if (!accountNumber) return '';
+        const name = getCustomerName(customer, accountNumber);
+        const area = getCustomerArea(customer);
+        return `${accountNumber} - ${name}${area ? ` (${area})` : ''}`;
+    };
+    const getSortedCustomers = () => (Array.isArray(state.customers) ? state.customers : [])
+        .filter((customer) => getCustomerAccountNumber(customer))
+        .slice()
+        .sort((left, right) => {
+            const leftName = getCustomerName(left, getCustomerAccountNumber(left));
+            const rightName = getCustomerName(right, getCustomerAccountNumber(right));
+            return leftName.localeCompare(rightName, undefined, { sensitivity: 'base', numeric: true });
+        });
+    const renderUnmatchedCustomerList = () => {
+        state.unmatchedCustomerValues = new Map();
+        if (!unmatchedCustomerList) return;
+        const options = getSortedCustomers().map((customer) => {
+            const accountNumber = getCustomerAccountNumber(customer);
+            const value = buildUnmatchedCustomerValue(customer);
+            if (!value) return '';
+            state.unmatchedCustomerValues.set(normalizeText(value), accountNumber);
+            state.unmatchedCustomerValues.set(normalizeText(accountNumber), accountNumber);
+            return `<option value="${escapeHtml(value)}"></option>`;
+        }).filter(Boolean);
+        unmatchedCustomerList.innerHTML = options.join('');
+    };
+    const getUnmatchedCustomerInputValue = (accountNumber = '') => {
+        const account = String(accountNumber || '').trim();
+        if (!account) return '';
+        const customer = (Array.isArray(state.customers) ? state.customers : []).find((item) => getCustomerAccountNumber(item) === account);
+        return customer ? buildUnmatchedCustomerValue(customer) : account;
+    };
+    const resolveUnmatchedInputAccountNumber = (value = '') => {
+        const rawValue = String(value || '').trim();
+        if (!rawValue) return '';
+        const key = normalizeText(rawValue);
+        if (state.unmatchedCustomerValues.has(key)) return state.unmatchedCustomerValues.get(key);
+        const leadingAccount = rawValue.match(/^\s*(\d{5,20})\b/);
+        if (leadingAccount?.[1]) return leadingAccount[1];
+        const matches = getSortedCustomers().filter((customer) => {
+            const accountNumber = getCustomerAccountNumber(customer);
+            return normalizeText(buildUnmatchedCustomerValue(customer)).includes(key)
+                || normalizeText(getCustomerName(customer, accountNumber)).includes(key);
+        });
+        return matches.length === 1 ? getCustomerAccountNumber(matches[0]) : '';
+    };
+    const updateUnmatchedButton = (count = state.unmatchedRows.length) => {
+        const normalizedCount = Math.max(0, Number(count) || 0);
+        if (unmatchedBadge) unmatchedBadge.textContent = formatCount(normalizedCount);
+        if (!unmatchedBtn) return;
+        unmatchedBtn.classList.toggle('btn-outline-warning', normalizedCount > 0);
+        unmatchedBtn.classList.toggle('btn-outline-secondary', normalizedCount <= 0);
+        unmatchedBtn.title = normalizedCount
+            ? `${formatCount(normalizedCount)} unmatched imported ${normalizedCount === 1 ? 'payment' : 'payments'}`
+            : 'No unmatched imported payments';
+    };
+    const renderUnmatchedRecords = () => {
+        if (unmatchedModalSummary) {
+            const count = state.unmatchedRows.length;
+            unmatchedModalSummary.textContent = `${formatCount(count)} ${count === 1 ? 'record' : 'records'}`;
+        }
+        if (!unmatchedModalBody) return;
+        if (!state.unmatchedRows.length) {
+            unmatchedModalBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-secondary py-4">No unmatched imported payments.</td>
+                </tr>
+            `;
+            return;
+        }
+
+        unmatchedModalBody.innerHTML = state.unmatchedRows.map((row) => {
+            const dateObj = safeDate(row.date);
+            const displayDate = dateObj ? formatEntryDate(row.date, dateObj) : (row.date || 'No date');
+            const methodClass = normalizeText(row.method) === 'gcash' ? 'bg-blue-lt text-blue' : 'bg-green-lt text-green';
+            const reference = String(row.reference || '').trim();
+            const excelAccount = String(row.accountNumber || '').trim();
+            const sourceLines = [
+                row.importFileName ? `<span>${escapeHtml(row.importFileName)}</span>` : '',
+                row.sheetName ? `<span>${escapeHtml(row.sheetName)}${row.rowNumber ? ` row ${escapeHtml(row.rowNumber)}` : ''}</span>` : '',
+                excelAccount ? `<span>Excel account: ${escapeHtml(excelAccount)}</span>` : '',
+                row.reason ? `<span class="text-warning">${escapeHtml(row.reason)}</span>` : ''
+            ].filter(Boolean).join('');
+            const metaLines = [
+                row.area ? `<span class="text-secondary">${escapeHtml(row.area)}</span>` : '',
+                reference ? `<span class="text-secondary">Ref: ${escapeHtml(reference)}</span>` : '',
+                row.collector ? `<span class="text-secondary">Collector: ${escapeHtml(row.collector)}</span>` : '',
+                row.gcashAccount ? `<span class="text-secondary">GCash: ${escapeHtml(row.gcashAccount)}</span>` : ''
+            ].filter(Boolean).join('');
+
+            return `
+                <tr data-unmatched-row="${escapeHtml(row.id)}">
+                    <td>
+                        <div class="payment-history-stack">
+                            <span class="fw-semibold">${escapeHtml(displayDate)}</span>
+                            <span class="badge ${methodClass}">${escapeHtml(row.method || 'Cash')}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="payment-history-stack">
+                            <span class="fw-semibold">${escapeHtml(row.customerName || 'No name')}</span>
+                            ${metaLines}
+                        </div>
+                    </td>
+                    <td class="is-num"><span class="fw-semibold text-success">${escapeHtml(formatCurrency(row.amount))}</span></td>
+                    <td>
+                        <div class="payment-history-stack payment-history-unmatched-source text-secondary">${sourceLines}</div>
+                    </td>
+                    <td>
+                        <input
+                            class="form-control payment-history-unmatched-account-input"
+                            list="paymentHistoryUnmatchedCustomerList"
+                            placeholder="Search subscriber"
+                            value="${escapeHtml(getUnmatchedCustomerInputValue(row.accountNumber))}"
+                            aria-label="Bind unmatched payment to subscriber"
+                            autocomplete="off"
+                        >
+                    </td>
+                    <td class="is-center">
+                        <div class="payment-history-action-row">
+                            <button type="button" class="btn btn-primary btn-sm payment-history-unmatched-bind" data-record-id="${escapeHtml(row.id)}">
+                                <i class="ti ti-link" aria-hidden="true"></i>
+                                Bind
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm payment-history-unmatched-delete" data-record-id="${escapeHtml(row.id)}">
+                                <i class="ti ti-trash" aria-hidden="true"></i>
+                                Delete
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    };
+    const renderUnmatchedLoading = () => {
+        if (unmatchedModalSummary) unmatchedModalSummary.textContent = 'Loading records';
+        if (!unmatchedModalBody) return;
+        unmatchedModalBody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-secondary py-4">
+                    <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                    Loading unmatched imported payments...
+                </td>
+            </tr>
+        `;
+    };
+    const loadUnmatchedRecords = async ({ render = false } = {}) => {
+        try {
+            const payload = await fetchJSON('/api/payments/import-unmatched');
+            state.unmatchedRows = Array.isArray(payload?.records) ? payload.records : [];
+            updateUnmatchedButton(Number(payload?.count) || state.unmatchedRows.length);
+            if (render) renderUnmatchedRecords();
+            return state.unmatchedRows;
+        } catch (error) {
+            if (render && unmatchedModalBody) {
+                unmatchedModalBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-danger py-4">${escapeHtml(error.message || 'Failed to load unmatched imported payments.')}</td>
+                    </tr>
+                `;
+            }
+            showToast(error.message || 'Failed to load unmatched imported payments.', 'error');
+            return [];
+        }
+    };
+    const ensureCustomersLoaded = async () => {
+        if (Array.isArray(state.customers) && state.customers.length) {
+            renderUnmatchedCustomerList();
+            return state.customers;
+        }
+        const payload = await fetchJSON('/api/customers');
+        state.customers = Array.isArray(payload?.customers) ? payload.customers : [];
+        renderUnmatchedCustomerList();
+        return state.customers;
+    };
+    const getTablerModalClass = () => (
+        window.bootstrap?.Modal
+        || window.tabler?.bootstrap?.Modal
+        || window.tabler?.Modal
+        || null
+    );
+    const fallbackShowModal = (modalEl) => {
+        if (!modalEl) return;
+        modalEl.classList.add('show');
+        modalEl.style.display = 'block';
+        modalEl.removeAttribute('aria-hidden');
+        modalEl.setAttribute('aria-modal', 'true');
+        modalEl.setAttribute('role', 'dialog');
+        document.body.classList.add('modal-open');
+        if (!document.querySelector('.modal-backdrop.payment-history-unmatched-backdrop')) {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show payment-history-unmatched-backdrop';
+            document.body.appendChild(backdrop);
+        }
+    };
+    const fallbackHideModal = (modalEl) => {
+        if (!modalEl) return;
+        modalEl.classList.remove('show');
+        modalEl.style.display = 'none';
+        modalEl.setAttribute('aria-hidden', 'true');
+        modalEl.removeAttribute('aria-modal');
+        document.querySelectorAll('.modal-backdrop.payment-history-unmatched-backdrop').forEach((backdrop) => backdrop.remove());
+        if (!document.querySelector('.modal.show')) {
+            document.body.classList.remove('modal-open');
+        }
+    };
+    const showUnmatchedModal = () => {
+        if (!unmatchedModalEl) return;
+        const Modal = getTablerModalClass();
+        if (Modal?.getOrCreateInstance) {
+            Modal.getOrCreateInstance(unmatchedModalEl).show();
+            return;
+        }
+        if (Modal) {
+            new Modal(unmatchedModalEl).show();
+            return;
+        }
+        fallbackShowModal(unmatchedModalEl);
+    };
+    const openUnmatchedModal = async () => {
+        showUnmatchedModal();
+        renderUnmatchedLoading();
+        try {
+            await Promise.all([
+                ensureCustomersLoaded(),
+                loadUnmatchedRecords({ render: false })
+            ]);
+            renderUnmatchedRecords();
+        } catch (error) {
+            if (unmatchedModalBody) {
+                unmatchedModalBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-danger py-4">${escapeHtml(error.message || 'Failed to load unmatched imported payments.')}</td>
+                    </tr>
+                `;
+            }
+            showToast(error.message || 'Failed to load unmatched imported payments.', 'error');
+        }
+    };
+    const bindUnmatchedPayment = async (button) => {
+        const recordId = String(button?.dataset?.recordId || '').trim();
+        const rowEl = button?.closest('tr');
+        const input = rowEl?.querySelector('.payment-history-unmatched-account-input');
+        const accountNumber = resolveUnmatchedInputAccountNumber(input?.value || '');
+        if (!recordId) {
+            showToast('Unmatched payment record is missing.', 'error');
+            return;
+        }
+        if (!accountNumber) {
+            showToast('Select a matching subscriber before binding.', 'error');
+            input?.focus();
+            return;
+        }
+
+        setButtonBusy(button, true);
+        if (input) input.disabled = true;
+        try {
+            const payload = await fetchJSON(`/api/payments/import-unmatched/${encodeURIComponent(recordId)}/bind`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accountNumber })
+            });
+            await loadHistory();
+            await loadUnmatchedRecords({ render: true });
+            showToast(`Payment bound to ${payload?.customerName || accountNumber}.`, 'success');
+        } catch (error) {
+            showToast(error.message || 'Failed to bind unmatched payment.', 'error');
+            setButtonBusy(button, false);
+            if (input) input.disabled = false;
+        }
+    };
+    const deleteUnmatchedPayment = async (button) => {
+        const recordId = String(button?.dataset?.recordId || '').trim();
+        if (!recordId) {
+            showToast('Unmatched payment record is missing.', 'error');
+            return;
+        }
+        const confirmed = typeof window.appConfirm === 'function'
+            ? await window.appConfirm('Delete this unmatched imported payment?', { title: 'Delete Unmatched Payment' })
+            : window.confirm('Delete this unmatched imported payment?');
+        if (!confirmed) return;
+
+        setButtonBusy(button, true);
+        try {
+            await fetchJSON(`/api/payments/import-unmatched/${encodeURIComponent(recordId)}`, {
+                method: 'DELETE'
+            });
+            await loadUnmatchedRecords({ render: true });
+            showToast('Unmatched payment deleted.', 'success');
+        } catch (error) {
+            showToast(error.message || 'Failed to delete unmatched payment.', 'error');
+            setButtonBusy(button, false);
+        }
+    };
 
     function populateAreaFilter(rows) {
         if (!areaFilter) return;
@@ -681,10 +994,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             await loadHistory();
+            await loadUnmatchedRecords({ render: unmatchedModalEl?.classList.contains('show') });
             if (Array.isArray(payload?.warnings) && payload.warnings.length) {
                 console.warn('Payment import skipped rows:', payload.warnings);
             }
             showToast(describePaymentImport(payload), Number(payload?.imported) ? 'success' : 'info');
+            if (Number(payload?.unmatchedQueued) > 0) {
+                await openUnmatchedModal();
+            }
         } catch (error) {
             showToast(error.message || 'Failed to import payment records.', 'error');
         } finally {
@@ -819,7 +1136,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 fetchJSON('/api/payments')
             ]);
 
-            state.allRows = buildRows(customerPayload?.customers || [], paymentPayload || {});
+            state.customers = Array.isArray(customerPayload?.customers) ? customerPayload.customers : [];
+            renderUnmatchedCustomerList();
+            state.allRows = buildRows(state.customers, paymentPayload || {});
             populateAreaFilter(state.allRows);
             populateRecordedByFilter(state.allRows);
             applyFilters({ resetPage: true });
@@ -859,6 +1178,35 @@ document.addEventListener('DOMContentLoaded', () => {
         void importPaymentHistoryFromFile(importFileInput.files?.[0] || null);
     });
     exportBtn?.addEventListener('click', exportPaymentHistoryExcel);
+    unmatchedBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void openUnmatchedModal();
+    });
+    unmatchedRefreshBtn?.addEventListener('click', () => {
+        void loadUnmatchedRecords({ render: true });
+    });
+    unmatchedModalBody?.addEventListener('click', (event) => {
+        const bindBtn = event.target.closest('.payment-history-unmatched-bind');
+        if (bindBtn) {
+            void bindUnmatchedPayment(bindBtn);
+            return;
+        }
+        const deleteBtn = event.target.closest('.payment-history-unmatched-delete');
+        if (deleteBtn) {
+            void deleteUnmatchedPayment(deleteBtn);
+        }
+    });
+    unmatchedModalEl?.addEventListener('click', (event) => {
+        const closeBtn = event.target.closest('[data-bs-dismiss="modal"]');
+        if (!closeBtn) return;
+        const Modal = getTablerModalClass();
+        if (Modal?.getInstance) {
+            const instance = Modal.getInstance(unmatchedModalEl);
+            if (instance) return;
+        }
+        fallbackHideModal(unmatchedModalEl);
+    });
     backupBtn?.addEventListener('click', backupPaymentRecords);
     clearBtn?.addEventListener('click', clearPaymentRecords);
     tableBody?.addEventListener('click', async (event) => {
@@ -917,4 +1265,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     loadHistory();
+    loadUnmatchedRecords();
 });

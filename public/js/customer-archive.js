@@ -8,6 +8,7 @@
     const summary = document.getElementById('archiveSummary');
     const selectAllInput = document.getElementById('archiveSelectAll');
     const deleteSelectedBtn = document.getElementById('archiveDeleteSelectedBtn');
+    const deleteAllBtn = document.getElementById('archiveDeleteAllBtn');
 
     if (!tableBody || !pageSizeSelect) return;
 
@@ -23,13 +24,18 @@
         errorMessage: '',
         search: '',
         bulkDeleteInProgress: false,
+        bulkDeleteScope: '',
         selectedIds: new Set(),
         selectedMeta: new Map()
     };
 
     const notify = (message, type = 'info') => {
         if (typeof window.appToast === 'function') {
-            window.appToast(message, { type });
+            try {
+                window.appToast(message, { type });
+            } catch (error) {
+                console.warn('Archive notification failed:', error);
+            }
             return;
         }
         console.log(message);
@@ -146,9 +152,17 @@
 
         if (deleteSelectedBtn) {
             deleteSelectedBtn.disabled = selectedCount === 0 || state.loading || state.bulkDeleteInProgress;
-            deleteSelectedBtn.innerHTML = state.bulkDeleteInProgress
+            deleteSelectedBtn.innerHTML = state.bulkDeleteInProgress && state.bulkDeleteScope === 'selected'
                 ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Deleting...'
                 : `<i class="ti ti-trash" aria-hidden="true"></i> Delete selected${selectedCount ? ` (${selectedCount})` : ''}`;
+        }
+
+        if (deleteAllBtn) {
+            const total = Number(state.total || 0);
+            deleteAllBtn.disabled = total === 0 || state.loading || state.bulkDeleteInProgress;
+            deleteAllBtn.innerHTML = state.bulkDeleteInProgress && state.bulkDeleteScope === 'all'
+                ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Deleting all...'
+                : '<i class="ti ti-trash-x" aria-hidden="true"></i> Delete all';
         }
     };
 
@@ -291,8 +305,17 @@
     };
 
     const render = () => {
-        renderTable();
-        renderPagination();
+        try {
+            renderTable();
+            renderPagination();
+        } catch (error) {
+            console.error('Failed to render archived records:', error);
+            state.loading = false;
+            state.errorMessage = error?.message || 'Failed to render archived records.';
+            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="archive-empty">${escapeHtml(state.errorMessage)}</td></tr>`;
+            renderPagination();
+            renderSelectionUi();
+        }
     };
 
     const apiFetch = async (url, options = {}) => {
@@ -371,10 +394,16 @@
     };
 
     const confirmAction = async (message, options = {}) => {
+        let result;
         if (window.appConfirm) {
-            return window.appConfirm(message, options);
+            result = await window.appConfirm(message, options);
+        } else {
+            result = window.confirm(message);
         }
-        return window.confirm(message);
+        if (result && typeof result === 'object') {
+            return result.ok === true || result.confirmed === true || result.value === true;
+        }
+        return result === true;
     };
 
     const restoreArchivedCustomer = async ({ archiveId, customerName, accountNumber, recordType }) => {
@@ -419,11 +448,11 @@
             if (!confirmed) return false;
         }
 
-        await apiFetch(`/api/customers/archive/${encodeURIComponent(normalizedId)}`, {
+        const payload = await apiFetch(`/api/customers/archive/${encodeURIComponent(normalizedId)}`, {
             method: 'DELETE'
         });
         forgetArchiveItem(normalizedId);
-        return true;
+        return payload || { ok: true };
     };
 
     const deleteSelectedArchives = async () => {
@@ -446,41 +475,93 @@
         if (!confirmed) return;
 
         state.bulkDeleteInProgress = true;
+        state.bulkDeleteScope = 'selected';
         renderSelectionUi();
 
-        const results = await Promise.allSettled(selectedIds.map(async (archiveId) => {
-            const meta = state.selectedMeta.get(archiveId) || { archiveId };
-            await deleteArchivedCustomer({
-                archiveId,
-                customerName: meta.customerName,
-                accountNumber: meta.accountNumber,
-                skipConfirm: true
+        try {
+            const results = await Promise.allSettled(selectedIds.map(async (archiveId) => {
+                const meta = state.selectedMeta.get(archiveId) || { archiveId };
+                const payload = await deleteArchivedCustomer({
+                    archiveId,
+                    customerName: meta.customerName,
+                    accountNumber: meta.accountNumber,
+                    skipConfirm: true
+                });
+                return { archiveId, warning: payload?.warning || '' };
+            }));
+
+            const succeededIds = [];
+            const warnings = [];
+            const failedResults = [];
+            results.forEach((result) => {
+                if (result.status === 'fulfilled' && result.value?.archiveId) {
+                    succeededIds.push(result.value.archiveId);
+                    if (result.value.warning) warnings.push(result.value.warning);
+                } else {
+                    failedResults.push(result.reason || new Error('Archived record was not deleted.'));
+                }
             });
-            return archiveId;
-        }));
 
-        const succeededIds = [];
-        const failedResults = [];
-        results.forEach((result) => {
-            if (result.status === 'fulfilled') {
-                succeededIds.push(result.value);
-            } else {
-                failedResults.push(result.reason);
+            succeededIds.forEach((archiveId) => forgetArchiveItem(archiveId));
+
+            if (succeededIds.length && failedResults.length) {
+                notify(`${formatArchiveCollection(succeededIds.length)} deleted. ${failedResults.length} failed.`, 'warning');
+            } else if (succeededIds.length) {
+                notify(`${formatArchiveCollection(succeededIds.length)} deleted.`, 'success');
+            } else if (failedResults.length) {
+                notify(failedResults[0]?.message || 'Failed to delete selected archived records.', 'error');
             }
-        });
-
-        succeededIds.forEach((archiveId) => forgetArchiveItem(archiveId));
-        state.bulkDeleteInProgress = false;
-
-        if (succeededIds.length && failedResults.length) {
-            notify(`${formatArchiveCollection(succeededIds.length)} deleted. ${failedResults.length} failed.`, 'warning');
-        } else if (succeededIds.length) {
-            notify(`${formatArchiveCollection(succeededIds.length)} deleted.`, 'success');
-        } else if (failedResults.length) {
-            notify(failedResults[0]?.message || 'Failed to delete selected archived records.', 'error');
+            if (warnings.length) {
+                notify(warnings[0], 'warning');
+            }
+        } catch (error) {
+            notify(error?.message || 'Failed to delete selected archived records.', 'error');
+        } finally {
+            state.bulkDeleteInProgress = false;
+            state.bulkDeleteScope = '';
+            await loadArchives();
         }
+    };
 
-        await loadArchives();
+    const deleteAllArchives = async () => {
+        const total = Number(state.total || 0);
+        if (!total || state.bulkDeleteInProgress) return;
+
+        const confirmed = await confirmAction(
+            `Permanently delete all archived records? This deletes every archived record in this branch, not only this page. This cannot be undone.`,
+            {
+                title: 'Delete All Archive Records',
+                okText: 'Delete All'
+            }
+        );
+        if (!confirmed) return;
+
+        state.bulkDeleteInProgress = true;
+        state.bulkDeleteScope = 'all';
+        renderSelectionUi();
+        renderPagination();
+
+        try {
+            const payload = await apiFetch('/api/customers/archive', {
+                method: 'DELETE'
+            });
+            const deletedCount = Number(payload?.deletedCount || 0);
+            state.selectedIds.clear();
+            state.selectedMeta.clear();
+            state.offset = 0;
+            notify(
+                deletedCount
+                    ? `${formatArchiveCollection(deletedCount)} permanently deleted.`
+                    : 'No archived records were deleted.',
+                deletedCount ? 'success' : 'info'
+            );
+        } catch (error) {
+            notify(error?.message || 'Failed to delete all archived records.', 'error');
+        } finally {
+            state.bulkDeleteInProgress = false;
+            state.bulkDeleteScope = '';
+            await loadArchives();
+        }
     };
 
     let searchTimer = null;
@@ -535,6 +616,10 @@
         deleteSelectedArchives();
     });
 
+    deleteAllBtn?.addEventListener('click', () => {
+        deleteAllArchives();
+    });
+
     tableBody.addEventListener('change', (event) => {
         const checkbox = event.target.closest('[data-archive-select]');
         if (!checkbox) return;
@@ -573,9 +658,12 @@
         const accountNumber = String(deleteBtn.dataset.accountNumber || '').trim();
 
         try {
-            const deleted = await deleteArchivedCustomer({ archiveId, customerName, accountNumber });
-            if (!deleted) return;
+            const payload = await deleteArchivedCustomer({ archiveId, customerName, accountNumber });
+            if (!payload) return;
             notify(`${formatArchiveLabel({ customerName, accountNumber })} permanently deleted from archive.`, 'success');
+            if (payload?.warning) {
+                notify(payload.warning, 'warning');
+            }
             await loadArchives();
         } catch (error) {
             notify(error.message || 'Failed to permanently delete archived record.', 'error');

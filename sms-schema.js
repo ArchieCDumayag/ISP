@@ -1,4 +1,5 @@
 const { query } = require('./db');
+const { isJsonStorageMode } = require('./storage-mode');
 
 let smsSchemaReady = null;
 
@@ -57,6 +58,7 @@ const hasForeignKey = async (tableName, constraintName) => {
 };
 
 const ensureSmsSchema = async () => {
+  if (isJsonStorageMode()) return false;
   if (smsSchemaReady) return smsSchemaReady;
   smsSchemaReady = (async () => {
     await query(`

@@ -37,6 +37,7 @@
             </div>
             <div class="header-actions">
                 <button class="ghost-btn import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import clients</button>
+                <button class="ghost-btn export-clients-btn" id="exportClientsBtn" type="button"><i class="ti ti-file-export" aria-hidden="true"></i> Export clients</button>
                 <input type="file" class="import-clients-input" id="importClientsFile" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Import clients Excel file">
                 <button class="add-btn" id="openModalBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add customer</button> 
             </div>
@@ -867,6 +868,7 @@
             const creditOverrideModal = document.getElementById('creditOverrideModal');
             const openBtn = document.getElementById('openModalBtn');
             const importClientsBtn = document.getElementById('importClientsBtn');
+            const exportClientsBtn = document.getElementById('exportClientsBtn');
             const importClientsFileInput = document.getElementById('importClientsFile');
             const closeBtn = document.getElementById('closeModalBtn');
             const closeViewBtn = document.getElementById('closeViewModalBtn');
@@ -1945,6 +1947,24 @@
                 return fromParts || fallback || String(customer?.accountNumber || '').trim();
             };
 
+            const getReferralCustomerLocation = (customer = {}) => {
+                const address = [
+                    customer?.street,
+                    customer?.barangay,
+                    customer?.municipality,
+                    customer?.province
+                ].map((value) => String(value || '').trim()).filter(Boolean);
+                const area = String(customer?.area || customer?.coverageArea || '').trim();
+                return address.join(', ') || area;
+            };
+
+            const getReferralCustomerOptionLabel = (customer = {}, fallback = '') => {
+                const accountNumber = String(customer?.accountNumber || fallback || '').trim();
+                const name = getReferralCustomerName(customer, accountNumber);
+                const location = getReferralCustomerLocation(customer);
+                return `${name}${location ? ` - ${location}` : ''}${accountNumber ? ` (${accountNumber})` : ''}`;
+            };
+
             const findReferralCustomer = (accountNumber = '') => {
                 const target = String(accountNumber || '').trim();
                 if (!target) return null;
@@ -1976,15 +1996,14 @@
                         const accountNumber = String(customer?.accountNumber || '').trim();
                         return accountNumber && accountNumber !== exclude;
                     })
-                    .sort((left, right) => getReferralCustomerName(left).localeCompare(getReferralCustomerName(right)))
+                    .sort((left, right) => getReferralCustomerOptionLabel(left).localeCompare(getReferralCustomerOptionLabel(right)))
                     .forEach((customer) => {
                         const accountNumber = String(customer.accountNumber || '').trim();
-                        const name = getReferralCustomerName(customer, accountNumber);
-                        const option = new Option(`${name} (${accountNumber})`, accountNumber);
+                        const option = new Option(getReferralCustomerOptionLabel(customer, accountNumber), accountNumber);
                         referralCustomerSelect.appendChild(option);
                     });
                 if (selected && selected !== exclude) {
-                    ensureSelectOption(referralCustomerSelect, selected, `${getReferralCustomerName(findReferralCustomer(selected) || {}, selected)} (${selected})`);
+                    ensureSelectOption(referralCustomerSelect, selected, getReferralCustomerOptionLabel(findReferralCustomer(selected) || {}, selected));
                     referralCustomerSelect.value = selected;
                 } else {
                     referralCustomerSelect.value = '';
@@ -4883,6 +4902,69 @@
                     : '<i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import clients';
             }
 
+            function setExportClientsBusy(isBusy) {
+                if (!exportClientsBtn) return;
+                exportClientsBtn.disabled = Boolean(isBusy);
+                exportClientsBtn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+                exportClientsBtn.innerHTML = isBusy
+                    ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Exporting...'
+                    : '<i class="ti ti-file-export" aria-hidden="true"></i> Export clients';
+            }
+
+            function getAttachmentFilename(response, fallback) {
+                const disposition = String(response?.headers?.get('Content-Disposition') || '').trim();
+                const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+                if (encodedMatch?.[1]) {
+                    try {
+                        return decodeURIComponent(encodedMatch[1].replace(/^"|"$/g, '')) || fallback;
+                    } catch (error) {
+                        return fallback;
+                    }
+                }
+                const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+                return plainMatch?.[1] || fallback;
+            }
+
+            function downloadBlob(blob, filename) {
+                const objectUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = filename || 'clients-export.xlsx';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+            }
+
+            async function exportClientsExcel() {
+                setExportClientsBusy(true);
+                try {
+                    const response = await fetch('/api/export/clients', {
+                        method: 'GET',
+                        credentials: 'include',
+                        cache: 'no-store'
+                    });
+                    const contentType = String(response.headers.get('Content-Type') || '').toLowerCase();
+                    if (!response.ok) {
+                        const payload = contentType.includes('application/json')
+                            ? await response.json().catch(() => ({}))
+                            : {};
+                        throw new Error(payload?.error || payload?.message || `Export failed (${response.status})`);
+                    }
+                    const blob = await response.blob();
+                    if (!blob.size) {
+                        throw new Error('No clients were exported.');
+                    }
+                    const filename = getAttachmentFilename(response, `clients-export-${getTodayDateInputValue()}.xlsx`);
+                    downloadBlob(blob, filename);
+                    showToast('Clients exported successfully.');
+                } catch (error) {
+                    showToast(`Export failed: ${error.message || error}`);
+                } finally {
+                    setExportClientsBusy(false);
+                }
+            }
+
             async function importClientsFromFile(file) {
                 if (!file) return;
                 const fileName = String(file.name || '').trim();
@@ -5176,6 +5258,11 @@
                 });
                 importClientsFileInput.addEventListener('change', () => {
                     void importClientsFromFile(importClientsFileInput.files?.[0] || null);
+                });
+            }
+            if (exportClientsBtn) {
+                exportClientsBtn.addEventListener('click', () => {
+                    void exportClientsExcel();
                 });
             }
             if (loginPassToggleBtn && loginPassInput) {
@@ -5706,7 +5793,7 @@
 
             // Announce that this page is ready for global search
             document.dispatchEvent(new CustomEvent('page:search-ready', {
-                detail: { placeholder: 'Search by name, account #, or plan' }
+                detail: { placeholder: 'Search by name, account #, plan, or location' }
             }));
             // Listen for search queries from the global search bar
             document.addEventListener('global-search:query', (e) => {

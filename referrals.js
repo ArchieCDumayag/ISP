@@ -56,7 +56,11 @@ const buildCustomerOptions = (customers = []) => (
       name: getCustomerName(customer),
       planName: normalizeText(customer.planName),
       status: normalizeText(customer.status || 'active'),
-      area: normalizeText(customer.area)
+      area: normalizeText(customer.area),
+      street: normalizeText(customer.street),
+      barangay: normalizeText(customer.barangay),
+      municipality: normalizeText(customer.municipality),
+      province: normalizeText(customer.province)
     }))
     .filter((customer) => customer.accountNumber)
     .sort((left, right) => left.name.localeCompare(right.name))

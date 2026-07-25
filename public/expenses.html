@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/finance.css?v=1.6">
+    <link rel="stylesheet" href="css/finance.css?v=1.7">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -33,6 +33,9 @@
                         </div>
                         <button class="primary-btn" type="button" id="addExpenseBtn">
                             <i class="ti ti-plus" aria-hidden="true"></i> Add Expense
+                        </button>
+                        <button class="ghost-btn ghost-btn--danger" type="button" id="deleteAllExpensesBtn" disabled>
+                            <i class="ti ti-trash-x" aria-hidden="true"></i> Delete all
                         </button>
                     </div>
 
@@ -142,7 +145,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/expenses.js?v=1.4"></script>
+    <script src="js/expenses.js?v=1.5"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

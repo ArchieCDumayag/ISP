@@ -1,6 +1,7 @@
 const { query } = require('./db');
 const { assertRelationalReady } = require('./db-relational');
 const { ensureSmsSchema } = require('./sms-schema');
+const { isJsonStorageMode } = require('./storage-mode');
 const { toText, normalizeDeliveryMethods, normalizeMobileForSms, normalizeEmail, dispatchMessageToRecipients } = require('./sms-delivery');
 
 const DEFAULT_TICK_MS = Number.parseInt(process.env.SMS_SCHEDULER_TICK_MS || '60000', 10) || 60000;
@@ -452,6 +453,7 @@ const runSmsSchedulesUnsafe = async () => {
 };
 
 const runSmsSchedulesOnce = async () => {
+  if (isJsonStorageMode()) return false;
   if (tickRunning) return false;
   tickRunning = true;
   try {
@@ -473,6 +475,7 @@ const runSmsSchedulesOnce = async () => {
 };
 
 const scheduleSmsRunner = () => {
+  if (isJsonStorageMode()) return null;
   if (runnerInterval) return runnerInterval;
   runSmsSchedulesOnce().catch((error) => {
     console.warn('Initial SMS scheduler run failed:', error?.message || error);

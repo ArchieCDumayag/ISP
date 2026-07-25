@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyList = document.getElementById('expensesHistoryList');
     const searchInput = document.getElementById('expensesSearch');
     const addBtn = document.getElementById('addExpenseBtn');
+    const deleteAllBtn = document.getElementById('deleteAllExpensesBtn');
 
     const modal = document.getElementById('expenseModal');
     const modalTitle = document.getElementById('expenseModalTitle');
@@ -27,7 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const state = {
         items: [],
-        filtered: []
+        filtered: [],
+        deletingAll: false
     };
     const historyGroupsByKey = new Map();
 
@@ -83,6 +85,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         window.alert(message);
+    };
+
+    const confirmAction = async (message, options = {}) => {
+        let result;
+        if (window.appConfirm) {
+            result = await window.appConfirm(message, options);
+        } else {
+            result = window.confirm(message);
+        }
+        if (result && typeof result === 'object') {
+            return result.ok === true || result.confirmed === true || result.value === true;
+        }
+        return result === true;
     };
 
     const requestJson = async (url, options = {}) => {
@@ -208,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const renderTable = () => {
+        updateDeleteAllButton();
         if (!state.filtered.length) {
             setTableTotal(0);
             tableBody.innerHTML = '<tr><td colspan="6" class="finance-empty">No expense entries found for this month.</td></tr>';
@@ -237,6 +253,15 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
     };
+
+    function updateDeleteAllButton() {
+        if (!deleteAllBtn) return;
+        const total = Array.isArray(state.items) ? state.items.length : 0;
+        deleteAllBtn.disabled = state.deletingAll || total === 0;
+        deleteAllBtn.innerHTML = state.deletingAll
+            ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Deleting all...'
+            : `<i class="ti ti-trash-x" aria-hidden="true"></i> Delete all${total ? ` (${total})` : ''}`;
+    }
 
     const applyFilters = () => {
         const query = String(searchInput?.value || '').trim().toLowerCase();
@@ -358,9 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (action === 'delete') {
-            const confirmed = window.appConfirm
-                ? await window.appConfirm('Delete this expense entry?', { title: 'Delete Expense' })
-                : window.confirm('Delete this expense entry?');
+            const confirmed = await confirmAction('Delete this expense entry?', { title: 'Delete Expense' });
             if (!confirmed) return;
 
             await requestJson(`/api/expenses/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
@@ -369,7 +392,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const deleteAllExpenses = async () => {
+        const total = Array.isArray(state.items) ? state.items.length : 0;
+        if (!total || state.deletingAll) return;
+
+        const confirmed = await confirmAction(
+            `Permanently delete all ${total} expense ${total === 1 ? 'entry' : 'entries'}? This cannot be undone.`,
+            {
+                title: 'Delete All Expenses',
+                okText: 'Delete All'
+            }
+        );
+        if (!confirmed) return;
+
+        state.deletingAll = true;
+        updateDeleteAllButton();
+        try {
+            const payload = await requestJson('/api/expenses', { method: 'DELETE' });
+            const deletedCount = Number(payload?.deletedCount || total || 0);
+            notify(`${deletedCount} expense ${deletedCount === 1 ? 'entry' : 'entries'} deleted.`, 'success');
+            await loadExpenses();
+        } finally {
+            state.deletingAll = false;
+            updateDeleteAllButton();
+        }
+    };
+
     addBtn?.addEventListener('click', () => openModal());
+    deleteAllBtn?.addEventListener('click', async () => {
+        try {
+            await deleteAllExpenses();
+        } catch (error) {
+            notify(error.message || 'Unable to delete all expenses.', 'error');
+        }
+    });
     closeModalBtn?.addEventListener('click', closeModal);
     cancelModalBtn?.addEventListener('click', closeModal);
     historyModalCloseBtn?.addEventListener('click', closeHistoryModal);

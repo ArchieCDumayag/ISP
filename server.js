@@ -1059,6 +1059,240 @@ const toCustomerDisplayName = (customer = {}) => {
     if (account) return `Account ${account}`;
     return 'Unnamed customer';
 };
+const CLIENTS_EXPORT_HEADERS = Object.freeze([
+    'Account Number',
+    'Activation Date',
+    'Plan Type',
+    'Status',
+    'Plan',
+    'First Name',
+    'Middle Name',
+    'Last Name',
+    'Mobile Number',
+    'Email',
+    'Street/House No.',
+    'Province',
+    'Municipality/City',
+    'Barangay',
+    'Area / Cluster',
+    'Coordinates',
+    'PPPoE',
+    'REFERRED BY',
+    'Billing Date',
+    'Credit Limit',
+    'Facebook Username'
+]);
+const CLIENTS_EXPORT_COLUMN_WIDTHS = Object.freeze([
+    18, 16, 14, 14, 22, 18, 18, 18, 18, 28, 26, 20, 24, 22, 20, 24, 22, 30, 16, 14, 24
+]);
+const normalizeClientExportText = (value) => {
+    if (value == null) return '';
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'object') return '';
+    return String(value).trim();
+};
+const getClientExportValue = (record = {}, keys = []) => {
+    for (const key of keys) {
+        if (!key || !Object.prototype.hasOwnProperty.call(record || {}, key)) continue;
+        const value = record[key];
+        if (value === 0) return value;
+        const text = normalizeClientExportText(value);
+        if (text) return value;
+    }
+    return '';
+};
+const getClientExportText = (record = {}, keys = []) =>
+    normalizeClientExportText(getClientExportValue(record, keys));
+const normalizeClientLookupKey = (value) => normalizeClientExportText(value).toLowerCase();
+const formatClientExportDate = (value) => {
+    if (!value) return '';
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return '';
+        const yyyy = value.getFullYear();
+        const mm = String(value.getMonth() + 1).padStart(2, '0');
+        const dd = String(value.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+    const text = normalizeClientExportText(value);
+    if (!text) return '';
+    const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    const parsed = new Date(text.replace(' ', 'T'));
+    if (!Number.isNaN(parsed.getTime())) {
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsed.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+    return text;
+};
+const titleCaseClientExportLabel = (value) => {
+    const text = normalizeClientExportText(value).replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+    if (!text) return '';
+    return text.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+};
+const normalizeClientPlanCategory = (value) => {
+    const text = normalizeClientExportText(value).toLowerCase();
+    if (text === 'prepaid' || text.includes('prepaid')) return 'Prepaid';
+    if (text === 'postpaid' || text.includes('postpaid')) return 'Postpaid';
+    return '';
+};
+const buildClientExportPlanLookup = (plans = []) => {
+    const byId = new Map();
+    const byName = new Map();
+    (Array.isArray(plans) ? plans : []).forEach((plan) => {
+        if (!plan || typeof plan !== 'object') return;
+        const id = getClientExportText(plan, ['id', 'planId', 'plan_id']);
+        const name = getClientExportText(plan, ['name', 'label', 'planName', 'plan_name']);
+        if (id) byId.set(normalizeClientLookupKey(id), plan);
+        if (name) byName.set(normalizeClientLookupKey(name), plan);
+    });
+    return { byId, byName };
+};
+const resolveClientExportPlan = (customer = {}, planLookup = { byId: new Map(), byName: new Map() }) => {
+    const planId = getClientExportText(customer, ['planId', 'plan_id']);
+    const planName = getClientExportText(customer, ['planName', 'plan_name', 'plan', 'planValue']);
+    const matchedPlan = (planId && planLookup.byId.get(normalizeClientLookupKey(planId)))
+        || (planName && planLookup.byName.get(normalizeClientLookupKey(planName)))
+        || null;
+    const name = planName || getClientExportText(matchedPlan || {}, ['name', 'label']);
+    const category = normalizeClientPlanCategory(
+        getClientExportText(customer, ['planCategory', 'plan_category', 'planType', 'plan_type'])
+        || getClientExportText(matchedPlan || {}, ['category', 'planCategory', 'plan_category'])
+        || getClientExportText(customer, ['planBilling', 'plan_billing', 'billingCycle', 'billing_cycle'])
+    ) || 'Postpaid';
+    return { name, category };
+};
+const resolveClientExportNameParts = (customer = {}) => {
+    const explicitFirst = getClientExportText(customer, ['firstName', 'first_name', 'givenName', 'given_name']);
+    const explicitMiddle = getClientExportText(customer, ['middleName', 'middle_name']);
+    const explicitLast = getClientExportText(customer, ['lastName', 'last_name', 'surname']);
+    if (explicitFirst || explicitMiddle || explicitLast) {
+        return { firstName: explicitFirst, middleName: explicitMiddle, lastName: explicitLast };
+    }
+    const fullName = getClientExportText(customer, ['name', 'fullName', 'full_name', 'customerName', 'customer_name']);
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    if (!parts.length) return { firstName: '', middleName: '', lastName: '' };
+    if (parts.length === 1) return { firstName: parts[0], middleName: '', lastName: '' };
+    if (parts.length === 2) return { firstName: parts[0], middleName: '', lastName: parts[1] };
+    return {
+        firstName: parts[0],
+        middleName: parts.slice(1, -1).join(' '),
+        lastName: parts[parts.length - 1]
+    };
+};
+const resolveClientExportCoordinates = (customer = {}) => {
+    const direct = getClientExportText(customer, ['mapPin', 'map_pin', 'coordinates', 'coordinate', 'coords']);
+    if (direct) return direct;
+    const lat = getClientExportText(customer, ['lat', 'latitude']);
+    const lng = getClientExportText(customer, ['lng', 'lon', 'longitude']);
+    return lat && lng ? `${lat}, ${lng}` : '';
+};
+const formatClientExportCreditLimit = (customer = {}) => {
+    const raw = getClientExportValue(customer, ['creditLimit', 'credit_limit']);
+    const text = normalizeClientExportText(raw);
+    if (!text) return '';
+    const numeric = Number(text.replace(/,/g, ''));
+    return Number.isFinite(numeric) ? numeric : text;
+};
+const resolveClientExportReferral = (customer = {}, customersByAccount = new Map()) => {
+    const sourceType = getClientExportText(customer, [
+        'referralSourceType',
+        'referral_source_type',
+        'referredByType',
+        'referred_by_type'
+    ]).toLowerCase();
+    const customerAccount = getClientExportText(customer, [
+        'referralCustomerAccountNumber',
+        'referral_customer_account_number',
+        'referredByAccountNumber',
+        'referred_by_account_number'
+    ]);
+    const customerName = getClientExportText(customer, [
+        'referralCustomerName',
+        'referral_customer_name',
+        'referredByCustomerName',
+        'referred_by_customer_name'
+    ]);
+    const agentName = getClientExportText(customer, ['referralAgentName', 'referral_agent_name']);
+    const explicit = getClientExportText(customer, ['referredBy', 'referred_by', 'referral', 'agent']);
+    if (sourceType === 'agent' || agentName) return agentName || explicit;
+    if (sourceType === 'customer' || customerAccount) {
+        const referredCustomer = customerAccount ? customersByAccount.get(customerAccount) : null;
+        const resolvedName = customerName || (referredCustomer ? toCustomerDisplayName(referredCustomer) : '');
+        if (resolvedName && customerAccount && !resolvedName.includes(customerAccount)) {
+            return `${resolvedName} (${customerAccount})`;
+        }
+        return resolvedName || explicit || customerAccount;
+    }
+    return explicit;
+};
+const buildClientsExportRows = (customers = [], plans = []) => {
+    const planLookup = buildClientExportPlanLookup(plans);
+    const sourceCustomers = Array.isArray(customers) ? customers.slice() : [];
+    const customersByAccount = new Map();
+    sourceCustomers.forEach((customer) => {
+        const accountNumber = getClientExportText(customer, ['accountNumber', 'account_number', 'id']);
+        if (accountNumber && !customersByAccount.has(accountNumber)) {
+            customersByAccount.set(accountNumber, customer);
+        }
+    });
+    sourceCustomers.sort((left, right) => {
+        const leftAccount = getClientExportText(left, ['accountNumber', 'account_number', 'id']);
+        const rightAccount = getClientExportText(right, ['accountNumber', 'account_number', 'id']);
+        const accountCompare = leftAccount.localeCompare(rightAccount, undefined, { numeric: true, sensitivity: 'base' });
+        if (accountCompare) return accountCompare;
+        return toCustomerDisplayName(left).localeCompare(toCustomerDisplayName(right), undefined, { sensitivity: 'base' });
+    });
+    return sourceCustomers.map((customer) => {
+        const nameParts = resolveClientExportNameParts(customer);
+        const plan = resolveClientExportPlan(customer, planLookup);
+        const status = titleCaseClientExportLabel(getClientExportText(customer, ['status', 'customerStatus', 'subscriberStatus'])) || 'Active';
+        return [
+            getClientExportText(customer, ['accountNumber', 'account_number', 'id']),
+            formatClientExportDate(getClientExportValue(customer, ['activationDate', 'activation_date', 'since'])),
+            plan.category,
+            status,
+            plan.name,
+            nameParts.firstName,
+            nameParts.middleName,
+            nameParts.lastName,
+            getClientExportText(customer, ['mobileRaw', 'mobile_raw', 'mobile', 'contactNumber', 'contact_number']),
+            getClientExportText(customer, ['email', 'emailAddress', 'email_address']),
+            getClientExportText(customer, ['street', 'streetHouseNo', 'street_house_no', 'address']),
+            getClientExportText(customer, ['province']),
+            getClientExportText(customer, ['municipality', 'municipalityCity', 'municipality_city', 'city']),
+            getClientExportText(customer, ['barangay']),
+            getClientExportText(customer, ['area', 'cluster', 'coverageArea', 'coverage_area']),
+            resolveClientExportCoordinates(customer),
+            getClientExportText(customer, ['pppoeUsername', 'pppoe_username', 'pppoeAccount', 'pppoe_account', 'pppoe']),
+            resolveClientExportReferral(customer, customersByAccount),
+            formatClientExportDate(getClientExportValue(customer, ['billDate', 'bill_date', 'billingDate', 'billing_date', 'billingCycle', 'billing_cycle'])),
+            formatClientExportCreditLimit(customer),
+            getClientExportText(customer, ['facebookUsername', 'facebook_username', 'facebook', 'fbUsername', 'fb_username'])
+        ];
+    });
+};
+const createClientsExportWorkbookBuffer = (xlsx, customers = [], plans = []) => {
+    const workbook = xlsx.utils.book_new();
+    const rows = buildClientsExportRows(customers, plans);
+    const worksheet = xlsx.utils.aoa_to_sheet([CLIENTS_EXPORT_HEADERS, ...rows]);
+    worksheet['!cols'] = CLIENTS_EXPORT_COLUMN_WIDTHS.map((wch) => ({ wch }));
+    worksheet['!autofilter'] = {
+        ref: xlsx.utils.encode_range({
+            s: { r: 0, c: 0 },
+            e: { r: rows.length, c: CLIENTS_EXPORT_HEADERS.length - 1 }
+        })
+    };
+    xlsx.utils.book_append_sheet(workbook, worksheet, sanitizeSheetName('CLIENTS LIST'));
+    return xlsx.write(workbook, {
+        type: 'buffer',
+        bookType: 'xlsx',
+        compression: true
+    });
+};
 const toPrettyJsonText = (value) => {
     try {
         return JSON.stringify(value ?? [], null, 2);
@@ -5396,6 +5630,43 @@ app.use('/api/app-downloads', appDownloadsRouter);
 app.use('/api/integrations', integrationSettingsRouter);
 app.use('/api/mikrotik', requireFeature('mikrotikPppoe'), mikrotikRouter);
 app.use('/api/jobs', requireAuth, requireFeature('jobs'), jobsRouter);
+
+app.get('/api/export/clients', requireAuth, async (req, res) => {
+    if (!isAdminUser(req.user)) {
+        return res.status(403).json({ ok: false, error: 'Admin access required' });
+    }
+
+    const branchId = Number(req.user?.branchId || (isJsonStorageMode() ? 1 : 0));
+    if (!Number.isInteger(branchId) || branchId <= 0) {
+        return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
+    }
+
+    try {
+        if (!xlsxModule) {
+            try {
+                xlsxModule = require('xlsx');
+            } catch (loadError) {
+                return res.status(500).json({ ok: false, error: 'Excel exporter not installed. Run: npm install xlsx' });
+            }
+        }
+
+        const [customers, plans] = await Promise.all([
+            customersModule.readVisibleCustomers(branchId),
+            customersModule.readPlans(branchId)
+        ]);
+        const workbookBuffer = createClientsExportWorkbookBuffer(xlsxModule, customers, plans);
+        const dateStamp = new Date().toISOString().slice(0, 10);
+        const filename = `clients-export-${dateStamp}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', workbookBuffer.length);
+        return res.status(200).send(workbookBuffer);
+    } catch (error) {
+        console.error('Failed to export clients:', error);
+        return res.status(500).json({ ok: false, error: 'Failed to export clients.' });
+    }
+});
 
 app.get('/api/export/customers-full', requireAuth, async (req, res) => {
     if (!isAdminUser(req.user)) {

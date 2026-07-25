@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-history.css?v=4.1">
+    <link rel="stylesheet" href="css/payment-history.css?v=4.4">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.5">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -34,6 +34,17 @@
                         <button type="button" class="payment-history-small-btn btn btn-outline-secondary" id="paymentHistoryImportBtn">
                             <i class="ti ti-file-spreadsheet" aria-hidden="true"></i>
                             Import Cash/GCash
+                        </button>
+                        <button
+                            type="button"
+                            class="payment-history-small-btn btn btn-outline-warning"
+                            id="paymentHistoryUnmatchedBtn"
+                            data-bs-toggle="modal"
+                            data-bs-target="#paymentHistoryUnmatchedModal"
+                        >
+                            <i class="ti ti-link" aria-hidden="true"></i>
+                            Unmatched
+                            <span class="badge bg-warning-lt text-warning ms-1" id="paymentHistoryUnmatchedBadge">0</span>
                         </button>
                         <input
                             type="file"
@@ -230,9 +241,52 @@
         </div>
     </div>
 
-    <script src="layout.js?v=3.9"></script>
-    <script src="js/payment-history.js?v=2.3"></script>
+    <div class="modal modal-blur fade" id="paymentHistoryUnmatchedModal" tabindex="-1" aria-labelledby="paymentHistoryUnmatchedModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="paymentHistoryUnmatchedModalTitle">Unmatched Imported Payments</h2>
+                        <div class="text-secondary small" id="paymentHistoryUnmatchedSummary">0 records</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <datalist id="paymentHistoryUnmatchedCustomerList"></datalist>
+                    <div class="table-responsive">
+                        <table class="table table-vcenter table-hover payment-history-unmatched-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Excel Record</th>
+                                    <th class="is-num">Amount</th>
+                                    <th>Source</th>
+                                    <th>Bind To</th>
+                                    <th class="is-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="paymentHistoryUnmatchedBody">
+                                <tr>
+                                    <td colspan="6" class="text-center text-secondary py-4">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="paymentHistoryUnmatchedRefreshBtn">
+                        <i class="ti ti-refresh" aria-hidden="true"></i>
+                        Refresh
+                    </button>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="layout.js?v=3.9"></script>
+    <script src="js/payment-history.js?v=2.7"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>

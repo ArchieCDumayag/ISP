@@ -243,6 +243,54 @@ body:has(.payment-history-page) .app-main main,
     gap: .25rem;
 }
 
+#paymentHistoryUnmatchedModal.modal {
+    z-index: 1105 !important;
+    pointer-events: auto !important;
+    align-items: flex-start !important;
+    padding-top: 1rem !important;
+}
+
+#paymentHistoryUnmatchedModal .modal-dialog {
+    pointer-events: none;
+}
+
+#paymentHistoryUnmatchedModal .modal-content {
+    pointer-events: auto !important;
+}
+
+#paymentHistoryUnmatchedModal .form-select,
+#paymentHistoryUnmatchedModal .btn,
+#paymentHistoryUnmatchedModal .btn-close {
+    pointer-events: auto !important;
+}
+
+.payment-history-unmatched-backdrop.modal-backdrop {
+    z-index: 1100 !important;
+}
+
+.payment-history-unmatched-table {
+    min-width: 68rem;
+}
+
+.payment-history-unmatched-table th.is-center,
+.payment-history-unmatched-table td.is-center {
+    text-align: center;
+}
+
+.payment-history-unmatched-table .is-num {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.payment-history-unmatched-account-input {
+    min-width: 16rem;
+}
+
+.payment-history-unmatched-source {
+    max-width: 14rem;
+}
+
 .payment-history-empty-cell {
     padding: 2rem 1rem;
     text-align: center;

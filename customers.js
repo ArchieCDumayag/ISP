@@ -43,6 +43,7 @@ const {
     getCustomerArchiveById,
     markCustomerArchiveRestored,
     deleteCustomerArchivePermanently,
+    deleteAllCustomerArchivesPermanently,
     purgeExpiredCustomerArchives
 } = require('./customer-archive-store');
 const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
@@ -920,13 +921,19 @@ const restoreArchivedCustomerPppoeAccounts = async ({ branchId, customer = null,
     })
 );
 
-const removeCustomerPppoeAccounts = async ({ branchId, customer = null, archiveEntries = [], localOnly = false } = {}) => (
+const removeCustomerPppoeAccounts = async ({
+    branchId,
+    customer = null,
+    archiveEntries = [],
+    localOnly = false,
+    allowWarnings = false
+} = {}) => (
     manageCustomerPppoeAccounts({
         branchId,
         customer,
         action: 'delete',
         archiveEntries,
-        allowWarnings: false,
+        allowWarnings,
         localOnly
     })
 );
@@ -1546,14 +1553,20 @@ const deleteArchivedCustomerRecord = async (
         ? payload.customer
         : {};
 
-    await removeCustomerPppoeAccounts({
+    const pppoeArchiveEntries = Array.isArray(metadata?.pppoeArchive?.entries)
+        ? metadata.pppoeArchive.entries
+        : [];
+    const pppoeDeleteResult = await removeCustomerPppoeAccounts({
         branchId: scopedBranchId,
         customer: {
             accountNumber: String(customerRow?.account_number || archive.accountNumber || '').trim(),
             pppoeUsername: String(customerRow?.pppoe_username || customerRow?.pppoeUsername || '').trim()
         },
-        archiveEntries: Array.isArray(metadata?.pppoeArchive?.entries) ? metadata.pppoeArchive.entries : []
+        archiveEntries: pppoeArchiveEntries,
+        localOnly: pppoeArchiveEntries.length === 0,
+        allowWarnings: true
     });
+    const warning = buildPppoeActionWarning('delete', pppoeDeleteResult?.skippedEntries || []);
 
     const deleted = await deleteCustomerArchivePermanently(archiveId, {
         branchId: scopedBranchId
@@ -1561,7 +1574,26 @@ const deleteArchivedCustomerRecord = async (
     triggerBranchServiceRefreshSafe(scopedBranchId, 'customers-archive-delete');
     return {
         ...deleted,
-        recordType: 'customer'
+        recordType: 'customer',
+        warning: warning || undefined
+    };
+};
+
+const deleteAllArchivedCustomerRecords = async ({
+    branchId
+} = {}) => {
+    const scopedBranchId = Number(branchId);
+    if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+
+    const deleted = await deleteAllCustomerArchivesPermanently({
+        branchId: scopedBranchId
+    });
+    triggerBranchServiceRefreshSafe(scopedBranchId, 'customers-archive-delete-all');
+    return {
+        ok: true,
+        deletedCount: Number(deleted?.deletedCount || 0)
     };
 };
 
@@ -5674,6 +5706,25 @@ router.post('/archive/:archiveId/restore', async (req, res, next) => {
     }
 });
 
+// DELETE /api/customers/archive - Permanently delete all archived records for this branch
+router.delete('/archive', async (req, res, next) => {
+    try {
+        const branchId = req.user?.branchId || null;
+        if (!branchId) {
+            return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
+        }
+
+        await purgeExpiredArchivedCustomerRecords().catch(() => ({ purgedCount: 0 }));
+        const deleted = await deleteAllArchivedCustomerRecords({ branchId });
+        return res.json({
+            ok: true,
+            deletedCount: deleted.deletedCount
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // DELETE /api/customers/archive/:archiveId - Permanently delete one archived record
 router.delete('/archive/:archiveId', async (req, res, next) => {
     try {
@@ -5690,7 +5741,8 @@ router.delete('/archive/:archiveId', async (req, res, next) => {
             ok: true,
             archiveId: deleted.archiveId,
             accountNumber: deleted.accountNumber,
-            recordType: deleted.recordType || 'customer'
+            recordType: deleted.recordType || 'customer',
+            warning: deleted.warning || undefined
         });
     } catch (error) {
         next(error);

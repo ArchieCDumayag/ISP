@@ -20,7 +20,8 @@ const { accountHasRole } = require('./role-utils');
 const router = express.Router();
 const STORE_KEYS = {
     payments: 'payments',
-    customers: 'customers'
+    customers: 'customers',
+    paymentImportUnmatched: 'payment_import_unmatched'
 };
 const PAYMENT_BACKUP_DIR = path.join(__dirname, 'data', 'payment-backups');
 const readCustomers = async (branchId = null) => {
@@ -1030,10 +1031,16 @@ const resolvePaymentImportAccount = (lookup, rawName, area = '') => {
 const resolvePaymentImportAccountFromRow = (lookup, { accountNumber = '', rawName = '', area = '' } = {}) => {
     const account = formatPaymentImportAccountNumber(accountNumber);
     if (!account) {
+        const resolvedByName = resolvePaymentImportAccount(lookup, rawName, area);
+        if (resolvedByName.accountNumber) {
+            return {
+                ...resolvedByName,
+                matchedByNameFallback: true,
+                missingAccountNumber: true
+            };
+        }
         return {
-            accountNumber: '',
-            customer: null,
-            ambiguous: false,
+            ...resolvedByName,
             missingAccountNumber: true
         };
     }
@@ -1080,16 +1087,25 @@ const hasPaymentImportIncomeHeaders = (xlsx, sheet, row, dateCol, method) => {
     const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
     const startCol = dateCol + 1;
     const endCol = Math.min(range.e.c, dateCol + (method === 'Cash' ? 8 : 9));
-    const hasCommonHeaders = hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Account Number', 'Account No', 'Account #'])
-        && hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Particulars'])
+    const hasAccountHeader = hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Account Number', 'Account No', 'Account #']);
+    const hasCommonHeaders = hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Particulars'])
         && hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Amount', 'Payment', '3J Payment']);
     if (!hasCommonHeaders) return false;
-    if (method !== 'GCash') return true;
-    return hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Reference Number', 'Ref. No.', 'Ref No']);
+    if (method !== 'GCash') {
+        return hasAccountHeader
+            || dateCol >= 3
+            || hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Area', 'Area / Cluster', 'Collector', 'Collected By']);
+    }
+
+    const hasReferenceHeader = hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Reference Number', 'Ref. No.', 'Ref No']);
+    if (!hasReferenceHeader) return false;
+    return hasAccountHeader
+        || dateCol >= 5
+        || hasPaymentImportHeaderCol(xlsx, sheet, row, startCol, endCol, ['Gcash Account', 'Gcash No.', 'GCash No']);
 };
 const findPaymentImportIncomeDateCol = (xlsx, sheet, headerRow, method) => {
     const dateCols = getPaymentImportDateHeaderCols(xlsx, sheet, headerRow);
-    return dateCols.find((dateCol) => hasPaymentImportIncomeHeaders(xlsx, sheet, headerRow, dateCol, method)) ?? -1;
+    return [...dateCols].reverse().find((dateCol) => hasPaymentImportIncomeHeaders(xlsx, sheet, headerRow, dateCol, method)) ?? -1;
 };
 const findPaymentImportCashHeader = (xlsx, sheet) => {
     const range = xlsx.utils.decode_range(sheet?.['!ref'] || 'A1:A1');
@@ -1231,6 +1247,145 @@ const buildPaymentImportEntry = ({
         importedFrom: sheetName
     };
 };
+const getPaymentImportRecorderSnapshot = (user = null) => ({
+    id: String(user?.id || '').trim(),
+    username: normalizePaymentImportText(user?.username || user?.name || ''),
+    name: normalizePaymentImportText(user?.name || user?.username || ''),
+    role: normalizePaymentImportText(user?.role || '')
+});
+const buildPaymentImportUnmatchedRecord = ({
+    sheetName,
+    rowNumber,
+    method,
+    date,
+    amount,
+    rawName,
+    area,
+    category,
+    originalReference,
+    accountNumberFromWorkbook,
+    gcashAccount,
+    collector,
+    reason,
+    matches,
+    importFileName,
+    importedBy
+} = {}) => {
+    const sourceKey = [
+        importFileName,
+        sheetName,
+        rowNumber,
+        method,
+        date,
+        amount,
+        rawName,
+        originalReference,
+        accountNumberFromWorkbook
+    ].map((part) => normalizePaymentImportText(part)).join('|');
+    return {
+        id: `unmatched-${paymentImportHash(sourceKey || `${Date.now()}`, 18)}`,
+        sheetName: normalizePaymentImportText(sheetName),
+        rowNumber: Number(rowNumber) || 0,
+        method: method === 'GCash' ? 'GCash' : 'Cash',
+        date: normalizePaymentImportText(date),
+        amount: Number(Number(amount || 0).toFixed(2)) || 0,
+        customerName: normalizePaymentImportText(rawName),
+        accountNumber: formatPaymentImportAccountNumber(accountNumberFromWorkbook),
+        area: normalizePaymentImportText(area),
+        category: normalizePaymentImportText(category),
+        reference: sanitizeString(originalReference).slice(0, REF_MAX_LENGTH),
+        gcashAccount: normalizePaymentImportText(gcashAccount),
+        collector: normalizePaymentImportText(collector),
+        reason: normalizePaymentImportText(reason),
+        candidateAccountNumbers: Array.isArray(matches)
+            ? matches.map(formatPaymentImportAccountNumber).filter(Boolean).slice(0, 12)
+            : [],
+        importFileName: normalizePaymentImportText(importFileName),
+        importedAt: new Date().toISOString(),
+        importedBy: getPaymentImportRecorderSnapshot(importedBy)
+    };
+};
+const sanitizePaymentImportUnmatchedRecord = (record = {}) => {
+    const id = sanitizeString(record?.id);
+    const amount = Number(Number(record?.amount || 0).toFixed(2));
+    if (!id || !Number.isFinite(amount) || amount <= 0) return null;
+    const method = normalizePaymentImportText(record?.method);
+    return {
+        id,
+        sheetName: normalizePaymentImportText(record?.sheetName),
+        rowNumber: Number(record?.rowNumber) || 0,
+        method: method === 'GCash' ? 'GCash' : 'Cash',
+        date: normalizePaymentImportText(record?.date),
+        amount,
+        customerName: normalizePaymentImportText(record?.customerName || record?.rawName),
+        accountNumber: formatPaymentImportAccountNumber(record?.accountNumber),
+        area: normalizePaymentImportText(record?.area),
+        category: normalizePaymentImportText(record?.category),
+        reference: sanitizeString(record?.reference).slice(0, REF_MAX_LENGTH),
+        gcashAccount: normalizePaymentImportText(record?.gcashAccount),
+        collector: normalizePaymentImportText(record?.collector),
+        reason: normalizePaymentImportText(record?.reason) || 'Customer not found',
+        candidateAccountNumbers: Array.isArray(record?.candidateAccountNumbers)
+            ? record.candidateAccountNumbers.map(formatPaymentImportAccountNumber).filter(Boolean).slice(0, 12)
+            : [],
+        importFileName: normalizePaymentImportText(record?.importFileName),
+        importedAt: normalizePaymentImportText(record?.importedAt),
+        importedBy: getPaymentImportRecorderSnapshot(record?.importedBy)
+    };
+};
+const paymentImportUnmatchedBranchKey = (branchId) => {
+    const numericBranchId = Number(branchId);
+    return Number.isInteger(numericBranchId) && numericBranchId > 0 ? String(numericBranchId) : 'global';
+};
+const readPaymentImportUnmatchedStore = async () => {
+    const data = await readJson(STORE_KEYS.paymentImportUnmatched, {});
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+};
+const readPaymentImportUnmatchedRecords = async (branchId) => {
+    const store = await readPaymentImportUnmatchedStore();
+    const branchKey = paymentImportUnmatchedBranchKey(branchId);
+    return (Array.isArray(store[branchKey]) ? store[branchKey] : [])
+        .map(sanitizePaymentImportUnmatchedRecord)
+        .filter(Boolean)
+        .sort((left, right) => String(right.importedAt || '').localeCompare(String(left.importedAt || '')));
+};
+const writePaymentImportUnmatchedRecords = async (branchId, records = []) => {
+    const store = await readPaymentImportUnmatchedStore();
+    const branchKey = paymentImportUnmatchedBranchKey(branchId);
+    store[branchKey] = (Array.isArray(records) ? records : [])
+        .map(sanitizePaymentImportUnmatchedRecord)
+        .filter(Boolean)
+        .slice(0, 500);
+    await writeJson(STORE_KEYS.paymentImportUnmatched, store);
+    return store[branchKey];
+};
+const appendPaymentImportUnmatchedRecords = async (branchId, records = []) => {
+    const cleanedRecords = (Array.isArray(records) ? records : [])
+        .map(sanitizePaymentImportUnmatchedRecord)
+        .filter(Boolean);
+    if (!cleanedRecords.length) {
+        const existingRecords = await readPaymentImportUnmatchedRecords(branchId);
+        return { added: 0, count: existingRecords.length, records: existingRecords };
+    }
+
+    const existingRecords = await readPaymentImportUnmatchedRecords(branchId);
+    const merged = new Map(existingRecords.map((record) => [record.id, record]));
+    cleanedRecords.forEach((record) => merged.set(record.id, record));
+    const nextRecords = Array.from(merged.values())
+        .sort((left, right) => String(right.importedAt || '').localeCompare(String(left.importedAt || '')))
+        .slice(0, 500);
+    await writePaymentImportUnmatchedRecords(branchId, nextRecords);
+    return { added: cleanedRecords.length, count: nextRecords.length, records: nextRecords };
+};
+const removePaymentImportUnmatchedRecord = async (branchId, recordId) => {
+    const id = sanitizeString(recordId);
+    const existingRecords = await readPaymentImportUnmatchedRecords(branchId);
+    const target = existingRecords.find((record) => record.id === id) || null;
+    if (!target) return { target: null, records: existingRecords };
+    const nextRecords = existingRecords.filter((record) => record.id !== id);
+    await writePaymentImportUnmatchedRecords(branchId, nextRecords);
+    return { target, records: nextRecords };
+};
 const paymentImportOptionalCellText = (xlsx, sheet, row, col) => (
     Number.isInteger(col) && col >= 0 ? paymentImportCellText(xlsx, sheet, row, col) : ''
 );
@@ -1243,7 +1398,7 @@ const paymentImportOptionalReferenceText = (xlsx, sheet, row, col) => (
 const paymentImportOptionalAccountText = (xlsx, sheet, row, col) => (
     Number.isInteger(col) && col >= 0 ? paymentImportCellAccountText(xlsx, sheet, row, col) : ''
 );
-const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) => {
+const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null, options = {}) => {
     const xlsx = getPaymentImportXlsxModule();
     const workbook = xlsx.read(Buffer.from(buffer || []), {
         type: 'buffer',
@@ -1254,6 +1409,8 @@ const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) =
     const lookup = buildPaymentImportCustomerLookup(customers, workbook);
     const records = [];
     const skipped = [];
+    const unmatched = [];
+    const importFileName = normalizePaymentImportText(options?.fileName || options?.filename || '');
     let skippedCount = 0;
     const bySheet = {};
 
@@ -1329,16 +1486,37 @@ const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) =
             });
 
             if (!resolved.accountNumber) {
+                const reason = resolved.missingAccountNumber
+                    ? (resolved.ambiguous ? 'Missing account number and ambiguous customer name' : 'Missing account number and customer name not found')
+                    : (resolved.ambiguous ? 'Ambiguous customer name' : 'Customer not found');
+                const unmatchedRecord = buildPaymentImportUnmatchedRecord({
+                    sheetName,
+                    rowNumber: row + 1,
+                    method,
+                    date: lastIncomeDate,
+                    amount,
+                    rawName,
+                    area,
+                    category,
+                    originalReference,
+                    accountNumberFromWorkbook,
+                    gcashAccount: method === 'GCash' ? lastGcashAccount : '',
+                    collector: method === 'Cash' ? lastCollector : lastGcashAccount,
+                    reason,
+                    matches: resolved.matches,
+                    importFileName,
+                    importedBy
+                });
+                unmatched.push(unmatchedRecord);
                 bySheet[sheetName].skipped += 1;
                 skippedCount += 1;
                 if (skipped.length < PAYMENT_IMPORT_WARNING_LIMIT) {
                     skipped.push({
+                        id: unmatchedRecord.id,
                         sheetName,
                         rowNumber: row + 1,
                         amount,
-                        reason: resolved.missingAccountNumber
-                            ? 'Account number is required'
-                            : (resolved.ambiguous ? 'Ambiguous customer name' : 'Customer not found'),
+                        reason,
                         customerName: rawName,
                         accountNumber: accountNumberFromWorkbook || resolved.accountNumberHint || '',
                         area
@@ -1379,7 +1557,7 @@ const parsePaymentImportWorkbook = (buffer, customers = [], importedBy = null) =
         }
     });
 
-    return { records, skipped, skippedCount, bySheet, sheetNames: workbook.SheetNames };
+    return { records, skipped, skippedCount, unmatched, bySheet, sheetNames: workbook.SheetNames };
 };
 const parsePaymentImportBase64Payload = (payload = {}) => {
     const base64 = String(payload?.fileBase64 || payload?.fileDataBase64 || payload?.data || '').trim();
@@ -1416,7 +1594,7 @@ const sortPaymentImportHistory = (history = []) => {
         return String(right.id || '').localeCompare(String(left.id || ''));
     });
 };
-const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = null } = {}) => {
+const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = null, fileName = '' } = {}) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
         throw createError(400, 'Branch assignment missing for this admin account.');
@@ -1426,9 +1604,23 @@ const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = nu
     }
 
     const customers = await readCustomers(scopedBranchId);
-    const parsed = parsePaymentImportWorkbook(buffer, customers, importedBy);
+    const parsed = parsePaymentImportWorkbook(buffer, customers, importedBy, { fileName });
+    const unmatchedQueue = await appendPaymentImportUnmatchedRecords(scopedBranchId, parsed.unmatched);
+    if (!parsed.records.length && !parsed.unmatched.length) {
+        throw createError(400, 'No importable Cash or GCash income payment records found. Include Account Number, or make sure Particulars matches an existing subscriber name.');
+    }
     if (!parsed.records.length) {
-        throw createError(400, 'No importable Cash or GCash income payment records found. Account Number is required for every imported payment row.');
+        return {
+            imported: 0,
+            duplicates: 0,
+            skipped: parsed.skippedCount || parsed.skipped.length,
+            warnings: parsed.skipped,
+            unmatchedQueued: unmatchedQueue.added,
+            unmatchedCount: unmatchedQueue.count,
+            methods: { cash: 0, gcash: 0 },
+            bySheet: parsed.bySheet,
+            backup: null
+        };
     }
 
     const relational = await isRelationalReady();
@@ -1515,8 +1707,124 @@ const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = nu
         duplicates,
         skipped: parsed.skippedCount || parsed.skipped.length,
         warnings: parsed.skipped,
+        unmatchedQueued: unmatchedQueue.added,
+        unmatchedCount: unmatchedQueue.count,
         methods,
         bySheet: parsed.bySheet,
+        backup
+    };
+};
+
+const bindPaymentImportUnmatchedRecord = async ({ branchId, recordId, accountNumber, importedBy = null } = {}) => {
+    const scopedBranchId = Number(branchId);
+    if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+
+    const selectedAccountNumber = formatPaymentImportAccountNumber(accountNumber);
+    if (!selectedAccountNumber) {
+        throw createError(400, 'Select a subscriber to bind this payment.');
+    }
+
+    const unmatchedRecords = await readPaymentImportUnmatchedRecords(scopedBranchId);
+    const unmatchedRecord = unmatchedRecords.find((record) => record.id === sanitizeString(recordId));
+    if (!unmatchedRecord) {
+        throw createError(404, 'Unmatched payment record not found.');
+    }
+
+    const customers = await readCustomers(scopedBranchId);
+    const customer = (Array.isArray(customers) ? customers : []).find((item) => (
+        String(item?.accountNumber || '').trim() === selectedAccountNumber
+    ));
+    if (!customer) {
+        throw createError(404, 'Selected subscriber was not found.');
+    }
+
+    const entry = buildPaymentImportEntry({
+        accountNumber: selectedAccountNumber,
+        customer,
+        sheetName: unmatchedRecord.sheetName,
+        rowNumber: unmatchedRecord.rowNumber,
+        method: unmatchedRecord.method,
+        date: unmatchedRecord.date,
+        amount: unmatchedRecord.amount,
+        rawName: unmatchedRecord.customerName,
+        area: unmatchedRecord.area,
+        category: unmatchedRecord.category,
+        originalReference: unmatchedRecord.reference,
+        accountNumberFromWorkbook: unmatchedRecord.accountNumber,
+        gcashAccount: unmatchedRecord.method === 'GCash' ? unmatchedRecord.gcashAccount : '',
+        collector: unmatchedRecord.method === 'Cash' ? unmatchedRecord.collector : unmatchedRecord.gcashAccount,
+        importedBy
+    });
+    const customerName = getPaymentImportCustomerDisplayName(customer, unmatchedRecord.customerName);
+    const customerArea = normalizePaymentImportText(customer?.area || customer?.coverageArea || unmatchedRecord.area);
+    const relational = await isRelationalReady();
+    const existingPayments = await readPayments(scopedBranchId);
+    const backup = await createPaymentRecordsBackup(existingPayments, {
+        branchId: scopedBranchId,
+        user: importedBy,
+        reason: 'before-payment-history-unmatched-bind'
+    });
+
+    if (relational) {
+        await withTransaction(async (connection) => {
+            const [duplicateRows] = await connection.query(
+                `SELECT id FROM payment_entries
+                 WHERE branch_id = ?
+                   AND account_number = ?
+                   AND (id = ? OR fingerprint = ? OR reference = ?)
+                 LIMIT 1`,
+                [
+                    scopedBranchId,
+                    selectedAccountNumber,
+                    entry.id,
+                    entry.fingerprint,
+                    entry.reference
+                ]
+            );
+            if (duplicateRows && duplicateRows.length) {
+                throw createError(409, 'Payment already exists for this subscriber.');
+            }
+            await assignEntryNumbers(connection, entry);
+            await assertEntryNumbersAvailable(connection, scopedBranchId, entry);
+            await insertPaymentEntry(entry, scopedBranchId, selectedAccountNumber, connection);
+        });
+    } else {
+        const payments = existingPayments && typeof existingPayments === 'object' ? existingPayments : {};
+        if (!payments[selectedAccountNumber]) {
+            payments[selectedAccountNumber] = {
+                customerName,
+                area: customerArea,
+                history: []
+            };
+        }
+        if (!Array.isArray(payments[selectedAccountNumber].history)) {
+            payments[selectedAccountNumber].history = [];
+        }
+        if (paymentImportDuplicateInHistory(payments[selectedAccountNumber].history, entry)) {
+            throw createError(409, 'Payment already exists for this subscriber.');
+        }
+        if (!payments[selectedAccountNumber].customerName && customerName) {
+            payments[selectedAccountNumber].customerName = customerName;
+        }
+        if (!payments[selectedAccountNumber].area && customerArea) {
+            payments[selectedAccountNumber].area = customerArea;
+        }
+        payments[selectedAccountNumber].history.unshift(entry);
+        payments[selectedAccountNumber].history = sortPaymentImportHistory(payments[selectedAccountNumber].history);
+        await writePayments(payments);
+    }
+
+    const removal = await removePaymentImportUnmatchedRecord(scopedBranchId, unmatchedRecord.id);
+    triggerBranchServiceRefresh(scopedBranchId, 'payment-history-unmatched-bind');
+    return {
+        imported: 1,
+        accountNumber: selectedAccountNumber,
+        customerName,
+        entry,
+        removed: Boolean(removal.target),
+        unmatchedCount: removal.records.length,
         backup
     };
 };
@@ -2561,7 +2869,8 @@ router.post('/import-excel', express.raw({
         const result = await importPaymentRecordsFromExcel({
             buffer: importBuffer,
             branchId,
-            importedBy: user
+            importedBy: user,
+            fileName: decodeURIComponent(String(req.get('x-import-filename') || '')).trim()
         });
 
         res.json({
@@ -2599,6 +2908,60 @@ router.get('/export-excel', async (req, res, next) => {
         res.send(buffer);
     } catch (error) {
         next(error?.status ? error : createError(500, 'Failed to export payment history.'));
+    }
+});
+
+// GET /api/payments/import-unmatched - List imported payment rows that need manual binding
+router.get('/import-unmatched', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const records = await readPaymentImportUnmatchedRecords(branchId);
+        res.json({
+            ok: true,
+            count: records.length,
+            records
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to load unmatched imported payments.'));
+    }
+});
+
+// POST /api/payments/import-unmatched/:recordId/bind - Bind an unmatched row to a subscriber
+router.post('/import-unmatched/:recordId/bind', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const result = await bindPaymentImportUnmatchedRecord({
+            branchId: user.branchId || null,
+            recordId: req.params.recordId,
+            accountNumber: req.body?.accountNumber,
+            importedBy: user
+        });
+        res.json({
+            ok: true,
+            ...result
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to bind unmatched payment.'));
+    }
+});
+
+// DELETE /api/payments/import-unmatched/:recordId - Remove an unmatched imported row
+router.delete('/import-unmatched/:recordId', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const removal = await removePaymentImportUnmatchedRecord(branchId, req.params.recordId);
+        if (!removal.target) {
+            throw createError(404, 'Unmatched payment record not found.');
+        }
+        res.json({
+            ok: true,
+            deleted: true,
+            unmatchedCount: removal.records.length
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to delete unmatched payment.'));
     }
 });
 

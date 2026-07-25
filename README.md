@@ -31,7 +31,7 @@ http://YOUR_SERVER_IP:3000/login.html
 
 Default admin accounts:
 
-- Primary admin: `archiecd / finley123!`
+- Primary admin: ``
 - Backup admin: `admin / admin`
 
 Change the default passwords immediately after first login.

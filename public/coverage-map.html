@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="coverage.css?v=1.9">
+    <link rel="stylesheet" href="coverage.css?v=2.2">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
@@ -341,8 +341,8 @@
           </div>
         </section>
 
-        <div class="section-frame map-frame elevated" style="padding:0;">
-          <div id="mapView" style="display:block; padding: 16px;">
+        <div class="section-frame map-frame elevated">
+          <div id="mapView">
             <div class="map-tools card" role="region" aria-label="Coverage map tools">
               <div class="card-body map-tools__body">
                 <div class="map-tools__search input-group input-group-flat">
@@ -378,6 +378,12 @@
                   <button class="btn btn-outline-secondary btn-sm" id="mapFitBtn" type="button">
                     <i class="ti ti-arrows-maximize" aria-hidden="true"></i> Fit
                   </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="mapFullscreenBtn" type="button" aria-pressed="false" aria-label="Maximize map" title="Maximize map">
+                    <i class="ti ti-maximize" aria-hidden="true"></i> Full screen
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="mapLegendToggleBtn" type="button" aria-pressed="true" aria-label="Hide map legend" title="Hide map legend">
+                    <i class="ti ti-list-details" aria-hidden="true"></i> Legend
+                  </button>
                   <button class="btn btn-outline-secondary btn-sm" id="mapRefreshBtn" type="button">
                     <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
                   </button>
@@ -386,8 +392,8 @@
               </div>
             </div>
             <div class="map-canvas-wrap">
-              <div id="coverageMap" style="width:100%;height:calc((100vh - 220px) * 0.9);margin:0;"></div>
-              <div class="map-legend map-legend--overlay" aria-label="Map legend">
+              <div id="coverageMap"></div>
+              <div class="map-legend map-legend--overlay" id="mapLegendOverlay" aria-label="Map legend">
                 <span class="map-legend__title">Legend</span>
                 <span class="map-legend__item"><span class="map-legend__dot is-online"></span> Customer Online</span>
                 <span class="map-legend__item"><span class="map-legend__dot is-offline"></span> Customer Offline</span>
@@ -417,7 +423,7 @@
                 </div>
               </div>
             </div>
-            <p class="subtitle" id="mapStatus" style="margin: 10px 0 0;">Loading map data...</p>
+            <p class="subtitle" id="mapStatus">Loading map data...</p>
           </div>
         </div>
       </main>
@@ -448,11 +454,15 @@
       const mapLayersFabEl = document.getElementById('fabMapLayers');
       const mapSearchInputEl = document.getElementById('mapSearchInput');
       const mapSearchBtnEl = document.getElementById('mapSearchBtn');
+      const mapFrameEl = document.querySelector('.map-frame');
       const filterCustomersEl = document.getElementById('filterCustomers');
       const filterNapsEl = document.getElementById('filterNaps');
       const filterLinksEl = document.getElementById('filterLinks');
       const filterStatusEl = document.getElementById('filterStatus');
       const mapFitBtnEl = document.getElementById('mapFitBtn');
+      const mapFullscreenBtnEl = document.getElementById('mapFullscreenBtn');
+      const mapLegendToggleBtnEl = document.getElementById('mapLegendToggleBtn');
+      const mapLegendOverlayEl = document.getElementById('mapLegendOverlay');
       const mapRefreshBtnEl = document.getElementById('mapRefreshBtn');
       const mapLastUpdatedEl = document.getElementById('mapLastUpdated');
 
@@ -477,6 +487,9 @@
       let isRefreshing = false;
       let refreshTimer = null;
       let statusRestoreTimer = null;
+      let mapResizeObserver = null;
+      let mapInvalidateFrame = 0;
+      let isMapFullscreenFallback = false;
       let summaryStatusMessage = 'Loading map data...';
       let visibleCounts = { customers: 0, naps: 0, links: 0 };
       const MARKER_ICON_SIZE = [32, 40];
@@ -812,11 +825,13 @@
           disableClusteringAtZoom: 16,
           iconCreateFunction: (cluster) => {
             const count = cluster.getChildCount();
+            const label = String(count);
+            const iconWidth = Math.max(38, Math.min(76, 30 + (label.length * 9)));
             const klass = `coverage-cluster coverage-cluster--${type}`;
             return L.divIcon({
-              html: `<span class="coverage-cluster__bubble">${count}</span>`,
+              html: `<span class="coverage-cluster__bubble badge">${label}</span>`,
               className: klass,
-              iconSize: L.point(38, 38)
+              iconSize: L.point(iconWidth, 32)
             });
           }
         });
@@ -952,6 +967,118 @@
         linkRecords.forEach((row) => {
           if (!row?.line || typeof row.line.setLatLngs !== 'function') return;
           row.line.setLatLngs(buildNapCustomerLinkLatLngs(row));
+        });
+      };
+
+      const setMapLegendVisible = (isVisible) => {
+        mapLegendOverlayEl?.classList.toggle('is-hidden', !isVisible);
+        mapLegendOverlayEl?.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+        mapLegendToggleBtnEl?.classList.toggle('active', isVisible);
+        mapLegendToggleBtnEl?.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+        mapLegendToggleBtnEl?.setAttribute('aria-label', isVisible ? 'Hide map legend' : 'Show map legend');
+        mapLegendToggleBtnEl?.setAttribute('title', isVisible ? 'Hide map legend' : 'Show map legend');
+      };
+
+      const getFullscreenElement = () => (
+        document.fullscreenElement
+        || document.webkitFullscreenElement
+        || document.msFullscreenElement
+        || null
+      );
+
+      const setMapFullscreenState = (isActive) => {
+        mapFrameEl?.classList.toggle('is-map-fullscreen', isActive);
+        document.body.classList.toggle('coverage-map-fullscreen-active', isActive);
+        if (mapFullscreenBtnEl) {
+          mapFullscreenBtnEl.classList.toggle('active', isActive);
+          mapFullscreenBtnEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          mapFullscreenBtnEl.setAttribute('aria-label', isActive ? 'Back to normal map view' : 'Maximize map');
+          mapFullscreenBtnEl.setAttribute('title', isActive ? 'Back to normal map view' : 'Maximize map');
+          mapFullscreenBtnEl.innerHTML = isActive
+            ? '<i class="ti ti-minimize" aria-hidden="true"></i> Normal'
+            : '<i class="ti ti-maximize" aria-hidden="true"></i> Full screen';
+        }
+        invalidateMapSize();
+        setTimeout(invalidateMapSize, 180);
+      };
+
+      const enterMapFullscreenFallback = () => {
+        isMapFullscreenFallback = true;
+        setMapFullscreenState(true);
+      };
+
+      const enterMapFullscreen = async () => {
+        if (!mapFrameEl) return;
+        const requestFullscreen = (
+          mapFrameEl.requestFullscreen
+          || mapFrameEl.webkitRequestFullscreen
+          || mapFrameEl.msRequestFullscreen
+        );
+        if (!requestFullscreen) {
+          enterMapFullscreenFallback();
+          return;
+        }
+        try {
+          await Promise.resolve(requestFullscreen.call(mapFrameEl));
+          setMapFullscreenState(true);
+        } catch (error) {
+          enterMapFullscreenFallback();
+        }
+      };
+
+      const exitMapFullscreen = async () => {
+        const fullscreenElement = getFullscreenElement();
+        if (fullscreenElement === mapFrameEl) {
+          const exitFullscreen = (
+            document.exitFullscreen
+            || document.webkitExitFullscreen
+            || document.msExitFullscreen
+          );
+          if (exitFullscreen) {
+            try {
+              await Promise.resolve(exitFullscreen.call(document));
+              isMapFullscreenFallback = false;
+              setMapFullscreenState(false);
+            } catch (error) {
+              isMapFullscreenFallback = false;
+              setMapFullscreenState(false);
+            }
+            return;
+          }
+        }
+        isMapFullscreenFallback = false;
+        setMapFullscreenState(false);
+      };
+
+      const toggleMapFullscreen = () => {
+        const isActive = getFullscreenElement() === mapFrameEl || isMapFullscreenFallback;
+        if (isActive) {
+          exitMapFullscreen();
+        } else {
+          enterMapFullscreen();
+        }
+      };
+
+      const handleMapFullscreenChange = () => {
+        const isFullscreen = getFullscreenElement() === mapFrameEl;
+        if (!isFullscreen) isMapFullscreenFallback = false;
+        setMapFullscreenState(isFullscreen || isMapFullscreenFallback);
+      };
+
+      const handleMapFullscreenKeydown = (event) => {
+        if (event.key !== 'Escape' || !isMapFullscreenFallback) return;
+        exitMapFullscreen();
+      };
+
+      const invalidateMapSize = () => {
+        if (!map) return;
+        if (mapInvalidateFrame) {
+          window.cancelAnimationFrame(mapInvalidateFrame);
+        }
+        mapInvalidateFrame = window.requestAnimationFrame(() => {
+          mapInvalidateFrame = 0;
+          map.invalidateSize();
+          updateNapCustomerLinkGeometry();
         });
       };
 
@@ -1276,7 +1403,12 @@
           applyMapFilters();
           renderSummary();
         });
-        setTimeout(() => map.invalidateSize(), 120);
+        if ('ResizeObserver' in window) {
+          mapResizeObserver = new ResizeObserver(invalidateMapSize);
+          mapResizeObserver.observe(mapEl);
+        }
+        window.addEventListener('resize', invalidateMapSize);
+        setTimeout(invalidateMapSize, 120);
       };
 
       const searchAndFocus = () => {
@@ -1373,8 +1505,19 @@
         searchAndFocus();
       });
       mapFitBtnEl?.addEventListener('click', () => updateAutoFitBounds(true));
+      mapFullscreenBtnEl?.addEventListener('click', toggleMapFullscreen);
+      document.addEventListener('fullscreenchange', handleMapFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', handleMapFullscreenChange);
+      document.addEventListener('MSFullscreenChange', handleMapFullscreenChange);
+      window.addEventListener('keydown', handleMapFullscreenKeydown);
+      mapLegendToggleBtnEl?.addEventListener('click', () => {
+        const shouldShowLegend = mapLegendOverlayEl?.classList.contains('is-hidden') ?? false;
+        localStorage.setItem('coverageMapLegendVisible', shouldShowLegend ? '1' : '0');
+        setMapLegendVisible(shouldShowLegend);
+      });
       mapRefreshBtnEl?.addEventListener('click', () => refreshMapData({ forceFit: false, silent: false }));
 
+      setMapLegendVisible(localStorage.getItem('coverageMapLegendVisible') !== '0');
       initMap();
       const themeTargets = [document.body, document.documentElement].filter(Boolean);
       let lastThemeIsDark = isDarkThemeActive();
@@ -1396,6 +1539,13 @@
       window.addEventListener('beforeunload', () => {
         if (refreshTimer) clearInterval(refreshTimer);
         if (statusRestoreTimer) clearTimeout(statusRestoreTimer);
+        if (mapInvalidateFrame) window.cancelAnimationFrame(mapInvalidateFrame);
+        mapResizeObserver?.disconnect();
+        window.removeEventListener('resize', invalidateMapSize);
+        document.removeEventListener('fullscreenchange', handleMapFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', handleMapFullscreenChange);
+        document.removeEventListener('MSFullscreenChange', handleMapFullscreenChange);
+        window.removeEventListener('keydown', handleMapFullscreenKeydown);
       });
     });
   </script>

@@ -1149,8 +1149,13 @@
         const currentRows = rows.filter((row) => isSameBillingMonth(row.billDate, cycleDate));
         return currentRows.length ? currentRows[currentRows.length - 1] : null;
     };
+    const getEndingBalanceRow = (record = {}, customers = []) => {
+        const { rows } = buildBreakdownRows(record, customers);
+        return rows.length ? rows[rows.length - 1] : null;
+    };
     const resolveCurrentBillState = (record = {}, customers = [], cycleDate = new Date()) => {
-        const currentRow = getCurrentMonthRow(record, customers, cycleDate);
+        const currentRow = getEndingBalanceRow(record, customers)
+            || getCurrentMonthRow(record, customers, cycleDate);
         if (currentRow) {
             return {
                 amount: roundMoney(currentRow.balanceAfterPayment),

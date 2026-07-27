@@ -913,8 +913,8 @@ document.addEventListener('DOMContentLoaded', function () {
         return /\blast\b/.test(text) && /\bmonth\b/.test(text);
     };
     const usesMonthEndBillingCycle = (customer = {}, referenceDate = null) => {
-        const billDate = parseDateOnly(customer?.billDate);
-        const dueDate = parseDateOnly(customer?.dueDate);
+        const billDate = parseDateOnly(customer?.billDate || customer?.bill_date);
+        const dueDate = parseDateOnly(customer?.dueDate || customer?.due_date);
         return hasMonthEndBillingCycle(customer)
             || isThirtyFirstDay(referenceDate)
             || isThirtyFirstDay(billDate)
@@ -964,6 +964,37 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         return formatDate(candidate);
+    };
+    const addDays = (date, days = 0) => {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+        const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        result.setDate(result.getDate() + (Number(days) || 0));
+        return result;
+    };
+    const deriveDueOffsetForCustomer = (customer = {}) => {
+        const direct = Number(customer?.dueOffset ?? customer?.due_offset);
+        if (Number.isFinite(direct) && direct >= 0) return Math.floor(direct);
+
+        const billDate = parseDateOnly(customer?.billDate);
+        const dueDate = parseDateOnly(customer?.dueDate);
+        const diffDays = dateDiffDays(billDate, dueDate);
+        return Number.isFinite(diffDays) && diffDays >= 0 ? diffDays : null;
+    };
+    const resolveDueDateForBreakdownRow = (customer = {}, row = null) => {
+        const planCategory = resolvePlanCategory(customer);
+        if (planCategory === 'prepaid') {
+            return parseDateOnly(customer?.prepaidExpirationAt || customer?.prepaid_expiration_at || customer?.dueDate || customer?.due_date)
+                || (row?.billDate instanceof Date ? row.billDate : null);
+        }
+
+        const billDate = row?.billDate instanceof Date && !Number.isNaN(row.billDate.getTime())
+            ? row.billDate
+            : null;
+        if (billDate) {
+            const dueOffset = deriveDueOffsetForCustomer(customer);
+            if (dueOffset !== null) return addDays(billDate, dueOffset);
+        }
+        return parseDateOnly(customer?.dueDate || customer?.due_date) || billDate;
     };
     const isMonthlyChargeEntry = (entry = {}) => {
         const entryId = String(entry?.id || '').trim();
@@ -2341,6 +2372,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const currentRows = rows.filter((row) => isSameMonth(row.billDate, cycleDate));
         return currentRows.length ? currentRows[currentRows.length - 1] : null;
     };
+    const getPaymentBreakdownEndingRowForPayments = (customer = {}) => {
+        const customerPool = Array.isArray(allCustomers) && allCustomers.length
+            ? allCustomers
+            : (Array.isArray(window.allCustomers) ? window.allCustomers : []);
+        const { rows } = buildBreakdownRowsForPayments(customer, customerPool);
+        return rows.length ? rows[rows.length - 1] : null;
+    };
     const getEntryDate = (entry = {}) => parseDateOnly(entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || '');
     const isPrepaidBillChargeEntry = (entry = {}) => {
         if (resolveEntryDirection(entry) !== 'debit') return false;
@@ -2369,11 +2407,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const existingCustomerStart = isExistingCustomerOpeningCycle(customer, cycleDate);
         const hasPostedCurrentBill = hasCurrentMonthBillCharge(customer, planCategory, cycleDate);
         const firstBilling = resolveFirstBillingAmount(customer, planAmount, cycleDate);
-        const currentBreakdownRow = getCurrentMonthBreakdownRowForPayments(customer, cycleDate);
+        const currentBreakdownRow = getPaymentBreakdownEndingRowForPayments(customer)
+            || getCurrentMonthBreakdownRowForPayments(customer, cycleDate);
 
         if (currentBreakdownRow) {
             const currentMonthDue = roundMoney(currentBreakdownRow.due);
             const balanceAfterPayment = roundMoney(currentBreakdownRow.balanceAfterPayment);
+            const currentDueDate = resolveDueDateForBreakdownRow(customer, currentBreakdownRow);
             const billClass = balanceAfterPayment > EPSILON
                 ? 'has-balance'
                 : (balanceAfterPayment < -EPSILON ? 'advance-balance' : 'zero-balance');
@@ -2386,6 +2426,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 planAmount,
                 currentBillAmount: balanceAfterPayment,
                 currentMonthDue,
+                currentDueDate,
                 balanceAfterPayment,
                 existingCustomerStart,
                 hasPostedCurrentBill: currentBreakdownRow.sourceType === 'posted' || currentBreakdownRow.sourceType === 'opening',
@@ -2417,6 +2458,7 @@ document.addEventListener('DOMContentLoaded', function () {
             planAmount,
             currentBillAmount,
             currentMonthDue: 0,
+            currentDueDate: parseDateOnly(customer?.dueDate || customer?.due_date),
             existingCustomerStart,
             hasPostedCurrentBill,
             hasCurrentBreakdownRow: false,
@@ -2452,8 +2494,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const currentBillState = resolveCurrentBillState(customer);
         const balance = currentBillState.amount;
         if (!Number.isFinite(balance) || balance <= 0) return false;
-        if (currentBillState.currentBreakdownRow?.billDate) {
-            return formatDateISO(currentBillState.currentBreakdownRow.billDate) === targetDateKey;
+        if (currentBillState.currentDueDate) {
+            return formatDateISO(currentBillState.currentDueDate) === targetDateKey;
         }
 
         const planCategory = resolvePlanCategory(customer);
@@ -3777,7 +3819,7 @@ document.addEventListener('DOMContentLoaded', function () {
             let billingCycleMeta = 'No cycle recorded';
             const planCategory = resolvePlanCategory(customer);
             const currentBillState = resolveCurrentBillState(customer);
-            const currentCycleDueDate = currentBillState.currentBreakdownRow?.billDate || customer?.dueDate;
+            const currentCycleDueDate = currentBillState.currentDueDate || customer?.dueDate;
             const dueStatus = getDueStatus(currentCycleDueDate);
             const balanceNumber = currentBillState.amount;
             const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < -EPSILON;
@@ -3802,8 +3844,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     const day = billDate.getDate();
                     billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
                 }
-                billingCycleMeta = currentBillState.currentBreakdownRow?.billDate
-                    ? `Current due: ${formatDate(currentBillState.currentBreakdownRow.billDate)}`
+                billingCycleMeta = currentBillState.currentDueDate
+                    ? `Current due: ${formatDate(currentBillState.currentDueDate)}`
                     : `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;
             }
 
@@ -3821,8 +3863,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Use Math.abs to prevent negative sign, color coding will indicate the status
             const balanceAmount = formatCurrency(currentBillState.displayAmount);
-            const dueForDisplay = currentBillState.currentBreakdownRow?.billDate
-                ? formatDate(currentBillState.currentBreakdownRow.billDate)
+            const dueForDisplay = currentBillState.currentDueDate
+                ? formatDate(currentBillState.currentDueDate)
                 : (planCategory === 'postpaid'
                     ? getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })
                     : formatDate(customer.dueDate));

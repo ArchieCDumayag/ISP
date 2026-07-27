@@ -2927,6 +2927,24 @@ router.get('/import-unmatched', async (req, res, next) => {
     }
 });
 
+// DELETE /api/payments/import-unmatched - Clear all unmatched imported rows for this branch
+router.delete('/import-unmatched', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = user.branchId || null;
+        const existingRecords = await readPaymentImportUnmatchedRecords(branchId);
+        await writePaymentImportUnmatchedRecords(branchId, []);
+        res.json({
+            ok: true,
+            deleted: true,
+            deletedCount: existingRecords.length,
+            unmatchedCount: 0
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to clear unmatched imported payments.'));
+    }
+});
+
 // POST /api/payments/import-unmatched/:recordId/bind - Bind an unmatched row to a subscriber
 router.post('/import-unmatched/:recordId/bind', async (req, res, next) => {
     try {

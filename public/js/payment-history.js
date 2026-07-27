@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const unmatchedModalEl = document.getElementById('paymentHistoryUnmatchedModal');
     const unmatchedModalBody = document.getElementById('paymentHistoryUnmatchedBody');
     const unmatchedModalSummary = document.getElementById('paymentHistoryUnmatchedSummary');
+    const unmatchedClearBtn = document.getElementById('paymentHistoryUnmatchedClearBtn');
     const unmatchedRefreshBtn = document.getElementById('paymentHistoryUnmatchedRefreshBtn');
     const unmatchedCustomerList = document.getElementById('paymentHistoryUnmatchedCustomerList');
     const metricEntriesEl = document.getElementById('historyMetricEntries');
@@ -70,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         customers: [],
         unmatchedRows: [],
         unmatchedCustomerValues: new Map(),
+        clearingUnmatched: false,
         page: 1,
         pageSize: Number(pageSizeSelect?.value) || 25
     };
@@ -420,12 +422,22 @@ document.addEventListener('DOMContentLoaded', () => {
         unmatchedBtn.title = normalizedCount
             ? `${formatCount(normalizedCount)} unmatched imported ${normalizedCount === 1 ? 'payment' : 'payments'}`
             : 'No unmatched imported payments';
+        updateUnmatchedClearButton(normalizedCount);
+    };
+    const updateUnmatchedClearButton = (count = state.unmatchedRows.length) => {
+        if (!unmatchedClearBtn) return;
+        const normalizedCount = Math.max(0, Number(count) || 0);
+        unmatchedClearBtn.disabled = state.clearingUnmatched || normalizedCount <= 0;
+        unmatchedClearBtn.innerHTML = state.clearingUnmatched
+            ? '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Clearing...'
+            : '<i class="ti ti-trash-x" aria-hidden="true"></i> Clear all';
     };
     const renderUnmatchedRecords = () => {
         if (unmatchedModalSummary) {
             const count = state.unmatchedRows.length;
             unmatchedModalSummary.textContent = `${formatCount(count)} ${count === 1 ? 'record' : 'records'}`;
         }
+        updateUnmatchedClearButton();
         if (!unmatchedModalBody) return;
         if (!state.unmatchedRows.length) {
             unmatchedModalBody.innerHTML = `
@@ -501,6 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderUnmatchedLoading = () => {
         if (unmatchedModalSummary) unmatchedModalSummary.textContent = 'Loading records';
+        if (unmatchedClearBtn) unmatchedClearBtn.disabled = true;
         if (!unmatchedModalBody) return;
         unmatchedModalBody.innerHTML = `
             <tr>
@@ -657,6 +670,45 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             showToast(error.message || 'Failed to delete unmatched payment.', 'error');
             setButtonBusy(button, false);
+        }
+    };
+    const clearAllUnmatchedPayments = async () => {
+        const total = state.unmatchedRows.length;
+        if (!total) {
+            showToast('No unmatched imported payments to clear.', 'info');
+            updateUnmatchedClearButton(0);
+            return;
+        }
+
+        const message = `Clear all ${formatCount(total)} unmatched imported ${total === 1 ? 'payment' : 'payments'}? This only removes the unmatched import rows and cannot be undone.`;
+        const confirmed = typeof window.appConfirm === 'function'
+            ? await window.appConfirm(message, { title: 'Clear Unmatched Payments' })
+            : window.confirm(message);
+        if (!confirmed) return;
+
+        state.clearingUnmatched = true;
+        updateUnmatchedClearButton(total);
+        if (unmatchedRefreshBtn) unmatchedRefreshBtn.disabled = true;
+        unmatchedModalBody?.querySelectorAll('button, input').forEach((control) => {
+            control.disabled = true;
+        });
+
+        try {
+            const payload = await fetchJSON('/api/payments/import-unmatched', {
+                method: 'DELETE'
+            });
+            const deletedCount = Number(payload?.deletedCount);
+            state.unmatchedRows = [];
+            updateUnmatchedButton(0);
+            renderUnmatchedRecords();
+            const clearedCount = Number.isFinite(deletedCount) ? deletedCount : total;
+            showToast(`${formatCount(clearedCount)} unmatched imported ${clearedCount === 1 ? 'payment' : 'payments'} cleared.`, 'success');
+        } catch (error) {
+            showToast(error.message || 'Failed to clear unmatched imported payments.', 'error');
+        } finally {
+            state.clearingUnmatched = false;
+            if (unmatchedRefreshBtn) unmatchedRefreshBtn.disabled = false;
+            updateUnmatchedClearButton();
         }
     };
 
@@ -1185,6 +1237,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     unmatchedRefreshBtn?.addEventListener('click', () => {
         void loadUnmatchedRecords({ render: true });
+    });
+    unmatchedClearBtn?.addEventListener('click', () => {
+        void clearAllUnmatchedPayments();
     });
     unmatchedModalBody?.addEventListener('click', (event) => {
         const bindBtn = event.target.closest('.payment-history-unmatched-bind');

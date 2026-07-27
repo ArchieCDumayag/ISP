@@ -665,6 +665,13 @@ const shouldAttachCreditToBillMonth = (entry = {}, billDate = null, record = {})
   return resolvePlanType(record) === 'postpaid';
 };
 
+const isPendingPostpaidSyntheticBill = (record = {}, billDate = null, todayBillingDate = getTodayBillingDate()) => {
+  if (resolvePlanType(record) !== 'postpaid' || !billDate || !todayBillingDate) return false;
+  if (!isSameBillingMonth(billDate, todayBillingDate)) return false;
+  const releaseDate = getMonthEndDate(billDate) || billDate;
+  return compareBillingDateOnly(todayBillingDate, releaseDate) < 0;
+};
+
 const sumEntries = (entries = []) => roundMoney(
   entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
 );
@@ -897,7 +904,8 @@ const createBreakdownRow = ({
   advanceOverride = null,
   openingPreviousBalance = false,
   openingAdvance = false,
-  isFirstRow = false
+  isFirstRow = false,
+  paymentStatusOverride = ''
 }) => {
   const firstBillAdjustment = isFirstRow ? normalizeFirstBillAdjustment(context?.firstBillAdjustment) : null;
   const monthlyReferralAdjustment = getMonthlyReferralAdjustment(context, billDate, isFirstRow);
@@ -950,6 +958,7 @@ const createBreakdownRow = ({
   const amountPaid = sumEntries(paymentCredits);
   const balanceAfterPayment = roundMoney(rawDue - amountPaid);
   const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
+  const paymentStatus = paymentStatusOverride || (balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid');
 
   return {
     row: {
@@ -963,6 +972,7 @@ const createBreakdownRow = ({
       isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
       isDueOverride: hasDueOverride,
       amountPaid,
+      paymentStatus,
       balanceAfterPayment,
       isFirstRow,
       openingPreviousBalance,
@@ -987,6 +997,14 @@ const resolveBillingDay = (record = {}, fallbackDate = null) => {
   return 1;
 };
 
+const resolvePendingPostpaidBillDate = (record = {}, todayBillingDate = getTodayBillingDate(), fallbackDate = null) => {
+  const todayParts = getZonedDateParts(todayBillingDate);
+  if (!todayParts) return null;
+  const billingDay = resolveBillingDay(record, fallbackDate || todayBillingDate);
+  const billDate = buildMonthlyDate(todayParts.year, todayParts.month, billingDay);
+  return isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate) ? billDate : null;
+};
+
 const buildRowsFromPostedDebits = (record, entries, context) => {
   const rows = [];
   const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(entries);
@@ -994,6 +1012,8 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
   const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
   if (!debitEntries.length) return rows;
   const assignedCreditOrders = new Set();
+  const todayBillingDate = getTodayBillingDate();
+  const pendingPostpaidBillDate = resolvePendingPostpaidBillDate(record, todayBillingDate, debitEntries[0]?.dateObj);
 
   let runningBalance = 0;
   effectiveEntries
@@ -1014,6 +1034,11 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
       const attachesToNextBillMonth = nextDebit
         ? shouldAttachCreditToBillMonth(entry, nextDebit.dateObj, record)
         : false;
+      const attachesToPendingPostpaidBill = pendingPostpaidBillDate
+        && entry.dateObj
+        && isSameBillingMonth(entry.dateObj, pendingPostpaidBillDate)
+        && !isSameBillingMonth(debit.dateObj, pendingPostpaidBillDate);
+      if (attachesToPendingPostpaidBill) return false;
       return attachesToCurrentBillMonth
         || (
           !attachesToNextBillMonth
@@ -1038,6 +1063,31 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
     rows.push(result.row);
     runningBalance = result.nextBalance;
   });
+
+  if (
+    pendingPostpaidBillDate
+    && !rows.some((row) => row?.billDate && isSameBillingMonth(row.billDate, pendingPostpaidBillDate))
+  ) {
+    const pendingCredits = effectiveEntries.filter((entry) => (
+      entry.direction === 'credit'
+      && !assignedCreditOrders.has(entry.sortOrder)
+      && entry.dateObj
+      && isSameBillingMonth(entry.dateObj, pendingPostpaidBillDate)
+    ));
+    pendingCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
+    const result = createBreakdownRow({
+      record,
+      billDate: pendingPostpaidBillDate,
+      planAmount: 0,
+      credits: pendingCredits,
+      runningBalance,
+      context,
+      isFirstRow: rows.length === 0,
+      paymentStatusOverride: 'not-generated'
+    });
+    rows.push(result.row);
+    runningBalance = result.nextBalance;
+  }
 
   return rows;
 };
@@ -1132,7 +1182,10 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
   let guard = 0;
   while (
     billDate <= lastBillDate
-    && isOnOrBeforeBillingDate(billDate, todayBillingDate)
+    && (
+      isOnOrBeforeBillingDate(billDate, todayBillingDate)
+      || isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate)
+    )
     && guard < MAX_SYNTHETIC_ROWS
   ) {
     const nextParts = getNextMonthParts(currentYear, currentMonth);
@@ -1164,14 +1217,16 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
     const planChange = resolvePlanChangeForMonth(context, billDate);
     const effectivePlanAmount = planChange ? planChange.planAmount : planAmount;
     const proration = resolveFirstMonthProration(record, billDate, effectivePlanAmount);
+    const pendingPostpaidBill = isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate);
     const result = createBreakdownRow({
       record,
       billDate,
-      planAmount: proration.amount,
+      planAmount: pendingPostpaidBill ? 0 : proration.amount,
       credits: cycleCredits,
       runningBalance,
       context,
-      isFirstRow: rows.length === 0
+      isFirstRow: rows.length === 0,
+      paymentStatusOverride: pendingPostpaidBill ? 'not-generated' : ''
     });
     rows.push(result.row);
     runningBalance = result.nextBalance;

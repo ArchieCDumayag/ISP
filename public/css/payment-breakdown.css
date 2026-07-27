@@ -465,6 +465,11 @@
     background: rgba(214, 57, 57, .12);
 }
 
+.breakdown-status.is-not-generated {
+    color: var(--tblr-warning, #f59f00);
+    background: rgba(245, 159, 0, .12);
+}
+
 .breakdown-status.is-disconnected {
     color: var(--tblr-danger, #d63939);
     background: rgba(214, 57, 57, .12);

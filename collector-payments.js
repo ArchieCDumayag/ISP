@@ -8,6 +8,7 @@ const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = req
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
 const { resolveCollectorNextDue } = require('./collector-next-due');
 const { accountHasRole } = require('./role-utils');
+const paymentRecordsRouter = require('./payment-records');
 
 const router = express.Router();
 const REFERENCE_MAX_LENGTH = 32;
@@ -787,6 +788,37 @@ function buildCollectorReceiptPayload(customer, history, targetPayment) {
   };
 }
 
+async function resolveAdminCurrentBillBalance(accountNumber, branchId, fallbackBalance = 0) {
+  try {
+    const record = await paymentRecordsRouter.buildPaymentRecordForAccount(accountNumber, branchId);
+    const endingBalance = Number(record?.paymentBreakdownEndingBalance ?? record?.endingBalance);
+    if (Number.isFinite(endingBalance)) return Number(endingBalance.toFixed(2));
+  } catch (error) {
+    console.warn(
+      `Unable to resolve admin current bill balance for ${accountNumber || 'unknown account'}:`,
+      error?.message || error
+    );
+  }
+  const fallback = Number(fallbackBalance);
+  return Number.isFinite(fallback) ? Number(fallback.toFixed(2)) : 0;
+}
+
+async function buildCollectorReceiptPayloadWithAdminBalance(customer, history, targetPayment, branchId = null) {
+  const payload = buildCollectorReceiptPayload(customer, history, targetPayment);
+  const currentBillAmount = await resolveAdminCurrentBillBalance(
+    payload.accountNumber || customer?.accountNumber,
+    branchId,
+    payload.currentBalance
+  );
+  return {
+    ...payload,
+    currentBillAmount,
+    paymentBreakdownEndingBalance: currentBillAmount,
+    endingBalance: currentBillAmount,
+    currentBalance: Number(Math.max(currentBillAmount, 0).toFixed(2))
+  };
+}
+
 async function isCollectorAssignedToCustomer(branchId, collectorId, customer) {
   if (!collectorId) return true;
   const area = String(customer?.area || '').trim();
@@ -1000,7 +1032,7 @@ router.get('/reprint', async (req, res, next) => {
 
         const history = await readPaymentHistoryForReceipt(branchId, customer.accountNumber);
         const resolvedTarget = history.find((entry) => isSamePaymentEntry(entry, targetPayment)) || targetPayment;
-        return res.json(buildCollectorReceiptPayload(customer, history, resolvedTarget));
+        return res.json(await buildCollectorReceiptPayloadWithAdminBalance(customer, history, resolvedTarget, branchId));
       }
 
       return next(createError(404, 'Receipt payment was not found for this collector.'));
@@ -1023,7 +1055,7 @@ router.get('/reprint', async (req, res, next) => {
       const history = rawHistory.map(mapReceiptPaymentRow);
       const targetPayment = history.find((entry) => isReceiptPaymentEntry(entry) && matchesReceiptLookup(entry, lookup));
       if (!targetPayment) continue;
-      return res.json(buildCollectorReceiptPayload(customer, history, targetPayment));
+      return res.json(await buildCollectorReceiptPayloadWithAdminBalance(customer, history, targetPayment, branchId));
     }
 
     return next(createError(404, 'Receipt payment was not found for this collector.'));
@@ -1312,10 +1344,7 @@ router.post('/:accountNumber', async (req, res, next) => {
       } : null;
 
       const historyBeforeInsert = await readPaymentHistoryForReceipt(branchId, accountNumber);
-      const receiptBreakdown = buildCollectorReceiptBreakdown(
-        [...historyBeforeInsert, newEntry, ...(chargeEntry ? [chargeEntry] : [])],
-        newEntry
-      );
+      const receiptHistory = [...historyBeforeInsert, newEntry, ...(chargeEntry ? [chargeEntry] : [])];
 
       await withTransaction(async (connection) => {
         await assignEntryNumbers(connection, newEntry);
@@ -1329,12 +1358,11 @@ router.post('/:accountNumber', async (req, res, next) => {
       });
       triggerBranchServiceRefresh(branchId, 'collector-payments');
 
+      const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(customer, receiptHistory, newEntry, branchId);
       return res.status(201).json({
         ...newEntry,
-        customer: buildCollectorCustomerSummary(customer, accountNumber),
-        coveredBillingBreakdown: receiptBreakdown.coveredBillingBreakdown,
-        balanceBreakdown: receiptBreakdown.balanceBreakdown,
-        receiptBreakdown,
+        ...receiptPayload,
+        id: newEntry.id,
       });
     }
 
@@ -1446,13 +1474,16 @@ router.post('/:accountNumber', async (req, res, next) => {
     }
 
     await writeJson(STORE_KEYS.payments, payments);
-    const receiptBreakdown = buildCollectorReceiptBreakdown(payments[accountNumber].history, newEntry);
+    const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
+      customer,
+      payments[accountNumber].history,
+      newEntry,
+      collectorAccount.branchId || null
+    );
     res.status(201).json({
       ...newEntry,
-      customer: buildCollectorCustomerSummary(customer, accountNumber),
-      coveredBillingBreakdown: receiptBreakdown.coveredBillingBreakdown,
-      balanceBreakdown: receiptBreakdown.balanceBreakdown,
-      receiptBreakdown,
+      ...receiptPayload,
+      id: newEntry.id,
     });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to record payment'));

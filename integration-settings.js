@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const { requireAuth } = require('./auth');
 const { readJson, writeJson } = require('./data-store');
 const { query } = require('./db');
 const { isRelationalReady } = require('./db-relational');
@@ -433,7 +432,12 @@ async function saveSettings(nextSettings, branchId = null) {
     return normalized;
 }
 
-router.get('/', requireAuth, async (_req, res, next) => {
+const requireAuthForIntegrationSettings = (req, res, next) => {
+    const { requireAuth } = require('./auth');
+    return requireAuth(req, res, next);
+};
+
+router.get('/', requireAuthForIntegrationSettings, async (_req, res, next) => {
     try {
         const settings = await loadSettings(_req.user?.branchId || null);
         res.json({ ok: true, settings: sanitizeSettingsForClient(settings) });
@@ -442,7 +446,7 @@ router.get('/', requireAuth, async (_req, res, next) => {
     }
 });
 
-router.put('/:provider', requireAuth, async (req, res, next) => {
+router.put('/:provider', requireAuthForIntegrationSettings, async (req, res, next) => {
     try {
         const provider = normalizeProviderKey(req.params.provider);
         if (!INTEGRATION_PROVIDER_KEYS.includes(provider)) {

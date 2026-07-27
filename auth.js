@@ -19,6 +19,7 @@ const { hashPassword, verifyPassword, isHashedPassword } = require('./passwords'
 const { resolveCollectorNextDue } = require('./collector-next-due');
 const { normalizePaymentEntry } = require('./payment-entry-normalizer');
 const paymentRecordsRouter = require('./payment-records');
+const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
 const { normalizeRoles, rolesToStoredValue, accountHasRole, accountHasAnyRole, getPrimaryRole } = require('./role-utils');
 
 const sessions = new Map(); // sessionId -> { userId, createdAt }
@@ -605,6 +606,25 @@ function buildCollectorBalanceSummary(history = []) {
   };
 }
 
+function resolveCollectorCurrentBillBalance(customer = {}, history = [], balanceSummary = {}) {
+  const fallbackBalance = Number(balanceSummary?.balance);
+  const fallback = Number.isFinite(fallbackBalance) ? fallbackBalance : 0;
+  try {
+    const breakdown = calculatePaymentBreakdownEndingBalance({
+      ...customer,
+      history
+    });
+    const endingBalance = Number(breakdown?.endingBalance);
+    return Number.isFinite(endingBalance) ? Number(endingBalance.toFixed(2)) : Number(fallback.toFixed(2));
+  } catch (error) {
+    console.warn(
+      `Unable to calculate collector current bill balance for ${customer?.accountNumber || 'unknown account'}:`,
+      error?.message || error
+    );
+    return Number(fallback.toFixed(2));
+  }
+}
+
 async function readCollectorPaymentHistoryByAccountNumbers(accountNumbers = [], branchId = null) {
   const safeAccountNumbers = Array.from(
     new Set((Array.isArray(accountNumbers) ? accountNumbers : []).map((value) => normalizeText(value)).filter(Boolean))
@@ -674,21 +694,59 @@ async function readCollectorPaymentHistoryByAccountNumbers(accountNumbers = [], 
   }
 }
 
+async function readCollectorPaymentRecordsByAccountNumbers(accountNumbers = [], branchId = null) {
+  const safeAccountNumbers = Array.from(
+    new Set((Array.isArray(accountNumbers) ? accountNumbers : []).map((value) => normalizeText(value)).filter(Boolean))
+  );
+  const recordsByAccount = new Map();
+  if (!safeAccountNumbers.length) return recordsByAccount;
+
+  await Promise.all(safeAccountNumbers.map(async (accountNumber) => {
+    try {
+      const record = await paymentRecordsRouter.buildPaymentRecordForAccount(accountNumber, branchId);
+      if (record) recordsByAccount.set(accountNumber, record);
+    } catch (error) {
+      console.warn(
+        `Unable to load admin payment record for collector account ${accountNumber}:`,
+        error?.message || error
+      );
+    }
+  }));
+
+  return recordsByAccount;
+}
+
 async function readAssignedCustomerTransactionRecordsForCollector(collector) {
   const assignedCustomers = await readAssignedCustomersForCollector(collector);
+  const assignedAccountNumbers = assignedCustomers.map((customer) => customer.accountNumber);
+  const branchId = resolveBranchId(collector?.branchId);
   const historyByAccount = await readCollectorPaymentHistoryByAccountNumbers(
-    assignedCustomers.map((customer) => customer.accountNumber),
-    collector?.branchId
+    assignedAccountNumbers,
+    branchId
   );
+  const paymentRecordByAccount = await readCollectorPaymentRecordsByAccountNumbers(assignedAccountNumbers, branchId);
   return assignedCustomers.map((customer) => {
     const history = historyByAccount.get(customer.accountNumber) || [];
+    const paymentRecord = paymentRecordByAccount.get(customer.accountNumber) || null;
     const breakdowns = buildCollectorAssignedBreakdowns(history);
     const balanceSummary = buildCollectorBalanceSummary(history);
+    const adminEndingBalance = Number(
+      paymentRecord?.paymentBreakdownEndingBalance
+      ?? paymentRecord?.endingBalance
+    );
+    const currentBillBalance = Number.isFinite(adminEndingBalance)
+      ? Number(adminEndingBalance.toFixed(2))
+      : resolveCollectorCurrentBillBalance(paymentRecord || customer, paymentRecord?.history || history, balanceSummary);
+    const outstandingBalance = Number(Math.max(currentBillBalance, 0).toFixed(2));
+    const advanceBalance = Number(Math.max(-currentBillBalance, 0).toFixed(2));
     return {
       ...customer,
-      balance: balanceSummary.balance,
-      outstandingBalance: balanceSummary.outstandingBalance,
-      advanceBalance: balanceSummary.advanceBalance,
+      balance: currentBillBalance,
+      currentBalance: outstandingBalance,
+      paymentBreakdownEndingBalance: currentBillBalance,
+      endingBalance: currentBillBalance,
+      outstandingBalance,
+      advanceBalance,
       transactionCount: history.length,
       coveredBillingBreakdown: breakdowns.coveredBillingBreakdown,
       balanceBreakdown: balanceSummary.balanceBreakdown,
@@ -744,6 +802,7 @@ async function readAssignedCustomersForCollector(collector) {
       if (!areas.length) return [];
 
       const placeholders = areas.map(() => '?').join(', ');
+      const normalizedAreaParams = areas.map((area) => area.toLowerCase());
       const [customerRows] = await query(
         `SELECT
            c.account_number AS accountNumber,
@@ -764,15 +823,14 @@ async function readAssignedCustomersForCollector(collector) {
            c.due_date AS dueDate
          FROM customers c
          WHERE c.branch_id = ?
-           AND c.area IN (${placeholders})
+           AND LOWER(TRIM(COALESCE(c.area, ''))) IN (${placeholders})
          ORDER BY c.name ASC, c.last_name ASC, c.first_name ASC, c.account_number ASC`,
-        [scopedBranchId, ...areas]
+        [scopedBranchId, ...normalizedAreaParams]
       );
 
       return (customerRows || [])
         .map(mapCollectorCustomerRow)
-        .filter((row) => row.accountNumber)
-        .filter((row) => !isPrepaidCustomer(row));
+        .filter((row) => row.accountNumber);
     }
 
     const collectorsFile = await readJson(COLLECTORS_STORE_KEY, { assignments: {} });
@@ -792,6 +850,7 @@ async function readAssignedCustomersForCollector(collector) {
               .includes(collectorId);
           })
           .map(([area]) => normalizeText(area))
+          .map((area) => area.toLowerCase())
           .filter(Boolean)
       )
     );
@@ -801,8 +860,7 @@ async function readAssignedCustomersForCollector(collector) {
     const customers = await readJson(CUSTOMERS_STORE_KEY, []);
     return (Array.isArray(customers) ? customers : [])
       .map((row) => mapCollectorCustomerRow(row))
-      .filter((row) => row.accountNumber && areaSet.has(row.area))
-      .filter((row) => !isPrepaidCustomer(row));
+      .filter((row) => row.accountNumber && areaSet.has(row.area.toLowerCase()));
   } catch (error) {
     console.warn('Unable to read collector assigned customers:', error?.message || error);
     return [];

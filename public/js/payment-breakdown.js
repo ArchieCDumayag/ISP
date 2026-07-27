@@ -996,6 +996,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return resolvePlanType(record) === 'postpaid';
     };
 
+    const isPendingPostpaidSyntheticBill = (record = {}, billDate = null, todayBillingDate = getTodayBillingDate()) => {
+        if (resolvePlanType(record) !== 'postpaid' || !billDate || !todayBillingDate) return false;
+        if (!isSameBillingMonth(billDate, todayBillingDate)) return false;
+        const releaseDate = getMonthEndDate(billDate) || billDate;
+        return compareBillingDateOnly(todayBillingDate, releaseDate) < 0;
+    };
+
     const sumEntries = (entries = []) => roundMoney(
         entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
     );
@@ -1300,7 +1307,9 @@ document.addEventListener('DOMContentLoaded', () => {
         billLabelOverride = '',
         billMetaOverride = '',
         isFirstRow = false,
-        planOverride = null
+        planOverride = null,
+        paymentStatusOverride = '',
+        paymentStatusLabelOverride = ''
     }) => {
         const planLabel = toAdjustmentDisplayText(planOverride?.planName) || resolvePlanLabel(record);
         const firstBillAdjustment = isFirstRow ? normalizeFirstBillAdjustment(context?.firstBillAdjustment) : null;
@@ -1356,7 +1365,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const paymentDate = paymentDateOverride || (amountPaid > EPSILON ? resolveLatestPaymentDate(paymentCredits) : null);
         const balanceAfterPayment = roundMoney(rawDue - amountPaid);
         const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
-        const paymentStatus = balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid';
+        const computedPaymentStatus = balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid';
+        const paymentStatus = paymentStatusOverride || computedPaymentStatus;
+        const paymentStatusLabel = paymentStatusLabelOverride || paymentStatus;
         const billLabel = billLabelOverride || (openingPreviousBalance ? 'Previous Balance' : (openingAdvance ? 'Opening Advance' : formatMonth(billDate, 'Bill')));
         const planType = resolvePlanType(record);
         const planTypeLabel = toTitleCase(planType);
@@ -1408,6 +1419,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 paymentMode,
                 paymentDateLabel: paymentDate ? formatDate(paymentDate, '-') : '-',
                 paymentStatus,
+                paymentStatusLabel,
                 isDisconnected: Boolean(disconnection),
                 disconnectedAt: disconnection?.disconnectedAt || null,
                 disconnectionBillingPolicy: disconnection?.billingPolicy || '',
@@ -1442,6 +1454,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return 1;
     };
 
+    const resolvePendingPostpaidBillDate = (record = {}, todayBillingDate = getTodayBillingDate(), fallbackDate = null) => {
+        const todayParts = getZonedDateParts(todayBillingDate);
+        if (!todayParts) return null;
+        const billingDay = resolveBillingDay(record, fallbackDate || todayBillingDate);
+        const billDate = buildMonthlyDate(todayParts.year, todayParts.month, billingDay);
+        return isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate) ? billDate : null;
+    };
+
+    const buildPendingPostpaidBillMeta = (record = {}, billDate = null, planAmount = 0) => {
+        const releaseDate = billDate ? getMonthEndDate(billDate) : null;
+        return [
+            resolvePlanLabel(record),
+            formatCurrency(planAmount),
+            `bill not generated yet${releaseDate ? `; generates ${formatDate(releaseDate, '')}` : ''}`
+        ].filter(Boolean).join(' - ');
+    };
+
     const buildRowsFromPostedDebits = (record, entries, context) => {
         const rows = [];
         const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(entries);
@@ -1449,6 +1478,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
         const assignedCreditOrders = new Set();
+        const todayBillingDate = getTodayBillingDate();
+        const pendingPostpaidBillDate = resolvePendingPostpaidBillDate(record, todayBillingDate, debitEntries[0]?.dateObj);
 
         let runningBalance = 0;
         effectiveEntries
@@ -1473,6 +1504,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const attachesToNextBillMonth = nextDebit
                     ? shouldAttachCreditToBillMonth(entry, nextDebit.dateObj, record)
                     : false;
+                const attachesToPendingPostpaidBill = pendingPostpaidBillDate
+                    && entry.dateObj
+                    && isSameBillingMonth(entry.dateObj, pendingPostpaidBillDate)
+                    && !isSameBillingMonth(debit.dateObj, pendingPostpaidBillDate);
+                if (attachesToPendingPostpaidBill) return false;
                 return attachesToCurrentBillMonth
                     || (
                         !attachesToNextBillMonth
@@ -1498,6 +1534,37 @@ document.addEventListener('DOMContentLoaded', () => {
             rows.push(result.row);
             runningBalance = result.nextBalance;
         });
+
+        if (
+            pendingPostpaidBillDate
+            && !rows.some((row) => row?.billDate && isSameBillingMonth(row.billDate, pendingPostpaidBillDate))
+        ) {
+            const pendingCredits = effectiveEntries.filter((entry) => (
+                entry.direction === 'credit'
+                && !assignedCreditOrders.has(entry.sortOrder)
+                && entry.dateObj
+                && isSameBillingMonth(entry.dateObj, pendingPostpaidBillDate)
+            ));
+            pendingCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
+            const planChange = resolvePlanChangeForMonth(context, pendingPostpaidBillDate);
+            const effectivePlanAmount = planChange ? planChange.planAmount : context.planAmount;
+            const result = createBreakdownRow({
+                record,
+                billDate: pendingPostpaidBillDate,
+                planAmount: 0,
+                credits: pendingCredits,
+                runningBalance,
+                context,
+                sourceType: 'pending',
+                billMetaOverride: buildPendingPostpaidBillMeta(record, pendingPostpaidBillDate, effectivePlanAmount),
+                isFirstRow: rows.length === 0,
+                planOverride: planChange,
+                paymentStatusOverride: 'not-generated',
+                paymentStatusLabelOverride: 'not generated'
+            });
+            rows.push(result.row);
+            runningBalance = result.nextBalance;
+        }
 
         return rows;
     };
@@ -1597,7 +1664,10 @@ document.addEventListener('DOMContentLoaded', () => {
         let guard = 0;
         while (
             billDate <= lastBillDate
-            && isOnOrBeforeBillingDate(billDate, todayBillingDate)
+            && (
+                isOnOrBeforeBillingDate(billDate, todayBillingDate)
+                || isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate)
+            )
             && guard < MAX_SYNTHETIC_ROWS
         ) {
             const nextParts = getNextMonthParts(currentYear, currentMonth);
@@ -1629,17 +1699,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const planChange = resolvePlanChangeForMonth(context, billDate);
             const effectivePlanAmount = planChange ? planChange.planAmount : planAmount;
             const proration = resolveFirstMonthProration(record, billDate, effectivePlanAmount);
+            const pendingPostpaidBill = isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate);
+            const releaseDate = pendingPostpaidBill ? getMonthEndDate(billDate) : null;
+            const pendingBillMeta = pendingPostpaidBill
+                ? [
+                    resolvePlanLabel(record),
+                    formatCurrency(effectivePlanAmount),
+                    `bill not generated yet${releaseDate ? `; generates ${formatDate(releaseDate, '')}` : ''}`
+                ].filter(Boolean).join(' - ')
+                : '';
             const result = createBreakdownRow({
                 record,
                 billDate,
-                planAmount: proration.amount,
+                planAmount: pendingPostpaidBill ? 0 : proration.amount,
                 credits: cycleCredits,
                 runningBalance,
                 context,
-                sourceType: 'monthly',
-                proration: proration.isProrated ? proration : null,
+                sourceType: pendingPostpaidBill ? 'pending' : 'monthly',
+                proration: !pendingPostpaidBill && proration.isProrated ? proration : null,
+                billMetaOverride: pendingBillMeta,
                 isFirstRow: rows.length === 0,
-                planOverride: planChange
+                planOverride: planChange,
+                paymentStatusOverride: pendingPostpaidBill ? 'not-generated' : '',
+                paymentStatusLabelOverride: pendingPostpaidBill ? 'not generated' : ''
             });
             rows.push(result.row);
             runningBalance = result.nextBalance;
@@ -1826,7 +1908,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ].filter(Boolean).join(' ');
             const statusCell = row.isDisconnected
                 ? `<span class="breakdown-status is-disconnected">disconnected</span><span class="breakdown-status-note">${escapeHtml(row.disconnectionBillingPolicyLabel || '')}</span>`
-                : `<span class="breakdown-status is-${row.paymentStatus}">${escapeHtml(row.paymentStatus)}</span>`;
+                : `<span class="breakdown-status is-${escapeHtml(row.paymentStatus)}">${escapeHtml(row.paymentStatusLabel || row.paymentStatus)}</span>`;
             return `
             <tr${rowClasses ? ` class="${rowClasses}"` : ''}>
                 <td>
@@ -2020,6 +2102,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderMetrics = (rows = [], context = {}) => {
         const paidRows = rows.filter((row) => row.paymentStatus === 'paid').length;
+        const pendingRows = rows.filter((row) => row.paymentStatus === 'not-generated').length;
+        const unpaidRows = Math.max(0, rows.length - paidRows - pendingRows);
         const totalReferral = sumEntries(rows.map((row) => ({ amount: row.referral })));
         const endingBalance = rows.length ? rows[rows.length - 1].balanceAfterPayment : 0;
 
@@ -2031,11 +2115,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const referralCount = Number(context.referralDiscounts?.length || context.referredCustomers?.length) || 0;
         const summaryParts = [
             `Showing ${formatCount(rows.length)} bill breakdown${rows.length === 1 ? '' : 's'}.`,
-            `${formatCount(paidRows)} paid, ${formatCount(Math.max(0, rows.length - paidRows))} unpaid.`,
+            `${formatCount(paidRows)} paid, ${formatCount(unpaidRows)} unpaid.`,
             referralCount
                 ? `${formatCount(referralCount)} successful referral discount${referralCount === 1 ? '' : 's'} available.`
                 : 'No referral discount found.'
         ];
+        if (pendingRows) {
+            summaryParts.push(`${formatCount(pendingRows)} postpaid bill${pendingRows === 1 ? '' : 's'} not generated yet.`);
+        }
         if (context.usedSyntheticBills) {
             summaryParts.push('Monthly plan rows were generated because no posted bill charges were found.');
         }

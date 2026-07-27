@@ -859,7 +859,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/account-view-shared.js?v=3.3"></script>
+    <script src="js/account-view-shared.js?v=3.4"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async function () {
@@ -6400,7 +6400,11 @@
                                 paymentRecordsById.set(targetId, paymentRecord);
                             }
                         }
-                        const currentBalance = Number(paymentRecord?.balance) || 0;
+                        const currentBalance = Number(
+                            paymentRecord?.paymentBreakdownEndingBalance
+                            ?? paymentRecord?.endingBalance
+                            ?? paymentRecord?.balance
+                        ) || 0;
                         if (currentBalance > effectiveCreditLimit) {
                             const requiredIncrease = currentBalance - effectiveCreditLimit;
                             const overrideDecision = await openCreditOverridePrompt({

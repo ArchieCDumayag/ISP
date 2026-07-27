@@ -6,6 +6,7 @@ const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
 const { accountHasRole } = require('./role-utils');
 const { readBranchDisconnections, getAccountDisconnection } = require('./disconnection-store');
 const { buildReferralLedger, buildReferralDiscountMap } = require('./referral-engine');
+const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -258,6 +259,20 @@ const assertAdminUser = (req) => {
     return user;
 };
 
+const resolveBreakdownEndingBalance = (record = {}, fallbackBalance = 0) => {
+    try {
+        const breakdown = calculatePaymentBreakdownEndingBalance(record);
+        const endingBalance = Number(breakdown?.endingBalance);
+        return Number.isFinite(endingBalance) ? endingBalance : Number(fallbackBalance) || 0;
+    } catch (error) {
+        console.warn(
+            `Unable to calculate payment breakdown ending balance for ${record?.accountNumber || 'unknown account'}:`,
+            error?.message || error
+        );
+        return Number(fallbackBalance) || 0;
+    }
+};
+
 const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null, disconnections = {}, referralDiscountsByAccount = {}) => {
     if (!customer || typeof customer !== 'object') return null;
     const sanitizedCustomer = sanitizeCustomerForRecord(customer);
@@ -269,8 +284,8 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
     const creditLimit = Number(customer.creditLimit);
     const summary = calculatePaymentSummary(paymentHistory, creditLimit, customer.planAmount);
     const planCategory = resolvePlanCategory(customer, plans);
-
-    return {
+    const paymentBreakdownAdjustment = getPaymentBreakdownAdjustment(adjustments, branchId, accountNumber);
+    const recordBase = {
         ...sanitizedCustomer,
         subscriberStatus,
         customerStatus: subscriberStatus,
@@ -279,9 +294,16 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
         referralDiscounts: Array.isArray(referralDiscountsByAccount?.[accountNumber])
             ? referralDiscountsByAccount[accountNumber]
             : [],
-        paymentBreakdownAdjustment: getPaymentBreakdownAdjustment(adjustments, branchId, accountNumber),
+        paymentBreakdownAdjustment,
         ...summary,
         history: paymentHistory
+    };
+    const endingBalance = resolveBreakdownEndingBalance(recordBase, summary.balance);
+
+    return {
+        ...recordBase,
+        paymentBreakdownEndingBalance: endingBalance,
+        endingBalance
     };
 };
 

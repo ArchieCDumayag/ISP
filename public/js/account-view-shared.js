@@ -1321,7 +1321,11 @@
         const creditLimitDisplay = formatCurrency(customerData?.creditLimit);
         const dueStatus = getDueStatus(customerData?.dueDate);
 
-        const balanceRaw = record?.balance
+        const balanceRaw = record?.paymentBreakdownEndingBalance
+            ?? record?.endingBalance
+            ?? record?.breakdownEndingBalance
+            ?? record?.balanceAfterPayment
+            ?? record?.balance
             ?? customerData?.currentBalance
             ?? customerData?.balance
             ?? customerData?.outstandingBalance

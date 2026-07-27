@@ -733,8 +733,54 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const formatRecordDate = (value, fallback = '-') => {
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return formatDate(value, fallback);
+        }
         const parsed = safeDate(value);
         return parsed ? formatDate(parsed, fallback) : fallback;
+    };
+
+    const diffDays = (fromDate, toDate) => {
+        const fromParts = getZonedDateParts(fromDate);
+        const toParts = getZonedDateParts(toDate);
+        if (!fromParts || !toParts) return null;
+        const fromUtc = Date.UTC(fromParts.year, fromParts.month - 1, fromParts.day);
+        const toUtc = Date.UTC(toParts.year, toParts.month - 1, toParts.day);
+        return Math.round((toUtc - fromUtc) / 86400000);
+    };
+
+    const addDays = (date, days = 0) => {
+        const parts = getZonedDateParts(date);
+        if (!parts) return null;
+        const result = buildStableDate(parts.year, parts.month, parts.day);
+        result.setUTCDate(result.getUTCDate() + (Number(days) || 0));
+        return result;
+    };
+
+    const deriveDueOffset = (record = {}) => {
+        const direct = Number(record.dueOffset ?? record.due_offset);
+        if (Number.isFinite(direct) && direct >= 0) return Math.floor(direct);
+
+        const billDate = safeDate(record.billDate || record.bill_date);
+        const dueDate = safeDate(record.dueDate || record.due_date);
+        const offset = diffDays(billDate, dueDate);
+        return Number.isFinite(offset) && offset >= 0 ? offset : null;
+    };
+
+    const resolveCurrentDueDate = (record = {}, rows = []) => {
+        const latestRow = Array.isArray(rows) && rows.length ? rows[rows.length - 1] : null;
+        if (resolvePlanType(record) === 'prepaid') {
+            return safeDate(record.prepaidExpirationAt || record.prepaid_expiration_at || record.dueDate || record.due_date)
+                || latestRow?.billDate
+                || safeDate(record.billDate || record.bill_date);
+        }
+
+        const billDate = latestRow?.billDate instanceof Date && !Number.isNaN(latestRow.billDate.getTime())
+            ? latestRow.billDate
+            : safeDate(record.billDate || record.bill_date);
+        const offset = deriveDueOffset(record);
+        if (billDate && offset !== null) return addDays(billDate, offset);
+        return safeDate(record.dueDate || record.due_date) || billDate;
     };
 
     const resolveContactText = (record = {}) => {
@@ -775,7 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .map((value) => String(value || '').trim())
         .find(Boolean) || '';
 
-    const renderSubscriberInfo = (record = {}) => {
+    const renderSubscriberInfo = (record = {}, rows = state.rows) => {
         const account = String(record.accountNumber || accountNumber || '').trim();
         const customerName = getCustomerName(record, account);
         const planAmount = resolvePlanAmount(record);
@@ -786,6 +832,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = resolveSubscriberStatus(record);
         const joined = String(record.since || record.joinDate || '').trim();
         const creditLimit = Number(record.creditLimit);
+        const currentDueDate = resolveCurrentDueDate(record, rows);
         const metaParts = [
             account ? `Account ${account}` : '',
             joined ? `Joined ${joined}` : '',
@@ -808,7 +855,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         setSubscriberText(subscriberInfo.billingCycle, billingCycle);
         setSubscriberText(subscriberInfo.activationDate, formatRecordDate(record.activationDate || record.activation_date));
-        setSubscriberText(subscriberInfo.dueDate, formatRecordDate(record.dueDate || record.prepaidExpirationAt || record.billDate));
+        setSubscriberText(subscriberInfo.dueDate, formatRecordDate(currentDueDate || record.dueDate || record.prepaidExpirationAt || record.billDate));
         setSubscriberText(subscriberInfo.creditLimit, Number.isFinite(creditLimit) ? formatCurrency(creditLimit) : '');
         setSubscriberText(subscriberInfo.area, resolveAreaText(record));
         setSubscriberText(subscriberInfo.contact, resolveContactText(record));
@@ -2151,7 +2198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.rows = rows;
         state.context = context;
         renderHeader(record, context);
-        renderSubscriberInfo(record);
+        renderSubscriberInfo(record, rows);
         renderRows(rows);
         renderMetrics(rows, context);
     };

@@ -25,8 +25,35 @@ const MONTH_YEAR_PATTERN = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|
 const STORE_KEYS = {
   payments: 'payments',
   customers: 'customers',
-  collectors: 'collectors'
+  collectors: 'collectors',
+  remittances: 'collector_remittances'
 };
+
+const remittanceText = (value) => String(value || '').trim();
+
+function normalizeRemittancePayment(row = {}) {
+  const paymentEntryId = remittanceText(row.paymentEntryId || row.entryId || row.id);
+  const accountNumber = remittanceText(row.accountNumber || row.account);
+  const reference = remittanceText(row.reference || row.ref || row.orNumber);
+  const amount = Number(row.amount || 0);
+  return {
+    paymentEntryId,
+    accountNumber,
+    reference,
+    amount: Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0
+  };
+}
+
+function getRemittanceActor(req) {
+  const actor = req.collector || req.user || {};
+  return {
+    id: remittanceText(actor.id),
+    username: remittanceText(actor.username),
+    name: remittanceText(actor.name || actor.username),
+    role: req.collector ? 'Collector' : remittanceText(actor.role || 'Admin'),
+    branchId: actor.branchId || null
+  };
+}
 
 function normalizeKind(rawKind) {
   const k = String(rawKind || 'payment').toLowerCase().trim();
@@ -1005,6 +1032,127 @@ router.get('/reprint', async (req, res, next) => {
   }
 });
 
+// GET /api/collector/payments/remittances
+// Collector sees own remittances; admin sees all JSON remittance submissions.
+router.get('/remittances', async (req, res, next) => {
+  try {
+    const actor = getRemittanceActor(req);
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const scoped = req.collector
+      ? records.filter((record) => remittanceText(record.collectorId) === actor.id)
+      : records;
+    res.json({ ok: true, records: scoped });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to load remittances.'));
+  }
+});
+
+// POST /api/collector/payments/remittances
+// Body { paymentEntryIds: [{ paymentEntryId, accountNumber, reference, amount }], totalAmount? }
+router.post('/remittances', async (req, res, next) => {
+  try {
+    if (!req.collector) {
+      return next(createError(403, 'Collector access required to submit remittance.'));
+    }
+    const actor = getRemittanceActor(req);
+    const rawItems = Array.isArray(req.body?.paymentEntryIds)
+      ? req.body.paymentEntryIds
+      : (Array.isArray(req.body?.payments) ? req.body.payments : []);
+    const payments = rawItems
+      .map(normalizeRemittancePayment)
+      .filter((item) => item.paymentEntryId || item.reference || item.accountNumber);
+    if (!payments.length) {
+      return next(createError(400, 'At least one payment is required for remittance.'));
+    }
+
+    const computedTotal = payments.reduce((sum, item) => sum + Math.max(Number(item.amount || 0), 0), 0);
+    const requestedTotal = Number(req.body?.totalAmount);
+    const totalAmount = Number((Number.isFinite(requestedTotal) && requestedTotal > 0 ? requestedTotal : computedTotal).toFixed(2));
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const paymentKeys = new Set(
+      payments.map((item) => remittanceText(item.paymentEntryId || item.reference)).filter(Boolean)
+    );
+    const duplicatePending = records.some((record) => {
+      const status = remittanceText(record.status || 'pending').toLowerCase();
+      if (status === 'rejected') return false;
+      return (Array.isArray(record.payments) ? record.payments : []).some((item) => {
+        const key = remittanceText(item.paymentEntryId || item.reference);
+        return key && paymentKeys.has(key);
+      });
+    });
+    if (duplicatePending) {
+      return next(createError(409, 'One or more payments are already submitted for remittance.'));
+    }
+
+    const submittedAt = new Date().toISOString();
+    const record = {
+      id: `remit-${actor.id || 'collector'}-${Date.now()}`,
+      collectorId: actor.id,
+      collectorName: actor.name || actor.username || 'Collector',
+      branchId: actor.branchId,
+      status: 'pending',
+      payments,
+      totalAmount,
+      submittedAt,
+      submittedBy: actor,
+      reviewedAt: null,
+      reviewedBy: null,
+      adminNote: ''
+    };
+    records.unshift(record);
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: submittedAt });
+    res.status(201).json({ ok: true, record });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to submit remittance.'));
+  }
+});
+
+// POST /api/collector/payments/remittances/:id/confirm
+router.post('/remittances/:id/confirm', async (req, res, next) => {
+  try {
+    if (req.collector) {
+      return next(createError(403, 'Admin access required to confirm remittance.'));
+    }
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const record = records.find((item) => remittanceText(item.id) === remittanceText(req.params.id));
+    if (!record) return next(createError(404, 'Remittance not found.'));
+    const reviewer = getRemittanceActor(req);
+    record.status = 'remitted';
+    record.reviewedAt = new Date().toISOString();
+    record.reviewedBy = reviewer;
+    record.adminNote = remittanceText(req.body?.adminNote || req.body?.note);
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: new Date().toISOString() });
+    res.json({ ok: true, record });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to confirm remittance.'));
+  }
+});
+
+// POST /api/collector/payments/remittances/:id/reject
+router.post('/remittances/:id/reject', async (req, res, next) => {
+  try {
+    if (req.collector) {
+      return next(createError(403, 'Admin access required to reject remittance.'));
+    }
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const record = records.find((item) => remittanceText(item.id) === remittanceText(req.params.id));
+    if (!record) return next(createError(404, 'Remittance not found.'));
+    const reviewer = getRemittanceActor(req);
+    record.status = 'rejected';
+    record.reviewedAt = new Date().toISOString();
+    record.reviewedBy = reviewer;
+    record.adminNote = remittanceText(req.body?.adminNote || req.body?.note);
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: new Date().toISOString() });
+    res.json({ ok: true, record });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to reject remittance.'));
+  }
+});
+
 // POST /api/collector/payments/:accountNumber
 // body for admin auth: { collectorId, amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod? }
 // body for collector token auth: { amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod? }
@@ -1254,6 +1402,23 @@ router.post('/:accountNumber', async (req, res, next) => {
       paymentMethod: normalizedPaymentMethod || undefined,
       typeOfPayment: normalizedTypeOfPayment,
     };
+    const paymentFingerprint = `${accountNumber}|${normalizedReference}|${kind}|${Math.abs(numericAmount).toFixed(2)}`;
+    const normalizedReferenceKey = String(normalizedReference || '').trim().toLowerCase();
+    const duplicateEntry = Object.values(payments || {}).some((bucket) => {
+      const history = Array.isArray(bucket?.history) ? bucket.history : [];
+      return history.some((entry) => {
+        const entryReference = String(entry?.reference || entry?.orNumber || '').trim().toLowerCase();
+        const entryFingerprint = String(entry?.fingerprint || '').trim();
+        return (
+          (normalizedReferenceKey && entryReference === normalizedReferenceKey) ||
+          (entryFingerprint && entryFingerprint === paymentFingerprint)
+        );
+      });
+    });
+    if (duplicateEntry) {
+      return next(createError(409, `Reference already exists: ${normalizedReference}`));
+    }
+    newEntry.fingerprint = paymentFingerprint;
 
     const shouldAutoCharge = isPrepaid && kind === 'payment';
     const chargeEntry = shouldAutoCharge ? {
@@ -1270,6 +1435,7 @@ router.post('/:accountNumber', async (req, res, next) => {
       payer: newEntry.payer,
       paymentMethod: normalizedPaymentMethod || undefined,
       typeOfPayment: 'debit',
+      fingerprint: `${accountNumber}|${normalizedReference}|charge|${Math.abs(numericAmount).toFixed(2)}`,
     } : null;
 
     payments[accountNumber].history = payments[accountNumber].history || [];

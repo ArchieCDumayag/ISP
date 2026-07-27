@@ -285,6 +285,27 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
     };
 };
 
+async function buildPaymentRecordForAccount(accountNumber, branchId = null) {
+    const safeAccountNumber = String(accountNumber || '').trim();
+    if (!safeAccountNumber) return null;
+
+    const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
+        readCustomers(branchId),
+        readPayments(branchId),
+        readPlans(branchId),
+        readPaymentBreakdownAdjustments(),
+        readBranchDisconnections(branchId)
+    ]);
+    const referralDiscountsByAccount = buildReferralDiscountMap(
+        buildReferralLedger({ customers, payments, now: new Date() })
+    );
+    const customer = Array.isArray(customers)
+        ? customers.find((entry) => String(entry?.accountNumber || '').trim() === safeAccountNumber)
+        : null;
+    if (!customer) return null;
+    return buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount);
+}
+
 // Logic to calculate payment summary for a customer
 
 function calculatePaymentSummary(history = [], creditLimit, planAmount) {
@@ -390,28 +411,9 @@ router.get('/:accountNumber', async (req, res, next) => {
             return next(createError(400, 'Account number is required.'));
         }
 
-        const branchId = req.user?.branchId || null;
-        const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
-            readCustomers(branchId),
-            readPayments(branchId),
-            readPlans(branchId),
-            readPaymentBreakdownAdjustments(),
-            readBranchDisconnections(branchId)
-        ]);
-        const referralDiscountsByAccount = buildReferralDiscountMap(
-            buildReferralLedger({ customers, payments, now: new Date() })
-        );
-
-        const customer = Array.isArray(customers)
-            ? customers.find((entry) => String(entry?.accountNumber || '').trim() === accountNumber)
-            : null;
-        if (!customer) {
-            return next(createError(404, 'Customer not found.'));
-        }
-
-        const record = buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount);
+        const record = await buildPaymentRecordForAccount(accountNumber, req.user?.branchId || null);
         if (!record) {
-            return next(createError(500, 'Failed to generate payment record.'));
+            return next(createError(404, 'Customer not found.'));
         }
 
         res.json({ record });
@@ -490,3 +492,4 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.buildPaymentRecordForAccount = buildPaymentRecordForAccount;

@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { readJson, writeJson } = require('./data-store');
-const { requireAuth } = require('./auth');
 const { getPool, query } = require('./db');
 const { isRelationalReady } = require('./db-relational');
 const { isJsonStorageMode } = require('./storage-mode');
@@ -5522,8 +5521,12 @@ const readVisibleCustomers = async (branchId = null) => {
     return filterPendingDraftLinkedCustomers(customers, pendingDraftAccounts);
 };
 
-// Admin routes require authentication
-router.use(requireAuth);
+// Admin routes require authentication. Load lazily to avoid a CommonJS cycle:
+// customers -> auth -> payment-records -> customers.
+router.use((req, res, next) => {
+    const { requireAuth } = require('./auth');
+    return requireAuth(req, res, next);
+});
 
 // GET /api/customers - Get all customers
 router.get('/', async (req, res, next) => {

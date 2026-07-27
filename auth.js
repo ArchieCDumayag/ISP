@@ -18,6 +18,7 @@ const { readJson, writeJson } = require('./data-store');
 const { hashPassword, verifyPassword, isHashedPassword } = require('./passwords');
 const { resolveCollectorNextDue } = require('./collector-next-due');
 const { normalizePaymentEntry } = require('./payment-entry-normalizer');
+const paymentRecordsRouter = require('./payment-records');
 const { normalizeRoles, rolesToStoredValue, accountHasRole, accountHasAnyRole, getPrimaryRole } = require('./role-utils');
 
 const sessions = new Map(); // sessionId -> { userId, createdAt }
@@ -54,6 +55,7 @@ const DEFAULT_BUSINESS_PROFILE = {
 };
 const COLLECTORS_STORE_KEY = 'collectors';
 const CUSTOMERS_STORE_KEY = 'customers';
+const PON_STATE_STORE_KEY = 'pon-state';
 const COLLECTOR_TOKEN_SCOPE = 'collector-app';
 const STATUS_ACTIVE = 'active';
 const STATUS_INACTIVE = 'inactive';
@@ -699,6 +701,15 @@ async function readAssignedCustomerTransactionRecordsForCollector(collector) {
   });
 }
 
+async function readCollectorPonState(branchId = null) {
+  const allState = await readJson(PON_STATE_STORE_KEY, {});
+  const branchKey = String(resolveBranchId(branchId) || '1');
+  const scoped = allState?.branches?.[branchKey] || allState?.default || {};
+  return {
+    naps: Array.isArray(scoped?.naps) ? scoped.naps : []
+  };
+}
+
 async function readAssignedCustomersForCollector(collector) {
   const collectorId = normalizeText(collector?.id);
   if (!collectorId) return [];
@@ -771,7 +782,15 @@ async function readAssignedCustomersForCollector(collector) {
     const assignedAreas = Array.from(
       new Set(
         Object.entries(assignments)
-          .filter(([, assignedCollectorId]) => normalizeText(assignedCollectorId) === collectorId)
+          .filter(([, assignedCollectorId]) => {
+            const assignedCollectorIds = Array.isArray(assignedCollectorId)
+              ? assignedCollectorId
+              : [assignedCollectorId];
+            return assignedCollectorIds
+              .map((value) => normalizeText(value))
+              .filter(Boolean)
+              .includes(collectorId);
+          })
           .map(([area]) => normalizeText(area))
           .filter(Boolean)
       )
@@ -1555,6 +1574,102 @@ router.get('/collector-transactions', requireCollectorTokenAuth, async (req, res
     assignedCustomersCount: records.length,
     assignedCustomers: records,
     records
+  });
+});
+
+router.get('/collector-payment-record/:accountNumber', requireCollectorTokenAuth, async (req, res) => {
+  const accountNumber = normalizeText(req.params?.accountNumber);
+  if (!accountNumber) {
+    return res.status(400).json({ error: 'Account number is required.' });
+  }
+
+  const assignedCustomers = await readAssignedCustomersForCollector(req.collector);
+  const assigned = (assignedCustomers || []).find((customer) => normalizeText(customer?.accountNumber) === accountNumber);
+  if (!assigned) {
+    return res.status(404).json({ error: 'Payment record was not found for this collector.' });
+  }
+
+  const record = await paymentRecordsRouter.buildPaymentRecordForAccount(
+    accountNumber,
+    resolveBranchId(req.collector?.branchId)
+  );
+  if (!record) {
+    return res.status(404).json({ error: 'Payment record was not found.' });
+  }
+
+  res.json({
+    ok: true,
+    collector: { ...req.collector, loginType: 'Collector' },
+    record
+  });
+});
+
+router.get('/collector-map-data', requireCollectorTokenAuth, async (req, res) => {
+  const records = await readAssignedCustomerTransactionRecordsForCollector(req.collector);
+  const assignedAccounts = new Set(
+    (records || [])
+      .map((customer) => normalizeText(customer?.accountNumber))
+      .filter(Boolean)
+  );
+  const assignedAreas = new Set(
+    (records || [])
+      .map((customer) => normalizeText(customer?.area).toLowerCase())
+      .filter(Boolean)
+  );
+  const branchId = resolveBranchId(req.collector?.branchId);
+  let ponState = { naps: [] };
+  try {
+    ponState = await readCollectorPonState(branchId);
+  } catch (error) {
+    ponState = { naps: [], mapWarning: error?.message || 'Unable to load NAP map data.' };
+  }
+
+  const naps = (Array.isArray(ponState?.naps) ? ponState.naps : [])
+    .filter((nap) => {
+      const napArea = normalizeText(nap?.location || nap?.area).toLowerCase();
+      if (napArea && assignedAreas.has(napArea)) return true;
+      const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+      return connections.some((entry) => {
+        const accountCandidates = [
+          normalizeText(entry?.customerId),
+          normalizeText(entry?.accountNumber),
+          normalizeText(entry?.customerRef)
+        ].filter(Boolean);
+        return accountCandidates.some((account) => assignedAccounts.has(account));
+      });
+    })
+    .map((nap) => ({
+      id: normalizeText(nap?.id),
+      code: normalizeText(nap?.code),
+      location: normalizeText(nap?.location || nap?.area),
+      coordinate: normalizeText(nap?.coordinate || nap?.coordinates || nap?.coords),
+      linkedOlt: normalizeText(nap?.linkedOlt),
+      ponRef: normalizeText(nap?.ponRef),
+      splitter: normalizeText(nap?.splitter),
+      capacity: Number(nap?.capacity || 0) || 0,
+      used: Number(nap?.used || 0) || 0,
+      opticalPower: normalizeText(nap?.opticalPower),
+      connections: (Array.isArray(nap?.connections) ? nap.connections : [])
+        .map((entry) => ({
+          customerId: normalizeText(entry?.customerId || entry?.accountNumber),
+          customerName: normalizeText(entry?.customerName),
+          customerRef: normalizeText(entry?.customerRef),
+          port: entry?.port || null,
+          opticalInfo: normalizeText(entry?.opticalInfo || entry?.opticalPower)
+        }))
+        .filter((entry) => (
+          assignedAccounts.has(entry.customerId) ||
+          assignedAccounts.has(entry.customerRef) ||
+          entry.customerName
+        ))
+    }));
+
+  res.json({
+    ok: true,
+    collector: { ...req.collector, loginType: 'Collector' },
+    customers: records,
+    naps,
+    warning: ponState?.mapWarning || ''
   });
 });
 

@@ -79,6 +79,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const formatCurrency = (value) => currencyFormatter.format(Number(value) || 0);
     const formatCount = (value) => countFormatter.format(Number(value) || 0);
     const normalizeText = (value) => String(value || '').trim().toLowerCase();
+    const INEFFECTIVE_PAYMENT_HISTORY_STATUSES = new Set([
+        'pending_approval',
+        'pending-approval',
+        'pending approval',
+        'rejected',
+        'cancelled',
+        'canceled',
+        'void',
+        'voided'
+    ]);
+    const isEffectivePaymentHistoryEntry = (entry = {}) => {
+        const status = normalizeText(entry?.status || entry?.paymentStatus || entry?.payment_status);
+        return !status || !INEFFECTIVE_PAYMENT_HISTORY_STATUSES.has(status);
+    };
     const hideAllocationMetadata = (value) => String(value ?? '')
         .replace(/\s*\[ALLOC:\s*[\s\S]*?\]\s*/gi, ' ')
         .replace(/\s{2,}/g, ' ')
@@ -767,6 +781,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const area = getCustomerArea(customer) || 'Unassigned';
 
             (paymentRecord?.history || []).forEach((entry, index) => {
+                if (!isEffectivePaymentHistoryEntry(entry)) return;
                 const rawDate = entry?.recordedAt || entry?.date || '';
                 const dateObj = safeDate(rawDate);
                 const dateKey = dateObj ? toDateKey(dateObj) : String(rawDate || '').slice(0, 10);
@@ -1185,7 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const [customerPayload, paymentPayload] = await Promise.all([
                 fetchJSON('/api/customers'),
-                fetchJSON('/api/payments')
+                fetchJSON('/api/payments?effective=1')
             ]);
 
             state.customers = Array.isArray(customerPayload?.customers) ? customerPayload.customers : [];

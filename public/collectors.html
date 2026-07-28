@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.4">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.6">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -69,17 +69,20 @@
                                 <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
                                 <p>Admin approval required before payments count in collector totals.</p>
                             </div>
-                            <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
+                            <div class="collector-approval-panel__actions">
+                                <span class="collector-approval-total" id="collectorApprovalTotal">PHP 0.00</span>
+                                <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
+                            </div>
                         </div>
                         <div class="table-responsive collector-approval-table-wrapper">
                             <table class="table table-vcenter table-sm collectors-table collector-approval-table">
                                 <thead>
                                     <tr>
-                                        <th>Collector</th>
-                                        <th>Client</th>
+                                        <th>Date</th>
+                                        <th>Paid Client</th>
                                         <th class="text-end">Amount</th>
                                         <th>Reference</th>
-                                        <th class="text-center">Action</th>
+                                        <th class="text-center">Reject</th>
                                     </tr>
                                 </thead>
                                 <tbody id="collectorApprovalList"></tbody>
@@ -213,7 +216,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=2.5"></script>
+    <script src="js/collectors-page.js?v=2.7"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

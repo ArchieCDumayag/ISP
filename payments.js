@@ -610,6 +610,16 @@ const readPaymentsForAccount = async (accountNumber, branchId = null) => {
     return payments?.[accountNumber]?.history || [];
 };
 
+const filterPaymentsForEffectiveHistory = (payments = {}) => Object.fromEntries(
+    Object.entries(payments || {}).map(([accountNumber, accountData]) => [
+        accountNumber,
+        {
+            ...accountData,
+            history: getEffectivePaymentEntries(accountData?.history || [])
+        }
+    ])
+);
+
 const writePayments = async (payments) => {
     await writeJson(STORE_KEYS.payments, payments);
 };
@@ -2795,7 +2805,10 @@ const createPaymentHistoryExportWorkbook = ({ payments = {}, customers = [], mon
 router.get('/', async (req, res, next) => {
     try {
         const payments = await readPayments(req.user?.branchId || null);
-        res.json(payments);
+        const effectiveOnly = ['1', 'true', 'approved', 'history'].includes(
+            String(req.query?.effective || req.query?.scope || '').trim().toLowerCase()
+        );
+        res.json(effectiveOnly ? filterPaymentsForEffectiveHistory(payments) : payments);
     } catch (error) {
         next(createError(500, 'Failed to retrieve payment records.'));
     }

@@ -4,6 +4,7 @@
   const reportContainer = document.getElementById('reportContainer');
   const collectorApprovalList = document.getElementById('collectorApprovalList');
   const collectorApprovalCount = document.getElementById('collectorApprovalCount');
+  const collectorApprovalTotal = document.getElementById('collectorApprovalTotal');
   const collectorApprovalsEmptyState = document.getElementById('collectorApprovalsEmptyState');
   const assignmentList = document.getElementById('assignmentList');
   const assignmentCount = document.getElementById('assignmentCount');
@@ -52,6 +53,7 @@
   let activeAssignmentFilter = 'all';
   let areaTotalsCache = {};
   let areaUnpaidCache = {};
+  let collectorApprovalRecords = [];
   let areaStatsPromise = null;
   let collectorAreaReportCache = {};
   let areaReportCache = {};
@@ -408,9 +410,77 @@
     collectorApprovalCount.textContent = count === 1 ? '1 pending' : `${count} pending`;
   }
 
+  function updateCollectorApprovalBatchState(records = []) {
+    const rows = Array.isArray(records) ? records : [];
+    const total = rows.reduce((sum, record) => sum + Math.abs(Number(record?.amount) || 0), 0);
+    setApprovalCount(rows.length);
+    if (collectorApprovalTotal) collectorApprovalTotal.textContent = `PHP ${fmtMoney(total)}`;
+  }
+
+  function getCollectorApprovalGroupKey(record = {}) {
+    return String(
+      record?.collectorId
+      || record?.collectorUsername
+      || record?.collectorName
+      || 'collector'
+    ).trim() || 'collector';
+  }
+
+  function getCollectorApprovalGroupName(record = {}) {
+    return String(record?.collectorName || record?.collectorUsername || 'Collector').trim() || 'Collector';
+  }
+
+  function buildCollectorApprovalGroups(records = []) {
+    const byKey = new Map();
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      const key = getCollectorApprovalGroupKey(record);
+      const existing = byKey.get(key) || {
+        key,
+        name: getCollectorApprovalGroupName(record),
+        records: [],
+        total: 0,
+        latestTime: 0,
+      };
+      const time = new Date(record?.recordedAt || record?.date || '').getTime();
+      existing.records.push(record);
+      existing.total += Math.abs(Number(record?.amount) || 0);
+      if (Number.isFinite(time)) existing.latestTime = Math.max(existing.latestTime, time);
+      byKey.set(key, existing);
+    });
+    return [...byKey.values()].sort((left, right) => {
+      if (right.latestTime !== left.latestTime) return right.latestTime - left.latestTime;
+      return left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true });
+    });
+  }
+
+  function formatCollectorApprovalBatchLine(record = {}) {
+    const clientName = record?.customerName || record?.accountNumber || 'Client';
+    const reference = String(record?.reference || '').trim() || 'No reference';
+    return `${clientName} - PHP ${fmtMoney(record?.amount)} - ${reference}`;
+  }
+
+  function buildCollectorApprovalBatchMessage(records = []) {
+    const rows = Array.isArray(records) ? records : [];
+    const total = rows.reduce((sum, record) => sum + Math.abs(Number(record?.amount) || 0), 0);
+    const visibleRows = rows.slice(0, 10).map(formatCollectorApprovalBatchLine);
+    const remaining = rows.length - visibleRows.length;
+    const moreLine = remaining > 0 ? [`+${remaining} more payment${remaining === 1 ? '' : 's'}`] : [];
+    const collectorName = rows.length ? getCollectorApprovalGroupName(rows[0]) : 'Collector';
+    return [
+      `Approve ${rows.length} pending payment${rows.length === 1 ? '' : 's'} for ${collectorName}?`,
+      '',
+      'Paid Client - Amount - Reference',
+      ...visibleRows,
+      ...moreLine,
+      '',
+      `Total: PHP ${fmtMoney(total)}`
+    ].join('\n');
+  }
+
   function renderCollectorApprovals(records = []) {
     const rows = Array.isArray(records) ? records : [];
-    setApprovalCount(rows.length);
+    collectorApprovalRecords = rows;
+    updateCollectorApprovalBatchState(rows);
     if (!collectorApprovalList) return;
     collectorApprovalList.innerHTML = '';
     if (!rows.length) {
@@ -418,53 +488,69 @@
       return;
     }
     if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'none';
-    rows.forEach((record) => {
-      const tr = document.createElement('tr');
-      const id = String(record?.id || '').trim();
-      const collectorName = record?.collectorName || record?.collectorUsername || 'Collector';
-      const clientName = record?.customerName || record?.accountNumber || 'Client';
-      const accountNumber = String(record?.accountNumber || '').trim();
-      const area = String(record?.area || '').trim();
-      const reference = String(record?.reference || '').trim();
-      const paymentMethod = String(record?.paymentMethod || '').trim();
-
-      tr.innerHTML = `
-        <td>
-          <div class="collector-approval-copy">
-            <strong>${escapeHtml(collectorName)}</strong>
-            <span>${escapeHtml(formatCollectorPaymentDate(record?.recordedAt || record?.date))}</span>
-          </div>
-        </td>
-        <td>
-          <div class="collector-approval-copy">
-            <strong>${escapeHtml(clientName)}</strong>
-            <span>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</span>
-          </div>
-        </td>
-        <td class="text-end collector-approval-amount">PHP ${fmtMoney(record?.amount)}</td>
-        <td>
-          <div class="collector-approval-copy">
-            <strong>${escapeHtml(reference || 'No reference')}</strong>
-            <span>${escapeHtml(paymentMethod || 'Payment')}</span>
-          </div>
-        </td>
-        <td class="text-center">
-          <div class="btn-list justify-content-center">
-            <button type="button" class="btn btn-success btn-sm btn-icon" title="Approve payment" aria-label="Approve payment" data-collector-approval-action="approve" data-entry-id="${escapeHtml(id)}">
-              <i class="ti ti-check" aria-hidden="true"></i>
-            </button>
-            <button type="button" class="btn btn-outline-danger btn-sm btn-icon" title="Reject payment" aria-label="Reject payment" data-collector-approval-action="reject" data-entry-id="${escapeHtml(id)}">
-              <i class="ti ti-x" aria-hidden="true"></i>
+    buildCollectorApprovalGroups(rows).forEach((group) => {
+      const groupRow = document.createElement('tr');
+      groupRow.className = 'collector-approval-group-row';
+      groupRow.innerHTML = `
+        <td colspan="5">
+          <div class="collector-approval-group">
+            <div class="collector-approval-group__copy">
+              <strong>${escapeHtml(group.name)}</strong>
+              <span>${group.records.length} pending - PHP ${fmtMoney(group.total)}</span>
+            </div>
+            <button type="button" class="btn btn-success btn-sm" data-collector-approval-collector-action="approve" data-collector-key="${escapeHtml(group.key)}">
+              <i class="ti ti-checks" aria-hidden="true"></i>
+              <span>Approve Collector</span>
             </button>
           </div>
         </td>
       `;
-      collectorApprovalList.appendChild(tr);
+      collectorApprovalList.appendChild(groupRow);
+      group.records.forEach((record) => {
+        const tr = document.createElement('tr');
+        tr.className = 'collector-approval-payment-row';
+        const id = String(record?.id || '').trim();
+        const clientName = record?.customerName || record?.accountNumber || 'Client';
+        const accountNumber = String(record?.accountNumber || '').trim();
+        const area = String(record?.area || '').trim();
+        const reference = String(record?.reference || '').trim();
+        const paymentMethod = String(record?.paymentMethod || '').trim();
+
+        tr.innerHTML = `
+          <td>
+            <div class="collector-approval-copy">
+              <strong>${escapeHtml(formatCollectorPaymentDate(record?.recordedAt || record?.date))}</strong>
+            </div>
+          </td>
+          <td>
+            <div class="collector-approval-copy">
+              <strong>${escapeHtml(clientName)}</strong>
+              <span>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</span>
+            </div>
+          </td>
+          <td class="text-end collector-approval-amount">PHP ${fmtMoney(record?.amount)}</td>
+          <td>
+            <div class="collector-approval-copy">
+              <strong>${escapeHtml(reference || 'No reference')}</strong>
+              <span>${escapeHtml(paymentMethod || 'Payment')}</span>
+            </div>
+          </td>
+          <td class="text-center">
+            <div class="btn-list justify-content-center">
+              <button type="button" class="btn btn-outline-danger btn-sm btn-icon" title="Reject payment" aria-label="Reject payment" data-collector-approval-action="reject" data-entry-id="${escapeHtml(id)}">
+                <i class="ti ti-x" aria-hidden="true"></i>
+              </button>
+            </div>
+          </td>
+        `;
+        collectorApprovalList.appendChild(tr);
+      });
     });
   }
 
   function renderCollectorApprovalNotice(message, tone = 'danger') {
-    setApprovalCount(0);
+    collectorApprovalRecords = [];
+    updateCollectorApprovalBatchState([]);
     if (!collectorApprovalList) return;
     const className = tone === 'muted' ? 'text-secondary' : 'text-danger';
     collectorApprovalList.innerHTML = `
@@ -498,6 +584,56 @@
       const status = Number(err?.status || 0);
       const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
       renderCollectorApprovalNotice(err?.message || 'Failed to load pending collector payments.', tone);
+    }
+  }
+
+  async function approveCollectorPaymentsBatch(triggerBtn = null, collectorKey = '') {
+    const normalizedCollectorKey = String(collectorKey || '').trim();
+    const rows = collectorApprovalRecords
+      .filter((record) => String(record?.id || '').trim())
+      .filter((record) => !normalizedCollectorKey || getCollectorApprovalGroupKey(record) === normalizedCollectorKey);
+    if (!rows.length) {
+      toast('No pending collector payments to approve.', 'danger');
+      return;
+    }
+    const collectorName = getCollectorApprovalGroupName(rows[0]);
+    const confirmed = window.appConfirm
+      ? await window.appConfirm(buildCollectorApprovalBatchMessage(rows), {
+        title: `Approve ${collectorName}`,
+        okText: 'Approve Collector',
+        type: 'success'
+      })
+      : window.confirm(buildCollectorApprovalBatchMessage(rows));
+    if (!confirmed) return;
+    if (triggerBtn) triggerBtn.disabled = true;
+    try {
+      const res = await fetch('/api/collector/payments/approvals/approve-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ entryIds: rows.map((record) => String(record.id).trim()) }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload?.error || 'Failed to approve pending collector payments.');
+      }
+      const approvedCount = Number(payload?.approved || (Array.isArray(payload?.records) ? payload.records.length : 0));
+      const skippedCount = Number(payload?.skipped || 0);
+      const skippedText = skippedCount ? ` ${skippedCount} skipped.` : '';
+      toast(
+        approvedCount
+          ? `Approved ${approvedCount} pending payment${approvedCount === 1 ? '' : 's'} for ${collectorName}.${skippedText}`
+          : 'No pending collector payments were approved.',
+        approvedCount ? 'ok' : 'danger'
+      );
+      await Promise.all([
+        loadCollectorApprovals(),
+        loadAssignmentsAndReport(),
+      ]);
+    } catch (err) {
+      toast(err?.message || 'Failed to approve pending collector payments.', 'danger');
+      if (triggerBtn) triggerBtn.disabled = false;
     }
   }
 
@@ -1556,6 +1692,13 @@
   });
 
   document.addEventListener('click', (event) => {
+    const collectorApprovalBtn = event.target.closest('[data-collector-approval-collector-action]');
+    if (collectorApprovalBtn) {
+      const collectorKey = collectorApprovalBtn.getAttribute('data-collector-key') || '';
+      approveCollectorPaymentsBatch(collectorApprovalBtn, collectorKey).catch(() => {});
+      return;
+    }
+
     const approvalBtn = event.target.closest('[data-collector-approval-action]');
     if (!approvalBtn) return;
     const entryId = approvalBtn.getAttribute('data-entry-id') || '';

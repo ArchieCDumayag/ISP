@@ -129,6 +129,28 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
     line-height: 1.3;
 }
 
+.collectors-board .collector-approval-panel__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+
+.collectors-board .collector-approval-panel__actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    white-space: nowrap;
+}
+
+.collectors-board .collector-approval-total {
+    color: var(--app-text, #172033);
+    font-size: .8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .collectors-board .collector-approval-table-wrapper {
     display: block;
     width: 100%;
@@ -169,6 +191,43 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
 .collectors-board .collector-approval-table th:last-child,
 .collectors-board .collector-approval-table td:last-child {
     width: 5.75rem;
+}
+
+.collectors-board .collector-approval-group-row td {
+    background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
+    padding: .5rem !important;
+}
+
+.collectors-board .collector-approval-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.collectors-board .collector-approval-group__copy {
+    display: grid;
+    gap: .125rem;
+    min-width: 0;
+}
+
+.collectors-board .collector-approval-group__copy strong {
+    color: var(--app-text, #172033);
+    font-size: .8125rem;
+    font-weight: 700;
+}
+
+.collectors-board .collector-approval-group__copy span {
+    color: var(--app-muted, #64748b);
+    font-size: .6875rem;
+    font-weight: 600;
+}
+
+.collectors-board .collector-approval-group .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    white-space: nowrap;
 }
 
 .collectors-board .collector-approval-copy {
@@ -848,7 +907,9 @@ body.theme-dark .collectors-board .collector-stat-card,
 body.theme-dark .collectors-board .collector-assignment-table thead th,
 [data-bs-theme=dark] .collectors-board .collector-assignment-table thead th,
 body.theme-dark .collectors-board .collector-approval-table thead th,
-[data-bs-theme=dark] .collectors-board .collector-approval-table thead th {
+[data-bs-theme=dark] .collectors-board .collector-approval-table thead th,
+body.theme-dark .collectors-board .collector-approval-group-row td,
+[data-bs-theme=dark] .collectors-board .collector-approval-group-row td {
     background: rgba(30, 41, 59, .9) !important;
     color: var(--app-muted, #cbd5e1) !important;
 }
@@ -860,9 +921,13 @@ body.theme-dark .collectors-board .collector-stat-card__body strong,
 body.theme-dark .collectors-board .collector-approval-panel__header h2,
 body.theme-dark .collectors-board .collector-approval-copy strong,
 body.theme-dark .collectors-board .collector-approval-amount,
+body.theme-dark .collectors-board .collector-approval-total,
+body.theme-dark .collectors-board .collector-approval-group__copy strong,
 [data-bs-theme=dark] .collectors-board .collector-approval-panel__header h2,
 [data-bs-theme=dark] .collectors-board .collector-approval-copy strong,
-[data-bs-theme=dark] .collectors-board .collector-approval-amount {
+[data-bs-theme=dark] .collectors-board .collector-approval-amount,
+[data-bs-theme=dark] .collectors-board .collector-approval-total,
+[data-bs-theme=dark] .collectors-board .collector-approval-group__copy strong {
     color: var(--app-text, #f8fafc) !important;
 }
 
@@ -875,8 +940,10 @@ body.theme-dark .collectors-board .collector-approval-table-wrapper,
 
 body.theme-dark .collectors-board .collector-approval-panel__header p,
 body.theme-dark .collectors-board .collector-approval-copy span,
+body.theme-dark .collectors-board .collector-approval-group__copy span,
 [data-bs-theme=dark] .collectors-board .collector-approval-panel__header p,
-[data-bs-theme=dark] .collectors-board .collector-approval-copy span {
+[data-bs-theme=dark] .collectors-board .collector-approval-copy span,
+[data-bs-theme=dark] .collectors-board .collector-approval-group__copy span {
     color: var(--app-muted, #94a3b8);
 }
 
@@ -900,6 +967,16 @@ body.theme-dark .collectors-board .collector-approval-copy span,
     }
 
     .collectors-board .collector-approval-panel__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .collectors-board .collector-approval-panel__actions {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .collectors-board .collector-approval-group {
         align-items: flex-start;
         flex-direction: column;
     }

@@ -1105,9 +1105,9 @@ function isPairedPrepaidChargeEntry(entry = {}, target = {}, pairedFingerprint =
     && (!entryRecorder || !targetRecorder || entryRecorder === targetRecorder);
 }
 
-async function updateCollectorPaymentApproval(req, nextStatus) {
+async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
   const actor = getApprovalActor(req);
-  const entryId = String(req.params?.entryId || '').trim();
+  const entryId = String(rawEntryId || '').trim();
   if (!entryId) throw createError(400, 'Payment entry ID is required.');
   const branchId = actor?.branchId || null;
 
@@ -1214,6 +1214,55 @@ async function updateCollectorPaymentApproval(req, nextStatus) {
   triggerBranchServiceRefresh(branchId || targetCustomer?.branchId || null, `collector-payment-${nextStatus}`);
   return {
     record: mapCollectorPaymentApprovalItem(targetEntry, targetCustomer, targetAccount)
+  };
+}
+
+async function updateCollectorPaymentApproval(req, nextStatus) {
+  return updateCollectorPaymentApprovalById(req, req.params?.entryId, nextStatus);
+}
+
+async function approveCollectorPaymentApprovalsBatch(req) {
+  const requestedIds = new Set(
+    (Array.isArray(req.body?.entryIds) ? req.body.entryIds : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+  );
+  const { records } = await listCollectorPaymentApprovals(req);
+  const pendingRecords = Array.isArray(records) ? records : [];
+  const targets = requestedIds.size
+    ? pendingRecords.filter((record) => requestedIds.has(String(record?.id || '').trim()))
+    : pendingRecords;
+  const targetIds = new Set(targets.map((record) => String(record?.id || '').trim()).filter(Boolean));
+  const errors = requestedIds.size
+    ? [...requestedIds]
+      .filter((id) => !targetIds.has(id))
+      .map((id) => ({ id, error: 'Pending collector payment was not found.' }))
+    : [];
+  const approvedRecords = [];
+
+  for (const record of targets) {
+    const entryId = String(record?.id || '').trim();
+    if (!entryId) continue;
+    try {
+      const result = await updateCollectorPaymentApprovalById(req, entryId, COLLECTOR_PAYMENT_APPROVED_STATUS);
+      if (result?.record) approvedRecords.push(result.record);
+    } catch (err) {
+      const status = Number(err?.status || err?.statusCode || 0);
+      if ([404, 409].includes(status)) {
+        errors.push({ id: entryId, error: err.message || 'Collector payment was skipped.' });
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  const totalAmount = approvedRecords.reduce((sum, record) => sum + Math.abs(Number(record?.amount) || 0), 0);
+  return {
+    approved: approvedRecords.length,
+    skipped: errors.length,
+    totalAmount: Number(totalAmount.toFixed(2)),
+    records: approvedRecords,
+    errors: errors.slice(0, 25)
   };
 }
 
@@ -1474,6 +1523,17 @@ router.get('/approvals', async (req, res, next) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to load collector payment approvals.'));
+  }
+});
+
+// POST /api/collector/payments/approvals/approve-all
+// Admin-only batch approval for the pending payments reviewed in collectors.html.
+router.post('/approvals/approve-all', async (req, res, next) => {
+  try {
+    const result = await approveCollectorPaymentApprovalsBatch(req);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to approve pending collector payments.'));
   }
 });
 

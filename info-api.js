@@ -423,7 +423,7 @@ function filterPayloadForCollector(payload, collectorId, collectorAccount, colle
   }
 
   if (payload.customers !== undefined) {
-    payload.customers = (payload.customers || []).filter((c) => c.area && areaSet.has(c.area) && !isPrepaidCustomer(c));
+    payload.customers = (payload.customers || []).filter((c) => c.area && areaSet.has(c.area));
   }
 
   const allowedAccounts = new Set(

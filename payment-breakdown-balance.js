@@ -17,6 +17,19 @@ const zonedDatePartsFormatter = new Intl.DateTimeFormat('en-US', {
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
 const normalizeIdentity = (value) => normalizeText(value).replace(/[^a-z0-9]+/g, '');
+const isEffectivePaymentStatus = (entry = {}) => {
+  const status = normalizeText(entry.status || entry.paymentStatus || entry.payment_status);
+  return ![
+    'pending_approval',
+    'pending-approval',
+    'pending approval',
+    'rejected',
+    'cancelled',
+    'canceled',
+    'void',
+    'voided'
+  ].includes(status);
+};
 const toAmount = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
@@ -676,6 +689,46 @@ const sumEntries = (entries = []) => roundMoney(
   entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0)
 );
 
+const resolvePaymentModeLabel = (entry = {}) => {
+  const rawMode = String(
+    entry.raw?.paymentMethod
+    || entry.raw?.payment_method
+    || entry.raw?.method
+    || entry.raw?.channel
+    || entry.raw?.paymentChannel
+    || entry.raw?.payment_channel
+    || ''
+  ).trim();
+  const normalized = normalizeText(rawMode).replace(/[\s-]+/g, '_');
+  if (normalized.includes('gcash') || normalized.includes('ph_gcash')) return 'GCash';
+  if (normalized === 'cash' || normalized.includes('_cash') || normalized.includes('cash_')) return 'Cash';
+  if (entry.raw?.xenditId || entry.raw?.xendit_id) return rawMode || 'GCash';
+  return rawMode || 'Cash';
+};
+
+const buildPaymentDetails = (entries = []) => {
+  return (Array.isArray(entries) ? entries : [])
+    .slice()
+    .sort((left, right) => {
+      const leftTime = left?.dateObj instanceof Date && !Number.isNaN(left.dateObj.getTime())
+        ? left.dateObj.getTime()
+        : 0;
+      const rightTime = right?.dateObj instanceof Date && !Number.isNaN(right.dateObj.getTime())
+        ? right.dateObj.getTime()
+        : 0;
+      if (leftTime !== rightTime) return leftTime - rightTime;
+      return (Number(left?.sortOrder) || 0) - (Number(right?.sortOrder) || 0);
+    })
+    .map((entry) => ({
+      amount: Number(entry?.amount) || 0,
+      mode: resolvePaymentModeLabel(entry),
+      date: entry?.dateObj instanceof Date && !Number.isNaN(entry.dateObj.getTime())
+        ? entry.dateObj.toISOString()
+        : ''
+    }))
+    .filter((entry) => Math.abs(Number(entry.amount) || 0) > EPSILON);
+};
+
 const applyEntryToBalance = (balance, entry = {}) => {
   const amount = Number(entry.amount) || 0;
   if (entry.direction === 'debit') return roundMoney(balance + amount);
@@ -956,6 +1009,7 @@ const createBreakdownRow = ({
     : computedRawDue;
   const due = roundMoney(Math.max(0, rawDue));
   const amountPaid = sumEntries(paymentCredits);
+  const paymentDetails = buildPaymentDetails(paymentCredits);
   const balanceAfterPayment = roundMoney(rawDue - amountPaid);
   const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
   const paymentStatus = paymentStatusOverride || (balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid');
@@ -972,6 +1026,7 @@ const createBreakdownRow = ({
       isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
       isDueOverride: hasDueOverride,
       amountPaid,
+      paymentDetails,
       paymentStatus,
       balanceAfterPayment,
       isFirstRow,
@@ -1242,6 +1297,7 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
 
 const calculatePaymentBreakdownRows = (record = {}, customers = []) => {
   const entries = (Array.isArray(record.history) ? record.history : [])
+    .filter(isEffectivePaymentStatus)
     .map(normalizeEntry)
     .filter(Boolean)
     .sort(compareEntries)

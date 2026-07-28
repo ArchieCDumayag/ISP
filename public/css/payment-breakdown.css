@@ -443,6 +443,23 @@
     font-weight: 700;
 }
 
+.breakdown-payment-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .35rem;
+}
+
+.is-num .breakdown-payment-stack {
+    align-items: flex-end;
+}
+
+.breakdown-payment-line {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.5rem;
+}
+
 .breakdown-status {
     display: inline-flex;
     align-items: center;

@@ -13,6 +13,21 @@ const STORE_KEYS = {
 };
 
 const router = express.Router();
+const EXCLUDED_COLLECTOR_PAYMENT_STATUSES = new Set([
+  'pending_approval',
+  'pending-approval',
+  'pending approval',
+  'rejected',
+  'cancelled',
+  'canceled',
+  'void',
+  'voided'
+]);
+
+const isReportableCollectorPaymentStatus = (status) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  return !normalized || !EXCLUDED_COLLECTOR_PAYMENT_STATUSES.has(normalized);
+};
 
 const buildAssignmentsMap = (rows = []) => {
   const assignments = {};
@@ -331,7 +346,7 @@ router.get('/report', async (req, res) => {
       });
 
       const [paymentRows] = await query(
-        `SELECT account_number AS accountNumber, amount, date, recorded_at AS recordedAt, direction, recorded_by_user_id AS recordedByUserId, recorded_by_role AS recordedByRole
+        `SELECT account_number AS accountNumber, amount, date, recorded_at AS recordedAt, direction, recorded_by_user_id AS recordedByUserId, recorded_by_role AS recordedByRole, status
          FROM payment_entries WHERE branch_id = ?`,
         [branchId]
       );
@@ -342,6 +357,7 @@ router.get('/report', async (req, res) => {
       (paymentRows || []).forEach((row) => {
         const meta = accountMeta[String(row.accountNumber)];
         if (!meta) return;
+        if (!isReportableCollectorPaymentStatus(row.status)) return;
         if (String(row.direction || '').toLowerCase() !== 'credit') return;
         const dateValue = row.date || row.recordedAt;
         if (!dateValue) return;
@@ -407,6 +423,7 @@ router.get('/report', async (req, res) => {
       for (const h of (bucket.history || [])) {
         // Count only payments (credits) as collected amounts
         if (String(h.direction || '').toLowerCase() !== 'credit') continue;
+        if (!isReportableCollectorPaymentStatus(h.status)) continue;
 
         const date = h.date || h.recordedAt;
         if (!date) continue;

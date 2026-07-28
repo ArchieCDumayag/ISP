@@ -2,6 +2,9 @@
 (function () {
   const assignMessage = document.getElementById('assignMessage');
   const reportContainer = document.getElementById('reportContainer');
+  const collectorApprovalList = document.getElementById('collectorApprovalList');
+  const collectorApprovalCount = document.getElementById('collectorApprovalCount');
+  const collectorApprovalsEmptyState = document.getElementById('collectorApprovalsEmptyState');
   const assignmentList = document.getElementById('assignmentList');
   const assignmentCount = document.getElementById('assignmentCount');
   const monthlySummary = document.getElementById('monthlySummary');
@@ -17,6 +20,7 @@
   const modalCollectorSelect = document.getElementById('modalCollectorSelect');
   const assignmentAreaSearch = document.getElementById('assignmentAreaSearch');
   const assignmentAreaList = document.getElementById('assignmentAreaList');
+  const assignmentClientReview = document.getElementById('assignmentClientReview');
   const assignmentAreaCount = document.getElementById('assignmentAreaCount');
   const assignmentFilterTabs = document.getElementById('assignmentFilterTabs');
   const assignmentSelectAllVisibleBtn = document.getElementById('assignmentSelectAllVisible');
@@ -39,6 +43,12 @@
   let assignmentsByArea = {};
   let availableAreas = [];
   let modalSelectedAreas = new Set();
+  let clientReviewCustomers = [];
+  let clientReviewByArea = new Map();
+  let clientReviewLoaded = false;
+  let clientReviewLoading = false;
+  let clientReviewError = '';
+  let clientReviewPromise = null;
   let activeAssignmentFilter = 'all';
   let areaTotalsCache = {};
   let areaUnpaidCache = {};
@@ -191,6 +201,338 @@
       .replace(/'/g, '&#39;');
   }
 
+  function getClientArea(customer) {
+    return String(
+      customer?.area
+      || customer?.coverageArea
+      || customer?.coverage_area
+      || customer?.coverageAreaName
+      || customer?.areaName
+      || ''
+    ).trim();
+  }
+
+  function getClientAccountNumber(customer) {
+    return String(customer?.accountNumber || customer?.account_number || customer?.id || '').trim();
+  }
+
+  function getClientDisplayName(customer) {
+    const firstName = String(customer?.firstName || customer?.first_name || '').trim();
+    const lastName = String(customer?.lastName || customer?.last_name || '').trim();
+    const fromParts = [firstName, lastName].filter(Boolean).join(' ');
+    return String(
+      customer?.name
+      || customer?.fullName
+      || customer?.customerName
+      || fromParts
+      || getClientAccountNumber(customer)
+      || 'Unnamed client'
+    ).trim();
+  }
+
+  function getClientPlanLabel(customer) {
+    return String(customer?.planName || customer?.plan_name || customer?.plan || customer?.packageName || '').trim();
+  }
+
+  function getClientStatusLabel(customer) {
+    const label = String(
+      customer?.accountStatusLabel
+      || customer?.statusLabel
+      || customer?.statusText
+      || customer?.status
+      || ''
+    ).trim();
+    return label ? label.charAt(0).toUpperCase() + label.slice(1) : '';
+  }
+
+  function compareClientRecords(left, right) {
+    const nameOrder = getClientDisplayName(left).localeCompare(getClientDisplayName(right), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+    if (nameOrder) return nameOrder;
+    return getClientAccountNumber(left).localeCompare(getClientAccountNumber(right), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+  }
+
+  function rebuildClientReviewIndex() {
+    const next = new Map();
+    clientReviewCustomers.forEach((customer) => {
+      const area = getClientArea(customer);
+      const areaKey = normalizeAreaKey(area);
+      if (!areaKey) return;
+      const bucket = next.get(areaKey) || [];
+      bucket.push(customer);
+      next.set(areaKey, bucket);
+    });
+    next.forEach((clients) => clients.sort(compareClientRecords));
+    clientReviewByArea = next;
+  }
+
+  function getClientsForArea(area) {
+    return clientReviewByArea.get(normalizeAreaKey(area)) || [];
+  }
+
+  function clientCountLabel(count) {
+    return count === 1 ? '1 client' : `${count} clients`;
+  }
+
+  function renderClientReviewRows(clients) {
+    const visible = clients.slice(0, 12);
+    const rows = visible.map((client) => {
+      const accountNumber = getClientAccountNumber(client);
+      const planLabel = getClientPlanLabel(client);
+      const statusLabel = getClientStatusLabel(client);
+      const metaParts = [accountNumber ? `#${accountNumber}` : '', planLabel, statusLabel].filter(Boolean);
+      return `
+        <li class="assignment-client-review__item">
+          <span class="assignment-client-review__name">${escapeHtml(getClientDisplayName(client))}</span>
+          <span class="assignment-client-review__meta">${escapeHtml(metaParts.join(' - ') || 'Client record')}</span>
+        </li>
+      `;
+    }).join('');
+    const moreCount = clients.length - visible.length;
+    const moreRow = moreCount > 0
+      ? `<li class="assignment-client-review__more">+${moreCount} more ${moreCount === 1 ? 'client' : 'clients'}</li>`
+      : '';
+    return `<ul class="assignment-client-review__list">${rows}${moreRow}</ul>`;
+  }
+
+  function renderAssignmentClientReview() {
+    if (!assignmentClientReview) return;
+    const selectedAreas = getSelectedModalAreas();
+    if (!selectedAreas.length) {
+      assignmentClientReview.innerHTML = `
+        <div class="assignment-client-review__empty">
+          <i class="ti ti-users" aria-hidden="true"></i>
+          <span>Select coverage areas to review clients per area.</span>
+        </div>
+      `;
+      return;
+    }
+
+    if (clientReviewLoading && !clientReviewLoaded) {
+      assignmentClientReview.innerHTML = `
+        <div class="assignment-client-review__empty">
+          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+          <span>Loading clients for review...</span>
+        </div>
+      `;
+      return;
+    }
+
+    if (clientReviewError && !clientReviewLoaded) {
+      assignmentClientReview.innerHTML = `
+        <div class="assignment-client-review__empty assignment-client-review__empty--error">
+          <i class="ti ti-alert-circle" aria-hidden="true"></i>
+          <span>${escapeHtml(clientReviewError)}</span>
+        </div>
+      `;
+      return;
+    }
+
+    const groups = selectedAreas.map((area) => ({
+      area,
+      clients: getClientsForArea(area),
+    }));
+    const totalClients = groups.reduce((sum, group) => sum + group.clients.length, 0);
+
+    assignmentClientReview.innerHTML = `
+      <div class="assignment-client-review__header">
+        <div>
+          <span class="assignment-client-review__eyebrow">Review only</span>
+          <strong>Clients per selected area</strong>
+        </div>
+        <span class="badge bg-secondary-lt text-secondary">${clientCountLabel(totalClients)}</span>
+      </div>
+      <div class="assignment-client-review__groups">
+        ${groups.map((group) => `
+          <section class="assignment-client-review__group">
+            <div class="assignment-client-review__group-head">
+              <strong title="${escapeHtml(group.area)}">${escapeHtml(group.area)}</strong>
+              <span>${clientCountLabel(group.clients.length)}</span>
+            </div>
+            ${group.clients.length
+              ? renderClientReviewRows(group.clients)
+              : '<p class="assignment-client-review__no-clients">No clients found in this area.</p>'}
+          </section>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function loadClientReviewCustomers() {
+    if (clientReviewLoaded) return clientReviewCustomers;
+    if (clientReviewPromise) return clientReviewPromise;
+    clientReviewLoading = true;
+    clientReviewError = '';
+    renderAssignmentClientReview();
+
+    clientReviewPromise = fetch('/api/customers', { credentials: 'include', cache: 'no-store' })
+      .then(async (res) => {
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error || payload?.message || 'Unable to load clients for review.');
+        }
+        clientReviewCustomers = Array.isArray(payload?.customers)
+          ? payload.customers
+          : (Array.isArray(payload) ? payload : []);
+        clientReviewLoaded = true;
+        rebuildClientReviewIndex();
+        return clientReviewCustomers;
+      })
+      .catch((err) => {
+        clientReviewError = err?.message || 'Unable to load clients for review.';
+        throw err;
+      })
+      .finally(() => {
+        clientReviewLoading = false;
+        clientReviewPromise = null;
+        renderAssignmentClientReview();
+      });
+
+    return clientReviewPromise;
+  }
+
+  function formatCollectorPaymentDate(value) {
+    if (!value) return 'No date';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return String(value);
+    return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function setApprovalCount(count) {
+    if (!collectorApprovalCount) return;
+    collectorApprovalCount.textContent = count === 1 ? '1 pending' : `${count} pending`;
+  }
+
+  function renderCollectorApprovals(records = []) {
+    const rows = Array.isArray(records) ? records : [];
+    setApprovalCount(rows.length);
+    if (!collectorApprovalList) return;
+    collectorApprovalList.innerHTML = '';
+    if (!rows.length) {
+      if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'flex';
+      return;
+    }
+    if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'none';
+    rows.forEach((record) => {
+      const tr = document.createElement('tr');
+      const id = String(record?.id || '').trim();
+      const collectorName = record?.collectorName || record?.collectorUsername || 'Collector';
+      const clientName = record?.customerName || record?.accountNumber || 'Client';
+      const accountNumber = String(record?.accountNumber || '').trim();
+      const area = String(record?.area || '').trim();
+      const reference = String(record?.reference || '').trim();
+      const paymentMethod = String(record?.paymentMethod || '').trim();
+
+      tr.innerHTML = `
+        <td>
+          <div class="collector-approval-copy">
+            <strong>${escapeHtml(collectorName)}</strong>
+            <span>${escapeHtml(formatCollectorPaymentDate(record?.recordedAt || record?.date))}</span>
+          </div>
+        </td>
+        <td>
+          <div class="collector-approval-copy">
+            <strong>${escapeHtml(clientName)}</strong>
+            <span>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</span>
+          </div>
+        </td>
+        <td class="text-end collector-approval-amount">PHP ${fmtMoney(record?.amount)}</td>
+        <td>
+          <div class="collector-approval-copy">
+            <strong>${escapeHtml(reference || 'No reference')}</strong>
+            <span>${escapeHtml(paymentMethod || 'Payment')}</span>
+          </div>
+        </td>
+        <td class="text-center">
+          <div class="btn-list justify-content-center">
+            <button type="button" class="btn btn-success btn-sm btn-icon" title="Approve payment" aria-label="Approve payment" data-collector-approval-action="approve" data-entry-id="${escapeHtml(id)}">
+              <i class="ti ti-check" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm btn-icon" title="Reject payment" aria-label="Reject payment" data-collector-approval-action="reject" data-entry-id="${escapeHtml(id)}">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+        </td>
+      `;
+      collectorApprovalList.appendChild(tr);
+    });
+  }
+
+  function renderCollectorApprovalNotice(message, tone = 'danger') {
+    setApprovalCount(0);
+    if (!collectorApprovalList) return;
+    const className = tone === 'muted' ? 'text-secondary' : 'text-danger';
+    collectorApprovalList.innerHTML = `
+      <tr>
+        <td colspan="5" class="text-center ${className} py-3">${escapeHtml(message)}</td>
+      </tr>
+    `;
+    if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'none';
+  }
+
+  function getCollectorApprovalErrorMessage(status, payload = {}) {
+    if (status === 401) return 'Please log in again as admin to load pending collector payments.';
+    if (status === 403) return payload?.error || 'Admin access is required to review collector payments.';
+    if (status === 404) return 'Collector approval API is not active yet. Restart the server and refresh this page.';
+    return payload?.error || payload?.message || 'Failed to load pending collector payments.';
+  }
+
+  async function loadCollectorApprovals() {
+    if (!collectorApprovalList) return;
+    try {
+      const res = await fetch('/api/collector/payments/approvals', { credentials: 'include', cache: 'no-store' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        const error = new Error(getCollectorApprovalErrorMessage(res.status, payload));
+        error.status = res.status;
+        throw error;
+      }
+      renderCollectorApprovals(payload.records || []);
+    } catch (err) {
+      console.warn('Failed to load collector payment approvals', err);
+      const status = Number(err?.status || 0);
+      const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
+      renderCollectorApprovalNotice(err?.message || 'Failed to load pending collector payments.', tone);
+    }
+  }
+
+  async function reviewCollectorPayment(entryId, action, triggerBtn = null) {
+    const safeEntryId = String(entryId || '').trim();
+    const safeAction = String(action || '').trim().toLowerCase();
+    if (!safeEntryId || !['approve', 'reject'].includes(safeAction)) return;
+    const actionLabel = safeAction === 'approve' ? 'Approve' : 'Reject';
+    const confirmed = window.appConfirm
+      ? await window.appConfirm(`${actionLabel} this collector payment?`, { title: `${actionLabel} Payment` })
+      : window.confirm(`${actionLabel} this collector payment?`);
+    if (!confirmed) return;
+    if (triggerBtn) triggerBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/collector/payments/approvals/${encodeURIComponent(safeEntryId)}/${safeAction}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload?.error || `Failed to ${safeAction} collector payment.`);
+      }
+      toast(safeAction === 'approve' ? 'Collector payment approved.' : 'Collector payment rejected.', 'ok');
+      await Promise.all([
+        loadCollectorApprovals(),
+        loadAssignmentsAndReport(),
+      ]);
+    } catch (err) {
+      toast(err?.message || `Failed to ${safeAction} collector payment.`, 'danger');
+      if (triggerBtn) triggerBtn.disabled = false;
+    }
+  }
+
   function hasAccountRole(account, role) {
     const wanted = String(role || '').trim().toLowerCase();
     const values = Array.isArray(account?.roles)
@@ -215,6 +557,20 @@
     if (billing.includes('prepaid')) return true;
     if (billing.includes('postpaid')) return false;
     return false;
+  }
+
+  function isReportableCollectorPaymentEntry(entry = {}) {
+    const status = String(entry?.status || entry?.paymentStatus || '').trim().toLowerCase();
+    return ![
+      'pending_approval',
+      'pending-approval',
+      'pending approval',
+      'rejected',
+      'cancelled',
+      'canceled',
+      'void',
+      'voided',
+    ].includes(status);
   }
 
   // Simple toast
@@ -357,6 +713,7 @@
       assignmentSelectAllVisibleBtn.disabled = !collectorId || visibleAreas.length === 0;
     }
     updateAreaCount();
+    renderAssignmentClientReview();
   }
 
   function buildCollectorTotals(reportCache) {
@@ -424,6 +781,7 @@
         unpaid[area] = (unpaid[area] || 0) + balance;
         const assignedIds = getCollectorsForArea(area);
         (record.history || []).forEach((entry) => {
+          if (!isReportableCollectorPaymentEntry(entry)) return;
           const direction = String(entry.direction || '').toLowerCase();
           if (direction !== 'credit') return;
           const recordedCollectorId = String(entry?.recordedBy?.id || '').trim();
@@ -1111,8 +1469,10 @@
     activeAssignmentFilter = 'all';
     syncAssignmentFilterTabs();
     setModalMessage('');
+    renderAssignmentClientReview();
     assignmentModal.classList.add('show');
     assignmentModal.setAttribute('aria-hidden', 'false');
+    loadClientReviewCustomers().catch(() => {});
     loadCollectors()
       .then(() => {
         if (initialCollectorId && modalCollectorSelect) {
@@ -1195,6 +1555,14 @@
       });
   });
 
+  document.addEventListener('click', (event) => {
+    const approvalBtn = event.target.closest('[data-collector-approval-action]');
+    if (!approvalBtn) return;
+    const entryId = approvalBtn.getAttribute('data-entry-id') || '';
+    const action = approvalBtn.getAttribute('data-collector-approval-action') || '';
+    reviewCollectorPayment(entryId, action, approvalBtn).catch(() => {});
+  });
+
   // Delegate delete/remove actions similar to Plans page: confirm then remove
   document.addEventListener('click', (event) => {
     const actionBtn = event.target.closest('[data-assign-action]');
@@ -1228,6 +1596,7 @@
   });
 
   loadAreas().catch(() => {});
+  loadCollectorApprovals().catch(() => {});
   loadCollectors()
     .then(() => loadReport())
     .catch(() => {

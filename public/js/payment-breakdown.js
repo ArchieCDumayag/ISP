@@ -118,6 +118,19 @@ document.addEventListener('DOMContentLoaded', () => {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    const isEffectivePaymentStatus = (entry = {}) => {
+        const status = normalizeText(entry.status || entry.paymentStatus || entry.payment_status);
+        return ![
+            'pending_approval',
+            'pending-approval',
+            'pending approval',
+            'rejected',
+            'cancelled',
+            'canceled',
+            'void',
+            'voided'
+        ].includes(status);
+    };
 
     const normalizeText = (value) => String(value || '').trim().toLowerCase();
     const normalizeIdentity = (value) => normalizeText(value).replace(/[^a-z0-9]+/g, '');
@@ -1040,6 +1053,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return datedEntries[0]?.dateObj || null;
     };
 
+    const buildPaymentDetails = (entries = []) => {
+        return (Array.isArray(entries) ? entries : [])
+            .slice()
+            .sort((left, right) => {
+                const leftTime = left?.dateObj instanceof Date && !Number.isNaN(left.dateObj.getTime())
+                    ? left.dateObj.getTime()
+                    : 0;
+                const rightTime = right?.dateObj instanceof Date && !Number.isNaN(right.dateObj.getTime())
+                    ? right.dateObj.getTime()
+                    : 0;
+                if (leftTime !== rightTime) return leftTime - rightTime;
+                return (Number(left?.sortOrder) || 0) - (Number(right?.sortOrder) || 0);
+            })
+            .map((entry) => ({
+                amount: Number(entry?.amount) || 0,
+                mode: resolvePaymentModeLabel(entry),
+                dateLabel: entry?.dateObj instanceof Date && !Number.isNaN(entry.dateObj.getTime())
+                    ? formatDate(entry.dateObj, '-')
+                    : '-'
+            }))
+            .filter((entry) => Math.abs(Number(entry.amount) || 0) > EPSILON);
+    };
+
     const applyEntryToBalance = (balance, entry = {}) => {
         const amount = Number(entry.amount) || 0;
         if (entry.direction === 'debit') return roundMoney(balance + amount);
@@ -1363,6 +1399,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const amountPaid = sumEntries(paymentCredits);
         const paymentMode = paymentModeOverride || (amountPaid > EPSILON ? resolvePaymentModeSummary(paymentCredits) : '-');
         const paymentDate = paymentDateOverride || (amountPaid > EPSILON ? resolveLatestPaymentDate(paymentCredits) : null);
+        const paymentDetails = buildPaymentDetails(paymentCredits);
         const balanceAfterPayment = roundMoney(rawDue - amountPaid);
         const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
         const computedPaymentStatus = balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid';
@@ -1416,6 +1453,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
                 isDueOverride: hasDueOverride,
                 amountPaid,
+                paymentDetails,
                 paymentMode,
                 paymentDateLabel: paymentDate ? formatDate(paymentDate, '-') : '-',
                 paymentStatus,
@@ -1784,6 +1822,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const buildBreakdownRows = (record = {}, customers = []) => {
         const entries = (Array.isArray(record.history) ? record.history : [])
+            .filter(isEffectivePaymentStatus)
             .map(normalizeEntry)
             .filter(Boolean)
             .sort(compareEntries)
@@ -1890,6 +1929,50 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     };
 
+    const renderPaymentAmountCell = (row) => {
+        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
+        if (!details.length) {
+            return `<span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span>`;
+        }
+        return `
+            <span class="breakdown-payment-stack">
+                ${details.map((detail) => `
+                    <span class="breakdown-payment-line">
+                        <span class="breakdown-amount ${getCreditClass(detail.amount)}">${formatCurrency(detail.amount)}</span>
+                    </span>
+                `).join('')}
+            </span>
+        `;
+    };
+
+    const renderPaymentModeCell = (row) => {
+        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
+        if (!details.length) {
+            return `<span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span>`;
+        }
+        return `
+            <span class="breakdown-payment-stack">
+                ${details.map((detail) => `
+                    <span class="breakdown-payment-line"><span class="breakdown-mode">${escapeHtml(detail.mode || '-')}</span></span>
+                `).join('')}
+            </span>
+        `;
+    };
+
+    const renderPaymentDateCell = (row) => {
+        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
+        if (!details.length) {
+            return `<span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span>`;
+        }
+        return `
+            <span class="breakdown-payment-stack">
+                ${details.map((detail) => `
+                    <span class="breakdown-payment-line"><span class="breakdown-date">${escapeHtml(detail.dateLabel || '-')}</span></span>
+                `).join('')}
+            </span>
+        `;
+    };
+
     const renderRows = (rows = []) => {
         if (!tableBody) return;
         if (!rows.length) {
@@ -1920,9 +2003,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="is-num">${advanceCell}</td>
                 <td class="is-num">${renderReferralCell(row)}</td>
                 <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.due)}">${formatRowBillAmount(row.due)}</span></td>
-                <td class="is-num"><span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span></td>
-                <td><span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span></td>
-                <td><span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span></td>
+                <td class="is-num">${renderPaymentAmountCell(row)}</td>
+                <td>${renderPaymentModeCell(row)}</td>
+                <td>${renderPaymentDateCell(row)}</td>
                 <td>${statusCell}</td>
                 <td class="is-num"><span class="breakdown-amount ${getBalanceClass(row.balanceAfterPayment)}">${escapeHtml(formatBalance(row.balanceAfterPayment))}</span></td>
             </tr>

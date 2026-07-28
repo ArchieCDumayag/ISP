@@ -61,6 +61,20 @@
     return false;
   };
 
+  const isReportableCollectorPaymentEntry = (entry = {}) => {
+    const status = String(entry?.status || entry?.paymentStatus || '').trim().toLowerCase();
+    return ![
+      'pending_approval',
+      'pending-approval',
+      'pending approval',
+      'rejected',
+      'cancelled',
+      'canceled',
+      'void',
+      'voided',
+    ].includes(status);
+  };
+
   const resolveDirection = (entry) => {
     const rawDirection = String(entry?.direction || entry?.nature || '').trim().toLowerCase();
     if (rawDirection === 'debit' || rawDirection === 'credit') return rawDirection;
@@ -81,6 +95,7 @@
       const area = String(record.area || '').trim() || 'Unassigned';
 
       (Array.isArray(record.history) ? record.history : []).forEach((entry) => {
+        if (!isReportableCollectorPaymentEntry(entry)) return;
         if (resolveDirection(entry) !== 'credit') return;
         const collectorId = String(entry?.recordedBy?.id || '').trim();
         if (!collectorId) return;
@@ -134,6 +149,7 @@
       const area = String(record.area || '').trim() || 'Unassigned';
 
       (Array.isArray(record.history) ? record.history : []).forEach((entry) => {
+        if (!isReportableCollectorPaymentEntry(entry)) return;
         if (resolveDirection(entry) !== 'credit') return;
         const collectorId = String(entry?.recordedBy?.id || '').trim();
         if (!collectorId) return;

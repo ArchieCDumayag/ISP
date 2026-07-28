@@ -1059,12 +1059,26 @@ document.addEventListener('DOMContentLoaded', function () {
         if (kind === 'payment' || kind === 'rebate' || kind === 'discount' || kind === 'credit') return 'credit';
         return '';
     };
+    const isEffectivePaymentStatusForPayments = (entry = {}) => {
+        const status = String(entry?.status || entry?.paymentStatus || entry?.payment_status || '').trim().toLowerCase();
+        return ![
+            'pending_approval',
+            'pending-approval',
+            'pending approval',
+            'rejected',
+            'cancelled',
+            'canceled',
+            'void',
+            'voided'
+        ].includes(status);
+    };
     const getEntryComparableTime = (entry = {}) => {
         const parsed = parseTimestampValue(entry?.recordedAt || entry?.recorded_at || entry?.date || '');
         return parsed ? parsed.getTime() : 0;
     };
     const getEffectivePaymentHistory = (history = []) => {
-        const entries = (Array.isArray(history) ? history : [])
+        const source = (Array.isArray(history) ? history : []).filter(isEffectivePaymentStatusForPayments);
+        const entries = source
             .map((entry, index) => ({
                 entry,
                 amount: Math.abs(Number(entry?.amount) || 0),
@@ -1080,7 +1094,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 || (row.direction === 'credit' && isOpeningAdvancePaymentEntry(row.entry))
             )
         ));
-        if (!openingAdjustments.length) return Array.isArray(history) ? history : [];
+        if (!openingAdjustments.length) return source;
 
         const ignoredIndexes = new Set();
         entries.forEach((row) => {
@@ -2346,6 +2360,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     const buildBreakdownRowsForPayments = (customer = {}, customers = []) => {
         const entries = (Array.isArray(customer.history) ? customer.history : [])
+            .filter(isEffectivePaymentStatusForPayments)
             .map(normalizeBreakdownEntryForPayments)
             .filter(Boolean)
             .sort(compareBreakdownEntriesForPayments)

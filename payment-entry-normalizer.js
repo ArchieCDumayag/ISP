@@ -1,6 +1,16 @@
 const DEBIT_KINDS = new Set(['charge', 'bill', 'debit']);
 const CREDIT_KINDS = new Set(['payment', 'rebate', 'discount', 'credit']);
 const KNOWN_KINDS = new Set([...DEBIT_KINDS, ...CREDIT_KINDS]);
+const INEFFECTIVE_STATUSES = new Set([
+  'pending_approval',
+  'pending-approval',
+  'pending approval',
+  'rejected',
+  'cancelled',
+  'canceled',
+  'void',
+  'voided'
+]);
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
@@ -68,6 +78,11 @@ function getPaymentEntryTime(entry = {}, fallback = 0) {
   return Number.isFinite(time) ? time : fallback;
 }
 
+function isEffectivePaymentEntryStatus(entry = {}) {
+  const status = normalizeText(entry?.status || entry?.paymentStatus || entry?.payment_status);
+  return !status || !INEFFECTIVE_STATUSES.has(status);
+}
+
 function normalizePaymentEntryDirection(entry = {}) {
   if (isOpeningPreviousBalanceEntry(entry)) {
     return 'debit';
@@ -121,6 +136,7 @@ function normalizePaymentEntry(entry = {}) {
 
 function getEffectivePaymentEntries(history = []) {
   const entries = (Array.isArray(history) ? history : [])
+    .filter((entry) => isEffectivePaymentEntryStatus(entry))
     .map((entry, index) => ({
       entry: normalizePaymentEntry(entry),
       amount: getPaymentEntryAmount(entry),
@@ -174,6 +190,7 @@ module.exports = {
   getEffectivePaymentEntries,
   isOpeningAdvancePaymentEntry,
   isOpeningPreviousBalanceEntry,
+  isEffectivePaymentEntryStatus,
   isPrepaidAutoChargeEntry,
   normalizePaymentEntry,
   normalizePaymentEntryDirection,

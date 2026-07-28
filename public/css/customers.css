@@ -186,6 +186,31 @@ body {
     width: 140px;
 }
 
+.coordinates-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.coordinates-indicator--configured {
+    color: #15803d;
+}
+
+.coordinates-indicator--configured i {
+    font-size: 1rem;
+}
+
+.coordinates-indicator--configured:hover {
+    color: #166534;
+    text-decoration: underline;
+}
+
 
 .customer-table thead th.select-col,
 .customer-table tbody td.select-col {

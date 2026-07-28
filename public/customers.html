@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customers.css?v=2.9">
+    <link rel="stylesheet" href="css/customers.css?v=3.0">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
@@ -6684,6 +6684,33 @@
                         const isSelected = selectedCustomerIds.has(accountNumber);
                         
                         const address = [customer.street, customer.barangay, customer.municipality, customer.province].filter(Boolean).join(', ');
+                        const rawMapPin = String(
+                            customer.mapPin
+                            || customer.map_pin
+                            || customer.coordinates
+                            || customer.coordinate
+                            || ''
+                        ).trim();
+                        const parsedMapPin = parseCoordinateValue(rawMapPin);
+                        const hasConfiguredCoordinates = Boolean(parsedMapPin);
+                        const coordinatesUrl = hasConfiguredCoordinates
+                            ? `https://maps.google.com/?q=${encodeURIComponent(rawMapPin)}`
+                            : '';
+                        const coordinatesIndicator = hasConfiguredCoordinates
+                            ? `
+                                <a
+                                    class="coordinates-indicator coordinates-indicator--configured"
+                                    href="${coordinatesUrl}"
+                                    target="_blank"
+                                    rel="noopener"
+                                    title="Coordinates configured: ${escapeHtml(rawMapPin)}"
+                                    aria-label="Coordinates configured for ${escapeHtml(canonicalFullName)}"
+                                >
+                                    <i class="ti ti-circle-check-filled" aria-hidden="true"></i>
+                                    <span>Coordinates configured</span>
+                                </a>
+                            `
+                            : '';
                         const normalizedStatus = resolveCustomerStatusValue(customer, 'active');
                         const statusClass = normalizedStatus === 'active'
                             ? 'success'
@@ -6799,7 +6826,8 @@
                                 <p class="contact-line"><i class="ti ti-mail" aria-hidden="true"></i> ${customer.email}</p>
                             </td>
                             <td>
-                                <p class="address">${address}</p>
+                                <p class="address">${address || 'No address set'}</p>
+                                ${coordinatesIndicator}
                             </td>
                             <td>
                                 <span class="note">${customer.remarks || ''}</span>

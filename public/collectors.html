@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.2">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.4">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -62,6 +62,34 @@
                     </div>
 
                     <div id="assignMessage" class="assignment-toast"></div>
+
+                    <section class="collector-approval-panel" aria-labelledby="collectorApprovalTitle">
+                        <div class="collector-approval-panel__header">
+                            <div>
+                                <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
+                                <p>Admin approval required before payments count in collector totals.</p>
+                            </div>
+                            <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
+                        </div>
+                        <div class="table-responsive collector-approval-table-wrapper">
+                            <table class="table table-vcenter table-sm collectors-table collector-approval-table">
+                                <thead>
+                                    <tr>
+                                        <th>Collector</th>
+                                        <th>Client</th>
+                                        <th class="text-end">Amount</th>
+                                        <th>Reference</th>
+                                        <th class="text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="collectorApprovalList"></tbody>
+                            </table>
+                            <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
+                                <i class="ti ti-circle-check" aria-hidden="true"></i>
+                                <p>No pending collector payments.</p>
+                            </div>
+                        </div>
+                    </section>
 
                     <div class="table-responsive assignment-table-wrapper">
                         <table class="table table-vcenter table-sm collectors-table collector-assignment-table">
@@ -172,6 +200,7 @@
                                 <div class="assignment-area-list list-group tabler-list list-group-flush" id="assignmentAreaList"></div>
                             </div>
                         </div>
+                        <div class="assignment-client-review" id="assignmentClientReview" aria-live="polite" role="region" aria-label="Clients per selected area review"></div>
                         <div id="assignmentModalMessage" class="modal-message"></div>
                     </div>
                     <div class="modal-footer form-actions assignment-modal__actions">
@@ -184,7 +213,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=2.2"></script>
+    <script src="js/collectors-page.js?v=2.5"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

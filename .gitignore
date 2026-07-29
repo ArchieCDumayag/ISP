@@ -12,6 +12,8 @@ coverage/
 .idea/
 .DS_Store
 data/
+!core/data/
+!core/data/**
 logs/
 backups/
 .tmp/

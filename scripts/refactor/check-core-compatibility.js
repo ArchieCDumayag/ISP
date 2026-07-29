@@ -27,6 +27,14 @@ retiredCompatibilityPaths.forEach(([legacyPath, canonicalPath]) => {
   console.log(`PASS retired Core root entry ${legacyPath}`);
 });
 
+const storageMode = require(path.join(projectRoot, 'core/config/storage-mode'));
+assert.strictEqual(storageMode.normalizeStorageDriver(), 'json');
+assert.strictEqual(storageMode.normalizeStorageDriver(''), 'json');
+assert.strictEqual(storageMode.normalizeStorageDriver('local-json'), 'json');
+assert.strictEqual(storageMode.normalizeStorageDriver('MYSQL'), 'mysql');
+assert.throws(() => storageMode.normalizeStorageDriver('unsupported'), /Unsupported storage driver/);
+console.log('PASS JSON default and explicit MySQL storage selection');
+
 const core = require(path.join(projectRoot, 'core'));
 assert.strictEqual(core.paths.PROJECT_ROOT, projectRoot);
 assert.strictEqual(core.paths.DATA_DIR, path.join(projectRoot, 'data'));

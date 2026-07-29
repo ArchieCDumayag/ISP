@@ -104,8 +104,9 @@ assert(!read('start_codex.md').includes('legacy source paths'), 'Startup guide s
 pass('phase ledger, records, and multi-Codex startup guidance');
 
 const gitignore = read('.gitignore');
+const gitignoreEntries = gitignore.split(/\r?\n/);
 ['.env', 'data/', '.ai_coord/'].forEach((entry) => {
-  assert(gitignore.split('\n').includes(entry), `.gitignore must exclude ${entry}`);
+  assert(gitignoreEntries.includes(entry), `.gitignore must exclude ${entry}`);
 });
 const installer = read('scripts/install-ubuntu.sh');
 assert(installer.includes('${APP_DIR}/server.js'), 'Installer must validate the canonical server entry');
@@ -113,9 +114,13 @@ assert(installer.includes('npm --prefix'), 'Installer must install against the a
 assert(installer.includes('NODE_ENV=production'), 'Installer must configure production mode');
 pass('secret/runtime exclusions and installer canonical entry');
 
+const npmCommand = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';
+const npmArgs = process.platform === 'win32'
+  ? ['/d', '/s', '/c', 'npm', 'pack', '--dry-run', '--json', '--ignore-scripts']
+  : ['pack', '--dry-run', '--json', '--ignore-scripts'];
 const packOutput = childProcess.execFileSync(
-  'npm',
-  ['pack', '--dry-run', '--json', '--ignore-scripts'],
+  npmCommand,
+  npmArgs,
   { cwd: projectRoot, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }
 );
 const packResult = JSON.parse(packOutput);

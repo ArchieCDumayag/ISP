@@ -117,7 +117,7 @@ Shared code includes `server.js`, database/storage helpers, environment loading,
 
 ## Storage and secrets
 
-- Default: `STORAGE_DRIVER=json`
+- Default: `STORAGE_DRIVER=json`; missing or blank storage configuration resolves to JSON, only an explicit `mysql` value enables relational mode, and unsupported values are rejected.
 - JSON runtime data: `data/*.json`
 - Optional relational mode: `STORAGE_DRIVER=mysql`
 - Sensitive integration configuration depends on `CONFIG_MASTER_KEY`.
@@ -174,6 +174,7 @@ Use one shared working tree and the coordination script. Agents lock exact files
 ## Physical module refactor
 
 - The physical migration is divided into 12 ordered phases documented in `docs/refactor/PHASES.md`.
+- On 2026-07-29, the four canonical storage modules under `core/data/` were restored after the broad `data/` ignore rule omitted them from the refactor commit. The ignore rules now explicitly re-include canonical `core/data/` source while runtime data directories remain ignored, and the cutover check accepts both LF and CRLF checkouts.
 - Phase 1 is complete. It established the immutable legacy inventory and repeatable structural/runtime acceptance checks in `docs/refactor/` and `scripts/refactor/`.
 - Phase 2 is complete. It introduced the runtime loader, guarded canonical paths, shared-core layout, and temporary migration shims; Phase 11 later retired those shims.
 - Phases 3–10 are complete. They moved Admin, Customer Management, Billing, Network, Collector, Technician, Finance, and Customer App into canonical module runtimes while preserving their API and browser contracts.

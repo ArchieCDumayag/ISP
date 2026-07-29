@@ -1,7 +1,18 @@
+:root {
+    --app-font-sans-serif: var(--tblr-font-sans-serif, "Inter Var", Inter, -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif);
+}
+
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
+    font-family: var(--app-font-sans-serif);
     background-color: #f4f4f4;
+}
+
+button,
+input,
+select,
+textarea {
+    font-family: inherit;
 }
 
 header {

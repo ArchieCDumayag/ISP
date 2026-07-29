@@ -110,8 +110,16 @@ const gitignoreEntries = gitignore.split(/\r?\n/);
 });
 const installer = read('scripts/install-ubuntu.sh');
 assert(installer.includes('${APP_DIR}/server.js'), 'Installer must validate the canonical server entry');
+assert(
+  installer.includes('Features/modules/customer-app/web/company-info.html'),
+  'Installer must validate the canonical Customer App company-info page'
+);
 assert(installer.includes('npm --prefix'), 'Installer must install against the application directory');
 assert(installer.includes('NODE_ENV=production'), 'Installer must configure production mode');
+assert(
+  installer.includes('systemctl restart "${SERVICE_NAME}"'),
+  'Installer updates must restart the service to load the new checkout'
+);
 pass('secret/runtime exclusions and installer canonical entry');
 
 const npmCommand = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';

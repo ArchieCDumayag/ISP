@@ -67,6 +67,34 @@ random_hex() {
   node -e "process.stdout.write(require('crypto').randomBytes(Number(process.argv[1] || 32)).toString('hex'))" "$1"
 }
 
+verify_checkout() {
+  local required_files=(
+    "server.js"
+    "package.json"
+    "core/runtime/module-loader.js"
+    "Features/modules/customer-app/module.json"
+    "Features/modules/customer-app/web/company-info.html"
+  )
+  local missing=0
+
+  for relative_path in "${required_files[@]}"; do
+    if [[ ! -f "${APP_DIR}/${relative_path}" ]]; then
+      echo "[error] Installed checkout is missing ${relative_path}" >&2
+      missing=1
+    fi
+  done
+
+  if [[ "${missing}" -ne 0 ]]; then
+    echo "[error] Refusing to start an incomplete modular checkout." >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "CUSTOMER_APP_WEB_ROOT, 'company-info.html'" "${APP_DIR}/server.js"; then
+    echo "[error] server.js does not use the canonical Customer App company-info page." >&2
+    exit 1
+  fi
+}
+
 install_node_if_needed() {
   local major="0"
   if command -v node >/dev/null 2>&1; then
@@ -149,6 +177,9 @@ else
   run_as_app git clone --branch "${BRANCH}" "${REPO_URL}" "${APP_DIR}"
 fi
 
+log "Validating canonical modular checkout..."
+verify_checkout
+
 log "Installing Node.js dependencies..."
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 if [[ -f "${APP_DIR}/package-lock.json" ]]; then
@@ -219,8 +250,15 @@ EOF
 
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}" "/var/lib/${SERVICE_NAME}"
 
+log "Enabling and restarting service to load the installed checkout..."
 systemctl daemon-reload
-systemctl enable --now "${SERVICE_NAME}"
+systemctl enable "${SERVICE_NAME}"
+systemctl restart "${SERVICE_NAME}"
+if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
+  systemctl status "${SERVICE_NAME}" --no-pager || true
+  echo "[error] ${SERVICE_NAME} did not start successfully." >&2
+  exit 1
+fi
 
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -qi 'Status: active'; then
   log "UFW is active; allowing TCP port ${PORT}."

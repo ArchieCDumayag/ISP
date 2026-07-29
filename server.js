@@ -45,6 +45,10 @@ const customersModule = customerManagementBackend.load('customers');
 const customersRouter = customersModule.router || customersModule;
 const customersPublicRouter = customersModule.publicRouter || require('express').Router();
 const getCustomerFromSession = customersModule.getCustomerFromSession;
+const {
+    filterCustomerFullImportRows,
+    importCustomerFullJsonData
+} = customerManagementBackend.load('customerFullJsonImport');
 const paymentRecordsRouter = billingBackend.load('paymentRecords');
 const disconnectionsRouter = billingBackend.load('disconnections');
 const referralsRouter = customerManagementBackend.load('referrals');
@@ -1438,11 +1442,29 @@ const normalizeJsonPaymentExportRow = (entry = {}, accountNumber = '', branchId 
     payment_method: entry.paymentMethod || entry.payment_method || '',
     xendit_id: entry.xenditId || entry.xendit_id || ''
 });
+const normalizeJsonRelatedExportRow = (entry = {}, branchId = 1) => ({
+    ...camelToSnakeRow(entry),
+    branch_id: entry.branchId || entry.branch_id || branchId
+});
 const readJsonCustomerFullExportData = async (branchId = 1) => {
-    const [rawCustomers, rawPlans, rawPayments] = await Promise.all([
+    const [
+        rawCustomers,
+        rawPlans,
+        rawPayments,
+        rawTickets,
+        rawJobs,
+        rawSmsMessages,
+        rawSmsAutomationRuns,
+        rawPonState
+    ] = await Promise.all([
         readJson('customers', []),
         readJson('plans', []),
-        readJson('payments', {})
+        readJson('payments', {}),
+        readJson('tickets', []),
+        readJson('jobs', []),
+        readJson('sms_messages', []),
+        readJson('sms_automation_runs', []),
+        readJson('pon-state', {})
     ]);
     const customers = (Array.isArray(rawCustomers) ? rawCustomers : [])
         .filter((customer) => !customer?.branchId || Number(customer.branchId) === Number(branchId))
@@ -1460,6 +1482,56 @@ const readJsonCustomerFullExportData = async (branchId = 1) => {
             });
         });
     }
+    const ticketRows = (Array.isArray(rawTickets) ? rawTickets : [])
+        .filter((ticket) => !ticket?.branchId || Number(ticket.branchId) === Number(branchId))
+        .map((ticket) => normalizeJsonRelatedExportRow(ticket, branchId));
+    const jobRows = (Array.isArray(rawJobs) ? rawJobs : [])
+        .filter((job) => !job?.branchId || Number(job.branchId) === Number(branchId))
+        .map((job) => normalizeJsonRelatedExportRow(job, branchId));
+    const smsMessages = (Array.isArray(rawSmsMessages) ? rawSmsMessages : [])
+        .filter((message) => !message?.branchId || Number(message.branchId) === Number(branchId))
+        .map((message) => normalizeJsonRelatedExportRow(message, branchId));
+    const smsAutomationRuns = (Array.isArray(rawSmsAutomationRuns) ? rawSmsAutomationRuns : [])
+        .filter((run) => !run?.branchId || Number(run.branchId) === Number(branchId))
+        .map((run) => normalizeJsonRelatedExportRow(run, branchId));
+    const safePonState = rawPonState && typeof rawPonState === 'object' && !Array.isArray(rawPonState)
+        ? rawPonState
+        : {};
+    const scopedPonState = safePonState?.branches?.[String(branchId)] || safePonState?.default || null;
+    const ponStateJson = scopedPonState && typeof scopedPonState === 'object'
+        ? JSON.stringify(scopedPonState)
+        : '';
+    const ponStateChunks = ponStateJson ? ponStateJson.match(/[\s\S]{1,30000}/g) || [] : [];
+    const ponStateRows = ponStateChunks.map((stateJsonChunk, index) => ({
+        branch_id: branchId,
+        chunk_index: index + 1,
+        chunk_count: ponStateChunks.length,
+        state_json_chunk: stateJsonChunk
+    }));
+    const ponNapConnections = [];
+    (Array.isArray(scopedPonState?.naps) ? scopedPonState.naps : []).forEach((nap) => {
+        (Array.isArray(nap?.connections) ? nap.connections : []).forEach((connection, index) => {
+            const accountNumber = String(
+                connection?.customerId
+                || connection?.customerAccountNumber
+                || connection?.customer_account_number
+                || ''
+            ).trim();
+            ponNapConnections.push({
+                ...camelToSnakeRow(connection),
+                id: connection?.id || `${String(nap?.id || nap?.code || 'nap')}:${Number(connection?.port || index + 1)}:${accountNumber}`,
+                branch_id: branchId,
+                nap_id: nap?.id || nap?.napId || nap?.nap_id || '',
+                nap_client_uid: nap?.id || '',
+                nap_code: nap?.code || '',
+                customer_account_number: accountNumber,
+                customer_name: connection?.customerName || connection?.customer_name || '',
+                customer_ref: connection?.customerRef || connection?.customer_ref || '',
+                port: connection?.port || '',
+                optical_info: connection?.opticalInfo || connection?.optical_info || ''
+            });
+        });
+    });
     return {
         branch: {
             id: branchId,
@@ -1471,7 +1543,13 @@ const readJsonCustomerFullExportData = async (branchId = 1) => {
         },
         customers,
         planRows,
-        paymentEntries
+        paymentEntries,
+        tickets: ticketRows,
+        jobs: jobRows,
+        smsMessages,
+        smsAutomationRuns,
+        ponNapConnections,
+        ponStateRows
     };
 };
 const toNonEmptyString = (value) => {
@@ -1520,10 +1598,7 @@ const toMysqlDateTime = (value) => {
     if (!Number.isFinite(parsed.getTime())) return null;
     return parsed.toISOString().slice(0, 19).replace('T', ' ');
 };
-const ensureArrayOfObjects = (value) => {
-    if (!Array.isArray(value)) return [];
-    return value.filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry));
-};
+const ensureArrayOfObjects = (value) => filterCustomerFullImportRows(value);
 const decodeHeaderFileName = (headerValue = '') => {
     const raw = String(headerValue || '').trim();
     if (!raw) return '';
@@ -1550,7 +1625,8 @@ const loadExportTablesFromWorkbook = (workbook) => {
         jobs: readSheet('jobs'),
         sms_messages: readSheet('sms_messages'),
         sms_automation_runs: readSheet('sms_automation_runs'),
-        pon_nap_connections: readSheet('pon_nap_connections')
+        pon_nap_connections: readSheet('pon_nap_connections'),
+        pon_state: readSheet('pon_state')
     };
 };
 const parseImportTablesFromBuffer = (buffer, filename = '') => {
@@ -1577,7 +1653,8 @@ const parseImportTablesFromBuffer = (buffer, filename = '') => {
                 jobs: ensureArrayOfObjects(tablesRoot.jobs),
                 sms_messages: ensureArrayOfObjects(tablesRoot.sms_messages),
                 sms_automation_runs: ensureArrayOfObjects(tablesRoot.sms_automation_runs),
-                pon_nap_connections: ensureArrayOfObjects(tablesRoot.pon_nap_connections)
+                pon_nap_connections: ensureArrayOfObjects(tablesRoot.pon_nap_connections),
+                pon_state: ensureArrayOfObjects(tablesRoot.pon_state)
             }
         };
     };
@@ -6474,6 +6551,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         let smsMessages = [];
         let smsAutomationRuns = [];
         let ponNapConnections = [];
+        let ponStateRows = [];
 
         if (isJsonStorageMode()) {
             const jsonExportData = await readJsonCustomerFullExportData(branchId);
@@ -6481,6 +6559,12 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
             customers = jsonExportData.customers;
             planRows = jsonExportData.planRows;
             paymentEntries = jsonExportData.paymentEntries;
+            tickets = jsonExportData.tickets;
+            jobs = jsonExportData.jobs;
+            smsMessages = jsonExportData.smsMessages;
+            smsAutomationRuns = jsonExportData.smsAutomationRuns;
+            ponNapConnections = jsonExportData.ponNapConnections;
+            ponStateRows = jsonExportData.ponStateRows;
         } else {
             const [branchRows] = await query(
                 'SELECT id, name, code FROM branches WHERE id = ? LIMIT 1',
@@ -6521,14 +6605,15 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
                 [branchId, ...accountNumbers]
             );
             paymentEntries = Array.isArray(paymentRows) ? paymentRows : [];
+        }
 
+        if (!isJsonStorageMode()) {
             const [ticketRows] = await query(
                 `SELECT *
                  FROM tickets
                  WHERE branch_id = ?
-                   AND account_number IN (${placeholders})
                  ORDER BY created_at DESC, id DESC`,
-                [branchId, ...accountNumbers]
+                [branchId]
             );
             tickets = Array.isArray(ticketRows) ? ticketRows : [];
 
@@ -6537,13 +6622,12 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
                     j.*,
                     t.account_number AS account_number
                  FROM jobs j
-                 INNER JOIN tickets t
+                 LEFT JOIN tickets t
                     ON t.id = j.ticket_id
                    AND t.branch_id = j.branch_id
                  WHERE j.branch_id = ?
-                   AND t.account_number IN (${placeholders})
                  ORDER BY j.created_at DESC, j.id DESC`,
-                [branchId, ...accountNumbers]
+                [branchId]
             );
             jobs = Array.isArray(jobRows) ? jobRows : [];
 
@@ -6551,9 +6635,8 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
                 `SELECT *
                  FROM sms_messages
                  WHERE branch_id = ?
-                   AND customer_account_number IN (${placeholders})
                  ORDER BY created_at DESC, id DESC`,
-                [branchId, ...accountNumbers]
+                [branchId]
             );
             smsMessages = Array.isArray(smsMessageRows) ? smsMessageRows : [];
 
@@ -6561,9 +6644,8 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
                 `SELECT *
                  FROM sms_automation_runs
                  WHERE branch_id = ?
-                   AND customer_account_number IN (${placeholders})
                  ORDER BY created_at DESC, id DESC`,
-                [branchId, ...accountNumbers]
+                [branchId]
             );
             smsAutomationRuns = Array.isArray(automationRunRows) ? automationRunRows : [];
 
@@ -6574,9 +6656,8 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
                  FROM pon_nap_connections c
                  INNER JOIN pon_naps n ON n.id = c.nap_id
                  WHERE n.branch_id = ?
-                   AND c.customer_account_number IN (${placeholders})
                  ORDER BY c.created_at DESC, c.id DESC`,
-                [branchId, ...accountNumbers]
+                [branchId]
             );
             ponNapConnections = Array.isArray(ponRows) ? ponRows : [];
         }
@@ -6706,12 +6787,19 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
             branch_name: branch?.name || '',
             branch_code: branch?.code || '',
             customers: customers.length,
+            customer_names: customerNames.length,
+            customer_balances: customerBalances.length,
+            customer_list: customerList.length,
+            customer_all_data: customerAllData.length,
+            customers_full: customersFull.length,
+            plans: planRows.length,
             payment_entries: paymentEntries.length,
             tickets: tickets.length,
             jobs: jobs.length,
             sms_messages: smsMessages.length,
             sms_automation_runs: smsAutomationRuns.length,
-            pon_nap_connections: ponNapConnections.length
+            pon_nap_connections: ponNapConnections.length,
+            pon_state_rows: ponStateRows.length
         }]);
         appendSheet('customer_names', customerNames);
         appendSheet('customer_balances', customerBalances);
@@ -6726,6 +6814,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         appendSheet('sms_messages', smsMessages);
         appendSheet('sms_automation_runs', smsAutomationRuns);
         appendSheet('pon_nap_connections', ponNapConnections);
+        appendSheet('pon_state', ponStateRows);
 
         const workbookBuffer = xlsxModule.write(workbook, {
             type: 'buffer',
@@ -6760,7 +6849,7 @@ app.post(
             return res.status(403).json({ ok: false, error: 'Admin access required' });
         }
 
-        const branchId = Number(req.user?.branchId || 0);
+        const branchId = Number(req.user?.branchId || (isJsonStorageMode() ? 1 : 0));
         if (!Number.isInteger(branchId) || branchId <= 0) {
             return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
         }
@@ -6830,6 +6919,23 @@ app.post(
             warnings.push(String(message));
         };
 
+        if (isJsonStorageMode()) {
+            try {
+                const jsonResult = await importCustomerFullJsonData({ branchId, tables });
+                return res.json({
+                    ok: true,
+                    message: 'Import completed successfully.',
+                    source: parsedImport.source,
+                    imported: jsonResult.imported,
+                    warnings: jsonResult.warnings,
+                    warningCount: jsonResult.warningCount
+                });
+            } catch (error) {
+                console.error('Failed to import full customer data into JSON storage:', error);
+                return res.status(500).json({ ok: false, error: 'Failed to import full customer data.' });
+            }
+        }
+
         const nowDateTime = toMysqlDateTime(new Date()) || new Date().toISOString().slice(0, 19).replace('T', ' ');
         const importedAccounts = new Set();
         const importedTicketIds = new Set();
@@ -6838,7 +6944,10 @@ app.post(
         try {
             const pool = await getPool();
             if (!pool) {
-                return res.status(500).json({ ok: false, error: 'MySQL connection is not available.' });
+                return res.status(503).json({
+                    ok: false,
+                    error: 'MySQL storage is selected, but no connection is available. Configure MySQL or set STORAGE_DRIVER=json and restart the server.'
+                });
             }
             connection = await pool.getConnection();
             await connection.beginTransaction();

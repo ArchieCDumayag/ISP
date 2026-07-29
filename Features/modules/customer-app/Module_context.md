@@ -42,7 +42,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - Billing provides balances, payment confirmations, receipts, statements, and quick-payment contracts through unchanged APIs and shared composition.
 - Network provides modem/GenieACS and WiFi operations through Customer Management and shared handlers.
 - Admin provides integration settings, business profile, staff authorization, SMS/email provider configuration, and protected secrets.
-- JSON keys include `customer_app_settings`, `customer_fcm_tokens`, and `customer_notification_inbox`; SMS uses its existing relational tables when relational storage is enabled.
+- JSON keys include `customer_app_settings`, `customer_fcm_tokens`, and `customer_notification_inbox`; dashboard backup/restore also preserves archived `sms_messages` and `sms_automation_runs` arrays in JSON mode. Interactive SMS tools still require MySQL and their existing relational schema.
 - Push, SMS, email, and Messenger credentials must never be recorded in this context.
 
 ## Known risks and follow-up
@@ -64,6 +64,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Latest meaningful changes
 
+- 2026-07-29: Dashboard full backup/restore now round-trips SMS message history and automation-run records through archive JSON keys when JSON storage is selected; provider delivery and interactive SMS behavior remain MySQL-only.
 - 2026-07-29: Phase 12 revalidated Customer App through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all ten Customer App root shims; shared composition and security checks now load its manifest runtime directly.
 - 2026-07-29: Physically migrated ten backend implementations and 18 browser files into the Customer App module, added root compatibility shims and module-loader/static wiring, converted dependencies to canonical paths, preserved repository-root Firebase credential lookup, and added Phase 10 compatibility and HTTP coverage.

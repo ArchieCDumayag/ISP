@@ -35,6 +35,7 @@ All API prefixes, authorization requirements, feature gates, response contracts,
 ## Data and dependencies
 
 - Canonical shared database and storage imports come from `core/`.
+- Dashboard full backups export all branch JSON-mode `tickets` and `jobs`; full import upserts both arrays by ID and restores available ticket relationships before jobs.
 - Admin provides technician account/role records and integration settings.
 - Customer Management provides customer records, application drafts, coverage, and technician-token authentication helpers.
 - Network provides canonical PON state, MikroTik access, PPPoE normalization/generation, and active-account lookup contracts.
@@ -58,6 +59,7 @@ All API prefixes, authorization requirements, feature gates, response contracts,
 
 ## Latest meaningful changes
 
+- 2026-07-29: Added the shared dashboard backup/restore contract for JSON ticket and ticket-linked job records without changing Technician API URLs or workflow behavior.
 - 2026-07-29: Phase 12 revalidated Technician through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all five Technician root shims and switched migration/schema scripts to canonical job-numbering imports.
 - 2026-07-29: Physically migrated five backend implementations and 11 browser files into the Technician module, added root compatibility shims and module-loader/static wiring, converted dependencies to canonical module paths, and added Phase 8 compatibility and HTTP coverage.

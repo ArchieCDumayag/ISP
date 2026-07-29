@@ -15,6 +15,7 @@ This is the durable project-wide memory for all Codex sessions. Read it with `AG
 - Development checkout uses `.env`, JSON storage, app port `3100`, and customer-upstream port `4101`.
 - Start development with `npm start` or `node server.js` from `/home/archiecd/ISP`.
 - Existing production runs separately from `/opt/isp-billing` as `isp-billing.service` on ports `3000` and `4001`.
+- The Ubuntu installer validates the canonical Customer App `company-info.html` runtime before dependency installation and explicitly restarts an existing systemd service after Git updates, preventing stale pre-module routes from remaining active.
 - Never modify or restart production unless the user explicitly requests it.
 - Lock `runtime/server` before changing the development runtime.
 
@@ -120,6 +121,7 @@ Shared code includes `server.js`, database/storage helpers, environment loading,
 - Default: `STORAGE_DRIVER=json`; missing or blank storage configuration resolves to JSON, only an explicit `mysql` value enables relational mode, and unsupported values are rejected.
 - JSON runtime data: `data/*.json`
 - Optional relational mode: `STORAGE_DRIVER=mysql`
+- Dashboard `/api/export/customers-full` produces metadata, customer-name/balance/list/full-data views, canonical customers, plans, payment entries, all branch tickets/jobs, SMS messages, SMS automation runs, flattened PON/NAP connections, and chunked branch PON state. `/api/import/customers-full` restores the canonical sheets (derived customer views are regenerated), upserting all JSON-backed records without requesting MySQL. MySQL mode retains its relational transaction and returns a configuration-focused `503` when unavailable. Empty-sheet `note: No records` placeholders are ignored.
 - Sensitive integration configuration depends on `CONFIG_MASTER_KEY`.
 - Production requires a strong `SESSION_TOKEN_SECRET`.
 - `.env`, `data/`, logs, backups, Firebase/service-account files, and `.ai_coord/` are ignored.
@@ -153,6 +155,7 @@ The local development login page is `http://localhost:3100/login.html` when the 
 
 - Express routers are mounted centrally in `server.js`.
 - The shared static shell comes from `public/index.html`, `public/layout.js`, `public/sidebar.html`, `public/topbar.html`, `public/styles.css`, and related common assets.
+- Shared `public/css/tabler-app.css` applies Tabler's installed default sans-serif stack (`Inter Var`, `Inter`, then system fallbacks) to all rendered UI text across every module page; code-like elements retain Tabler's monospace stack and icon-font classes retain their dedicated fonts.
 - Module pages and API prefixes are recorded in each `Module_context.md` and `module.json`.
 - Any change to shared navigation, route mounts, common middleware, auth/session contracts, storage contracts, or cross-module response shapes is integration work.
 

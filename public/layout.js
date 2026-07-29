@@ -1582,7 +1582,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 addActivityLog({ message: 'Exported full customer data', meta: filename });
                 if (typeof window.appToast === 'function') {
-                    window.appToast('Customer export downloaded.', { type: 'success' });
+                    window.appToast('Full backup downloaded: customers, balances, plans, payments, tickets, jobs, SMS, and PON.', { type: 'success' });
                 }
             } catch (error) {
                 console.error('Failed to export full customer data:', error);
@@ -1635,10 +1635,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const imported = payload?.imported || {};
                 const summary = [
                     `Customers: ${Number(imported.customers || 0)}`,
+                    `Plans: ${Number(imported.plans || 0)}`,
                     `Payments: ${Number(imported.payment_entries || 0)}`,
                     `Tickets: ${Number(imported.tickets || 0)}`,
                     `Jobs: ${Number(imported.jobs || 0)}`,
-                    `SMS: ${Number(imported.sms_messages || 0)}`
+                    `SMS: ${Number(imported.sms_messages || 0)}`,
+                    `SMS runs: ${Number(imported.sms_automation_runs || 0)}`,
+                    `PON: ${Number(imported.pon_nap_connections || 0)}`
                 ].join(' | ');
 
                 addActivityLog({ message: 'Imported customer export file', meta: summary });
@@ -1648,7 +1651,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
                 if (warnings.length && typeof window.appToast === 'function') {
-                    window.appToast(`${warnings.length} warning(s) during import.`, { type: 'warning' });
+                    const warningPreview = warnings.slice(0, 3).join(' ');
+                    const remaining = warnings.length > 3 ? ` (+${warnings.length - 3} more)` : '';
+                    window.appToast(`${warningPreview}${remaining}`, { type: 'warning' });
                 }
             } catch (error) {
                 console.error('Failed to import customer export file:', error);
@@ -1691,7 +1696,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (importInProgress) return;
             const confirmed = window.appConfirm
                 ? await window.appConfirm(
-                    'Import will restore customer records, payments, tickets, and jobs from an exported file. Continue?',
+                    'Import will restore customers, plans, payments, tickets, jobs, SMS history/runs, and PON connections from a full backup. Continue?',
                     { title: 'Import Customer Data', okText: 'Import', cancelText: 'Cancel' }
                 )
                 : window.confirm('Import customer data from file?');

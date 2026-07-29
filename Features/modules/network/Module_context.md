@@ -43,6 +43,7 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - Billing supplies plan-profile intent and service enforcement triggers.
 - Technician installation workflows consume the canonical Network PON, PPPoE, and MikroTik backends directly.
 - Activity auditing crosses into Admin-owned logs.
+- Dashboard full backups serialize branch-scoped JSON PON state into Excel-safe chunks plus a flattened connection sheet; import restores topology first, then upserts customer connections by connection ID or port.
 
 ## Known risks and follow-up
 
@@ -63,6 +64,7 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Latest meaningful changes
 
+- 2026-07-29: Added branch-scoped PON topology and customer-connection round-trip behavior to the shared dashboard full backup/import workflow; live router operations are not invoked.
 - 2026-07-29: Phase 12 revalidated Network through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all six Network root shims; runtime and scripts now resolve Network code only through canonical module paths.
 - 2026-07-29: Updated the Technician provisioning dependency after Phase 8 to resolve canonical Network backends directly.

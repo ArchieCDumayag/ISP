@@ -17,6 +17,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - `backend/customers.js`: `/api/customers`, customer sessions/helpers, record lifecycle, import, archive orchestration, and cross-domain enrichment.
 - `backend/customer-draft-submissions.js` and `backend/customer-draft-submissions-store.js`: Admin and Technician draft workflows.
 - `backend/customer-archive-store.js`: archive retention, restore, and permanent deletion persistence.
+- `backend/customer-full-json-import.js`: storage-aware merge/persistence for full customer exports when JSON storage is selected.
 - `backend/api_coverage.js`: authenticated `/api/coverage` CRUD and reusable coverage reads.
 - `backend/referrals.js` and `backend/referral-engine.js`: `/api/referrals`, options, and ledger calculations.
 - `backend/philippines-addresses.js`: repository package-backed province, municipality, and barangay lookup.
@@ -44,13 +45,14 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/a
 - Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
 - Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- The shared `/api/import/customers-full` route delegates JSON-mode restoration to this module for plans, customers, payment history, tickets, jobs, SMS messages, SMS automation runs, and PON state/connections. Records are upserted by stable IDs, unrelated data and other-branch customers are preserved, PON topology is restored before its connections, and empty-sheet `note: No records` placeholders are ignored.
 - Network owns MikroTik, PPPoE, PON, GenieACS, and coverage-map consumers.
 - Technician consumes customer draft, archive, customer, and coverage contracts.
 - Customer App consumes customer sessions, identity, FCM tokens, and notification contracts.
 
 ## Verification contract
 
-- `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, eighteen web files, server wiring, repository-root paths, Philippine dataset, and web-app stylesheet reference.
+- `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
 - `npm run refactor:phase4` runs structural, core, Admin, Customer Management, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public application/address/coverage resources, protected-page redirects, and unauthenticated Customer Management API denial.
@@ -61,10 +63,13 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/a
 - Public application and coverage-map handlers still partly live in shared `server.js`.
 - `/coverage.css` is shared with Network module pages; preserve its unchanged root URL.
 - Customer file cleanup is destructive by design; never test it against production data.
-- Add authenticated CRUD, draft approval, archive restore/retention, import, and referral ledger integration tests.
+- Add authenticated CRUD, draft approval, archive restore/retention, dashboard export/download, and referral ledger integration tests.
 
 ## Latest meaningful changes
 
+- 2026-07-29: Completed the dashboard JSON backup round-trip: export now reads all branch ticket, job, SMS message/run, and PON stores, while import restores all canonical record sheets and preserves derived customer views through regeneration.
+- 2026-07-29: Fixed five false warnings produced when empty ticket/job/SMS/automation/PON export sheets contributed `note: No records` placeholder rows; import parsing now removes only those placeholders before validation.
+- 2026-07-29: Added storage-aware JSON restoration for `/api/import/customers-full`, covering plan/customer upserts and payment history while preserving unrelated data and returning explicit warnings for unsupported related-record tables.
 - 2026-07-29: Phase 12 revalidated Customer Management through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all eight Customer Management root shims and moved Billing dependencies and data-import scripts to canonical module paths.
 - 2026-07-29: Phase 10 switched FCM-token and customer-notification inbox consumers to canonical Customer App backend imports.

@@ -3,6 +3,7 @@ const entries = Object.freeze({
   customerArchiveStore: './customer-archive-store',
   customerDraftSubmissionsStore: './customer-draft-submissions-store',
   customerDraftSubmissions: './customer-draft-submissions',
+  customerFullJsonImport: './customer-full-json-import',
   customers: './customers',
   philippinesAddresses: './philippines-addresses',
   referralEngine: './referral-engine',

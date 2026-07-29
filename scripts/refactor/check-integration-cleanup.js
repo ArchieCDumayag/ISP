@@ -63,6 +63,21 @@ console.log('PASS eight complete manifest-driven module runtimes and canonical o
 });
 console.log('PASS shared frontend shell remains canonical under public/');
 
+const tablerAppSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'css', 'tabler-app.css'), 'utf8');
+const sharedStylesSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'styles.css'), 'utf8');
+const webAppStylesSource = fs.readFileSync(
+  path.join(projectRoot, 'web-app', 'src', 'styles', 'main.css'),
+  'utf8'
+);
+const tablerSansFallback = '"Inter Var", Inter, -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+assert(tablerAppSource.includes(`--app-font-sans-serif: var(--tblr-font-sans-serif, ${tablerSansFallback})`));
+assert(tablerAppSource.includes('body * {'));
+assert(tablerAppSource.includes('font-family: var(--app-font-sans-serif) !important'));
+assert(tablerAppSource.includes('font-family: var(--app-font-monospace) !important'));
+assert(sharedStylesSource.includes(`font-family: var(--app-font-sans-serif, ${tablerSansFallback})`));
+assert(webAppStylesSource.includes(`--app-font-sans-serif: var(--tblr-font-sans-serif, ${tablerSansFallback})`));
+console.log('PASS shared and standalone web typography use the Tabler font stacks');
+
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 [
   './core/config/env-loader',

@@ -352,16 +352,6 @@
     text-decoration: underline;
 }
 
-.system-update-command-card {
-    display: grid;
-    gap: 12px;
-    padding: 18px;
-    border: 1px solid rgba(226, 232, 240, 0.85);
-    border-radius: 18px;
-    background: linear-gradient(180deg, #ffffff, #f8fafc);
-}
-
-.system-update-command-head,
 .system-update-commits-head {
     display: flex;
     align-items: center;
@@ -369,39 +359,11 @@
     gap: 14px;
 }
 
-.system-update-command-head .summary-label {
-    margin: 0 0 4px;
-    font-size: 0.74rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #64748b;
-}
-
-.system-update-command-shell,
-.system-update-note,
 .system-update-warning,
 .system-update-commits-head span {
     margin: 0;
     color: #64748b;
     font-size: 0.88rem;
-    line-height: 1.45;
-}
-
-.system-update-command {
-    min-height: 74px;
-    max-height: 160px;
-    margin: 0;
-    padding: 14px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 14px;
-    background: #0f172a;
-    color: #e2e8f0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    font-size: 0.84rem;
     line-height: 1.45;
 }
 
@@ -3933,19 +3895,6 @@ body.theme-dark .system-update-commit-link {
     color: #93c5fd;
 }
 
-body.theme-dark .system-update-command-card {
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.9));
-    border-color: rgba(71, 85, 105, 0.75);
-}
-
-body.theme-dark .system-update-command {
-    background: #020617;
-    color: #dbeafe;
-    border-color: rgba(96, 165, 250, 0.35);
-}
-
-body.theme-dark .system-update-command-shell,
-body.theme-dark .system-update-note,
 body.theme-dark .system-update-commits-head span,
 body.theme-dark .system-update-empty {
     color: #94a3b8;

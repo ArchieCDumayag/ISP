@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/accounts.css?v=4.7">
+    <link rel="stylesheet" href="css/accounts.css?v=4.8">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
 </head>
 
@@ -70,13 +70,13 @@
                                     </span>
                                     <div>
                                         <h2>System Update</h2>
-                                        <p>Checks the tracked Git branch on the server and updates Ubuntu installs automatically when a new version is available.</p>
+                                        <p>Checks the tracked Git branch on the server and applies the newest update when one is available.</p>
                                     </div>
                                 </div>
                                 <div class="panel-actions">
                                     <span class="integration-status-badge integration-status-badge--partial" id="system-update-status">Checking</span>
-                                    <button class="primary-btn system-update-auto-btn" type="button" id="system-update-check">
-                                        <i class="ti ti-cloud-download" aria-hidden="true"></i> Check for Update
+                                    <button class="primary-btn system-update-auto-btn" type="button" id="system-update-check" disabled>
+                                        <i class="ti ti-cloud-download" aria-hidden="true"></i> Apply New Update
                                     </button>
                                     <button class="ghost-btn" type="button" id="system-update-refresh">
                                         <i class="ti ti-refresh" aria-hidden="true"></i> Refresh Status
@@ -114,20 +114,7 @@
                                     </div>
                                 </div>
 
-                                <div class="system-update-command-card">
-                                    <div class="system-update-command-head">
-                                        <div>
-                                            <p class="summary-label">Terminal update command</p>
-                                            <p class="system-update-command-shell" id="system-update-command-shell">Server terminal</p>
-                                        </div>
-                                        <button class="ghost-btn ghost-btn--icon" type="button" id="system-update-copy" aria-label="Copy terminal update command" title="Copy terminal update command">
-                                            <i class="ti ti-copy" aria-hidden="true"></i>
-                                        </button>
-                                    </div>
-                                    <pre id="system-update-command" class="system-update-command" tabindex="0">Loading...</pre>
-                                    <p class="system-update-note" id="system-update-auto-note">On Ubuntu, Check for Update applies available updates automatically. Use the terminal command as a fallback, then refresh this tab after the app comes back.</p>
-                                    <p class="system-update-warning" id="system-update-warning" hidden></p>
-                                </div>
+                                <p class="system-update-warning" id="system-update-warning" hidden></p>
 
                                 <div class="system-update-commits">
                                     <div class="system-update-commits-head">
@@ -810,7 +797,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="accounts.js?v=3.7"></script>
+    <script src="accounts.js?v=3.8"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

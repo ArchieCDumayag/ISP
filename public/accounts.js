@@ -96,9 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemUpdateRemote = document.getElementById('system-update-remote');
     const systemUpdateDifference = document.getElementById('system-update-difference');
     const systemUpdateChecked = document.getElementById('system-update-checked');
-    const systemUpdateCommandShell = document.getElementById('system-update-command-shell');
-    const systemUpdateCommand = document.getElementById('system-update-command');
-    const systemUpdateCopyBtn = document.getElementById('system-update-copy');
+
     const systemUpdateWarning = document.getElementById('system-update-warning');
     const systemUpdateCommitCount = document.getElementById('system-update-commit-count');
     const systemUpdateCommitsBody = document.getElementById('system-update-commits-body');
@@ -116,7 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     let activeIntegrationEditor = null;
     let latestIntegrationSettings = {};
-    let latestSystemUpdateCommand = '';
     const MIKROTIK_TEST_TIMEOUT_MS = 15000;
     
     // Backend-powered accounts
@@ -801,15 +798,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!systemUpdateCheckBtn) return;
         const autoUpdate = payload.autoUpdate || {};
         const updateRun = payload.updateRun || {};
+        const comparison = payload.comparison || {};
         const isRunning = Boolean(updateRun.running || updateRun.status === 'running');
         const isEnabled = Boolean(autoUpdate.enabled);
-        systemUpdateCheckBtn.disabled = isRunning || !isEnabled;
+        const hasUpdate = Boolean(comparison.updateAvailable);
+        const unableToVerify = Boolean(comparison.unableToVerify);
+        const hasLocalChanges = Boolean(payload.workingTree?.dirty);
+        systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasLocalChanges || !hasUpdate;
         if (isRunning) {
             systemUpdateCheckBtn.title = updateRun.currentStep || 'System update is running.';
         } else if (!isEnabled) {
-            systemUpdateCheckBtn.title = autoUpdate.message || 'Automatic updates run only on Ubuntu servers.';
+            systemUpdateCheckBtn.title = autoUpdate.message || 'Automatic update is not supported on this install.';
+        } else if (unableToVerify) {
+            systemUpdateCheckBtn.title = comparison.fetchError || 'Unable to verify GitHub updates.';
+        } else if (hasLocalChanges) {
+            systemUpdateCheckBtn.title = 'Commit or stash local changes before applying an update.';
+        } else if (!hasUpdate) {
+            systemUpdateCheckBtn.title = 'No new update available. Refresh status to check GitHub again.';
         } else {
-            systemUpdateCheckBtn.title = 'Check the remote branch and automatically apply updates on Ubuntu.';
+            systemUpdateCheckBtn.title = 'Apply the latest GitHub update now.';
         }
     };
 
@@ -825,6 +832,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const formatSystemUpdateDifference = (payload = {}) => {
         const comparison = payload.comparison || {};
+        if (comparison.unableToVerify) {
+            return 'Unable to verify remote';
+        }
         const ahead = Math.max(0, Number(comparison.ahead) || 0);
         const behind = Math.max(0, Number(comparison.behind) || 0);
         const parts = [];
@@ -908,7 +918,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const local = payload.local || {};
         const remote = payload.remote || {};
         const comparison = payload.comparison || {};
-        const command = payload.command || {};
         const autoUpdate = payload.autoUpdate || {};
         const updateRun = payload.updateRun || {};
         const isRunning = Boolean(updateRun.running || updateRun.status === 'running');
@@ -931,17 +940,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         setSystemUpdateField(systemUpdateDifference, formatSystemUpdateDifference(payload));
         setSystemUpdateField(systemUpdateChecked, formatDateTimeDisplay(payload.checkedAt || branch.fetchedAt, '-'));
-        setSystemUpdateField(systemUpdateCommandShell, command.shell || 'Server terminal', 'Server terminal');
-        latestSystemUpdateCommand = String(command.value || '').trim();
-        setSystemUpdateField(systemUpdateCommand, latestSystemUpdateCommand, 'No update command available.');
 
         const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
         const changedCount = Math.max(0, Number(payload.workingTree?.changedFileCount) || 0);
         if (changedCount > 0) {
-            warnings.unshift(`Working tree has ${changedCount} local file change${changedCount === 1 ? '' : 's'}; the terminal update may require manual cleanup.`);
+            warnings.unshift(`Working tree has ${changedCount} local file change${changedCount === 1 ? '' : 's'}; commit or stash them before applying an update.`);
         }
         if (autoUpdate.enabled === false) {
-            warnings.push(autoUpdate.message || 'Automatic updates run only on Ubuntu servers.');
+            warnings.push(autoUpdate.message || 'Automatic update is not supported on this install.');
         }
         if (isRunning) {
             warnings.unshift(updateRun.currentStep || updateRun.message || 'System update is running.');
@@ -956,6 +962,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setSystemUpdateBadge('update', 'Updating');
         } else if (updateRun.status === 'restart-pending') {
             setSystemUpdateBadge('updated', 'Restarting');
+        } else if (comparison.unableToVerify) {
+            setSystemUpdateBadge('error', 'Unable to Verify');
         } else if (comparison.updateAvailable) {
             setSystemUpdateBadge('update', 'Update Available');
         } else {
@@ -1014,7 +1022,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setSystemUpdateBadge('checking', 'Checking');
         if (systemUpdateWarning) {
             systemUpdateWarning.hidden = false;
-            systemUpdateWarning.textContent = 'Checking remote branch and preparing automatic update...';
+            systemUpdateWarning.textContent = 'Checking GitHub and preparing to apply the update...';
         }
 
         try {
@@ -1062,32 +1070,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const copySystemUpdateCommand = async () => {
-        const commandText = String(latestSystemUpdateCommand || systemUpdateCommand?.textContent || '').trim();
-        if (!commandText || commandText === 'Loading...' || commandText === 'No update command available.') {
-            showInlineMessage(systemUpdatePanel, 'No update command available yet.', 'error');
-            return;
-        }
-
-        try {
-            if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(commandText);
-            } else {
-                const textarea = document.createElement('textarea');
-                textarea.value = commandText;
-                textarea.setAttribute('readonly', '');
-                textarea.style.position = 'fixed';
-                textarea.style.opacity = '0';
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                textarea.remove();
-            }
-            showInlineMessage(systemUpdatePanel, 'Update command copied.', 'success');
-        } catch (error) {
-            showInlineMessage(systemUpdatePanel, error.message || 'Unable to copy command.', 'error');
-        }
-    };
 
     const collectFormValues = (form) => {
         if (!form) return {};
@@ -2453,9 +2435,6 @@ document.addEventListener('DOMContentLoaded', () => {
         systemUpdateCheckBtn.addEventListener('click', checkAndApplySystemUpdate);
     }
 
-    if (systemUpdateCopyBtn) {
-        systemUpdateCopyBtn.addEventListener('click', copySystemUpdateCommand);
-    }
 
     if (gcashQrFileInput) {
         gcashQrFileInput.addEventListener('change', async () => {

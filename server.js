@@ -10,7 +10,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const net = require('net');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const cors = require('cors');
 const { createRateLimiter } = require('./rate-limiter');
 
@@ -1622,7 +1622,6 @@ const SYSTEM_UPDATE_FETCH_TIMEOUT_MS = 30000;
 const SYSTEM_UPDATE_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const SYSTEM_UPDATE_RESTART_DELAY_MS = 1800;
 const SYSTEM_UPDATE_REPOSITORY_FALLBACK_URL = 'https://github.com/ArchieCDumayag/ISP';
-const SYSTEM_UPDATE_DEFAULT_SERVICE_NAME = 'isp-billing';
 let systemUpdateRestartScheduled = false;
 let systemUpdateRunState = {
     running: false,
@@ -1699,15 +1698,19 @@ const getSystemUpdatePlatformInfo = () => {
     const distroName = String(osRelease.PRETTY_NAME || osRelease.NAME || '').trim();
     const isUbuntu = process.platform === 'linux'
         && (distroId === 'ubuntu' || distroName.toLowerCase().includes('ubuntu'));
+    const isWindows = process.platform === 'win32';
+    const enabled = isUbuntu || isWindows;
+    const platformLabel = isWindows ? 'Windows' : (isUbuntu ? 'Ubuntu' : (distroName || process.platform));
     return {
         platform: process.platform,
         distroId,
         distroName,
         isUbuntu,
-        enabled: isUbuntu,
-        message: isUbuntu
-            ? 'Automatic updates are enabled on this Ubuntu server.'
-            : 'Automatic updates run only on Ubuntu servers. Use the terminal command on this server.'
+        isWindows,
+        enabled,
+        message: enabled
+            ? `Automatic updates are enabled on this ${platformLabel} install.`
+            : 'Automatic updates run only on Windows or Ubuntu installs.'
     };
 };
 
@@ -1746,47 +1749,6 @@ const normalizeRemoteBranchName = (value = '') => String(value || '')
     .trim()
     .replace(/^refs\/heads\//i, '')
     .replace(/^refs\/remotes\/[^/]+\//i, '');
-
-const quotePosixArg = (value = '') => {
-    const text = String(value || '');
-    if (/^[A-Za-z0-9_./:@+-]+$/.test(text)) return text;
-    return `'${text.replace(/'/g, `'\\''`)}'`;
-};
-
-const quotePowerShellArg = (value = '') => `'${String(value || '').replace(/'/g, "''")}'`;
-
-const buildSystemUpdateCommand = ({ remoteName, remoteBranch } = {}) => {
-    const remote = String(remoteName || 'origin').trim() || 'origin';
-    const branch = String(remoteBranch || 'main').trim() || 'main';
-    const serviceName = String(
-        process.env.SYSTEM_UPDATE_SERVICE_NAME ||
-        process.env.ISP_SERVICE_NAME ||
-        SYSTEM_UPDATE_DEFAULT_SERVICE_NAME
-    ).trim() || SYSTEM_UPDATE_DEFAULT_SERVICE_NAME;
-    if (process.platform === 'win32') {
-        return {
-            shell: 'PowerShell',
-            value: [
-                `Set-Location ${quotePowerShellArg(__dirname)}`,
-                `git fetch ${quotePowerShellArg(remote)}`,
-                `if ($LASTEXITCODE -eq 0) { git pull --ff-only ${quotePowerShellArg(remote)} ${quotePowerShellArg(branch)} }`,
-                'if ($LASTEXITCODE -eq 0) { npm install }',
-                'if ($LASTEXITCODE -eq 0) { npm start }'
-            ].join('; ')
-        };
-    }
-
-    return {
-        shell: 'Ubuntu terminal',
-        value: [
-            `cd ${quotePosixArg(__dirname)}`,
-            `git fetch ${quotePosixArg(remote)}`,
-            `git pull --ff-only ${quotePosixArg(remote)} ${quotePosixArg(branch)}`,
-            'if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi',
-            `sudo systemctl restart ${quotePosixArg(serviceName)}`
-        ].join(' && ')
-    };
-};
 
 const parseGitCommitLine = (line = '', repoUrl = '') => {
     const [hash = '', shortHash = '', timestampText = '', author = '', ...subjectParts] = String(line || '').split('\x1f');
@@ -1851,11 +1813,45 @@ const runSystemUpdateStep = (label, command, args = [], options = {}) => new Pro
     });
 });
 
+const getSystemUpdateNpmCommand = () => (process.platform === 'win32' ? 'npm.cmd' : 'npm');
+
+const scheduleWindowsSystemUpdateRestart = () => {
+    const npmExecPath = String(process.env.npm_execpath || '').trim();
+    const npmStart = npmExecPath && fs.existsSync(npmExecPath)
+        ? { command: process.execPath, args: [npmExecPath, 'start'] }
+        : { command: getSystemUpdateNpmCommand(), args: ['start'] };
+    const restartScript = `
+const { spawn } = require('child_process');
+setTimeout(() => {
+  const child = spawn(${JSON.stringify(npmStart.command)}, ${JSON.stringify(npmStart.args)}, {
+    cwd: ${JSON.stringify(__dirname)},
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true
+  });
+  child.unref();
+}, ${SYSTEM_UPDATE_RESTART_DELAY_MS + 2500});
+`;
+    const child = spawn(process.execPath, ['-e', restartScript], {
+        cwd: __dirname,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true
+    });
+    child.unref();
+};
+
 const scheduleSystemUpdateRestart = () => {
     if (systemUpdateRestartScheduled) return;
     systemUpdateRestartScheduled = true;
+    if (process.platform === 'win32') {
+        scheduleWindowsSystemUpdateRestart();
+    }
     const timer = setTimeout(() => {
-        console.log('[system-update] Update applied. Exiting so the Ubuntu service manager can restart the app.');
+        const restartTarget = process.platform === 'win32'
+            ? 'the Windows launcher'
+            : 'the Ubuntu service manager';
+        console.log(`[system-update] Update applied. Exiting so ${restartTarget} can restart the app.`);
         process.exit(0);
     }, SYSTEM_UPDATE_RESTART_DELAY_MS);
     if (typeof timer.unref === 'function') {
@@ -1874,6 +1870,14 @@ const applySystemUpdateIfAvailable = async () => {
     }
 
     const status = await buildSystemUpdateStatus();
+    if (status.comparison?.unableToVerify) {
+        throw makeSystemUpdateError(
+            status.comparison.fetchError
+                ? `Unable to check GitHub for updates: ${status.comparison.fetchError}`
+                : 'Unable to check GitHub for updates.',
+            502
+        );
+    }
     if (!status.comparison?.updateAvailable) {
         systemUpdateRunState = {
             ...systemUpdateRunState,
@@ -1920,7 +1924,7 @@ const applySystemUpdateIfAvailable = async () => {
         const npmArgs = hasPackageLock
             ? ['ci', '--omit=dev']
             : ['install', '--omit=dev'];
-        await runSystemUpdateStep('Install production dependencies', 'npm', npmArgs, {
+        await runSystemUpdateStep('Install production dependencies', getSystemUpdateNpmCommand(), npmArgs, {
             timeout: SYSTEM_UPDATE_INSTALL_TIMEOUT_MS,
             maxBuffer: 4 * 1024 * 1024
         });
@@ -1978,6 +1982,7 @@ const buildSystemUpdateStatus = async () => {
     }
 
     let fetchedAt = '';
+    let fetchError = '';
     try {
         await runGitCommand(['fetch', '--quiet', '--prune', remoteName], {
             timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS,
@@ -1985,7 +1990,8 @@ const buildSystemUpdateStatus = async () => {
         });
         fetchedAt = new Date().toISOString();
     } catch (error) {
-        warnings.push(`Remote fetch failed: ${summarizeGitError(error)}`);
+        fetchError = summarizeGitError(error);
+        warnings.push(`Remote fetch failed: ${fetchError}`);
     }
 
     const remoteUrlRaw = await runGitCommandOrEmpty(['config', '--get', `remote.${remoteName}.url`])
@@ -2027,6 +2033,8 @@ const buildSystemUpdateStatus = async () => {
         ? statusOutput.split(/\r?\n/).filter((line) => line.trim()).length
         : 0;
 
+    const remoteStatusVerified = Boolean(fetchedAt);
+
     return {
         repository: {
             name: repositoryNameFromUrl(repositoryUrl),
@@ -2050,8 +2058,10 @@ const buildSystemUpdateStatus = async () => {
         comparison: {
             ahead,
             behind,
-            updateAvailable: behind > 0,
-            upToDate: behind === 0
+            updateAvailable: remoteStatusVerified && behind > 0,
+            upToDate: remoteStatusVerified && behind === 0,
+            unableToVerify: !remoteStatusVerified,
+            fetchError
         },
         workingTree: {
             dirty: dirtyCount > 0,
@@ -2059,7 +2069,6 @@ const buildSystemUpdateStatus = async () => {
         },
         autoUpdate: getSystemUpdatePlatformInfo(),
         updateRun: cloneSystemUpdateRunState(),
-        command: buildSystemUpdateCommand({ remoteName, remoteBranch }),
         commits,
         warnings
     };

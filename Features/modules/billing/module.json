@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "billing",
+  "displayName": "Billing",
+  "status": "modularized",
+  "contextFile": "Features/modules/billing/Module_context.md",
+  "coordinationLock": "Features/modules/billing",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/plans",
+    "/api/payments",
+    "/api/payment-records",
+    "/api/payment-confirmations",
+    "/api/disconnections",
+    "/api/billing"
+  ],
+  "webEntryPoints": [
+    "Features/modules/billing/web/plans.html",
+    "Features/modules/billing/web/payments.html",
+    "Features/modules/billing/web/payment-history.html",
+    "Features/modules/billing/web/payment-breakdown.html",
+    "Features/modules/billing/web/payment-confirmation-queue.html",
+    "Features/modules/billing/web/payment-confirmation-queue-history.html",
+    "Features/modules/billing/web/disconnections.html",
+    "Features/modules/billing/web/payment-receipt.html",
+    "Features/modules/billing/web/billing-statement.html",
+    "Features/modules/billing/web/account-statement.html",
+    "Features/modules/billing/web/quick-payment.html",
+    "Features/modules/billing/web/thermal-print.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/billing/**"
+  ]
+}

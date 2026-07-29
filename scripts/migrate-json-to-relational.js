@@ -1,15 +1,15 @@
-require('../env-loader');
+require('../core/config/env-loader');
 
 const fs = require('fs');
 const path = require('path');
-const { query, isMysqlEnabled } = require('../db');
-const { encryptJson, getMasterKeySource } = require('../db-secrets');
-const { hashPassword, isHashedPassword } = require('../passwords');
-const { clearRelationalCache } = require('../db-relational');
-const { backfillManualJobNumbers } = require('../job-numbering');
-const { serializePlanProfileBindings } = require('../plan-profile-utils');
+const { query, isMysqlEnabled } = require('../core/data/db');
+const { encryptJson, getMasterKeySource } = require('../core/data/db-secrets');
+const { hashPassword, isHashedPassword } = require('../core/security/passwords');
+const { clearRelationalCache } = require('../core/data/db-relational');
+const { DATA_DIR } = require('../core/runtime/paths');
+const { backfillManualJobNumbers } = require('../Features/modules/technician/backend/job-numbering');
+const { serializePlanProfileBindings } = require('../Features/modules/billing/backend/plan-profile-utils');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
 const BRANCH_NAME = String(process.env.INITIAL_BRANCH_NAME || 'Main').trim() || 'Main';
 const RESET_DB = String(process.env.RESET_DB || '').trim().toLowerCase() === 'true' || process.env.RESET_DB === '1';
 

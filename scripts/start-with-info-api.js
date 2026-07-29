@@ -1,4 +1,4 @@
-require('../env-loader');
+require('../core/config/env-loader');
 
 const path = require('path');
 

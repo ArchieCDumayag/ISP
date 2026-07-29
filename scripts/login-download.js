@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { PROJECT_ROOT } = require('../core/runtime/paths');
 
 const BASE_URL = process.env.CENTRAL_URL || 'http://localhost:3000';
 const ACCOUNT_NUMBER = process.env.TEST_ACCOUNT_NUMBER || '10000004';
@@ -9,7 +10,7 @@ const CREDENTIALS = {
   app: 'customer',
 };
 
-const STATEMENT_PATH = path.join(__dirname, `../account-${ACCOUNT_NUMBER}.pdf`);
+const STATEMENT_PATH = path.join(PROJECT_ROOT, `account-${ACCOUNT_NUMBER}.pdf`);
 
 async function getLoginToken() {
   const url = `${BASE_URL}/api/auth/login`;

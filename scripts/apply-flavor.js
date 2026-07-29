@@ -1,20 +1,21 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { PROJECT_ROOT, FLAVORS_DIR, ENV_FILE, DATA_DIR } = require('../core/runtime/paths');
+const { DEFAULT_FEATURES, FEATURE_LABELS, normalizeFeatures } = require('../core/config/flavor-features');
 
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = PROJECT_ROOT;
 const flavorPath = path.join(projectRoot, 'flavor.config.json');
 const examplePath = path.join(projectRoot, 'flavor.config.example.json');
-const flavorsDir = path.join(projectRoot, 'flavors');
-const envPath = path.join(projectRoot, '.env');
-const dataDir = path.join(projectRoot, 'data');
+const flavorsDir = FLAVORS_DIR;
+const envPath = ENV_FILE;
+const dataDir = DATA_DIR;
 const mysqlConfigPath = path.join(dataDir, 'mysql-config.json');
 const mysqlConfigBackupPath = path.join(dataDir, 'mysql-config.backup.json');
 const masterKeyPath = path.join(dataDir, 'master-key.json');
 const masterKeyBackupPath = path.join(dataDir, 'master-key.backup.json');
 const flavorFeaturesPath = path.join(dataDir, 'flavor-features.json');
 const cloudflaredConfigPath = path.join(projectRoot, '.cloudflared', 'config.yml');
-const { DEFAULT_FEATURES, FEATURE_LABELS, normalizeFeatures } = require('../flavor-features');
 
 const rawArgs = process.argv.slice(2);
 const args = new Set(rawArgs);

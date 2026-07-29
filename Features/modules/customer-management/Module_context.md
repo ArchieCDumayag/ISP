@@ -1,0 +1,77 @@
+# Customer Management Module Context
+
+Last reviewed: 2026-07-29
+Status: Physically modularized and loaded through the runtime module manifest.
+
+## Purpose and current scope
+
+- Create, view, update, search, import, archive, restore, and delete customer records.
+- Manage account numbers, identity/contact details, service addresses, coordinates, plan/service metadata, PPPoE linkage, status, and billing dates.
+- Accept public applications and place them into the customer draft review workflow.
+- Maintain coverage areas and public Philippine address lookup flows.
+- Track customer referrals and related options/ledger presentation.
+
+## Canonical runtime layout
+
+- `backend/index.js` is the lazy Customer Management descriptor loaded from `module.json`.
+- `backend/customers.js`: `/api/customers`, customer sessions/helpers, record lifecycle, import, archive orchestration, and cross-domain enrichment.
+- `backend/customer-draft-submissions.js` and `backend/customer-draft-submissions-store.js`: Admin and Technician draft workflows.
+- `backend/customer-archive-store.js`: archive retention, restore, and permanent deletion persistence.
+- `backend/api_coverage.js`: authenticated `/api/coverage` CRUD and reusable coverage reads.
+- `backend/referrals.js` and `backend/referral-engine.js`: `/api/referrals`, options, and ledger calculations.
+- `backend/philippines-addresses.js`: repository package-backed province, municipality, and barangay lookup.
+- `web/` contains Customer Management pages and assets mounted at unchanged root URLs.
+
+The eight former root backend shims were retired in Phase 11. Existing API prefixes and browser URLs did not change.
+
+## Browser entry points
+
+- `/customers.html` → `web/customers.html`
+- `/customer-draft-queue.html` → `web/customer-draft-queue.html`
+- `/customer-archive.html` → `web/customer-archive.html`
+- `/coverage.html` → `web/coverage.html`
+- `/apply-now.html` → `web/apply-now.html`
+- `/referrals.html` → `web/referrals.html`
+
+Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/apply-now.js`, `/coverage.css`, and `/coverage.js`. Shared shell/vendor assets fall through to `public/`. Network-owned coverage-map pages continue consuming `/coverage.css` through the module web mount.
+
+## Data and dependencies
+
+- Canonical storage, database, password, session, role, and path imports come from `core/`.
+- Authentication, account storage, and integration settings use the migrated Admin implementation directly.
+- Billing, Network, and Customer App dependencies resolve directly from their migrated module backends.
+- Customer upload cleanup explicitly resolves beneath repository `public/uploads` using `PUBLIC_ROOT`.
+- Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
+- Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
+- Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- Network owns MikroTik, PPPoE, PON, GenieACS, and coverage-map consumers.
+- Technician consumes customer draft, archive, customer, and coverage contracts.
+- Customer App consumes customer sessions, identity, FCM tokens, and notification contracts.
+
+## Verification contract
+
+- `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, eighteen web files, server wiring, repository-root paths, Philippine dataset, and web-app stylesheet reference.
+- `npm run refactor:phase4` runs structural, core, Admin, Customer Management, security, and isolated HTTP checks.
+- `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
+- HTTP coverage includes public application/address/coverage resources, protected-page redirects, and unauthenticated Customer Management API denial.
+
+## Known risks and follow-up
+
+- `backend/customers.js` remains large and crosses Billing, Network, Customer App, and Admin contracts.
+- Public application and coverage-map handlers still partly live in shared `server.js`.
+- `/coverage.css` is shared with Network module pages; preserve its unchanged root URL.
+- Customer file cleanup is destructive by design; never test it against production data.
+- Add authenticated CRUD, draft approval, archive restore/retention, import, and referral ledger integration tests.
+
+## Latest meaningful changes
+
+- 2026-07-29: Phase 12 revalidated Customer Management through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
+- 2026-07-29: Phase 11 retired all eight Customer Management root shims and moved Billing dependencies and data-import scripts to canonical module paths.
+- 2026-07-29: Phase 10 switched FCM-token and customer-notification inbox consumers to canonical Customer App backend imports.
+- 2026-07-29: Phase 4 moved eight backend implementations, one root stylesheet, and seventeen public files into this module; added manifest runtime entries, root shims, repository-safe paths, module static composition, and focused regression gates.
+- 2026-07-29: Phase 6 switched MikroTik, PPPoE, and PON consumers to canonical Network backend imports while preserving all Customer Management contracts.
+- 2026-07-29: Established ownership/context and moved the unreferenced compact UI screenshot into `assets/`.
+
+## Context update rule
+
+Update this file in the same task whenever owned behavior, APIs, data structures, UI workflow, tests, risks, dependencies, or source ownership changes.

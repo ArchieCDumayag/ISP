@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "network",
+  "displayName": "Network",
+  "status": "modularized",
+  "contextFile": "Features/modules/network/Module_context.md",
+  "coordinationLock": "Features/modules/network",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/mikrotik",
+    "/api/pon",
+    "/api/genieacs",
+    "/api/customers/:accountNumber/direct-connected-devices",
+    "/api/customers/:accountNumber/direct-wifi"
+  ],
+  "webEntryPoints": [
+    "Features/modules/network/web/pppoe.html",
+    "Features/modules/network/web/pon-management.html",
+    "Features/modules/network/web/genieacs.html",
+    "Features/modules/network/web/coverage-map.html",
+    "Features/modules/network/web/coverage-map-app.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/network/**"
+  ]
+}

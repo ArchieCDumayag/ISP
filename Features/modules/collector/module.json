@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "collector",
+  "displayName": "Collector",
+  "status": "modularized",
+  "contextFile": "Features/modules/collector/Module_context.md",
+  "coordinationLock": "Features/modules/collector",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/collectors",
+    "/api/collector/payments",
+    "/api/auth/collector-*"
+  ],
+  "webEntryPoints": [
+    "Features/modules/collector/web/collectors.html",
+    "Features/modules/collector/web/collectors-history.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/collector/**"
+  ]
+}

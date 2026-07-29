@@ -1,0 +1,4244 @@
+{
+  "schemaVersion": 1,
+  "project": "ISP Billing System",
+  "architectureState": "legacy-integrated modular monolith",
+  "counts": {
+    "files": 317,
+    "javascriptFiles": 146,
+    "htmlFiles": 49,
+    "cssFiles": 46,
+    "modules": 8,
+    "localRequireEdges": 329,
+    "localHtmlAssetReferences": 427
+  },
+  "modules": [
+    {
+      "id": "admin",
+      "displayName": "Admin",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/admin/module.json",
+      "contextFile": "Features/modules/admin/Module_context.md",
+      "apiPrefixes": [
+        "/api/auth",
+        "/api/accounts",
+        "/api/activity-log",
+        "/api/business-profile",
+        "/api/integrations",
+        "/api/info",
+        "/api/app-downloads",
+        "/api/structure",
+        "/api/system-update"
+      ],
+      "webEntryPoints": [
+        "public/login.html",
+        "public/accounts.html",
+        "public/company-info.html",
+        "public/flavors.html",
+        "public/setup.html",
+        "public/install-guide.html",
+        "public/update-download.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/admin/Module_context.md",
+        "Features/modules/admin/README.md",
+        "Features/modules/admin/module.json",
+        "accounts-store.js",
+        "accounts.js",
+        "activity-log-visibility.js",
+        "activity-log.js",
+        "app-downloads-store.js",
+        "app-downloads.js",
+        "auth.js",
+        "business-profile.js",
+        "info-api.js",
+        "integration-settings.js",
+        "public/accounts.html",
+        "public/accounts.js",
+        "public/css/accounts.css",
+        "public/css/login.css",
+        "public/flavors.html",
+        "public/install-guide.html",
+        "public/js/install-guide.js",
+        "public/login.html",
+        "public/setup.html",
+        "public/update-download.html",
+        "service-config.json",
+        "setup-installer.js",
+        "structure-manifest.json"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "billing",
+      "displayName": "Billing",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/billing/module.json",
+      "contextFile": "Features/modules/billing/Module_context.md",
+      "apiPrefixes": [
+        "/api/plans",
+        "/api/payments",
+        "/api/payment-records",
+        "/api/payment-confirmations",
+        "/api/disconnections",
+        "/api/billing"
+      ],
+      "webEntryPoints": [
+        "public/plans.html",
+        "public/payments.html",
+        "public/payment-history.html",
+        "public/payment-breakdown.html",
+        "public/payment-confirmation-queue.html",
+        "public/disconnections.html",
+        "public/billing-statement.html",
+        "public/account-statement.html",
+        "public/quick-payment.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/billing/Module_context.md",
+        "Features/modules/billing/README.md",
+        "Features/modules/billing/module.json",
+        "billing-scheduler.js",
+        "disconnection-store.js",
+        "disconnections.js",
+        "payment-breakdown-balance.js",
+        "payment-confirmation-queue-store.js",
+        "payment-confirmations.js",
+        "payment-entry-normalizer.js",
+        "payment-numbering.js",
+        "payment-records.js",
+        "payment-service-refresh.js",
+        "payments.js",
+        "plan-profile-utils.js",
+        "plans.js",
+        "public/account-statement.html",
+        "public/billing-statement.html",
+        "public/css/billing-statement.css",
+        "public/css/disconnections.css",
+        "public/css/payment-breakdown.css",
+        "public/css/payment-confirmation-queue-history.css",
+        "public/css/payment-confirmation-queue.css",
+        "public/css/payment-history.css",
+        "public/css/payment-receipt.css",
+        "public/css/payments.css",
+        "public/css/plans-tabler.css",
+        "public/css/plans.css",
+        "public/css/quick-payment.css",
+        "public/css/statements.css",
+        "public/disconnections.html",
+        "public/js/disconnections.js",
+        "public/js/payment-breakdown.js",
+        "public/js/payment-current-bill.js",
+        "public/js/payment-history.js",
+        "public/js/payment-receipt.js",
+        "public/js/quick-payment.js",
+        "public/payment-breakdown.html",
+        "public/payment-confirmation-queue-history.html",
+        "public/payment-confirmation-queue-history.js",
+        "public/payment-confirmation-queue.html",
+        "public/payment-confirmation-queue.js",
+        "public/payment-history.html",
+        "public/payment-receipt.html",
+        "public/payments.html",
+        "public/payments.js",
+        "public/plans.html",
+        "public/plans.js",
+        "public/quick-payment.html",
+        "public/thermal-print.html"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "collector",
+      "displayName": "Collector",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/collector/module.json",
+      "contextFile": "Features/modules/collector/Module_context.md",
+      "apiPrefixes": [
+        "/api/collectors",
+        "/api/collector/payments",
+        "/api/auth/collector-*"
+      ],
+      "webEntryPoints": [
+        "public/collectors.html",
+        "public/collectors-history.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/collector/Module_context.md",
+        "Features/modules/collector/README.md",
+        "Features/modules/collector/module.json",
+        "collector-next-due.js",
+        "collector-payments.js",
+        "collectors.js",
+        "public/collectors-history.html",
+        "public/collectors.html",
+        "public/css/collectors-history-tabler.css",
+        "public/css/collectors-tabler.css",
+        "public/css/collectors.css",
+        "public/js/collectors-history.js",
+        "public/js/collectors-page.js",
+        "routes/collectors.js"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "customer-app",
+      "displayName": "Customer App",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/customer-app/module.json",
+      "contextFile": "Features/modules/customer-app/Module_context.md",
+      "apiPrefixes": [
+        "/api/customer-app",
+        "/api/customers/login",
+        "/api/customers/me",
+        "/api/sms",
+        "/webhooks/messenger"
+      ],
+      "webEntryPoints": [
+        "public/customer-login.html",
+        "public/customer-portal.html",
+        "public/customer-app.html",
+        "public/customer-app-popup-reminder.html",
+        "public/sms.html",
+        "public/privacy-terms.html",
+        "public/terms-of-use.html",
+        "public/company-info.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/customer-app/Module_context.md",
+        "Features/modules/customer-app/README.md",
+        "Features/modules/customer-app/module.json",
+        "customer-app-api.js",
+        "customer-fcm-tokens.js",
+        "customer-notification-inbox.js",
+        "customer-upstream.js",
+        "firebase-push.js",
+        "messenger-bot.js",
+        "public/company-info.html",
+        "public/css/customer-app.css",
+        "public/css/customer-portal.css",
+        "public/css/public-pages.css",
+        "public/css/sms.css",
+        "public/css/sms.js",
+        "public/customer-app-popup-reminder.html",
+        "public/customer-app.html",
+        "public/customer-login.html",
+        "public/customer-portal.html",
+        "public/js/company-info.js",
+        "public/js/customer-app-popup-reminder.js",
+        "public/js/customer-portal-login.js",
+        "public/js/customer-portal.js",
+        "public/privacy-terms.html",
+        "public/sms.html",
+        "public/sms.js",
+        "public/terms-of-use.html",
+        "sms-delivery.js",
+        "sms-scheduler.js",
+        "sms-schema.js",
+        "sms.js"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "customer-management",
+      "displayName": "Customer Management",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/customer-management/module.json",
+      "contextFile": "Features/modules/customer-management/Module_context.md",
+      "apiPrefixes": [
+        "/api/customers",
+        "/api/customer-drafts",
+        "/api/coverage",
+        "/api/referrals",
+        "/api/public/applications",
+        "/api/public/philippines"
+      ],
+      "webEntryPoints": [
+        "public/customers.html",
+        "public/customer-draft-queue.html",
+        "public/customer-archive.html",
+        "public/coverage.html",
+        "public/apply-now.html",
+        "public/referrals.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/customer-management/Module_context.md",
+        "Features/modules/customer-management/README.md",
+        "Features/modules/customer-management/assets/compact-ui-reference.png",
+        "Features/modules/customer-management/module.json",
+        "api_coverage.js",
+        "customer-archive-store.js",
+        "customer-draft-submissions-store.js",
+        "customer-draft-submissions.js",
+        "customers.css",
+        "customers.js",
+        "philippines-addresses.js",
+        "public/apply-now.html",
+        "public/coverage.css",
+        "public/coverage.html",
+        "public/coverage.js",
+        "public/css/coverage-tabler.css",
+        "public/css/customer-archive.css",
+        "public/css/customer-draft-queue.css",
+        "public/css/customers.css",
+        "public/css/referrals.css",
+        "public/customer-archive.html",
+        "public/customer-draft-queue.html",
+        "public/customers.html",
+        "public/js/apply-now.js",
+        "public/js/customer-archive.js",
+        "public/js/customer-draft-queue.js",
+        "public/js/referrals.js",
+        "public/referrals.html",
+        "referral-engine.js",
+        "referrals.js"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "finance",
+      "displayName": "Finance",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/finance/module.json",
+      "contextFile": "Features/modules/finance/Module_context.md",
+      "apiPrefixes": [
+        "/api/expenses",
+        "/api/payroll",
+        "/api/dashboard/collection-breakdown"
+      ],
+      "webEntryPoints": [
+        "public/expenses.html",
+        "public/payroll.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/finance/Module_context.md",
+        "Features/modules/finance/README.md",
+        "Features/modules/finance/module.json",
+        "expenses.js",
+        "payroll.js",
+        "public/css/finance.css",
+        "public/css/monthly-collection-trend.css",
+        "public/css/reports.css",
+        "public/expenses.html",
+        "public/js/expenses.js",
+        "public/js/monthly-collection-trend.js",
+        "public/js/payroll.js",
+        "public/payroll.html",
+        "public/reports.js"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "network",
+      "displayName": "Network",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/network/module.json",
+      "contextFile": "Features/modules/network/Module_context.md",
+      "apiPrefixes": [
+        "/api/mikrotik",
+        "/api/pon",
+        "/api/genieacs",
+        "/api/customers/:accountNumber/direct-connected-devices",
+        "/api/customers/:accountNumber/direct-wifi"
+      ],
+      "webEntryPoints": [
+        "public/pppoe.html",
+        "public/pon-management.html",
+        "public/genieacs.html",
+        "public/coverage-map.html",
+        "public/coverage-map-app.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/network/Module_context.md",
+        "Features/modules/network/README.md",
+        "Features/modules/network/module.json",
+        "mikrotik-audit-log.js",
+        "mikrotik-client.js",
+        "mikrotik-endpoint.js",
+        "mikrotik.js",
+        "pon-management-api.js",
+        "pppoe-account-utils.js",
+        "public/coverage-map-app.html",
+        "public/coverage-map.html",
+        "public/css/genieacs.css",
+        "public/css/pon-management-tabler.css",
+        "public/css/pon-management.css",
+        "public/genieacs.html",
+        "public/js/genieacs.js",
+        "public/js/pon-management.js",
+        "public/js/pppoe.js",
+        "public/pon-management.html",
+        "public/pppoe.html"
+      ],
+      "missingRequiredPaths": []
+    },
+    {
+      "id": "technician",
+      "displayName": "Technician",
+      "status": "legacy-integrated",
+      "manifestPath": "Features/modules/technician/module.json",
+      "contextFile": "Features/modules/technician/Module_context.md",
+      "apiPrefixes": [
+        "/api/tickets",
+        "/api/jobs",
+        "/api/technician",
+        "/api/technician/installations",
+        "/api/technician/customer-drafts"
+      ],
+      "webEntryPoints": [
+        "public/tickets.html",
+        "public/technicians.html",
+        "public/job-history.html",
+        "public/technician-customer-drafts.html"
+      ],
+      "ownedFiles": [
+        "Features/modules/technician/Module_context.md",
+        "Features/modules/technician/README.md",
+        "Features/modules/technician/module.json",
+        "job-numbering.js",
+        "jobs.js",
+        "public/css/technician-customer-drafts.css",
+        "public/css/technicians.css",
+        "public/css/tickets.css",
+        "public/job-history.html",
+        "public/js/job-history.js",
+        "public/js/technician-customer-drafts.js",
+        "public/js/technicians.js",
+        "public/js/tickets.js",
+        "public/technician-customer-drafts.html",
+        "public/technicians.html",
+        "public/tickets.html",
+        "technician-assignments.js",
+        "technician-installations.js",
+        "tickets.js"
+      ],
+      "missingRequiredPaths": []
+    }
+  ],
+  "sharedDomainFiles": [
+    "data-store.js",
+    "db-relational.js",
+    "db-secrets.js",
+    "db.js",
+    "env-loader.js",
+    "flavor-features.js",
+    "passwords.js",
+    "public/api.js",
+    "public/app.js",
+    "public/css/account-view-shared.css",
+    "public/css/base.css",
+    "public/css/dashboard.css",
+    "public/css/tabler-app.css",
+    "public/index.html",
+    "public/js/account-view-shared.js",
+    "public/js/confirm-dialog.js",
+    "public/js/public-branding.js",
+    "public/js/tabler-enhance.js",
+    "public/layout.js",
+    "public/sidebar.html",
+    "public/styles.css",
+    "public/theme-init.js",
+    "public/theme.js",
+    "public/topbar.html",
+    "public/vendor/tabler-icons/tabler-icons.min.css",
+    "public/vendor/tabler/css/tabler.min.css",
+    "public/vendor/tabler/js/tabler.min.js",
+    "rate-limiter.js",
+    "role-utils.js",
+    "server.js",
+    "session-cache.js",
+    "storage-mode.js"
+  ],
+  "validation": {
+    "manifestErrors": [],
+    "ownershipCollisions": [],
+    "missingOwnedPatterns": [],
+    "unownedDomainFiles": [],
+    "missingLocalRequires": [],
+    "missingHtmlAssets": [],
+    "modulesWithMissingRequiredPaths": []
+  },
+  "dependencies": [
+    {
+      "from": "accounts-store.js",
+      "request": "./activity-log-visibility",
+      "resolved": "activity-log-visibility.js"
+    },
+    {
+      "from": "accounts-store.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "accounts-store.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "accounts-store.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "accounts-store.js",
+      "request": "./passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "accounts-store.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "accounts.js",
+      "request": "./accounts-store",
+      "resolved": "accounts-store.js"
+    },
+    {
+      "from": "accounts.js",
+      "request": "./passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "accounts.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "activity-log.js",
+      "request": "./activity-log-visibility",
+      "resolved": "activity-log-visibility.js"
+    },
+    {
+      "from": "activity-log.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "activity-log.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "activity-log.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "api_coverage.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "api_coverage.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "api_coverage.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "api_coverage.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "app-downloads-store.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "app-downloads-store.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "app-downloads.js",
+      "request": "./app-downloads-store",
+      "resolved": "app-downloads-store.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./accounts-store",
+      "resolved": "accounts-store.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./activity-log",
+      "resolved": "activity-log.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./collector-next-due",
+      "resolved": "collector-next-due.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./payment-breakdown-balance",
+      "resolved": "payment-breakdown-balance.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./payment-entry-normalizer",
+      "resolved": "payment-entry-normalizer.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./payment-records",
+      "resolved": "payment-records.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "auth.js",
+      "request": "./session-cache",
+      "resolved": "session-cache.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./disconnection-store",
+      "resolved": "disconnection-store.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./mikrotik-audit-log",
+      "resolved": "mikrotik-audit-log.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./mikrotik-client",
+      "resolved": "mikrotik-client.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./payment-numbering",
+      "resolved": "payment-numbering.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./plan-profile-utils",
+      "resolved": "plan-profile-utils.js"
+    },
+    {
+      "from": "billing-scheduler.js",
+      "request": "./pppoe-account-utils",
+      "resolved": "pppoe-account-utils.js"
+    },
+    {
+      "from": "business-profile.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "business-profile.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "business-profile.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "business-profile.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "business-profile.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./accounts-store",
+      "resolved": "accounts-store.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./collector-next-due",
+      "resolved": "collector-next-due.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./payment-numbering",
+      "resolved": "payment-numbering.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./payment-records",
+      "resolved": "payment-records.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./payment-service-refresh",
+      "resolved": "payment-service-refresh.js"
+    },
+    {
+      "from": "collector-payments.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "collectors.js",
+      "request": "./accounts-store",
+      "resolved": "accounts-store.js"
+    },
+    {
+      "from": "collectors.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "collectors.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "collectors.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "collectors.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "customer-app-api.js",
+      "request": "./customer-fcm-tokens",
+      "resolved": "customer-fcm-tokens.js"
+    },
+    {
+      "from": "customer-app-api.js",
+      "request": "./customer-notification-inbox",
+      "resolved": "customer-notification-inbox.js"
+    },
+    {
+      "from": "customer-app-api.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "customer-app-api.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-app-api.js",
+      "request": "./firebase-push",
+      "resolved": "firebase-push.js"
+    },
+    {
+      "from": "customer-app-api.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "customer-archive-store.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-archive-store.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "customer-archive-store.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "customer-draft-submissions-store.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "customer-draft-submissions-store.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-draft-submissions-store.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "customer-draft-submissions-store.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./accounts-store",
+      "resolved": "accounts-store.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./customer-archive-store",
+      "resolved": "customer-archive-store.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./customer-draft-submissions-store",
+      "resolved": "customer-draft-submissions-store.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./pon-management-api",
+      "resolved": "pon-management-api.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "customer-draft-submissions.js",
+      "request": "./session-cache",
+      "resolved": "session-cache.js"
+    },
+    {
+      "from": "customer-fcm-tokens.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-notification-inbox.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-upstream.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "customer-upstream.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customer-upstream.js",
+      "request": "./passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./customer-archive-store",
+      "resolved": "customer-archive-store.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./customer-fcm-tokens",
+      "resolved": "customer-fcm-tokens.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./customer-notification-inbox",
+      "resolved": "customer-notification-inbox.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./mikrotik-audit-log",
+      "resolved": "mikrotik-audit-log.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./mikrotik-client",
+      "resolved": "mikrotik-client.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./payment-confirmation-queue-store",
+      "resolved": "payment-confirmation-queue-store.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./payment-entry-normalizer",
+      "resolved": "payment-entry-normalizer.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./payment-service-refresh",
+      "resolved": "payment-service-refresh.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./plan-profile-utils",
+      "resolved": "plan-profile-utils.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./pppoe-account-utils",
+      "resolved": "pppoe-account-utils.js"
+    },
+    {
+      "from": "customers.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "data-store.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "data-store.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "db-relational.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "db-relational.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "db.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "disconnection-store.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./disconnection-store",
+      "resolved": "disconnection-store.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./mikrotik-audit-log",
+      "resolved": "mikrotik-audit-log.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./mikrotik-client",
+      "resolved": "mikrotik-client.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./payment-breakdown-balance",
+      "resolved": "payment-breakdown-balance.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./payment-service-refresh",
+      "resolved": "payment-service-refresh.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./pppoe-account-utils",
+      "resolved": "pppoe-account-utils.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./referral-engine",
+      "resolved": "referral-engine.js"
+    },
+    {
+      "from": "disconnections.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "expenses.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "expenses.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "expenses.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "expenses.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./business-profile",
+      "resolved": "business-profile.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./collector-next-due",
+      "resolved": "collector-next-due.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./payment-entry-normalizer",
+      "resolved": "payment-entry-normalizer.js"
+    },
+    {
+      "from": "info-api.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "integration-settings.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "integration-settings.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "integration-settings.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "integration-settings.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "integration-settings.js",
+      "request": "./db-secrets",
+      "resolved": "db-secrets.js"
+    },
+    {
+      "from": "integration-settings.js",
+      "request": "./mikrotik-endpoint",
+      "resolved": "mikrotik-endpoint.js"
+    },
+    {
+      "from": "job-numbering.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "jobs.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "jobs.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "jobs.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "jobs.js",
+      "request": "./job-numbering",
+      "resolved": "job-numbering.js"
+    },
+    {
+      "from": "mikrotik-audit-log.js",
+      "request": "./activity-log",
+      "resolved": "activity-log.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./mikrotik-audit-log",
+      "resolved": "mikrotik-audit-log.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./mikrotik-client",
+      "resolved": "mikrotik-client.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./mikrotik-endpoint",
+      "resolved": "mikrotik-endpoint.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./plan-profile-utils",
+      "resolved": "plan-profile-utils.js"
+    },
+    {
+      "from": "mikrotik.js",
+      "request": "./pppoe-account-utils",
+      "resolved": "pppoe-account-utils.js"
+    },
+    {
+      "from": "payment-confirmation-queue-store.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "payment-confirmations.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "payment-confirmations.js",
+      "request": "./payment-confirmation-queue-store",
+      "resolved": "payment-confirmation-queue-store.js"
+    },
+    {
+      "from": "payment-confirmations.js",
+      "request": "./payment-numbering",
+      "resolved": "payment-numbering.js"
+    },
+    {
+      "from": "payment-confirmations.js",
+      "request": "./payment-service-refresh",
+      "resolved": "payment-service-refresh.js"
+    },
+    {
+      "from": "payment-confirmations.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "payment-numbering.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./disconnection-store",
+      "resolved": "disconnection-store.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./payment-breakdown-balance",
+      "resolved": "payment-breakdown-balance.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./payment-entry-normalizer",
+      "resolved": "payment-entry-normalizer.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./referral-engine",
+      "resolved": "referral-engine.js"
+    },
+    {
+      "from": "payment-records.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "payment-service-refresh.js",
+      "request": "./billing-scheduler",
+      "resolved": "billing-scheduler.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./mikrotik-audit-log",
+      "resolved": "mikrotik-audit-log.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./mikrotik-client",
+      "resolved": "mikrotik-client.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./payment-entry-normalizer",
+      "resolved": "payment-entry-normalizer.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./payment-numbering",
+      "resolved": "payment-numbering.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./payment-service-refresh",
+      "resolved": "payment-service-refresh.js"
+    },
+    {
+      "from": "payments.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "payroll.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "payroll.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "payroll.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "payroll.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "plans.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "plans.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "plans.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "plans.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "plans.js",
+      "request": "./plan-profile-utils",
+      "resolved": "plan-profile-utils.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./api_coverage",
+      "resolved": "api_coverage.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./mikrotik",
+      "resolved": "mikrotik.js"
+    },
+    {
+      "from": "pon-management-api.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "referral-engine.js",
+      "request": "./payment-entry-normalizer",
+      "resolved": "payment-entry-normalizer.js"
+    },
+    {
+      "from": "referrals.js",
+      "request": "./accounts-store",
+      "resolved": "accounts-store.js"
+    },
+    {
+      "from": "referrals.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "referrals.js",
+      "request": "./referral-engine",
+      "resolved": "referral-engine.js"
+    },
+    {
+      "from": "referrals.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "routes/collectors.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/apply-flavor.js",
+      "request": "../flavor-features",
+      "resolved": "flavor-features.js"
+    },
+    {
+      "from": "scripts/check-flavors.js",
+      "request": "./flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "scripts/check-security-modules.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/check-security-modules.js",
+      "request": "../env-loader",
+      "resolved": "env-loader.js"
+    },
+    {
+      "from": "scripts/cleanup-future-monthly-charges.js",
+      "request": "../billing-scheduler",
+      "resolved": "billing-scheduler.js"
+    },
+    {
+      "from": "scripts/cleanup-future-monthly-charges.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/create-flavor.js",
+      "request": "./flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "scripts/generate-flavor-launcher.js",
+      "request": "./flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "scripts/import-clients-from-cash-flow.js",
+      "request": "../customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-mysql.js",
+      "request": "../data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-mysql.js",
+      "request": "../env-loader",
+      "resolved": "env-loader.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../db-secrets",
+      "resolved": "db-secrets.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../env-loader",
+      "resolved": "env-loader.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../job-numbering",
+      "resolved": "job-numbering.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../passwords",
+      "resolved": "passwords.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-relational.js",
+      "request": "../plan-profile-utils",
+      "resolved": "plan-profile-utils.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-schema.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-schema.js",
+      "request": "../db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-schema.js",
+      "request": "../env-loader",
+      "resolved": "env-loader.js"
+    },
+    {
+      "from": "scripts/migrate-json-to-schema.js",
+      "request": "../job-numbering",
+      "resolved": "job-numbering.js"
+    },
+    {
+      "from": "scripts/normalize-system-charge-timestamps-to-manila.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/normalize-system-charge-timestamps-to-manila.js",
+      "request": "../db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "scripts/repair-pppoe-customer-links.js",
+      "request": "../db-secrets",
+      "resolved": "db-secrets.js"
+    },
+    {
+      "from": "scripts/reset-billing-clock-guard.js",
+      "request": "../data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "scripts/reset-billing-clock-guard.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "scripts/start-flavor.js",
+      "request": "./flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "scripts/start-with-info-api.js",
+      "request": "../env-loader",
+      "resolved": "env-loader.js"
+    },
+    {
+      "from": "scripts/verify-store.js",
+      "request": "../data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "scripts/verify-store.js",
+      "request": "../db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./accounts",
+      "resolved": "accounts.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./activity-log",
+      "resolved": "activity-log.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./api_coverage",
+      "resolved": "api_coverage.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./app-downloads",
+      "resolved": "app-downloads.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./billing-scheduler",
+      "resolved": "billing-scheduler.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./business-profile",
+      "resolved": "business-profile.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./collector-payments",
+      "resolved": "collector-payments.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./collectors",
+      "resolved": "collectors.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./customer-app-api",
+      "resolved": "customer-app-api.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./customer-draft-submissions",
+      "resolved": "customer-draft-submissions.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./customer-upstream",
+      "resolved": "customer-upstream.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./disconnections",
+      "resolved": "disconnections.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./env-loader",
+      "resolved": "env-loader.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./expenses",
+      "resolved": "expenses.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./flavor-features",
+      "resolved": "flavor-features.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./flavor-features",
+      "resolved": "flavor-features.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./flavor-features",
+      "resolved": "flavor-features.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./info-api",
+      "resolved": "info-api.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./jobs",
+      "resolved": "jobs.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./messenger-bot",
+      "resolved": "messenger-bot.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./mikrotik",
+      "resolved": "mikrotik.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./payment-confirmations",
+      "resolved": "payment-confirmations.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./payment-records",
+      "resolved": "payment-records.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./payments",
+      "resolved": "payments.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./payroll",
+      "resolved": "payroll.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./philippines-addresses",
+      "resolved": "philippines-addresses.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./plans",
+      "resolved": "plans.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./pon-management-api",
+      "resolved": "pon-management-api.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./pppoe-account-utils",
+      "resolved": "pppoe-account-utils.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./rate-limiter",
+      "resolved": "rate-limiter.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./referrals",
+      "resolved": "referrals.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./scripts/flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./scripts/flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./scripts/flavor-tools",
+      "resolved": "scripts/flavor-tools.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./session-cache",
+      "resolved": "session-cache.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./setup-installer",
+      "resolved": "setup-installer.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./sms",
+      "resolved": "sms.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./sms-scheduler",
+      "resolved": "sms-scheduler.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./technician-assignments",
+      "resolved": "technician-assignments.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./technician-installations",
+      "resolved": "technician-installations.js"
+    },
+    {
+      "from": "server.js",
+      "request": "./tickets",
+      "resolved": "tickets.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./app-downloads-store",
+      "resolved": "app-downloads-store.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./auth",
+      "resolved": "auth.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./db-secrets",
+      "resolved": "db-secrets.js"
+    },
+    {
+      "from": "setup-installer.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "sms-delivery.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "sms-delivery.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "sms-delivery.js",
+      "request": "./role-utils",
+      "resolved": "role-utils.js"
+    },
+    {
+      "from": "sms-scheduler.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "sms-scheduler.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "sms-scheduler.js",
+      "request": "./sms-delivery",
+      "resolved": "sms-delivery.js"
+    },
+    {
+      "from": "sms-scheduler.js",
+      "request": "./sms-schema",
+      "resolved": "sms-schema.js"
+    },
+    {
+      "from": "sms-scheduler.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "sms-schema.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "sms-schema.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "sms.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "sms.js",
+      "request": "./sms-delivery",
+      "resolved": "sms-delivery.js"
+    },
+    {
+      "from": "sms.js",
+      "request": "./sms-schema",
+      "resolved": "sms-schema.js"
+    },
+    {
+      "from": "sms.js",
+      "request": "./storage-mode",
+      "resolved": "storage-mode.js"
+    },
+    {
+      "from": "technician-assignments.js",
+      "request": "./customer-draft-submissions",
+      "resolved": "customer-draft-submissions.js"
+    },
+    {
+      "from": "technician-assignments.js",
+      "request": "./jobs",
+      "resolved": "jobs.js"
+    },
+    {
+      "from": "technician-assignments.js",
+      "request": "./tickets",
+      "resolved": "tickets.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./api_coverage",
+      "resolved": "api_coverage.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./customer-draft-submissions",
+      "resolved": "customer-draft-submissions.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./customer-draft-submissions-store",
+      "resolved": "customer-draft-submissions-store.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./integration-settings",
+      "resolved": "integration-settings.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./mikrotik",
+      "resolved": "mikrotik.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./mikrotik-client",
+      "resolved": "mikrotik-client.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./plan-profile-utils",
+      "resolved": "plan-profile-utils.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./pon-management-api",
+      "resolved": "pon-management-api.js"
+    },
+    {
+      "from": "technician-installations.js",
+      "request": "./pppoe-account-utils",
+      "resolved": "pppoe-account-utils.js"
+    },
+    {
+      "from": "tickets.js",
+      "request": "./customers",
+      "resolved": "customers.js"
+    },
+    {
+      "from": "tickets.js",
+      "request": "./data-store",
+      "resolved": "data-store.js"
+    },
+    {
+      "from": "tickets.js",
+      "request": "./db",
+      "resolved": "db.js"
+    },
+    {
+      "from": "tickets.js",
+      "request": "./db-relational",
+      "resolved": "db-relational.js"
+    },
+    {
+      "from": "tickets.js",
+      "request": "./jobs",
+      "resolved": "jobs.js"
+    }
+  ],
+  "htmlAssets": [
+    {
+      "from": "public/account-statement.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "js/confirm-dialog.js?v=1.1",
+      "resolved": "public/js/confirm-dialog.js"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "styles.css",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/account-statement.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "accounts.js?v=3.8",
+      "resolved": "public/accounts.js"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "css/accounts.css?v=4.8",
+      "resolved": "public/css/accounts.css"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/accounts.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "css/public-pages.css?v=6.4",
+      "resolved": "public/css/public-pages.css"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "js/apply-now.js?v=1.3",
+      "resolved": "public/js/apply-now.js"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "js/public-branding.js?v=1.1",
+      "resolved": "public/js/public-branding.js"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/apply-now.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "js/confirm-dialog.js?v=1.1",
+      "resolved": "public/js/confirm-dialog.js"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "styles.css",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/billing-statement.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "css/collectors-history-tabler.css?v=1.0",
+      "resolved": "public/css/collectors-history-tabler.css"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "css/collectors.css?v=2.3",
+      "resolved": "public/css/collectors.css"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "js/collectors-history.js?v=1.6",
+      "resolved": "public/js/collectors-history.js"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/collectors-history.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "css/collectors-tabler.css?v=1.6",
+      "resolved": "public/css/collectors-tabler.css"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "css/collectors.css?v=2.1",
+      "resolved": "public/css/collectors.css"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "js/collectors-page.js?v=2.7",
+      "resolved": "public/js/collectors-page.js"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/collectors.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "css/public-pages.css?v=6.6",
+      "resolved": "public/css/public-pages.css"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "css/tabler-app.css?v=3.2",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "js/company-info.js?v=2.4",
+      "resolved": "public/js/company-info.js"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "js/public-branding.js?v=1.1",
+      "resolved": "public/js/public-branding.js"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/company-info.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "coverage.css?v=2.2",
+      "resolved": "public/coverage.css"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "js/payment-current-bill.js?v=1.5",
+      "resolved": "public/js/payment-current-bill.js"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "styles.css",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/coverage-map-app.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "coverage.css?v=2.2",
+      "resolved": "public/coverage.css"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "js/payment-current-bill.js?v=1.5",
+      "resolved": "public/js/payment-current-bill.js"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "styles.css",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/coverage-map.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "css/coverage-tabler.css?v=1.5",
+      "resolved": "public/css/coverage-tabler.css"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "styles.css",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/coverage.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "css/customer-app.css?v=1.4",
+      "resolved": "public/css/customer-app.css"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "js/customer-app-popup-reminder.js?v=1.2",
+      "resolved": "public/js/customer-app-popup-reminder.js"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customer-app-popup-reminder.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customer-app.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customer-app.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customer-app.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/customer-app.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customer-app.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customer-app.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "css/customer-archive.css?v=1.1",
+      "resolved": "public/css/customer-archive.css"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "js/confirm-dialog.js?v=1.1",
+      "resolved": "public/js/confirm-dialog.js"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "js/customer-archive.js?v=1.7",
+      "resolved": "public/js/customer-archive.js"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customer-archive.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "css/customer-draft-queue.css?v=2.7",
+      "resolved": "public/css/customer-draft-queue.css"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "js/confirm-dialog.js?v=1.1",
+      "resolved": "public/js/confirm-dialog.js"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "js/customer-draft-queue.js?v=3.0",
+      "resolved": "public/js/customer-draft-queue.js"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customer-draft-queue.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "css/customer-portal.css?v=2.7",
+      "resolved": "public/css/customer-portal.css"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "js/customer-portal-login.js?v=1.1",
+      "resolved": "public/js/customer-portal-login.js"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customer-login.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "css/customer-portal.css?v=2.6",
+      "resolved": "public/css/customer-portal.css"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "js/customer-portal.js?v=2.4",
+      "resolved": "public/js/customer-portal.js"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customer-portal.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "css/account-view-shared.css?v=2.4",
+      "resolved": "public/css/account-view-shared.css"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "css/customers.css?v=3.0",
+      "resolved": "public/css/customers.css"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "js/account-view-shared.js?v=3.4",
+      "resolved": "public/js/account-view-shared.js"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/customers.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "css/disconnections.css?v=1.0",
+      "resolved": "public/css/disconnections.css"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "js/disconnections.js?v=1.1",
+      "resolved": "public/js/disconnections.js"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/disconnections.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "css/finance.css?v=1.7",
+      "resolved": "public/css/finance.css"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "js/expenses.js?v=1.5",
+      "resolved": "public/js/expenses.js"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/expenses.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/flavors.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/flavors.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/flavors.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/flavors.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/flavors.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "css/accounts.css?v=4.5",
+      "resolved": "public/css/accounts.css"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "css/genieacs.css?v=1.6",
+      "resolved": "public/css/genieacs.css"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "js/genieacs.js?v=4.2",
+      "resolved": "public/js/genieacs.js"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/genieacs.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "app.js?v=4.1",
+      "resolved": "public/app.js"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "css/dashboard.css?v=5.0",
+      "resolved": "public/css/dashboard.css"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "js/payment-current-bill.js?v=1.5",
+      "resolved": "public/js/payment-current-bill.js"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/index.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "css/public-pages.css?v=6.5",
+      "resolved": "public/css/public-pages.css"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "js/install-guide.js?v=1.1",
+      "resolved": "public/js/install-guide.js"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "js/public-branding.js?v=1.1",
+      "resolved": "public/js/public-branding.js"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/install-guide.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "css/technicians.css?v=1.0",
+      "resolved": "public/css/technicians.css"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "js/job-history.js?v=1.1",
+      "resolved": "public/js/job-history.js"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/job-history.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "css/login.css?v=1.6",
+      "resolved": "public/css/login.css"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "css/tabler-app.css?v=3.3",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "styles.css",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/login.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "css/payment-breakdown.css?v=2.3",
+      "resolved": "public/css/payment-breakdown.css"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "js/payment-breakdown.js?v=3.8",
+      "resolved": "public/js/payment-breakdown.js"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payment-breakdown.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "css/payment-confirmation-queue-history.css?v=1.2",
+      "resolved": "public/css/payment-confirmation-queue-history.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "payment-confirmation-queue-history.js?v=1.1",
+      "resolved": "public/payment-confirmation-queue-history.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue-history.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "css/payment-confirmation-queue.css?v=3.2",
+      "resolved": "public/css/payment-confirmation-queue.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "payment-confirmation-queue.js?v=3.9",
+      "resolved": "public/payment-confirmation-queue.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payment-confirmation-queue.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "css/payment-history.css?v=4.4",
+      "resolved": "public/css/payment-history.css"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "css/tabler-app.css?v=3.5",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "js/payment-history.js?v=2.9",
+      "resolved": "public/js/payment-history.js"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payment-history.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "/css/payment-receipt.css?v=1.1",
+      "resolved": "public/css/payment-receipt.css"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "/js/payment-receipt.js?v=1.1",
+      "resolved": "public/js/payment-receipt.js"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payment-receipt.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "css/payments.css?v=3.7",
+      "resolved": "public/css/payments.css"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "payments.js?v=8.5",
+      "resolved": "public/payments.js"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payments.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "css/finance.css?v=2.6",
+      "resolved": "public/css/finance.css"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "js/payroll.js?v=1.13",
+      "resolved": "public/js/payroll.js"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/payroll.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "css/plans-tabler.css?v=1.0",
+      "resolved": "public/css/plans-tabler.css"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "plans.js?v=3.1",
+      "resolved": "public/plans.js"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/plans.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "css/pon-management-tabler.css?v=1.0",
+      "resolved": "public/css/pon-management-tabler.css"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "css/pon-management.css?v=2.8",
+      "resolved": "public/css/pon-management.css"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "js/pon-management.js?v=4.5",
+      "resolved": "public/js/pon-management.js"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/pon-management.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "css/account-view-shared.css?v=2.0",
+      "resolved": "public/css/account-view-shared.css"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "css/accounts.css?v=4.9",
+      "resolved": "public/css/accounts.css"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "js/account-view-shared.js?v=3.2",
+      "resolved": "public/js/account-view-shared.js"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "js/pppoe.js?v=7.3",
+      "resolved": "public/js/pppoe.js"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/pppoe.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "css/public-pages.css?v=6.4",
+      "resolved": "public/css/public-pages.css"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "js/public-branding.js?v=1.1",
+      "resolved": "public/js/public-branding.js"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/privacy-terms.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "css/quick-payment.css?v=1.3",
+      "resolved": "public/css/quick-payment.css"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "js/quick-payment.js?v=1.2",
+      "resolved": "public/js/quick-payment.js"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/quick-payment.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "css/referrals.css?v=1.0",
+      "resolved": "public/css/referrals.css"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "js/referrals.js?v=1.0",
+      "resolved": "public/js/referrals.js"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/referrals.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/setup.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/setup.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/setup.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/setup.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/setup.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/setup.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "css/sms.css?v=6.5",
+      "resolved": "public/css/sms.css"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "sms.js?v=6.0",
+      "resolved": "public/sms.js"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/sms.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "css/technician-customer-drafts.css?v=1.2",
+      "resolved": "public/css/technician-customer-drafts.css"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "js/technician-customer-drafts.js?v=1.8",
+      "resolved": "public/js/technician-customer-drafts.js"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/technician-customer-drafts.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "css/technicians.css?v=1.0",
+      "resolved": "public/css/technicians.css"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "js/technicians.js?v=1.3",
+      "resolved": "public/js/technicians.js"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/technicians.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "css/public-pages.css?v=6.4",
+      "resolved": "public/css/public-pages.css"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "js/public-branding.js?v=1.1",
+      "resolved": "public/js/public-branding.js"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/terms-of-use.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/thermal-print.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/thermal-print.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/thermal-print.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/thermal-print.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/thermal-print.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/thermal-print.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "css/technicians.css?v=1.0",
+      "resolved": "public/css/technicians.css"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "css/tickets.css?v=1.1",
+      "resolved": "public/css/tickets.css"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "js/tickets.js?v=1.2",
+      "resolved": "public/js/tickets.js"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "layout.js?v=3.9",
+      "resolved": "public/layout.js"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/tickets.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "css/tabler-app.css?v=3.1",
+      "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "js/confirm-dialog.js?v=1.1",
+      "resolved": "public/js/confirm-dialog.js"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "js/tabler-enhance.js?v=2.2",
+      "resolved": "public/js/tabler-enhance.js"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "styles.css?v=2.9",
+      "resolved": "public/styles.css"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "theme-init.js?v=2.6",
+      "resolved": "public/theme-init.js"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "vendor/tabler-icons/tabler-icons.min.css",
+      "resolved": "public/vendor/tabler-icons/tabler-icons.min.css"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "vendor/tabler/css/tabler.min.css",
+      "resolved": "public/vendor/tabler/css/tabler.min.css"
+    },
+    {
+      "from": "public/update-download.html",
+      "reference": "vendor/tabler/js/tabler.min.js",
+      "resolved": "public/vendor/tabler/js/tabler.min.js"
+    },
+    {
+      "from": "web-app/src/index.html",
+      "reference": "../../public/css/customers.css",
+      "resolved": "public/css/customers.css"
+    },
+    {
+      "from": "web-app/src/index.html",
+      "reference": "scripts/app.js",
+      "resolved": "web-app/src/scripts/app.js"
+    },
+    {
+      "from": "web-app/src/index.html",
+      "reference": "styles/main.css",
+      "resolved": "web-app/src/styles/main.css"
+    }
+  ]
+}

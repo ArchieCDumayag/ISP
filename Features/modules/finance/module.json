@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "finance",
+  "displayName": "Finance",
+  "status": "modularized",
+  "contextFile": "Features/modules/finance/Module_context.md",
+  "coordinationLock": "Features/modules/finance",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/expenses",
+    "/api/payroll",
+    "/api/dashboard/collection-breakdown"
+  ],
+  "webEntryPoints": [
+    "Features/modules/finance/web/expenses.html",
+    "Features/modules/finance/web/payroll.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/finance/**"
+  ]
+}

@@ -17,6 +17,7 @@ backups/
 .tmp/
 .tmp-*
 .cloudflared/
+.ai_coord/
 releases/apply-backups/
 releases/apply-state.json
 *.zip

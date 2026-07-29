@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "technician",
+  "displayName": "Technician",
+  "status": "modularized",
+  "contextFile": "Features/modules/technician/Module_context.md",
+  "coordinationLock": "Features/modules/technician",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/tickets",
+    "/api/jobs",
+    "/api/technician",
+    "/api/technician/installations",
+    "/api/technician/customer-drafts"
+  ],
+  "webEntryPoints": [
+    "Features/modules/technician/web/tickets.html",
+    "Features/modules/technician/web/technicians.html",
+    "Features/modules/technician/web/job-history.html",
+    "Features/modules/technician/web/technician-customer-drafts.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/technician/**"
+  ]
+}

@@ -171,6 +171,59 @@ STORAGE_DRIVER=mysql
 
 ## Local Development
 
+### Multiple Codex sessions
+
+This checkout supports parallel Codex work with module ownership, file/folder locks, shared activity updates, and mandatory module context updates.
+
+Start with:
+
+```bash
+cd /home/archiecd/ISP
+python3 scripts/ai_coord.py register "<module and task>"
+python3 scripts/ai_coord.py status
+python3 scripts/ai_coord.py modules
+```
+
+Read `AGENTS.md`, `Project_Context.md`, `start_codex.md`, and the assigned module's files under `Features/modules/` before editing. Every module change must update its `Module_context.md`.
+
+The 12-phase physical module migration is complete and tracked in `docs/refactor/PHASES.md`. The project is ready for coordinated multiple-Codex module work. Run the final regression gate with:
+
+```bash
+npm test
+npm run refactor:verify
+npm run refactor:smoke
+npm run refactor:phase3
+npm run refactor:phase4
+npm run refactor:phase5
+npm run refactor:phase6
+npm run refactor:phase7
+npm run refactor:phase8
+npm run refactor:phase9
+npm run refactor:phase10
+npm run refactor:phase11
+npm run refactor:phase12
+```
+
+Shared runtime infrastructure has a canonical home under `core/`. Phase 11 retired the old root aliases; shared code must import `core/` directly.
+
+The Phase 12 cutover assessment, remaining production-release conditions, and manual UI/directory checklist are in `docs/refactor/phase-12-cutover-readiness.md`. Refactor completion does not deploy or restart production.
+
+Admin/authentication is physically located under `Features/modules/admin/backend`, with its owned pages and assets under `Features/modules/admin/web`. The module manifest drives server loading and static delivery; browser URLs remain unchanged.
+
+Customer Management is physically located under `Features/modules/customer-management/backend`, with its customer, draft, archive, coverage, application, and referral browser files under `Features/modules/customer-management/web`. Existing APIs, uploads, and page URLs remain unchanged.
+
+Billing is physically located under `Features/modules/billing/backend`, with its plan, payment, confirmation, statement, receipt, and disconnection browser files under `Features/modules/billing/web`. Existing financial APIs, stored-data paths, feature/auth gates, and page/asset URLs remain unchanged.
+
+Network is physically located under `Features/modules/network/backend`, with its PPPoE, PON, GenieACS, and coverage-map browser files under `Features/modules/network/web`. Existing device APIs, cross-module consumers, authentication/feature gates, and page/asset URLs remain unchanged.
+
+Collector is physically located under `Features/modules/collector/backend`, with its assignment, approval, and collection-history browser files under `Features/modules/collector/web`. Existing payment/remittance APIs, authentication/feature gates, storage behavior, and page/asset URLs remain unchanged.
+
+Technician is physically located under `Features/modules/technician/backend`, with its ticket, job, history, assignment, and installation browser files under `Features/modules/technician/web`. Existing APIs, authentication/feature gates, provisioning dependencies, storage behavior, and page/asset URLs remain unchanged.
+
+Finance is physically located under `Features/modules/finance/backend`, with its expense, payroll, and retained reporting browser files under `Features/modules/finance/web`. Existing APIs, authentication/feature gates, JSON/MySQL storage behavior, and page/asset URLs remain unchanged.
+
+Customer App and communications are physically located under `Features/modules/customer-app/backend`, with customer portal/app, SMS, and public legal/company browser files under `Features/modules/customer-app/web`. Existing APIs, webhooks, authentication/feature gates, schedulers, upstream behavior, provider contracts, storage, and page/asset URLs remain unchanged.
+
 Install dependencies:
 
 ```bash

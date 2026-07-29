@@ -40,13 +40,13 @@ Do not replace the whole system folder or whole files by default. Apply the smal
 
 Use extra care when changing:
 
-- `auth.js`
-- `accounts.js`
-- `accounts-store.js`
+- `Features/modules/admin/backend/auth.js`
+- `Features/modules/admin/backend/accounts.js`
+- `Features/modules/admin/backend/accounts-store.js`
 - `server.js`
-- `data-store.js`
-- `db-secrets.js`
-- `setup-installer.js`
+- `core/data/data-store.js`
+- `core/data/db-secrets.js`
+- `Features/modules/admin/backend/setup-installer.js`
 - `scripts/schema.sql`
 
 For owner-only pages, confirm both protections still apply:

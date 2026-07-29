@@ -1,10 +1,10 @@
-require('../env-loader');
+require('../core/config/env-loader');
 
 const fs = require('fs');
 const path = require('path');
-const { query, isMysqlEnabled } = require('../db');
-const { clearRelationalCache } = require('../db-relational');
-const { backfillManualJobNumbers, ensureJobsJobNumberColumn } = require('../job-numbering');
+const { query, isMysqlEnabled } = require('../core/data/db');
+const { clearRelationalCache } = require('../core/data/db-relational');
+const { backfillManualJobNumbers, ensureJobsJobNumberColumn } = require('../Features/modules/technician/backend/job-numbering');
 
 const SCHEMA_FILE = path.join(__dirname, 'schema.sql');
 

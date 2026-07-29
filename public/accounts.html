@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/accounts.css?v=4.8">
+    <link rel="stylesheet" href="css/accounts.css?v=4.9">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
 </head>
 
@@ -28,8 +28,61 @@
                     </div>
                 </section>
 
-                <div class="settings-content">
-                        <section id="accounts" class="settings-panel">
+                <nav class="settings-tabs-wrap" aria-label="Settings sections">
+                    <ul class="nav nav-tabs settings-tabs" id="settingsTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="settings-tab-accounts" type="button" role="tab" aria-controls="accounts" aria-selected="true" data-settings-tab-target="accounts">
+                                <i class="ti ti-users" aria-hidden="true"></i>
+                                <span>Accounts</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-system-update" type="button" role="tab" aria-controls="system-update" aria-selected="false" data-settings-tab-target="system-update">
+                                <i class="ti ti-refresh" aria-hidden="true"></i>
+                                <span>System Update</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-xendit" type="button" role="tab" aria-controls="xendit" aria-selected="false" data-settings-tab-target="xendit">
+                                <i class="ti ti-credit-card" aria-hidden="true"></i>
+                                <span>Xendit</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-semaphore" type="button" role="tab" aria-controls="semaphore" aria-selected="false" data-settings-tab-target="semaphore">
+                                <i class="ti ti-message-2" aria-hidden="true"></i>
+                                <span>Semaphore</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-smtp" type="button" role="tab" aria-controls="email" aria-selected="false" data-settings-tab-target="email">
+                                <i class="ti ti-mail" aria-hidden="true"></i>
+                                <span>SMTP</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-genieacs" type="button" role="tab" aria-controls="genieacs" aria-selected="false" data-settings-tab-target="genieacs">
+                                <i class="ti ti-server" aria-hidden="true"></i>
+                                <span>GenieACS</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-mikrotik" type="button" role="tab" aria-controls="mikrotik" aria-selected="false" data-settings-tab-target="mikrotik">
+                                <i class="ti ti-router" aria-hidden="true"></i>
+                                <span>MikroTik</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-ip-browser" type="button" role="tab" aria-controls="ip-browser" aria-selected="false" data-settings-tab-target="ip-browser">
+                                <i class="ti ti-window" aria-hidden="true"></i>
+                                <span>IP Browser</span>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+
+                <div class="settings-content tab-content" id="settingsTabsContent">
+                        <section id="accounts" class="settings-panel tab-pane fade show active" role="tabpanel" aria-labelledby="settings-tab-accounts" tabindex="0">
                             <header class="panel-header">
                                 <div>
                                     <h2>Accounts</h2>
@@ -62,7 +115,7 @@
                             </div>
                         </section>
 
-                        <section id="system-update" class="settings-panel system-update-panel">
+                        <section id="system-update" class="settings-panel system-update-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-system-update" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--system-update" aria-hidden="true">
@@ -142,7 +195,7 @@
                             </div>
                         </section>
 
-                        <section id="xendit" class="settings-panel">
+                        <section id="xendit" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-xendit" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--xendit" aria-hidden="true">
@@ -206,7 +259,7 @@
                             </div>
                         </section>
 
-                        <section id="semaphore" class="settings-panel">
+                        <section id="semaphore" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-semaphore" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--semaphore" aria-hidden="true">
@@ -262,14 +315,14 @@
                             </div>
                         </section>
 
-                        <section id="email" class="settings-panel">
+                        <section id="email" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-smtp" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--email" aria-hidden="true">
                                         <img class="integration-heading-logo__image" src="/img/integrations/email.png" alt="">
                                     </span>
                                     <div>
-                                        <h2>Email SMTP</h2>
+                                        <h2>SMTP</h2>
                                         <p>Configure SMTP delivery for email notifications and reminders.</p>
                                     </div>
                                 </div>
@@ -331,7 +384,7 @@
                             </div>
                         </section>
 
-                        <section id="genieacs" class="settings-panel">
+                        <section id="genieacs" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-genieacs" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--genieacs" aria-hidden="true">
@@ -419,7 +472,7 @@
                             </div>
                         </section>
 
-                        <section id="mikrotik" class="settings-panel">
+                        <section id="mikrotik" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-mikrotik" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--mikrotik" aria-hidden="true">
@@ -510,7 +563,7 @@
                             </div>
                         </section>
 
-                        <section id="ip-browser" class="settings-panel">
+                        <section id="ip-browser" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-ip-browser" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--ip-browser" aria-hidden="true">
@@ -591,7 +644,7 @@
                             </div>
                         </section>
 
-                        <section id="gcash" class="settings-panel">
+                        <section id="gcash" class="settings-panel settings-panel--hidden-in-tabs" hidden aria-hidden="true">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--gcash" aria-hidden="true">
@@ -797,13 +850,12 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="accounts.js?v=3.8"></script>
+    <script src="accounts.js?v=3.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 
 </html>
-
 
 
 

@@ -52,6 +52,33 @@
     font-size: 0.85rem;
     color: #475569;
 }
+
+.settings-tabs-wrap {
+    margin: 0 0 18px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+.settings-tabs {
+    flex-wrap: nowrap;
+    min-width: max-content;
+}
+
+.settings-tabs .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 10px 14px;
+    white-space: nowrap;
+}
+
+.settings-tabs .nav-link i {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
 .settings-content {
     display: grid;
     grid-template-columns: 1fr;
@@ -76,6 +103,18 @@
     #semaphore {
         min-height: fit-content;
     }
+}
+
+.settings-content.tab-content {
+    display: block;
+}
+
+.settings-content.tab-content > .settings-panel.tab-pane {
+    margin: 0;
+}
+
+.settings-content.tab-content > .settings-panel.tab-pane:not(.active) {
+    display: none;
 }
 
 .settings-panel {

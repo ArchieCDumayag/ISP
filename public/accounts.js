@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const integrationLabels = {
         xendit: 'Xendit Payment Gateway',
         semaphore: 'Semaphore SMS',
-        email: 'Email SMTP',
+        email: 'SMTP',
         genieacs: 'GenieACS',
         mikrotik: 'MikroTik',
         ipBrowser: 'IP Browser',
@@ -115,6 +115,50 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeIntegrationEditor = null;
     let latestIntegrationSettings = {};
     const MIKROTIK_TEST_TIMEOUT_MS = 15000;
+
+    const setupSettingsTabs = () => {
+        const tabButtons = Array.from(document.querySelectorAll('[data-settings-tab-target]'));
+        const tabPanes = Array.from(document.querySelectorAll('#settingsTabsContent > .settings-panel.tab-pane'));
+        if (!tabButtons.length || !tabPanes.length) return;
+
+        const targetExists = (targetId) => tabPanes.some((pane) => pane.id === targetId);
+        const normalizeTarget = (value = '') => {
+            const raw = String(value || '').replace(/^#/, '').trim();
+            if (raw === 'smtp') return 'email';
+            return raw;
+        };
+        const activateTab = (targetId, updateHash = false) => {
+            const normalizedTarget = normalizeTarget(targetId);
+            const nextTarget = targetExists(normalizedTarget) ? normalizedTarget : 'accounts';
+            tabButtons.forEach((button) => {
+                const isActive = button.dataset.settingsTabTarget === nextTarget;
+                button.classList.toggle('active', isActive);
+                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                button.tabIndex = isActive ? 0 : -1;
+            });
+            tabPanes.forEach((pane) => {
+                const isActive = pane.id === nextTarget;
+                pane.classList.toggle('active', isActive);
+                pane.classList.toggle('show', isActive);
+            });
+            if (updateHash && window.history?.replaceState) {
+                const nextUrl = `${window.location.pathname}${window.location.search}#${nextTarget}`;
+                window.history.replaceState(null, '', nextUrl);
+            }
+        };
+
+        tabButtons.forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                activateTab(button.dataset.settingsTabTarget, false);
+            });
+        });
+
+        const initialTarget = normalizeTarget(window.location.hash) || 'accounts';
+        activateTab(initialTarget, false);
+    };
+
+    setupSettingsTabs();
     
     // Backend-powered accounts
     const formatDateDisplay = (isoOrText) => {

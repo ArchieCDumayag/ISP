@@ -2,9 +2,10 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const readline = require('readline');
+const { PROJECT_ROOT, FLAVORS_DIR } = require('../core/runtime/paths');
 
-const projectRoot = path.resolve(__dirname, '..');
-const flavorsDir = path.join(projectRoot, 'flavors');
+const projectRoot = PROJECT_ROOT;
+const flavorsDir = FLAVORS_DIR;
 const desktopDir = path.resolve(projectRoot, '..');
 
 function normalizeFlavorName(value) {

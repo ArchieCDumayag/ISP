@@ -1,6 +1,7 @@
 const mysql = require('mysql2/promise');
 const path = require('path');
-const cfg = require(path.join(__dirname, '..', 'data', 'mysql-config.json'));
+const { DATA_DIR } = require('../core/runtime/paths');
+const cfg = require(path.join(DATA_DIR, 'mysql-config.json'));
 const ref = process.argv[2] || '21780017160232';
 const acct = process.argv[3] || '315068642';
 

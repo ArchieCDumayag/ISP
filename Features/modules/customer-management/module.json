@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "customer-management",
+  "displayName": "Customer Management",
+  "status": "modularized",
+  "contextFile": "Features/modules/customer-management/Module_context.md",
+  "coordinationLock": "Features/modules/customer-management",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/customers",
+    "/api/customer-drafts",
+    "/api/coverage",
+    "/api/referrals",
+    "/api/public/applications",
+    "/api/public/philippines"
+  ],
+  "webEntryPoints": [
+    "Features/modules/customer-management/web/customers.html",
+    "Features/modules/customer-management/web/customer-draft-queue.html",
+    "Features/modules/customer-management/web/customer-archive.html",
+    "Features/modules/customer-management/web/coverage.html",
+    "Features/modules/customer-management/web/apply-now.html",
+    "Features/modules/customer-management/web/referrals.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/customer-management/**"
+  ]
+}

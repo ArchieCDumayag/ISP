@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "admin",
+  "displayName": "Admin",
+  "status": "modularized",
+  "contextFile": "Features/modules/admin/Module_context.md",
+  "coordinationLock": "Features/modules/admin",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/auth",
+    "/api/accounts",
+    "/api/activity-log",
+    "/api/business-profile",
+    "/api/integrations",
+    "/api/info",
+    "/api/app-downloads",
+    "/api/structure",
+    "/api/system-update"
+  ],
+  "webEntryPoints": [
+    "Features/modules/admin/web/login.html",
+    "Features/modules/admin/web/accounts.html",
+    "Features/modules/admin/web/flavors.html",
+    "Features/modules/admin/web/setup.html",
+    "Features/modules/admin/web/install-guide.html",
+    "Features/modules/admin/web/update-download.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/admin/**",
+    "service-config.json",
+    "structure-manifest.json"
+  ]
+}

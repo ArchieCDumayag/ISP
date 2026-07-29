@@ -10,9 +10,10 @@ const XLSX = require('xlsx');
 const {
   createCustomerRecord,
   readCustomers
-} = require('../customers');
+} = require('../Features/modules/customer-management/backend/customers');
+const { PROJECT_ROOT, DATA_DIR } = require('../core/runtime/paths');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = PROJECT_ROOT;
 const DEFAULT_WORKBOOK = 'C:\\Users\\LENOVO\\Downloads\\Cash Flow 2026.xlsx';
 const SOURCE_SHEET = 'CLIENTS LIST';
 const BRANCH_ID = 1;
@@ -26,10 +27,10 @@ const workbookPath = sourceArgIndex !== -1 && args[sourceArgIndex + 1]
   ? path.resolve(args[sourceArgIndex + 1])
   : DEFAULT_WORKBOOK;
 
-const dataPath = path.join(ROOT, 'data', 'customers.json');
-const plansPath = path.join(ROOT, 'data', 'plans.json');
-const coveragePath = path.join(ROOT, 'data', 'coverage.json');
-const backupDir = path.join(ROOT, 'data', 'backups');
+const dataPath = path.join(DATA_DIR, 'customers.json');
+const plansPath = path.join(DATA_DIR, 'plans.json');
+const coveragePath = path.join(DATA_DIR, 'coverage.json');
+const backupDir = path.join(DATA_DIR, 'backups');
 
 const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const key = (value) => clean(value).toLowerCase();

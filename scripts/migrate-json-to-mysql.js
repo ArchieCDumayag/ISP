@@ -1,6 +1,6 @@
-require('../env-loader');
+require('../core/config/env-loader');
 
-const { readJsonFile, writeJson } = require('../data-store');
+const { readJsonFile, writeJson } = require('../core/data/data-store');
 
 const KEYS = [
   'accounts',

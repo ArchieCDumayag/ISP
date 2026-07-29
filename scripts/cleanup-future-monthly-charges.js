@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const { getPool, resetPool } = require('../db');
-const { runMonthlyBillingOnce, enforcePppoeGracePeriod } = require('../billing-scheduler');
+const { getPool, resetPool } = require('../core/data/db');
+const { DATA_DIR } = require('../core/runtime/paths');
+const { runMonthlyBillingOnce, enforcePppoeGracePeriod } = require('../Features/modules/billing/backend/billing-scheduler');
 
 function pad(value) {
   return String(value).padStart(2, '0');
@@ -66,7 +67,7 @@ function groupByAccount(rows) {
 }
 
 function ensureBackupDir() {
-  const dir = path.join(__dirname, '..', 'data', 'cleanup-backups');
+  const dir = path.join(DATA_DIR, 'cleanup-backups');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

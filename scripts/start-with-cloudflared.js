@@ -1,8 +1,9 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { PROJECT_ROOT } = require('../core/runtime/paths');
 
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = PROJECT_ROOT;
 const logsDir = path.join(projectRoot, 'logs');
 const cloudflaredConfig = process.env.CLOUDFLARED_CONFIG
   ? path.resolve(projectRoot, process.env.CLOUDFLARED_CONFIG)

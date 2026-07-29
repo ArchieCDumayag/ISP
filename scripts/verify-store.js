@@ -1,5 +1,5 @@
-const { readJson, readJsonFile } = require('../data-store');
-const { resetPool } = require('../db');
+const { readJson, readJsonFile } = require('../core/data/data-store');
+const { resetPool } = require('../core/data/db');
 
 const KEYS = [
   'accounts',

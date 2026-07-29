@@ -1,12 +1,12 @@
 const { URL } = require('node:url');
 const fs = require('fs');
-const path = require('path');
+const { resolveProjectPath } = require('../core/runtime/paths');
 
 const fetchFn = typeof fetch === 'function'
   ? fetch
   : require('undici').fetch;
 
-const CONFIG_PATH = path.join(__dirname, '..', 'login.json');
+const CONFIG_PATH = resolveProjectPath('login.json');
 
 const loadLoginConfig = () => {
   try {

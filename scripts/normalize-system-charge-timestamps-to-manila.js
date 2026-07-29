@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const { assertRelationalReady } = require('../db-relational');
-const { getPool, resetPool } = require('../db');
+const { assertRelationalReady } = require('../core/data/db-relational');
+const { getPool, resetPool } = require('../core/data/db');
+const { DATA_DIR } = require('../core/runtime/paths');
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
-const BACKUP_DIR = path.join(__dirname, '..', 'data', 'cleanup-backups');
+const BACKUP_DIR = path.join(DATA_DIR, 'cleanup-backups');
 const APPLY_FLAG = process.argv.includes('--apply');
 
 function pad(value) {

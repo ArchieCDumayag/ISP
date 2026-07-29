@@ -7,8 +7,9 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
+const { PROJECT_ROOT, DATA_DIR } = require('../core/runtime/paths');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = PROJECT_ROOT;
 const DEFAULT_WORKBOOK = 'C:\\Users\\LENOVO\\Downloads\\Cash Flow 2026.xlsx';
 const CLIENT_SHEET = 'CLIENTS LIST';
 const ACCOUNT_PREFIX = '100';
@@ -21,7 +22,7 @@ const workbookPath = sourceArgIndex !== -1 && args[sourceArgIndex + 1]
   ? path.resolve(args[sourceArgIndex + 1])
   : DEFAULT_WORKBOOK;
 
-const dataDir = path.join(ROOT, 'data');
+const dataDir = DATA_DIR;
 const paymentsPath = path.join(dataDir, 'payments.json');
 const customersPath = path.join(dataDir, 'customers.json');
 const backupDir = path.join(dataDir, 'backups');

@@ -1,4 +1,4 @@
-require('./env-loader');
+require('./core/config/env-loader');
 
 if (!process.env.TZ) {
     process.env.TZ = 'Asia/Manila';
@@ -12,68 +12,91 @@ const https = require('https');
 const net = require('net');
 const { execFile, spawn } = require('child_process');
 const cors = require('cors');
-const { createRateLimiter } = require('./rate-limiter');
+const { createRateLimiter } = require('./core/security/rate-limiter');
+const { loadModuleRuntimes } = require('./core/runtime/module-loader');
+const { PROJECT_ROOT, PUBLIC_ROOT, DATA_DIR } = require('./core/runtime/paths');
+
+const MODULE_RUNTIMES = loadModuleRuntimes({
+    requireBackend: true,
+    requireWeb: true
+});
+const requireModuleRuntime = (moduleId) => {
+    const runtime = MODULE_RUNTIMES.get(moduleId);
+    if (!runtime) throw new Error(`Required module runtime is missing: ${moduleId}`);
+    return runtime;
+};
+const { backend: adminBackend, webRoot: ADMIN_WEB_ROOT } = requireModuleRuntime('admin');
+const { backend: customerManagementBackend, webRoot: CUSTOMER_MANAGEMENT_WEB_ROOT } = requireModuleRuntime('customer-management');
+const { backend: billingBackend, webRoot: BILLING_WEB_ROOT } = requireModuleRuntime('billing');
+const { backend: networkBackend, webRoot: NETWORK_WEB_ROOT } = requireModuleRuntime('network');
+const { backend: collectorBackend, webRoot: COLLECTOR_WEB_ROOT } = requireModuleRuntime('collector');
+const { backend: technicianBackend, webRoot: TECHNICIAN_WEB_ROOT } = requireModuleRuntime('technician');
+const { backend: financeBackend, webRoot: FINANCE_WEB_ROOT } = requireModuleRuntime('finance');
+const { backend: customerAppBackend, webRoot: CUSTOMER_APP_WEB_ROOT } = requireModuleRuntime('customer-app');
+const MODULE_WEB_ROOTS = Object.freeze(
+    [...MODULE_RUNTIMES.values()].map((runtime) => runtime.webRoot).filter(Boolean)
+);
 
 // Import API routers
-const plansRouter = require('./plans');
-const paymentsRouter = require('./payments');
+const plansRouter = billingBackend.load('plans');
+const paymentsRouter = billingBackend.load('payments');
 const paymentsWebhookHandler = paymentsRouter.handleXenditWebhook;
-const customersModule = require('./customers');
+const customersModule = customerManagementBackend.load('customers');
 const customersRouter = customersModule.router || customersModule;
 const customersPublicRouter = customersModule.publicRouter || require('express').Router();
 const getCustomerFromSession = customersModule.getCustomerFromSession;
-const paymentRecordsRouter = require('./payment-records');
-const disconnectionsRouter = require('./disconnections');
-const referralsRouter = require('./referrals');
-const coverageRouter = require('./api_coverage');
-const ponManagementRouter = require('./pon-management-api');
-const smsRouter = require('./sms');
-const collectorsRouter = require('./collectors');
-const expensesRouter = require('./expenses');
-const payrollRouter = require('./payroll');
-const { scheduleBilling, runMonthlyBillingOnce, enforcePppoeGracePeriod } = require('./billing-scheduler');
-const { scheduleSmsRunner } = require('./sms-scheduler');
-const { router: authRouter, getUserFromSession, getUserFromBasicAuth, requireAuth, requireCollectorOrAdminAuth } = require('./auth');
-const accountsRouter = require('./accounts');
-const infoRouter = require('./info-api');
-const collectorPaymentsRouter = require('./collector-payments');
-const businessProfileRouter = require('./business-profile');
-const appDownloadsRouter = require('./app-downloads');
-const { loadActivityLog, appendActivityLog, clearActivityLog } = require('./activity-log');
-const integrationSettingsRouter = require('./integration-settings');
+const paymentRecordsRouter = billingBackend.load('paymentRecords');
+const disconnectionsRouter = billingBackend.load('disconnections');
+const referralsRouter = customerManagementBackend.load('referrals');
+const coverageRouter = customerManagementBackend.load('coverage');
+const ponManagementRouter = networkBackend.load('ponManagement');
+const smsRouter = customerAppBackend.load('sms');
+const collectorsRouter = collectorBackend.load('collectors');
+const expensesRouter = financeBackend.load('expenses');
+const payrollRouter = financeBackend.load('payroll');
+const { scheduleBilling, runMonthlyBillingOnce, enforcePppoeGracePeriod } = billingBackend.load('billingScheduler');
+const { scheduleSmsRunner } = customerAppBackend.load('smsScheduler');
+const { router: authRouter, getUserFromSession, getUserFromBasicAuth, requireAuth, requireCollectorOrAdminAuth } = adminBackend.load('auth');
+const accountsRouter = adminBackend.load('accounts');
+const infoRouter = adminBackend.load('infoApi');
+const collectorPaymentsRouter = collectorBackend.load('collectorPayments');
+const businessProfileRouter = adminBackend.load('businessProfile');
+const appDownloadsRouter = adminBackend.load('appDownloads');
+const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
+const integrationSettingsRouter = adminBackend.load('integrationSettings');
 const { loadIntegrationSettings } = integrationSettingsRouter;
-const paymentConfirmationsRouter = require('./payment-confirmations');
-const mikrotikRouter = require('./mikrotik');
-const jobsRouter = require('./jobs');
-const philippinesAddresses = require('./philippines-addresses');
-const customerDraftSubmissionsModule = require('./customer-draft-submissions');
+const paymentConfirmationsRouter = billingBackend.load('paymentConfirmations');
+const mikrotikRouter = networkBackend.load('mikrotik');
+const jobsRouter = technicianBackend.load('jobs');
+const philippinesAddresses = customerManagementBackend.load('philippinesAddresses');
+const customerDraftSubmissionsModule = customerManagementBackend.load('customerDraftSubmissions');
 const customerDraftAdminRouter = customerDraftSubmissionsModule.adminRouter || require('express').Router();
 const customerDraftTechnicianRouter = customerDraftSubmissionsModule.technicianRouter || require('express').Router();
 const customerDraftTechnicianAuthRouter = customerDraftSubmissionsModule.technicianAuthRouter || require('express').Router();
-const technicianInstallationsRouter = require('./technician-installations');
-const technicianAssignmentsRouter = require('./technician-assignments');
-const customerAppModule = require('./customer-app-api');
+const technicianInstallationsRouter = technicianBackend.load('technicianInstallations');
+const technicianAssignmentsRouter = technicianBackend.load('technicianAssignments');
+const customerAppModule = customerAppBackend.load('customerAppApi');
 const customerAppRouter = customerAppModule.router || require('express').Router();
 const customerAppPublicRouter = customerAppModule.publicRouter || require('express').Router();
-const messengerBotRouter = require('./messenger-bot');
-const ticketsModule = require('./tickets');
+const messengerBotRouter = customerAppBackend.load('messengerBot');
+const ticketsModule = technicianBackend.load('tickets');
 const ticketsRouter = ticketsModule.router || ticketsModule;
 const ticketsPublicRouter = ticketsModule.publicRouter || require('express').Router();
-const { startCustomerUpstream } = require('./customer-upstream');
-const { getSession: getCachedSession, verifyToken } = require('./session-cache');
-const { router: structureRouter } = require('./setup-installer');
-const { assertRelationalReady, isRelationalReady } = require('./db-relational');
-const { query, getPool } = require('./db');
-const { readJson, writeJson } = require('./data-store');
-const { getFlavorFeatures } = require('./flavor-features');
-const { normalizePppoeUsernameKey } = require('./pppoe-account-utils');
-const { accountHasRole } = require('./role-utils');
-const { isJsonStorageMode, getStorageDriver } = require('./storage-mode');
+const { startCustomerUpstream } = customerAppBackend.load('customerUpstream');
+const { getSession: getCachedSession, verifyToken } = require('./core/security/session-cache');
+const { router: structureRouter } = adminBackend.load('setupInstaller');
+const { assertRelationalReady, isRelationalReady } = require('./core/data/db-relational');
+const { query, getPool } = require('./core/data/db');
+const { readJson, writeJson } = require('./core/data/data-store');
+const { getFlavorFeatures } = require('./core/config/flavor-features');
+const { normalizePppoeUsernameKey } = networkBackend.load('pppoeAccountUtils');
+const { accountHasRole } = require('./core/security/role-utils');
+const { isJsonStorageMode, getStorageDriver } = require('./core/config/storage-mode');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PUBLIC_UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
-const LEGACY_UPLOADS_DIR = path.join(__dirname, 'data', 'uploads');
+const PUBLIC_UPLOADS_DIR = path.join(PUBLIC_ROOT, 'uploads');
+const LEGACY_UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const LOOPBACK_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const STRUCTURE_OWNER_ID = String(process.env.STRUCTURE_OWNER_ID || '1').trim() || '1';
@@ -100,7 +123,7 @@ const parseHostOnly = (hostValue = '') => {
 const readCloudflaredHostname = () => {
     if (cachedCloudflaredHostname !== undefined) return cachedCloudflaredHostname;
     try {
-        const filePath = path.join(__dirname, '.cloudflared', 'config.yml');
+        const filePath = path.join(PROJECT_ROOT, '.cloudflared', 'config.yml');
         const raw = fs.readFileSync(filePath, 'utf8');
         const match = raw.match(/^\s*-\s*hostname:\s*([^\s#]+)\s*$/m) || raw.match(/^\s*hostname:\s*([^\s#]+)\s*$/m);
         const host = String(match?.[1] || '').trim().toLowerCase();
@@ -1653,7 +1676,7 @@ const summarizeGitError = (error, fallback = 'Git command failed.') => {
 
 const runGitCommand = (args = [], options = {}) => new Promise((resolve, reject) => {
     execFile('git', args, {
-        cwd: __dirname,
+        cwd: PROJECT_ROOT,
         windowsHide: true,
         timeout: options.timeout || SYSTEM_UPDATE_GIT_TIMEOUT_MS,
         maxBuffer: options.maxBuffer || 1024 * 1024
@@ -1797,7 +1820,7 @@ const runSystemUpdateStep = (label, command, args = [], options = {}) => new Pro
     systemUpdateRunState.currentStep = label;
     appendSystemUpdateLog(`\n[${new Date().toISOString()}] ${label}\n$ ${[command, ...args].join(' ')}\n`);
     execFile(command, args, {
-        cwd: __dirname,
+        cwd: PROJECT_ROOT,
         windowsHide: true,
         timeout: options.timeout || SYSTEM_UPDATE_GIT_TIMEOUT_MS,
         maxBuffer: options.maxBuffer || 2 * 1024 * 1024
@@ -1824,7 +1847,7 @@ const scheduleWindowsSystemUpdateRestart = () => {
 const { spawn } = require('child_process');
 setTimeout(() => {
   const child = spawn(${JSON.stringify(npmStart.command)}, ${JSON.stringify(npmStart.args)}, {
-    cwd: ${JSON.stringify(__dirname)},
+    cwd: ${JSON.stringify(PROJECT_ROOT)},
     detached: true,
     stdio: 'ignore',
     windowsHide: true
@@ -1833,7 +1856,7 @@ setTimeout(() => {
 }, ${SYSTEM_UPDATE_RESTART_DELAY_MS + 2500});
 `;
     const child = spawn(process.execPath, ['-e', restartScript], {
-        cwd: __dirname,
+        cwd: PROJECT_ROOT,
         detached: true,
         stdio: 'ignore',
         windowsHide: true
@@ -1920,7 +1943,7 @@ const applySystemUpdateIfAvailable = async () => {
             timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
         });
 
-        const hasPackageLock = fs.existsSync(path.join(__dirname, 'package-lock.json'));
+        const hasPackageLock = fs.existsSync(path.join(PROJECT_ROOT, 'package-lock.json'));
         const npmArgs = hasPackageLock
             ? ['ci', '--omit=dev']
             : ['install', '--omit=dev'];
@@ -2090,7 +2113,7 @@ const getBaseUrl = (req) => {
 
 const PDF_CACHE_TTL_MS = 5 * 60 * 1000;
 const PDF_DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const PDF_CACHE_DIR = path.join(__dirname, 'data', 'pdf-cache');
+const PDF_CACHE_DIR = path.join(DATA_DIR, 'pdf-cache');
 const STATEMENT_PDF_LAYOUT_VERSION = 'print-v6-ready-fresh-cache';
 const STATEMENT_PDF_TIME_ZONE = 'Asia/Manila';
 const STATEMENT_PDF_VIEWPORT = Object.freeze({
@@ -2112,7 +2135,7 @@ const getTemplateVersionToken = (templateName) => {
     const safeName = String(templateName || '').replace(/[^0-9a-z._-]/gi, '');
     if (!safeName) return '0';
     try {
-        const fullPath = path.join(__dirname, 'public', safeName);
+        const fullPath = path.join(BILLING_WEB_ROOT, safeName);
         const stats = fs.statSync(fullPath);
         return String(Math.floor(stats.mtimeMs || 0));
     } catch {
@@ -2515,33 +2538,33 @@ const setStaticAssetCacheHeaders = (res) => {
 app.get('/styles.css', (_req, res) => {
     res.type('text/css');
     setStaticAssetCacheHeaders(res);
-    return res.sendFile(path.join(__dirname, 'public', 'styles.css'));
+    return res.sendFile(path.join(PUBLIC_ROOT, 'styles.css'));
 });
 
 app.get('/theme-init.js', (_req, res) => {
     res.type('application/javascript');
     setStaticAssetCacheHeaders(res);
-    return res.sendFile(path.join(__dirname, 'public', 'theme-init.js'));
+    return res.sendFile(path.join(PUBLIC_ROOT, 'theme-init.js'));
 });
 
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
-app.use('/css', express.static(path.join(__dirname, 'public', 'css'), {
+app.use('/css', express.static(path.join(PUBLIC_ROOT, 'css'), {
     etag: true,
     setHeaders: setStaticAssetCacheHeaders
 }));
 
-app.use('/js', express.static(path.join(__dirname, 'public', 'js'), {
+app.use('/js', express.static(path.join(PUBLIC_ROOT, 'js'), {
     etag: true,
     setHeaders: setStaticAssetCacheHeaders
 }));
 
-app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
+app.use('/images', express.static(path.join(PUBLIC_ROOT, 'images'), {
     etag: true,
     setHeaders: setStaticAssetCacheHeaders
 }));
 
-app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), {
+app.use('/assets', express.static(path.join(PUBLIC_ROOT, 'assets'), {
     etag: true,
     setHeaders: setStaticAssetCacheHeaders
 }));
@@ -2549,15 +2572,17 @@ app.use('/assets', express.static(path.join(__dirname, 'public', 'assets'), {
 // Serve root static assets before page guards so CSS/JS never fall through to HTML routes.
 app.get(/^\/[^/]+\.(?:css|js|mjs|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|map)$/i, (req, res, next) => {
     const filename = path.basename(req.path);
-    const publicPath = path.join(__dirname, 'public', filename);
-    const rootPath = path.join(__dirname, filename);
+    const publicPath = path.join(PUBLIC_ROOT, filename);
+    const moduleWebPath = MODULE_WEB_ROOTS
+        .map((webRoot) => path.join(webRoot, filename))
+        .find((candidate) => fs.existsSync(candidate));
     if (fs.existsSync(publicPath)) {
         setStaticAssetCacheHeaders(res);
         return res.sendFile(publicPath);
     }
-    if (fs.existsSync(rootPath)) {
+    if (moduleWebPath) {
         setStaticAssetCacheHeaders(res);
-        return res.sendFile(rootPath);
+        return res.sendFile(moduleWebPath);
     }
     return next();
 });
@@ -2735,21 +2760,24 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files from the 'public' directory (AFTER auth check).
+// Serve module-owned and shared public files (AFTER auth check).
 // Keep index disabled so "/" is handled by the explicit route below.
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+MODULE_WEB_ROOTS.forEach((webRoot) => {
+    app.use(express.static(webRoot, { index: false }));
+});
+app.use(express.static(PUBLIC_ROOT, { index: false }));
 
 // Friendly page routes (optional but helpful)
 app.get('/', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    return res.sendFile(path.join(__dirname, 'public', 'company-info.html'));
+    return res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'company-info.html'));
 });
 // Serve a fresh login page (avoid caching old JS behavior)
 app.get('/login.html', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+    res.sendFile(path.join(ADMIN_WEB_ROOT, 'login.html'));
 });
 app.get('/customer-login', (_req, res) => {
     return res.redirect('/customer-login.html');
@@ -2758,25 +2786,25 @@ app.get('/customer-login.html', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    return res.sendFile(path.join(__dirname, 'public', 'customer-login.html'));
+    return res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'customer-login.html'));
 });
 app.get('/quick-payment', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    return res.sendFile(path.join(__dirname, 'public', 'quick-payment.html'));
+    return res.sendFile(path.join(BILLING_WEB_ROOT, 'quick-payment.html'));
 });
 app.get('/public', (_req, res) => {
     return res.redirect('/privacy-terms');
 });
 app.get('/privacy-terms', (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'privacy-terms.html'));
+    return res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'privacy-terms.html'));
 });
 app.get('/terms-of-use', (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'terms-of-use.html'));
+    return res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'terms-of-use.html'));
 });
 app.get('/company-info', (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'company-info.html'));
+    return res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'company-info.html'));
 });
 app.get('/apply-now', (req, res) => {
     const plan = String(req.query?.plan || '').trim();
@@ -2787,7 +2815,7 @@ app.get('/coverage-map-app', requireFeature('coverageMap'), (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    return res.sendFile(path.join(__dirname, 'public', 'coverage-map-app.html'));
+    return res.sendFile(path.join(NETWORK_WEB_ROOT, 'coverage-map-app.html'));
 });
 // Specific route for index.html to ensure protection
 app.get('/index.html', async (req, res) => {
@@ -2795,28 +2823,28 @@ app.get('/index.html', async (req, res) => {
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(PUBLIC_ROOT, 'index.html'));
 });
 app.get('/payments', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'payments.html'));
+    res.sendFile(path.join(BILLING_WEB_ROOT, 'payments.html'));
 });
 app.get('/expenses', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'expenses.html'));
+    res.sendFile(path.join(FINANCE_WEB_ROOT, 'expenses.html'));
 });
 app.get('/payroll', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'payroll.html'));
+    res.sendFile(path.join(FINANCE_WEB_ROOT, 'payroll.html'));
 });
 const XENDIT_RETURN_TARGET_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
 const parseXenditReturnTarget = (value) => {
@@ -3080,13 +3108,13 @@ app.get('/payment/success', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    return res.sendFile(path.join(__dirname, 'public', 'payment-receipt.html'));
+    return res.sendFile(path.join(BILLING_WEB_ROOT, 'payment-receipt.html'));
 });
 app.get('/payment-receipt', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    return res.sendFile(path.join(__dirname, 'public', 'payment-receipt.html'));
+    return res.sendFile(path.join(BILLING_WEB_ROOT, 'payment-receipt.html'));
 });
 app.get('/payment/failed', (req, res) => {
     return renderXenditReturnPage(res, {
@@ -3115,44 +3143,44 @@ app.get('/payment-confirmation-queue', async (req, res) => {
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'payment-confirmation-queue.html'));
+    res.sendFile(path.join(BILLING_WEB_ROOT, 'payment-confirmation-queue.html'));
 });
 app.get('/payment-confirmation-queue-history', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    return res.sendFile(path.join(__dirname, 'public', 'payment-confirmation-queue-history.html'));
+    return res.sendFile(path.join(BILLING_WEB_ROOT, 'payment-confirmation-queue-history.html'));
 });
 app.get('/customer-draft-queue', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    return res.sendFile(path.join(__dirname, 'public', 'customer-draft-queue.html'));
+    return res.sendFile(path.join(CUSTOMER_MANAGEMENT_WEB_ROOT, 'customer-draft-queue.html'));
 });
 app.get('/customer-archive', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    return res.sendFile(path.join(__dirname, 'public', 'customer-archive.html'));
+    return res.sendFile(path.join(CUSTOMER_MANAGEMENT_WEB_ROOT, 'customer-archive.html'));
 });
 app.get('/technician-customer-drafts', (_req, res) => {
-    return res.sendFile(path.join(__dirname, 'public', 'technician-customer-drafts.html'));
+    return res.sendFile(path.join(TECHNICIAN_WEB_ROOT, 'technician-customer-drafts.html'));
 });
 app.get('/update-download', requireStructureOwnerAccess, async (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'update-download.html'));
+    res.sendFile(path.join(ADMIN_WEB_ROOT, 'update-download.html'));
 });
 app.get('/flavors', requireStructureOwnerAccess, async (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'flavors.html'));
+    res.sendFile(path.join(ADMIN_WEB_ROOT, 'flavors.html'));
 });
 app.get('/tickets', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'tickets.html'));
+    res.sendFile(path.join(TECHNICIAN_WEB_ROOT, 'tickets.html'));
 });
 app.get('/customer-app', async (req, res) => {
     const user = await getUserFromSession(req);
@@ -3173,7 +3201,7 @@ app.get('/customer-app-popup-reminder', async (req, res) => {
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'customer-app-popup-reminder.html'));
+    res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'customer-app-popup-reminder.html'));
 });
 
 app.get('/collectors', async (req, res) => {
@@ -3181,35 +3209,35 @@ app.get('/collectors', async (req, res) => {
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'collectors.html'));
+    res.sendFile(path.join(COLLECTOR_WEB_ROOT, 'collectors.html'));
 });
 app.get('/collectors-history', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'collectors-history.html'));
+    res.sendFile(path.join(COLLECTOR_WEB_ROOT, 'collectors-history.html'));
 });
 app.get('/pppoe', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'pppoe.html'));
+    res.sendFile(path.join(NETWORK_WEB_ROOT, 'pppoe.html'));
 });
 app.get('/genieacs', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'genieacs.html'));
+    res.sendFile(path.join(NETWORK_WEB_ROOT, 'genieacs.html'));
 });
 app.get('/pon-management', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(__dirname, 'public', 'pon-management.html'));
+    res.sendFile(path.join(NETWORK_WEB_ROOT, 'pon-management.html'));
 });
 
 // --- API Routes ---
@@ -5895,7 +5923,7 @@ app.get('/api/flavors/features', requireAuth, (req, res) => {
     }
     try {
         const { listFlavorNames, loadFlavor } = require('./scripts/flavor-tools');
-        const { FEATURE_GROUPS, FEATURE_LABELS, FEATURE_ORDER, normalizeFeatures } = require('./flavor-features');
+        const { FEATURE_GROUPS, FEATURE_LABELS, FEATURE_ORDER, normalizeFeatures } = require('./core/config/flavor-features');
         const flavors = listFlavorNames().map((name) => {
             const flavor = loadFlavor(name);
             return {
@@ -5921,7 +5949,7 @@ app.put('/api/flavors/:name/features', requireAuth, (req, res) => {
     }
     try {
         const { getFlavorPath, loadFlavor, normalizeFlavorName } = require('./scripts/flavor-tools');
-        const { normalizeFeatures } = require('./flavor-features');
+        const { normalizeFeatures } = require('./core/config/flavor-features');
         const name = normalizeFlavorName(req.params.name);
         const flavor = loadFlavor(name);
         flavor.features = normalizeFeatures(req.body?.features || {});
@@ -7734,7 +7762,7 @@ app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
     console.log(`[info] Storage driver: ${getStorageDriver()}`);
     if (isJsonStorageMode()) {
-        console.log(`[info] JSON data directory: ${path.join(__dirname, 'data')}`);
+        console.log(`[info] JSON data directory: ${DATA_DIR}`);
     }
 });
 

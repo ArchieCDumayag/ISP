@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
-const { decryptJson, encryptJson } = require('../db-secrets');
+const { decryptJson, encryptJson } = require('../core/data/db-secrets');
+const { DATA_DIR } = require('../core/runtime/paths');
 
-const MYSQL_CONFIG_PATH = path.join(__dirname, '..', 'data', 'mysql-config.json');
+const MYSQL_CONFIG_PATH = path.join(DATA_DIR, 'mysql-config.json');
 
 const normalized = (value) => String(value || '').trim().toLowerCase();
 

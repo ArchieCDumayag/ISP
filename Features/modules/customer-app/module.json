@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "customer-app",
+  "displayName": "Customer App",
+  "status": "modularized",
+  "contextFile": "Features/modules/customer-app/Module_context.md",
+  "coordinationLock": "Features/modules/customer-app",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/customer-app",
+    "/api/customers/login",
+    "/api/customers/me",
+    "/api/sms",
+    "/webhooks/messenger"
+  ],
+  "webEntryPoints": [
+    "Features/modules/customer-app/web/customer-login.html",
+    "Features/modules/customer-app/web/customer-portal.html",
+    "Features/modules/customer-app/web/customer-app.html",
+    "Features/modules/customer-app/web/customer-app-popup-reminder.html",
+    "Features/modules/customer-app/web/sms.html",
+    "Features/modules/customer-app/web/privacy-terms.html",
+    "Features/modules/customer-app/web/terms-of-use.html",
+    "Features/modules/customer-app/web/company-info.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/customer-app/**"
+  ]
+}

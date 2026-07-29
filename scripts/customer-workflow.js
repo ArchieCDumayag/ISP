@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { resolveProjectPath } = require('../core/runtime/paths');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'login.json');
+const CONFIG_PATH = resolveProjectPath('login.json');
 const BASE_URL = process.env.CENTRAL_URL || 'http://localhost:3000';
 
 const fetchFn = typeof fetch === 'function' ? fetch : require('undici').fetch;

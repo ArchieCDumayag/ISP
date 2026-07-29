@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/accounts.css?v=4.5">
+    <link rel="stylesheet" href="css/accounts.css?v=4.6">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
 </head>
 
@@ -59,6 +59,96 @@
                                         <!-- Populated by public/accounts.js -->
                                     </tbody>
                                 </table>
+                            </div>
+                        </section>
+
+                        <section id="system-update" class="settings-panel system-update-panel">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo integration-heading-logo--system-update" aria-hidden="true">
+                                        <i class="integration-heading-logo__icon ti ti-refresh" aria-hidden="true"></i>
+                                    </span>
+                                    <div>
+                                        <h2>System Update</h2>
+                                        <p>Checks the tracked Git branch on the server and lists the latest remote commits.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <span class="integration-status-badge integration-status-badge--partial" id="system-update-status">Checking</span>
+                                    <button class="ghost-btn" type="button" id="system-update-refresh">
+                                        <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
+                                    </button>
+                                </div>
+                            </header>
+
+                            <div class="integration-overview system-update-overview">
+                                <div class="integration-summary">
+                                    <div class="integration-summary-grid system-update-summary-grid">
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Repository</p>
+                                            <p class="summary-value"><a id="system-update-repository" href="https://github.com/ArchieCDumayag/ISP" target="_blank" rel="noopener">ArchieCDumayag/ISP</a></p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Tracked Branch</p>
+                                            <p class="summary-value" id="system-update-branch">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Local Version</p>
+                                            <p class="summary-value" id="system-update-local">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Remote Version</p>
+                                            <p class="summary-value" id="system-update-remote">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Difference</p>
+                                            <p class="summary-value" id="system-update-difference">-</p>
+                                        </div>
+                                        <div class="integration-summary-item">
+                                            <p class="summary-label">Checked</p>
+                                            <p class="summary-value" id="system-update-checked">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="system-update-command-card">
+                                    <div class="system-update-command-head">
+                                        <div>
+                                            <p class="summary-label">Terminal update command</p>
+                                            <p class="system-update-command-shell" id="system-update-command-shell">Server terminal</p>
+                                        </div>
+                                        <button class="ghost-btn ghost-btn--icon" type="button" id="system-update-copy" aria-label="Copy terminal update command" title="Copy terminal update command">
+                                            <i class="ti ti-copy" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <pre id="system-update-command" class="system-update-command" tabindex="0">Loading...</pre>
+                                    <p class="system-update-note">System updates are terminal-based. Run the command on the server terminal, then refresh this tab after the app comes back.</p>
+                                    <p class="system-update-warning" id="system-update-warning" hidden></p>
+                                </div>
+
+                                <div class="system-update-commits">
+                                    <div class="system-update-commits-head">
+                                        <h3>Latest 50 Remote Commits</h3>
+                                        <span id="system-update-commit-count">0 shown</span>
+                                    </div>
+                                    <div class="table-wrapper system-update-table-wrapper">
+                                        <table class="settings-table system-update-table" aria-label="Latest remote Git commits">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Commit</th>
+                                                    <th scope="col">Message</th>
+                                                    <th scope="col">Author</th>
+                                                    <th scope="col">Date</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="system-update-commits-body">
+                                                <tr>
+                                                    <td colspan="4" class="system-update-empty">Loading commits...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         </section>
 
@@ -717,15 +807,12 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="accounts.js?v=3.5"></script>
+    <script src="accounts.js?v=3.6"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 
 </html>
-
-
-
 
 
 

@@ -1,0 +1,1790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Coverage Map - Dante Point To Point Pisonet</title>
+    <script src="theme-init.js?v=2.6"></script>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="coverage.css?v=2.2">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+    <style>
+      .nap-map-popup.leaflet-popup .leaflet-popup-content-wrapper {
+        border-radius: 22px;
+        border: 1px solid rgba(203, 213, 225, 0.82);
+        box-shadow: 0 22px 46px rgba(15, 23, 42, 0.16);
+        background: linear-gradient(180deg, #ffffff, #f8fbff);
+      }
+
+      .nap-map-popup.leaflet-popup .leaflet-popup-content {
+        margin: 0;
+        min-width: 316px;
+      }
+
+      .nap-map-popup__content {
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+        color: #0f172a;
+        line-height: 1.22;
+      }
+
+      .nap-map-popup__header {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .nap-map-popup__badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, rgba(124, 58, 237, 0.14), rgba(167, 139, 250, 0.24));
+        color: #6d28d9;
+        font-size: 1rem;
+        flex: 0 0 auto;
+      }
+
+      .nap-map-popup__headcopy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .nap-map-popup__eyebrow {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #6366f1;
+      }
+
+      .nap-map-popup__title {
+        font-size: 1.02rem;
+        font-weight: 800;
+        line-height: 1.18;
+        word-break: break-word;
+      }
+
+      .nap-map-popup__usage {
+        border-radius: 18px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+        padding: 14px 14px 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .nap-map-popup__usage-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .nap-map-popup__usage-label {
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+
+      .nap-map-popup__usage-value {
+        font-size: 0.92rem;
+        font-weight: 800;
+        color: #0f172a;
+      }
+
+      .nap-map-popup__usage-bar {
+        position: relative;
+        height: 8px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(203, 213, 225, 0.5);
+      }
+
+      .nap-map-popup__usage-bar > span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #7c3aed, #3b82f6);
+      }
+
+      .nap-map-popup__stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .nap-map-popup__stat {
+        display: grid;
+        gap: 5px;
+        padding: 12px 13px;
+        border-radius: 16px;
+        background: rgba(248, 250, 252, 0.98);
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        min-width: 0;
+      }
+
+      .nap-map-popup__stat-label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+
+      .nap-map-popup__stat-value {
+        font-size: 0.98rem;
+        font-weight: 600;
+        color: #0f172a;
+        word-break: break-word;
+      }
+
+      .customer-map-popup.leaflet-popup .leaflet-popup-content-wrapper {
+        border-radius: 18px;
+      }
+
+      .customer-map-popup.leaflet-popup .leaflet-popup-content {
+        margin: 16px 18px;
+        min-width: 220px;
+      }
+
+      .customer-map-popup__content {
+        display: grid;
+        gap: 8px;
+        color: #0f172a;
+        line-height: 1.24;
+      }
+
+      .customer-map-popup__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .customer-map-popup__title {
+        font-size: 1.02rem;
+        font-weight: 800;
+        line-height: 1.18;
+        margin-bottom: 0;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .customer-map-popup__name-status {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #16a34a;
+        box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+        flex: 0 0 auto;
+      }
+
+      .customer-map-popup__name-status--inactive {
+        background: #dc2626;
+        box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
+      }
+
+      .customer-map-popup__name-status--planned {
+        background: #2563eb;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+      }
+
+      .customer-map-popup__account {
+        font-size: 0.94rem;
+        font-weight: 700;
+        color: #2563eb;
+      }
+
+      .customer-map-popup__divider {
+        height: 1px;
+        background: rgba(203, 213, 225, 0.95);
+      }
+
+      .customer-map-popup__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        font-size: 0.94rem;
+        font-weight: 600;
+      }
+
+      .customer-map-popup__metric-label {
+        color: #2563eb;
+      }
+
+      body.theme-dark .nap-map-popup__content {
+        color: #e2e8f0;
+      }
+
+      body.theme-dark .nap-map-popup.leaflet-popup .leaflet-popup-content-wrapper,
+      body.theme-dark .customer-map-popup.leaflet-popup .leaflet-popup-content-wrapper {
+        background: rgba(11, 19, 33, 0.94);
+        border: 1px solid rgba(59, 74, 103, 0.58);
+        box-shadow: 0 20px 44px rgba(2, 6, 23, 0.58);
+      }
+
+      body.theme-dark .nap-map-popup.leaflet-popup .leaflet-popup-tip,
+      body.theme-dark .customer-map-popup.leaflet-popup .leaflet-popup-tip {
+        background: rgba(11, 19, 33, 0.94);
+      }
+
+      body.theme-dark .nap-map-popup__badge {
+        background: linear-gradient(135deg, rgba(109, 40, 217, 0.32), rgba(76, 29, 149, 0.38));
+        color: #ddd6fe;
+        box-shadow: inset 0 0 0 1px rgba(196, 181, 253, 0.18);
+      }
+
+      body.theme-dark .nap-map-popup__eyebrow {
+        color: #a5b4fc;
+      }
+
+      body.theme-dark .nap-map-popup__title,
+      body.theme-dark .nap-map-popup__usage-value,
+      body.theme-dark .nap-map-popup__stat-value {
+        color: #f8fafc;
+      }
+
+      body.theme-dark .nap-map-popup__usage-label,
+      body.theme-dark .nap-map-popup__stat-label {
+        color: #94a3b8;
+      }
+
+      body.theme-dark .nap-map-popup__usage,
+      body.theme-dark .nap-map-popup__stat {
+        background: rgba(15, 23, 42, 0.84);
+        border-color: rgba(71, 85, 105, 0.48);
+      }
+
+      body.theme-dark .nap-map-popup__usage-bar {
+        background: rgba(51, 65, 85, 0.9);
+      }
+
+      body.theme-dark .customer-map-popup__content {
+        color: #e2e8f0;
+      }
+
+      body.theme-dark .customer-map-popup__title {
+        color: #f8fafc;
+      }
+
+      body.theme-dark .customer-map-popup__account,
+      body.theme-dark .customer-map-popup__row {
+        color: #cbd5f5;
+      }
+
+      body.theme-dark .customer-map-popup__metric-label {
+        color: #93c5fd;
+      }
+
+      body.theme-dark .customer-map-popup__divider {
+        background: rgba(71, 85, 105, 0.85);
+      }
+
+      @media (max-width: 640px) {
+        .nap-map-popup.leaflet-popup .leaflet-popup-content {
+          min-width: 268px;
+        }
+
+        .customer-map-popup.leaflet-popup .leaflet-popup-content {
+          margin: 14px 16px;
+          min-width: 210px;
+        }
+
+        .nap-map-popup__title,
+        .customer-map-popup__title {
+          font-size: 0.98rem;
+        }
+
+        .nap-map-popup__stats {
+          grid-template-columns: 1fr;
+        }
+
+        .nap-map-popup__usage-value,
+        .nap-map-popup__stat-value,
+        .customer-map-popup__account,
+        .customer-map-popup__row {
+          font-size: 0.9rem;
+        }
+
+        .nap-map-popup__content {
+          padding: 14px;
+        }
+      }
+
+      html,
+      body.public-coverage-map {
+        height: 100%;
+      }
+
+      body.public-coverage-map {
+        margin: 0;
+        min-height: 100vh;
+        overflow: hidden;
+        background: var(--tblr-body-bg, #f7f9fb);
+      }
+
+      body.public-coverage-map .coverage-page {
+        --coverage-screen-height: 100vh;
+        height: 100vh;
+        min-height: 100vh;
+        gap: 0;
+        padding: 0 !important;
+      }
+
+      @supports (height: 100dvh) {
+        body.public-coverage-map .coverage-page {
+          --coverage-screen-height: 100dvh;
+          height: 100dvh;
+          min-height: 100dvh;
+        }
+      }
+
+      body.public-coverage-map .map-frame {
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+      }
+
+      body.public-coverage-map #mapView {
+        padding: .5rem !important;
+        gap: .5rem;
+      }
+
+      body.public-coverage-map .map-tools__body > * {
+        min-width: 0;
+      }
+
+      @media (max-width: 640px) {
+        body.public-coverage-map #mapView {
+          padding: .375rem !important;
+          gap: .375rem;
+        }
+
+        body.public-coverage-map .map-tools {
+          border-radius: 10px;
+        }
+
+        body.public-coverage-map .map-tools__body {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            "search"
+            "filters"
+            "actions";
+          gap: .45rem;
+          padding: .5rem;
+        }
+
+        body.public-coverage-map .map-tools__search {
+          grid-area: search;
+          max-width: none;
+          width: 100%;
+        }
+
+        body.public-coverage-map .map-tools__search .form-control,
+        body.public-coverage-map .map-tools__search .btn {
+          min-height: 2.125rem;
+        }
+
+        body.public-coverage-map .map-tools__filters {
+          grid-area: filters;
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: max-content;
+          grid-template-columns: none;
+          align-items: center;
+          justify-content: start;
+          gap: .35rem .55rem;
+          overflow-x: auto;
+          overflow-y: hidden;
+          padding-bottom: .125rem;
+          scrollbar-width: thin;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        body.public-coverage-map .map-tools__check {
+          gap: .25rem;
+          font-size: .78rem;
+        }
+
+        body.public-coverage-map .map-tools__check .form-check-input {
+          margin-top: 0;
+        }
+
+        body.public-coverage-map .map-tools__status {
+          grid-column: auto;
+          gap: .35rem;
+          min-width: max-content;
+        }
+
+        body.public-coverage-map .map-tools__status .form-label {
+          font-size: .72rem;
+        }
+
+        body.public-coverage-map .map-tools__status .form-select {
+          width: 6.25rem;
+          min-height: 2rem;
+          padding-top: .25rem;
+          padding-bottom: .25rem;
+          font-size: .78rem;
+        }
+
+        body.public-coverage-map .map-tools__actions {
+          grid-area: actions;
+          display: grid;
+          grid-template-columns: repeat(4, 2.125rem) minmax(0, 1fr);
+          align-items: center;
+          justify-content: stretch;
+          gap: .35rem;
+          width: 100%;
+          min-width: 0;
+        }
+
+        body.public-coverage-map .map-tools__actions .btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 2.125rem;
+          min-width: 2.125rem;
+          height: 2.125rem;
+          padding: 0;
+          border-radius: 8px;
+          font-size: 0;
+          line-height: 1;
+        }
+
+        body.public-coverage-map .map-tools__actions .btn i {
+          margin: 0;
+          font-size: 1.05rem;
+        }
+
+        body.public-coverage-map .map-last-updated {
+          justify-self: end;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: .68rem;
+          line-height: 1.1;
+        }
+
+        body.public-coverage-map .map-canvas-wrap {
+          border-radius: 8px;
+        }
+      }
+
+      @media (max-width: 360px) {
+        body.public-coverage-map .map-tools__body {
+          gap: .4rem;
+          padding: .45rem;
+        }
+
+        body.public-coverage-map .map-tools__actions {
+          grid-template-columns: repeat(4, 2rem) minmax(0, 1fr);
+          gap: .3rem;
+        }
+
+        body.public-coverage-map .map-tools__actions .btn {
+          width: 2rem;
+          min-width: 2rem;
+          height: 2rem;
+        }
+      }
+    </style>
+</head>
+<body class="public-coverage-map">
+  <div class="coverage-page coverage-map-app-page">
+    <div class="map-frame">
+      <div id="mapView">
+            <div class="map-tools card" role="region" aria-label="Coverage map tools">
+              <div class="card-body map-tools__body">
+                <div class="map-tools__search input-group input-group-flat">
+                  <input id="mapSearchInput" class="form-control form-control-sm" type="search" placeholder="Search client or NAP">
+                  <button class="btn btn-icon btn-sm" id="mapSearchBtn" type="button" aria-label="Search map">
+                    <i class="ti ti-search" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="map-tools__filters">
+                  <label class="form-check map-tools__check">
+                    <input id="filterCustomers" class="form-check-input" type="checkbox" checked>
+                    <span class="form-check-label">Customers</span>
+                  </label>
+                  <label class="form-check map-tools__check">
+                    <input id="filterNaps" class="form-check-input" type="checkbox" checked>
+                    <span class="form-check-label">NAP</span>
+                  </label>
+                  <label class="form-check map-tools__check">
+                    <input id="filterLinks" class="form-check-input" type="checkbox" checked>
+                    <span class="form-check-label">Links</span>
+                  </label>
+                  <label class="map-tools__status">
+                    <span class="form-label mb-0">Status</span>
+                    <select id="filterStatus" class="form-select form-select-sm">
+                      <option value="all">All</option>
+                      <option value="active">Active</option>
+                      <option value="planned">Planned</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="map-tools__actions">
+                  <button class="btn btn-outline-secondary btn-sm" id="mapFitBtn" type="button" aria-label="Fit map to pins" title="Fit map to pins">
+                    <i class="ti ti-arrows-maximize" aria-hidden="true"></i> Fit
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="mapFullscreenBtn" type="button" aria-pressed="false" aria-label="Maximize map" title="Maximize map">
+                    <i class="ti ti-maximize" aria-hidden="true"></i> Full screen
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="mapLegendToggleBtn" type="button" aria-pressed="true" aria-label="Hide map legend" title="Hide map legend">
+                    <i class="ti ti-list-details" aria-hidden="true"></i> Legend
+                  </button>
+                  <button class="btn btn-outline-secondary btn-sm" id="mapRefreshBtn" type="button" aria-label="Refresh map" title="Refresh map">
+                    <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
+                  </button>
+                  <span class="map-last-updated text-secondary small" id="mapLastUpdated">Last updated: --</span>
+                </div>
+              </div>
+            </div>
+            <div class="map-canvas-wrap">
+              <div id="coverageMap"></div>
+              <div class="map-legend map-legend--overlay" id="mapLegendOverlay" aria-label="Map legend">
+                <span class="map-legend__title">Legend</span>
+                <span class="map-legend__item"><span class="map-legend__dot is-online"></span> Customer Online</span>
+                <span class="map-legend__item"><span class="map-legend__dot is-offline"></span> Customer Offline</span>
+                <span class="map-legend__item"><span class="map-legend__dot is-unknown"></span> Customer Unknown</span>
+                <span class="map-legend__item"><span class="map-legend__dot is-nap"></span> NAP</span>
+              </div>
+              <button class="btn btn-primary btn-icon map-layers-fab" id="fabMapLayers" type="button" aria-label="Toggle Map Layers">
+                <i class="ti ti-layers-intersect" aria-hidden="true"></i>
+              </button>
+              <div id="mapLayersPanel" class="map-layers-panel card" style="display:none;">
+                <div class="card-body">
+                  <div class="card-title mb-3">Map Layers</div>
+                  <div class="map-layers-panel__options">
+                    <label class="form-check">
+                      <input class="form-check-input" type="radio" name="mapLayer" value="streets" checked>
+                      <span class="form-check-label">&copy; OpenStreetMap</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input" type="radio" name="mapLayer" value="satellite">
+                      <span class="form-check-label">Satellite</span>
+                    </label>
+                    <label class="form-check">
+                      <input class="form-check-input" type="radio" name="mapLayer" value="terrain">
+                      <span class="form-check-label">Terrain</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="subtitle" id="mapStatus">Loading map data...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="js/payment-current-bill.js?v=1.5"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const API_CUSTOMERS = '/api/public/coverage-map/customers';
+      const API_PON_STATE = '/api/public/coverage-map/pon-state';
+      const REFRESH_INTERVAL_MS = 60_000;
+      const LINKS_MIN_ZOOM = 14;
+      const PHILIPPINES_CENTER = [12.8797, 121.774];
+      const PHILIPPINES_ZOOM = 6;
+      const MAP_LAYER_MAX_ZOOM = {
+        streets: 19,
+        satellite: 19,
+        terrain: 17
+      };
+
+      const mapStatusEl = document.getElementById('mapStatus');
+      const mapLayersPanelEl = document.getElementById('mapLayersPanel');
+      const mapLayersFabEl = document.getElementById('fabMapLayers');
+      const mapSearchInputEl = document.getElementById('mapSearchInput');
+      const mapSearchBtnEl = document.getElementById('mapSearchBtn');
+      const mapFrameEl = document.querySelector('.map-frame');
+      const filterCustomersEl = document.getElementById('filterCustomers');
+      const filterNapsEl = document.getElementById('filterNaps');
+      const filterLinksEl = document.getElementById('filterLinks');
+      const filterStatusEl = document.getElementById('filterStatus');
+      const mapFitBtnEl = document.getElementById('mapFitBtn');
+      const mapFullscreenBtnEl = document.getElementById('mapFullscreenBtn');
+      const mapLegendToggleBtnEl = document.getElementById('mapLegendToggleBtn');
+      const mapLegendOverlayEl = document.getElementById('mapLegendOverlay');
+      const mapRefreshBtnEl = document.getElementById('mapRefreshBtn');
+      const mapLastUpdatedEl = document.getElementById('mapLastUpdated');
+
+      let map;
+      let tilesStreet;
+      let tilesSatellite;
+      let tilesTerrain;
+      let customersLayer;
+      let napsLayer;
+      let napLinksLayer;
+      let customerBounds = null;
+      let napBounds = null;
+      let napLinkBounds = null;
+      let autoFitBounds = null;
+      let hasAutoFitted = false;
+      let napStateRows = [];
+      let customerPointIndex = new Map();
+      let customerRecords = [];
+      let napRecords = [];
+      let linkRecords = [];
+      let searchRecords = [];
+      let isRefreshing = false;
+      let refreshTimer = null;
+      let statusRestoreTimer = null;
+      let mapResizeObserver = null;
+      let mapInvalidateFrame = 0;
+      let isMapFullscreenFallback = false;
+      let summaryStatusMessage = 'Loading map data...';
+      let visibleCounts = { customers: 0, naps: 0, links: 0 };
+      const MARKER_ICON_SIZE = [32, 40];
+      const MARKER_ICON_ANCHOR = [16, 40];
+      const MARKER_LINK_CENTER_OFFSET = [
+        (MARKER_ICON_SIZE[0] / 2) - MARKER_ICON_ANCHOR[0],
+        (MARKER_ICON_SIZE[1] / 2) - MARKER_ICON_ANCHOR[1]
+      ];
+
+      const metrics = {
+        customers: { total: 0, mapped: 0, invalid: 0 },
+        naps: { total: 0, mapped: 0, invalid: 0 },
+        links: { total: 0, mapped: 0, unmatched: 0 }
+      };
+
+      const escapeHtml = (value) =>
+        String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+
+      const setMapStatus = (message, isError = false) => {
+        if (!mapStatusEl) return;
+        mapStatusEl.textContent = message || '';
+        mapStatusEl.style.color = isError ? '#b91c1c' : '';
+      };
+
+      const setSummaryStatus = (message) => {
+        summaryStatusMessage = message || '';
+        setMapStatus(summaryStatusMessage);
+      };
+
+      const setTransientStatus = (message, isError = false) => {
+        setMapStatus(message, isError);
+        if (statusRestoreTimer) {
+          clearTimeout(statusRestoreTimer);
+        }
+        statusRestoreTimer = setTimeout(() => {
+          setMapStatus(summaryStatusMessage);
+        }, 2400);
+      };
+
+      const setLastUpdated = (dateValue) => {
+        if (!mapLastUpdatedEl) return;
+        if (!dateValue) {
+          mapLastUpdatedEl.textContent = 'Last updated: --';
+          return;
+        }
+        mapLastUpdatedEl.textContent = `Last updated: ${dateValue.toLocaleString()}`;
+      };
+
+      const setRefreshLoading = (loading) => {
+        if (!mapRefreshBtnEl) return;
+        mapRefreshBtnEl.disabled = Boolean(loading);
+        mapRefreshBtnEl.innerHTML = loading
+          ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Refreshing'
+          : '<i class="ti ti-refresh" aria-hidden="true"></i> Refresh';
+      };
+
+      const closeMapLayersPanel = () => {
+        if (!mapLayersPanelEl) return;
+        mapLayersPanelEl.style.display = 'none';
+      };
+
+      const normalizeLookupKey = (value) => String(value || '').trim().toLowerCase();
+      const normalizeName = (value) => String(value || '').trim().toLowerCase();
+
+      const normalizeStatus = (value, fallback = 'planned') => {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return fallback;
+        if (raw === 'disabled') return 'inactive';
+        if (raw === 'active' || raw === 'planned' || raw === 'inactive') return raw;
+        return fallback;
+      };
+
+      const getNapStatus = (nap) => {
+        const explicit = normalizeStatus(nap?.status || '', '');
+        if (explicit) return explicit;
+        const used = Number(nap?.used) || 0;
+        const connections = Array.isArray(nap?.connections) ? nap.connections.length : 0;
+        return (used > 0 || connections > 0) ? 'active' : 'planned';
+      };
+
+      const toNonNegativeNumber = (value, fallback = 0) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+      };
+
+      const getNapSplitterPorts = (nap) => {
+        const match = String(nap?.splitter || '').replace('/', ':').match(/:(\d+)/);
+        const parsed = Number(match?.[1]);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+      };
+
+      const getNapTotalPorts = (nap) => {
+        const explicit = toNonNegativeNumber(nap?.totalPorts, NaN);
+        if (Number.isFinite(explicit)) return explicit;
+        const highestAssignedPort = Array.isArray(nap?.connections)
+          ? nap.connections.reduce((max, entry) => Math.max(max, toNonNegativeNumber(entry?.port, 0)), 0)
+          : 0;
+        return Math.max(getNapSplitterPorts(nap), toNonNegativeNumber(nap?.capacity, 0), highestAssignedPort);
+      };
+
+      const getNapUsedPorts = (nap) => {
+        const explicit = toNonNegativeNumber(nap?.usedPorts, NaN);
+        if (Number.isFinite(explicit)) return explicit;
+        const connectionCount = Array.isArray(nap?.connections) ? nap.connections.length : 0;
+        return Math.max(toNonNegativeNumber(nap?.used, 0), connectionCount);
+      };
+
+      const getNapAvailablePorts = (nap) => {
+        const explicit = toNonNegativeNumber(nap?.availablePorts, NaN);
+        if (Number.isFinite(explicit)) return explicit;
+        return Math.max(getNapTotalPorts(nap) - getNapUsedPorts(nap), 0);
+      };
+
+      const formatSubscriberMetric = (value, available) => {
+        if (!available) return 'Unavailable';
+        return String(Math.round(toNonNegativeNumber(value, 0)));
+      };
+
+      const formatUsagePercent = (used, total) => {
+        const safeTotal = toNonNegativeNumber(total, 0);
+        if (!safeTotal) return '0%';
+        const percent = Math.min((toNonNegativeNumber(used, 0) / safeTotal) * 100, 100);
+        return `${Math.round(percent)}%`;
+      };
+
+      const statusColor = (status) => {
+        const safe = normalizeStatus(status, 'planned');
+        if (safe === 'active') return '#16a34a';
+        if (safe === 'planned') return '#2563eb';
+        if (safe === 'inactive') return '#dc2626';
+        return '#2563eb';
+      };
+
+      const markerFillColor = (status, type = 'customer') => {
+        const safe = normalizeStatus(status, 'planned');
+        if (type === 'nap' && safe === 'active') return '#7c3aed';
+        return statusColor(safe);
+      };
+
+      const statusLabel = (status) => {
+        const safe = normalizeStatus(status, 'planned');
+        if (safe === 'active') return 'Active';
+        if (safe === 'inactive') return 'Inactive';
+        return 'Planned';
+      };
+
+      const normalizeMikrotikCustomerStatus = (value) => {
+        const raw = String(value || '').trim().toLowerCase();
+        if (['online', 'up', 'active', 'connected'].includes(raw)) return 'active';
+        if (['offline', 'down', 'inactive', 'disabled', 'disconnected'].includes(raw)) return 'inactive';
+        return 'planned';
+      };
+
+      const customerMapStatusLabel = (status) => {
+        const safe = normalizeStatus(status, 'planned');
+        if (safe === 'active') return 'Online';
+        if (safe === 'inactive') return 'Offline';
+        return 'Unknown';
+      };
+
+      const isDarkThemeActive = () => Boolean(
+        document.body?.classList.contains('theme-dark')
+        || document.documentElement?.classList.contains('theme-dark')
+        || document.body?.dataset.theme === 'dark'
+        || document.documentElement?.dataset.theme === 'dark'
+      );
+
+      const formatCustomerBalance = (value) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return '₱0.00';
+        if (window.PaymentCurrentBill?.formatBalanceAfterPayment) {
+          return window.PaymentCurrentBill.formatBalanceAfterPayment(parsed);
+        }
+        return `₱${parsed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      };
+
+      const loadPaymentRecordIndex = async () => {
+        return new Map();
+      };
+
+      const resolveCustomerCurrentBillDisplay = (customer = {}, paymentRecord = null, paymentRecords = []) => {
+        const source = paymentRecord || customer || {};
+        const hasBalance = [
+          source.currentBill,
+          source.paymentBreakdownEndingBalance,
+          source.endingBalance,
+          source.balance
+        ].some((value) => value !== null && value !== undefined && String(value).trim() !== '' && Number.isFinite(Number(value)));
+        if (!hasBalance) return '';
+        if (window.PaymentCurrentBill?.resolveCurrentBillState) {
+          const state = window.PaymentCurrentBill.resolveCurrentBillState(source, paymentRecords);
+          return window.PaymentCurrentBill.formatBalanceAfterPayment(state.amount);
+        }
+        return formatCustomerBalance(source.balance);
+      };
+
+      const normalizeCoordinateText = (value) => String(value ?? '')
+        .replace(/\u00C2(?=\u00B0)/g, '')
+        .replace(/\uFF0C/g, ',')
+        .trim();
+
+      const parseLatLngNumbers = (latValue, lngValue) => {
+        if (latValue == null || lngValue == null) return null;
+        const latText = String(latValue).trim();
+        const lngText = String(lngValue).trim();
+        if (!latText || !lngText) return null;
+        const lat = Number(latText);
+        const lng = Number(lngText);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+        return { lat, lng };
+      };
+
+      const parseCoordinateObjectPair = (value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        return parseLatLngNumbers(
+          value.lat ?? value.latitude,
+          value.lng ?? value.lon ?? value.longitude
+        );
+      };
+
+      const parseCoordinatePair = (value) => {
+        if (Array.isArray(value)) {
+          return parseLatLngNumbers(value[0], value[1]);
+        }
+        if (value && typeof value === 'object') {
+          const directPair = parseCoordinateObjectPair(value);
+          if (directPair) return directPair;
+          const nestedValue = value.value
+            ?? value.text
+            ?? value.mapPin
+            ?? value.map_pin
+            ?? value.coordinate
+            ?? value.coordinates
+            ?? value.coords
+            ?? value.pin;
+          return nestedValue == null ? null : parseCoordinatePair(nestedValue);
+        }
+
+        const raw = normalizeCoordinateText(value);
+        if (!raw) return null;
+        const normalized = normalizeCoordinateText(raw);
+
+        const parseDecimalPair = (text) => {
+          let latText = '';
+          let lngText = '';
+
+          const commaParts = text.split(',').map((part) => part.trim()).filter(Boolean);
+          if (commaParts.length >= 2) {
+            latText = commaParts[0];
+            lngText = commaParts[1];
+          } else {
+            const loose = text.match(/(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/);
+            if (loose) {
+              latText = loose[1];
+              lngText = loose[2];
+            }
+          }
+
+          if (!latText || !lngText) return null;
+          const lat = Number(latText);
+          const lng = Number(lngText);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+          return { lat, lng };
+        };
+
+        const normalizedDms = normalized
+          .replace(/[\u00BA\u02DA]/g, '\u00B0')
+          .replace(/[\u2032\u2019]/g, "'")
+          .replace(/[\u2033\u201C\u201D]/g, '"')
+          .replace(/,/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const hasDmsMarkers = /[NSEW]/i.test(normalizedDms) && /[\u00B0'"]|\d+\s+[NSEW]|\b[NSEW]\s*\d/i.test(normalizedDms);
+        if (hasDmsMarkers) {
+          const parseDmsSegment = (segment) => {
+            const text = String(segment || '').trim().toUpperCase();
+            if (!text) return null;
+            const hemisphereMatch = text.match(/[NSEW]/);
+            const hemisphere = hemisphereMatch ? hemisphereMatch[0] : '';
+            if (!hemisphere) return null;
+
+            const numericParts = text.replace(/[NSEW]/g, ' ').match(/-?\d+(?:\.\d+)?/g) || [];
+            if (!numericParts.length) return null;
+
+            const degrees = Number(numericParts[0]);
+            const minutes = Number(numericParts[1] || 0);
+            const seconds = Number(numericParts[2] || 0);
+            if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+            if (minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) return null;
+
+            let decimal = Math.abs(degrees) + (minutes / 60) + (seconds / 3600);
+            if (String(numericParts[0] || '').trim().startsWith('-')) {
+              decimal *= -1;
+            }
+            if (hemisphere === 'S' || hemisphere === 'W') {
+              decimal = -Math.abs(decimal);
+            } else {
+              decimal = Math.abs(decimal);
+            }
+
+            return { value: decimal, hemisphere };
+          };
+
+          const dmsSegments = normalizedDms.match(/(?:[NSEW][^NSEW]+|[^NSEW]+[NSEW])/gi) || [];
+          const parsedDmsSegments = dmsSegments.map(parseDmsSegment).filter(Boolean);
+          const latEntry = parsedDmsSegments.find((entry) => entry.hemisphere === 'N' || entry.hemisphere === 'S');
+          const lngEntry = parsedDmsSegments.find((entry) => entry.hemisphere === 'E' || entry.hemisphere === 'W');
+          if (latEntry && lngEntry) {
+            return parseDecimalPair(`${latEntry.value}, ${lngEntry.value}`);
+          }
+        }
+
+        return parseDecimalPair(normalized);
+      };
+
+      const markerIconCache = new Map();
+      const markerIcon = (status, type = 'customer') => {
+        const safeStatus = normalizeStatus(status, 'planned');
+        const darkTheme = isDarkThemeActive();
+        const cacheKey = `${type}:${safeStatus}:${darkTheme ? 'dark' : 'light'}`;
+        if (markerIconCache.has(cacheKey)) {
+          return markerIconCache.get(cacheKey);
+        }
+        const color = markerFillColor(safeStatus, type);
+        const badge = type === 'nap' ? 'N' : 'C';
+        const circleFill = darkTheme && type === 'customer' ? '#1e293b' : '#ffffff';
+        const circleStroke = darkTheme && type === 'customer' ? '#93c5fd' : '#ffffff';
+        const textFill = darkTheme && type === 'customer' ? '#cbd5f5' : color;
+        const svg = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="80" viewBox="0 0 64 80">
+            <path d="M32 0C19.3 0 9 10.3 9 23c0 19.5 23 43.7 23 43.7S55 42.5 55 23C55 10.3 44.7 0 32 0z" fill="${color}"/>
+            <circle cx="32" cy="24" r="12" fill="${circleFill}" stroke="${circleStroke}" stroke-width="${darkTheme && type === 'customer' ? '1.4' : '0'}"/>
+            <text x="32" y="28" text-anchor="middle" font-size="11" font-weight="700" fill="${textFill}" font-family="Arial, sans-serif">${badge}</text>
+          </svg>
+        `.trim();
+        const icon = L.icon({
+          iconUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+          iconSize: [32, 40],
+          iconAnchor: [16, 40],
+          popupAnchor: [0, -36],
+          className: 'cov-pin-icon'
+        });
+        markerIconCache.set(cacheKey, icon);
+        return icon;
+      };
+
+      const refreshThemeSensitiveMapVisuals = () => {
+        markerIconCache.clear();
+        customerRecords.forEach((row) => {
+          row.marker.setIcon(markerIcon(row.status, 'customer'));
+        });
+        napRecords.forEach((row) => {
+          row.marker.setIcon(markerIcon(row.status, 'nap'));
+        });
+      };
+
+      const createClusterLayer = (type) => {
+        if (typeof L.markerClusterGroup !== 'function') return L.layerGroup();
+        return L.markerClusterGroup({
+          showCoverageOnHover: false,
+          maxClusterRadius: 42,
+          disableClusteringAtZoom: 16,
+          iconCreateFunction: (cluster) => {
+            const count = cluster.getChildCount();
+            const label = String(count);
+            const iconWidth = Math.max(38, Math.min(76, 30 + (label.length * 9)));
+            const klass = `coverage-cluster coverage-cluster--${type}`;
+            return L.divIcon({
+              html: `<span class="coverage-cluster__bubble badge">${label}</span>`,
+              className: klass,
+              iconSize: L.point(iconWidth, 32)
+            });
+          }
+        });
+      };
+
+      const getFilterState = () => ({
+        showCustomers: filterCustomersEl ? filterCustomersEl.checked : true,
+        showNaps: filterNapsEl ? filterNapsEl.checked : true,
+        showLinks: filterLinksEl ? filterLinksEl.checked : true,
+        status: normalizeStatus(filterStatusEl?.value, 'all')
+      });
+
+      const statusMatches = (status, filterValue) => {
+        if (!filterValue || filterValue === 'all') return true;
+        return normalizeStatus(status, 'planned') === filterValue;
+      };
+
+      const buildSearchRecords = () => {
+        const list = [];
+        customerRecords.forEach((row) => {
+          list.push({
+            type: 'customer',
+            marker: row.marker,
+            lat: row.lat,
+            lng: row.lng,
+            label: row.name,
+            keywords: `${row.name} ${row.accountNumber} customer`.toLowerCase()
+          });
+        });
+        napRecords.forEach((row) => {
+          list.push({
+            type: 'nap',
+            marker: row.marker,
+            lat: row.lat,
+            lng: row.lng,
+            label: row.code,
+            keywords: `${row.code} ${row.linkedOlt} ${row.ponRef} nap`.toLowerCase()
+          });
+        });
+        searchRecords = list;
+      };
+
+      const computeVisibleBounds = (filterState) => {
+        const points = [];
+        if (filterState.showCustomers) {
+          customerRecords.forEach((row) => {
+            if (statusMatches(row.status, filterState.status)) {
+              points.push([row.lat, row.lng]);
+            }
+          });
+        }
+        if (filterState.showNaps) {
+          napRecords.forEach((row) => {
+            if (statusMatches(row.status, filterState.status)) {
+              points.push([row.lat, row.lng]);
+            }
+          });
+        }
+        if (filterState.showLinks && map && map.getZoom() >= LINKS_MIN_ZOOM) {
+          linkRecords.forEach((row) => {
+            if (!statusMatches(row.customerStatus, filterState.status)) return;
+            points.push([row.napLat, row.napLng], [row.customerLat, row.customerLng]);
+          });
+        }
+        return points.length ? L.latLngBounds(points) : null;
+      };
+
+      const updateAutoFitBounds = (force = false) => {
+        if (!map) return;
+        autoFitBounds = computeVisibleBounds(getFilterState());
+        if (!autoFitBounds) {
+          if (force || !hasAutoFitted) {
+            map.setView(PHILIPPINES_CENTER, PHILIPPINES_ZOOM, { animate: Boolean(force) });
+            hasAutoFitted = true;
+          }
+          return;
+        }
+        if (force || !hasAutoFitted) {
+          map.fitBounds(autoFitBounds.pad(0.22));
+          hasAutoFitted = true;
+        }
+      };
+
+      const findCustomerPointForConnection = (connection) => {
+        const keys = [
+          normalizeLookupKey(connection?.customerId),
+          normalizeLookupKey(connection?.customerRef),
+          normalizeLookupKey(connection?.customerName)
+        ].filter(Boolean);
+        for (const key of keys) {
+          const point = customerPointIndex.get(key);
+          if (point) return point;
+        }
+        return null;
+      };
+
+      const findCoordinateCandidate = (source = {}, keys = []) => {
+        if (!source || typeof source !== 'object') return null;
+        const directPair = parseCoordinateObjectPair(source);
+        if (directPair) {
+          return { value: directPair, parsed: directPair, source: 'latlng' };
+        }
+
+        for (const key of keys) {
+          const value = source?.[key];
+          if (value == null) continue;
+          const parsed = parseCoordinatePair(value);
+          if (!parsed) continue;
+          return {
+            value: (typeof value === 'string' || typeof value === 'number') ? normalizeCoordinateText(value) : value,
+            parsed,
+            source: key
+          };
+        }
+
+        return null;
+      };
+
+      const PIN_COORDINATE_KEYS = [
+        'mapPin',
+        'map_pin',
+        'coordinate',
+        'coordinates',
+        'coords',
+        'pin',
+        'locationPin',
+        'gps',
+        'gpsCoordinates'
+      ];
+
+      const resolveCustomerCoordinateValue = (customer = {}) => {
+        const directCoordinate = findCoordinateCandidate(customer, PIN_COORDINATE_KEYS);
+        if (directCoordinate) {
+          return { ...directCoordinate, source: 'customer' };
+        }
+
+        const napAssignment = customer?.napAssignment && typeof customer.napAssignment === 'object'
+          ? customer.napAssignment
+          : {};
+        const napCoordinate = findCoordinateCandidate(napAssignment, PIN_COORDINATE_KEYS);
+        if (napCoordinate) {
+          return { ...napCoordinate, source: 'nap' };
+        }
+
+        return { value: '', source: '' };
+      };
+
+      const resolveNapCoordinateValue = (nap = {}) => (
+        findCoordinateCandidate(nap, PIN_COORDINATE_KEYS) || { value: '', source: '' }
+      );
+
+      const markerCenterLatLng = (lat, lng) => {
+        if (!map) return L.latLng(lat, lng);
+        const anchorPoint = map.latLngToLayerPoint([lat, lng]);
+        const centerPoint = anchorPoint.add(MARKER_LINK_CENTER_OFFSET);
+        return map.layerPointToLatLng(centerPoint);
+      };
+
+      const buildNapCustomerLinkLatLngs = (row) => ([
+        markerCenterLatLng(row.napLat, row.napLng),
+        markerCenterLatLng(row.customerLat, row.customerLng)
+      ]);
+
+      const updateNapCustomerLinkGeometry = () => {
+        if (!map || !linkRecords.length) return;
+        linkRecords.forEach((row) => {
+          if (!row?.line || typeof row.line.setLatLngs !== 'function') return;
+          row.line.setLatLngs(buildNapCustomerLinkLatLngs(row));
+        });
+      };
+
+      const setMapLegendVisible = (isVisible) => {
+        mapLegendOverlayEl?.classList.toggle('is-hidden', !isVisible);
+        mapLegendOverlayEl?.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+        mapLegendToggleBtnEl?.classList.toggle('active', isVisible);
+        mapLegendToggleBtnEl?.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+        mapLegendToggleBtnEl?.setAttribute('aria-label', isVisible ? 'Hide map legend' : 'Show map legend');
+        mapLegendToggleBtnEl?.setAttribute('title', isVisible ? 'Hide map legend' : 'Show map legend');
+      };
+
+      const getFullscreenElement = () => (
+        document.fullscreenElement
+        || document.webkitFullscreenElement
+        || document.msFullscreenElement
+        || null
+      );
+
+      const setMapFullscreenState = (isActive) => {
+        mapFrameEl?.classList.toggle('is-map-fullscreen', isActive);
+        document.body.classList.toggle('coverage-map-fullscreen-active', isActive);
+        if (mapFullscreenBtnEl) {
+          mapFullscreenBtnEl.classList.toggle('active', isActive);
+          mapFullscreenBtnEl.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          mapFullscreenBtnEl.setAttribute('aria-label', isActive ? 'Back to normal map view' : 'Maximize map');
+          mapFullscreenBtnEl.setAttribute('title', isActive ? 'Back to normal map view' : 'Maximize map');
+          mapFullscreenBtnEl.innerHTML = isActive
+            ? '<i class="ti ti-minimize" aria-hidden="true"></i> Normal'
+            : '<i class="ti ti-maximize" aria-hidden="true"></i> Full screen';
+        }
+        invalidateMapSize();
+        setTimeout(invalidateMapSize, 180);
+      };
+
+      const enterMapFullscreenFallback = () => {
+        isMapFullscreenFallback = true;
+        setMapFullscreenState(true);
+      };
+
+      const enterMapFullscreen = async () => {
+        if (!mapFrameEl) return;
+        const requestFullscreen = (
+          mapFrameEl.requestFullscreen
+          || mapFrameEl.webkitRequestFullscreen
+          || mapFrameEl.msRequestFullscreen
+        );
+        if (!requestFullscreen) {
+          enterMapFullscreenFallback();
+          return;
+        }
+        try {
+          await Promise.resolve(requestFullscreen.call(mapFrameEl));
+          setMapFullscreenState(true);
+        } catch (error) {
+          enterMapFullscreenFallback();
+        }
+      };
+
+      const exitMapFullscreen = async () => {
+        const fullscreenElement = getFullscreenElement();
+        if (fullscreenElement === mapFrameEl) {
+          const exitFullscreen = (
+            document.exitFullscreen
+            || document.webkitExitFullscreen
+            || document.msExitFullscreen
+          );
+          if (exitFullscreen) {
+            try {
+              await Promise.resolve(exitFullscreen.call(document));
+              isMapFullscreenFallback = false;
+              setMapFullscreenState(false);
+            } catch (error) {
+              isMapFullscreenFallback = false;
+              setMapFullscreenState(false);
+            }
+            return;
+          }
+        }
+        isMapFullscreenFallback = false;
+        setMapFullscreenState(false);
+      };
+
+      const toggleMapFullscreen = () => {
+        const isActive = getFullscreenElement() === mapFrameEl || isMapFullscreenFallback;
+        if (isActive) {
+          exitMapFullscreen();
+        } else {
+          enterMapFullscreen();
+        }
+      };
+
+      const handleMapFullscreenChange = () => {
+        const isFullscreen = getFullscreenElement() === mapFrameEl;
+        if (!isFullscreen) isMapFullscreenFallback = false;
+        setMapFullscreenState(isFullscreen || isMapFullscreenFallback);
+      };
+
+      const handleMapFullscreenKeydown = (event) => {
+        if (event.key !== 'Escape' || !isMapFullscreenFallback) return;
+        exitMapFullscreen();
+      };
+
+      const invalidateMapSize = () => {
+        if (!map) return;
+        if (mapInvalidateFrame) {
+          window.cancelAnimationFrame(mapInvalidateFrame);
+        }
+        mapInvalidateFrame = window.requestAnimationFrame(() => {
+          mapInvalidateFrame = 0;
+          map.invalidateSize();
+          updateNapCustomerLinkGeometry();
+        });
+      };
+
+      const refreshNapCustomerLinks = () => {
+        if (!map || !napLinksLayer) return;
+        napLinksLayer.clearLayers();
+        linkRecords = [];
+        const points = [];
+        let total = 0;
+        let mapped = 0;
+        let unmatched = 0;
+
+        napStateRows.forEach((nap) => {
+          const napCoordinate = resolveNapCoordinateValue(nap);
+          const napParsed = napCoordinate.parsed || parseCoordinatePair(napCoordinate.value);
+          if (!napParsed) return;
+          const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+
+          connections.forEach((connection) => {
+            total += 1;
+            const customerPoint = findCustomerPointForConnection(connection);
+            if (!customerPoint) {
+              unmatched += 1;
+              return;
+            }
+            mapped += 1;
+            const linkRecord = {
+              line: null,
+              customerStatus: customerPoint.status,
+              napStatus: getNapStatus(nap),
+              napLat: napParsed.lat,
+              napLng: napParsed.lng,
+              customerLat: customerPoint.lat,
+              customerLng: customerPoint.lng
+            };
+            const line = L.polyline(
+              buildNapCustomerLinkLatLngs(linkRecord),
+              { color: statusColor(customerPoint.status), weight: 2.4, opacity: 0.82, dashArray: '10 8', className: 'nap-link-live' }
+            );
+            linkRecord.line = line;
+            const customerLabel = connection?.customerName || connection?.customerId || connection?.customerRef || 'Customer';
+            line.bindPopup(`
+              <strong>${escapeHtml(nap?.code || 'NAP')}</strong> &rarr; <strong>${escapeHtml(customerLabel)}</strong><br>
+              <small>Port: ${escapeHtml(connection?.port || '-')}</small><br>
+              <small>Status: ${escapeHtml(customerMapStatusLabel(customerPoint.status))}</small>
+            `);
+            linkRecords.push(linkRecord);
+            points.push([napParsed.lat, napParsed.lng], [customerPoint.lat, customerPoint.lng]);
+          });
+        });
+
+        metrics.links.total = total;
+        metrics.links.mapped = mapped;
+        metrics.links.unmatched = unmatched;
+        napLinkBounds = points.length ? L.latLngBounds(points) : null;
+      };
+
+      const loadCustomersOnMap = async () => {
+        if (!map || !customersLayer) return;
+        customersLayer.clearLayers();
+        customerPointIndex = new Map();
+        customerRecords = [];
+
+        const res = await fetch(API_CUSTOMERS, { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || data?.message || 'Unable to load customers.');
+        }
+        const customers = Array.isArray(data) ? data : (Array.isArray(data.customers) ? data.customers : []);
+        const paymentRecordsByAccount = await loadPaymentRecordIndex();
+        const paymentRecords = Array.from(paymentRecordsByAccount.values());
+        const points = [];
+        let mapped = 0;
+        let invalid = 0;
+
+        customers.forEach((customer) => {
+          const coordinate = resolveCustomerCoordinateValue(customer);
+          const parsed = coordinate.parsed || parseCoordinatePair(coordinate.value);
+          if (!parsed) {
+            invalid += 1;
+            return;
+          }
+          const lat = parsed.lat;
+          const lng = parsed.lng;
+          const firstName = String(customer?.firstName || '').trim();
+          const lastName = String(customer?.lastName || '').trim();
+          const fullName = `${firstName} ${lastName}`.trim();
+          const name = fullName || String(customer?.name || '').trim() || 'Customer';
+          const accountNumber = String(customer?.accountNumber || customer?.account || customer?.id || '').trim() || '-';
+          const status = normalizeMikrotikCustomerStatus(customer?.mikrotikStatus);
+          const paymentRecord = paymentRecordsByAccount.get(normalizeLookupKey(accountNumber)) || null;
+          const balance = resolveCustomerCurrentBillDisplay(customer, paymentRecord, paymentRecords);
+          const billRow = balance ? `
+              <div class="customer-map-popup__divider" role="presentation"></div>
+              <div class="customer-map-popup__row">
+                <span class="customer-map-popup__metric-label">Current Bill</span>
+                <span>${escapeHtml(balance)}</span>
+              </div>
+          ` : '';
+          const marker = L.marker([lat, lng], { icon: markerIcon(status, 'customer') }).bindPopup(`
+            <div class="customer-map-popup__content">
+              <div class="customer-map-popup__header">
+                <div class="customer-map-popup__title">${escapeHtml(name)}</div>
+                <span class="customer-map-popup__name-status customer-map-popup__name-status--${escapeHtml(status)}"></span>
+              </div>
+              <div class="customer-map-popup__account">${escapeHtml(accountNumber)}</div>
+              ${billRow}
+            </div>
+          `, {
+            className: 'customer-map-popup',
+            maxWidth: 320
+          });
+          customerRecords.push({ marker, status, name, accountNumber, lat, lng });
+          points.push([lat, lng]);
+          mapped += 1;
+
+          const accountKey = normalizeLookupKey(accountNumber);
+          const nameKey = normalizeName(name);
+          const pointPayload = { lat, lng, label: name, status, marker, accountNumber, coordinateSource: coordinate.source };
+          if (accountKey) customerPointIndex.set(accountKey, pointPayload);
+          if (nameKey && !customerPointIndex.has(nameKey)) customerPointIndex.set(nameKey, pointPayload);
+        });
+
+        metrics.customers.total = customers.length;
+        metrics.customers.mapped = mapped;
+        metrics.customers.invalid = invalid;
+        customerBounds = points.length ? L.latLngBounds(points) : null;
+      };
+
+      const loadNapsOnMap = async () => {
+        if (!map || !napsLayer) return;
+        napsLayer.clearLayers();
+        napRecords = [];
+        napStateRows = [];
+
+        const res = await fetch(API_PON_STATE, { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || data?.message || 'Unable to load NAP state.');
+        }
+        const naps = Array.isArray(data?.naps) ? data.naps : [];
+        napStateRows = naps;
+        const points = [];
+        let mapped = 0;
+        let invalid = 0;
+
+        naps.forEach((nap) => {
+          const coordinate = resolveNapCoordinateValue(nap);
+          const parsed = coordinate.parsed || parseCoordinatePair(coordinate.value);
+          if (!parsed) {
+            invalid += 1;
+            return;
+          }
+          const lat = parsed.lat;
+          const lng = parsed.lng;
+          const code = String(nap?.code || 'NAP');
+          const linkedOlt = String(nap?.linkedOlt || '-');
+          const ponRef = String(nap?.ponRef || '-');
+          const status = getNapStatus(nap);
+          const totalPorts = getNapTotalPorts(nap);
+          const usedPorts = getNapUsedPorts(nap);
+          const availablePorts = getNapAvailablePorts(nap);
+          const subscriberStatusAvailable = Boolean(nap?.subscriberStatusAvailable);
+          const onlineSubscribers = formatSubscriberMetric(nap?.onlineSubscribers, subscriberStatusAvailable);
+          const offlineSubscribers = formatSubscriberMetric(nap?.offlineSubscribers, subscriberStatusAvailable);
+          const usagePercent = formatUsagePercent(usedPorts, totalPorts);
+          const marker = L.marker([lat, lng], { icon: markerIcon(status, 'nap') }).bindPopup(`
+            <div class="nap-map-popup__content">
+              <div class="nap-map-popup__header">
+                <div class="nap-map-popup__badge"><i class="ti ti-network" aria-hidden="true"></i></div>
+                <div class="nap-map-popup__headcopy">
+                  <div class="nap-map-popup__eyebrow">NAP Management</div>
+                  <div class="nap-map-popup__title">${escapeHtml(code)}</div>
+                </div>
+              </div>
+              <div class="nap-map-popup__usage">
+                <div class="nap-map-popup__usage-header">
+                  <span class="nap-map-popup__usage-label">Port Usage</span>
+                  <span class="nap-map-popup__usage-value">${escapeHtml(usedPorts)} / ${escapeHtml(totalPorts)} (${escapeHtml(usagePercent)})</span>
+                </div>
+                <div class="nap-map-popup__usage-bar"><span style="width:${escapeHtml(usagePercent)};"></span></div>
+              </div>
+              <div class="nap-map-popup__stats">
+                <div class="nap-map-popup__stat">
+                  <span class="nap-map-popup__stat-label">Online Subscribers</span>
+                  <span class="nap-map-popup__stat-value">${escapeHtml(onlineSubscribers)}</span>
+                </div>
+                <div class="nap-map-popup__stat">
+                  <span class="nap-map-popup__stat-label">Offline Subscribers</span>
+                  <span class="nap-map-popup__stat-value">${escapeHtml(offlineSubscribers)}</span>
+                </div>
+              </div>
+            </div>
+          `, {
+            className: 'nap-map-popup',
+            maxWidth: 380
+          });
+          napRecords.push({ marker, status, code, linkedOlt, ponRef, lat, lng });
+          points.push([lat, lng]);
+          mapped += 1;
+        });
+
+        metrics.naps.total = naps.length;
+        metrics.naps.mapped = mapped;
+        metrics.naps.invalid = invalid;
+        napBounds = points.length ? L.latLngBounds(points) : null;
+      };
+
+      const applyMapFilters = () => {
+        if (!map || !customersLayer || !napsLayer || !napLinksLayer) return;
+        const filterState = getFilterState();
+
+        customersLayer.clearLayers();
+        napsLayer.clearLayers();
+        napLinksLayer.clearLayers();
+
+        const visibleCustomers = customerRecords.filter(
+          (row) => filterState.showCustomers && statusMatches(row.status, filterState.status)
+        );
+        const visibleNaps = napRecords.filter(
+          (row) => filterState.showNaps && statusMatches(row.status, filterState.status)
+        );
+
+        visibleCustomers.forEach((row) => customersLayer.addLayer(row.marker));
+        visibleNaps.forEach((row) => napsLayer.addLayer(row.marker));
+
+        const linksAllowedByZoom = map.getZoom() >= LINKS_MIN_ZOOM;
+        const visibleLinks = linksAllowedByZoom
+          ? linkRecords.filter(
+              (row) => filterState.showLinks && statusMatches(row.customerStatus, filterState.status)
+            )
+          : [];
+        visibleLinks.forEach((row) => napLinksLayer.addLayer(row.line));
+
+        visibleCounts = {
+          customers: visibleCustomers.length,
+          naps: visibleNaps.length,
+          links: visibleLinks.length
+        };
+        updateAutoFitBounds(false);
+      };
+
+      const renderSummary = (issues = []) => {
+        const hint = (filterLinksEl?.checked && map && map.getZoom() < LINKS_MIN_ZOOM)
+          ? ` Zoom in to ${LINKS_MIN_ZOOM}+ to view links.`
+          : '';
+        const qualityHints = [];
+        if (metrics.customers.invalid > 0) {
+          qualityHints.push(`${metrics.customers.invalid} customer(s) missing coordinates`);
+        }
+        if (metrics.naps.invalid > 0) {
+          qualityHints.push(`${metrics.naps.invalid} NAP(s) missing coordinates`);
+        }
+        if (metrics.links.unmatched > 0) {
+          qualityHints.push(`${metrics.links.unmatched} link(s) unmatched`);
+        }
+        const issueText = issues.length ? ` Issues: ${issues.join(' | ')}` : '';
+        const qualityText = qualityHints.length ? ` Quality: ${qualityHints.join(', ')}.` : '';
+        const summary = `Visible C:${visibleCounts.customers} N:${visibleCounts.naps} L:${visibleCounts.links} | Mapped C:${metrics.customers.mapped}/${metrics.customers.total} N:${metrics.naps.mapped}/${metrics.naps.total} | Links ${metrics.links.mapped}/${metrics.links.total}.${hint}${qualityText}${issueText}`;
+        setSummaryStatus(summary.trim());
+      };
+
+      const switchMapLayer = (layerType) => {
+        if (!map) return;
+        [tilesStreet, tilesSatellite, tilesTerrain].forEach((layer) => {
+          if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+        });
+
+        if (layerType === 'satellite') {
+          tilesSatellite.addTo(map);
+        } else if (layerType === 'terrain') {
+          tilesTerrain.addTo(map);
+        } else {
+          tilesStreet.addTo(map);
+        }
+
+        const maxZoom = MAP_LAYER_MAX_ZOOM[layerType] || MAP_LAYER_MAX_ZOOM.streets;
+        map.setMaxZoom(maxZoom);
+        if (map.getZoom() > maxZoom) {
+          map.setZoom(maxZoom);
+        }
+      };
+
+      const initMap = () => {
+        const mapEl = document.getElementById('coverageMap');
+        if (!mapEl) return;
+
+        map = L.map(mapEl, { scrollWheelZoom: true, attributionControl: true, zoomControl: false }).setView(PHILIPPINES_CENTER, PHILIPPINES_ZOOM);
+        map.attributionControl?.setPrefix(false);
+
+        tilesStreet = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          maxNativeZoom: 19,
+          detectRetina: true,
+          attribution: '&copy; OpenStreetMap',
+          referrerPolicy: 'strict-origin-when-cross-origin'
+        });
+        tilesSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          maxNativeZoom: 19,
+          detectRetina: true,
+          keepBuffer: 4,
+          attribution: '&copy; Esri',
+          referrerPolicy: 'strict-origin-when-cross-origin'
+        });
+        tilesTerrain = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+          maxZoom: 17,
+          maxNativeZoom: 17,
+          detectRetina: true,
+          attribution: '&copy; OpenTopoMap',
+          referrerPolicy: 'strict-origin-when-cross-origin'
+        });
+
+        const initialLayer = 'streets';
+        switchMapLayer(initialLayer);
+
+        const selectedRadio = document.querySelector(`input[name="mapLayer"][value="${initialLayer}"]`);
+        if (selectedRadio) selectedRadio.checked = true;
+        customersLayer = createClusterLayer('customer').addTo(map);
+        napsLayer = createClusterLayer('nap').addTo(map);
+        napLinksLayer = L.layerGroup().addTo(map);
+
+        map.on('zoomend', () => {
+          updateNapCustomerLinkGeometry();
+          applyMapFilters();
+          renderSummary();
+        });
+        if ('ResizeObserver' in window) {
+          mapResizeObserver = new ResizeObserver(invalidateMapSize);
+          mapResizeObserver.observe(mapEl);
+        }
+        window.addEventListener('resize', invalidateMapSize);
+        setTimeout(invalidateMapSize, 120);
+      };
+
+      const searchAndFocus = () => {
+        const query = String(mapSearchInputEl?.value || '').trim().toLowerCase();
+        if (!query) {
+          updateAutoFitBounds(true);
+          return;
+        }
+        const match = searchRecords.find((row) => row.keywords.includes(query));
+        if (!match) {
+          setTransientStatus('No matching account, customer, or NAP found.', true);
+          return;
+        }
+        const targetZoom = Math.max(map.getZoom() || 0, 16);
+        map.setView([match.lat, match.lng], targetZoom, { animate: true });
+        if (match.marker && typeof match.marker.openPopup === 'function') {
+          match.marker.openPopup();
+        }
+        setTransientStatus(`Focused on ${match.type === 'nap' ? 'NAP' : 'Customer'}: ${match.label}`);
+      };
+
+      const refreshMapData = async ({ forceFit = false, silent = false } = {}) => {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        if (!silent) setRefreshLoading(true);
+
+        const issues = [];
+        try {
+          const [customersResult, napsResult] = await Promise.allSettled([
+            loadCustomersOnMap(),
+            loadNapsOnMap()
+          ]);
+          if (customersResult.status === 'rejected') {
+            issues.push(`Customers: ${customersResult.reason?.message || 'load failed'}`);
+            customerRecords = [];
+            customerPointIndex = new Map();
+            customerBounds = null;
+            metrics.customers = { total: 0, mapped: 0, invalid: 0 };
+          }
+          if (napsResult.status === 'rejected') {
+            issues.push(`NAP: ${napsResult.reason?.message || 'load failed'}`);
+            napRecords = [];
+            napStateRows = [];
+            napBounds = null;
+            metrics.naps = { total: 0, mapped: 0, invalid: 0 };
+          }
+
+          refreshNapCustomerLinks();
+          buildSearchRecords();
+          applyMapFilters();
+          updateAutoFitBounds(forceFit);
+          renderSummary(issues);
+          setLastUpdated(new Date());
+        } finally {
+          setRefreshLoading(false);
+          isRefreshing = false;
+        }
+      };
+
+      mapLayersFabEl?.addEventListener('click', () => {
+        if (!mapLayersPanelEl) return;
+        const isOpen = mapLayersPanelEl.style.display === 'block';
+        mapLayersPanelEl.style.display = isOpen ? 'none' : 'block';
+      });
+
+      document.addEventListener('mousedown', (event) => {
+        if (!mapLayersPanelEl || !mapLayersFabEl) return;
+        const isOpen = mapLayersPanelEl.style.display === 'block';
+        if (!isOpen) return;
+          if (mapLayersPanelEl.contains(event.target) || mapLayersFabEl.contains(event.target)) return;
+          closeMapLayersPanel();
+      });
+
+      document.querySelectorAll('input[name="mapLayer"]').forEach((radio) => {
+        radio.addEventListener('change', (event) => {
+          if (!event.target.checked) return;
+          const selectedLayer = event.target.value;
+          switchMapLayer(selectedLayer);
+        });
+      });
+
+      [filterCustomersEl, filterNapsEl, filterLinksEl, filterStatusEl].forEach((control) => {
+        control?.addEventListener('change', () => {
+          applyMapFilters();
+          renderSummary();
+        });
+      });
+
+      mapSearchBtnEl?.addEventListener('click', searchAndFocus);
+      mapSearchInputEl?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        searchAndFocus();
+      });
+      mapFitBtnEl?.addEventListener('click', () => updateAutoFitBounds(true));
+      mapFullscreenBtnEl?.addEventListener('click', toggleMapFullscreen);
+      document.addEventListener('fullscreenchange', handleMapFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', handleMapFullscreenChange);
+      document.addEventListener('MSFullscreenChange', handleMapFullscreenChange);
+      window.addEventListener('keydown', handleMapFullscreenKeydown);
+      mapLegendToggleBtnEl?.addEventListener('click', () => {
+        const shouldShowLegend = mapLegendOverlayEl?.classList.contains('is-hidden') ?? false;
+        localStorage.setItem('coverageMapLegendVisible', shouldShowLegend ? '1' : '0');
+        setMapLegendVisible(shouldShowLegend);
+      });
+      mapRefreshBtnEl?.addEventListener('click', () => refreshMapData({ forceFit: false, silent: false }));
+
+      setMapLegendVisible(localStorage.getItem('coverageMapLegendVisible') !== '0');
+      initMap();
+      const themeTargets = [document.body, document.documentElement].filter(Boolean);
+      let lastThemeIsDark = isDarkThemeActive();
+      const themeObserver = new MutationObserver(() => {
+        const nextThemeIsDark = isDarkThemeActive();
+        if (nextThemeIsDark === lastThemeIsDark) return;
+        lastThemeIsDark = nextThemeIsDark;
+        refreshThemeSensitiveMapVisuals();
+      });
+      themeTargets.forEach((target) => {
+        themeObserver.observe(target, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+      });
+      refreshMapData({ forceFit: true, silent: false });
+
+      refreshTimer = setInterval(() => {
+        refreshMapData({ forceFit: false, silent: true });
+      }, REFRESH_INTERVAL_MS);
+
+      window.addEventListener('beforeunload', () => {
+        if (refreshTimer) clearInterval(refreshTimer);
+        if (statusRestoreTimer) clearTimeout(statusRestoreTimer);
+        if (mapInvalidateFrame) window.cancelAnimationFrame(mapInvalidateFrame);
+        mapResizeObserver?.disconnect();
+        window.removeEventListener('resize', invalidateMapSize);
+        document.removeEventListener('fullscreenchange', handleMapFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', handleMapFullscreenChange);
+        document.removeEventListener('MSFullscreenChange', handleMapFullscreenChange);
+        window.removeEventListener('keydown', handleMapFullscreenKeydown);
+      });
+    });
+  </script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=2.2"></script>
+</body>
+</html>

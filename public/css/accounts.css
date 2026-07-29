@@ -67,6 +67,7 @@
     }
     /* Full-width sections */
     #accounts,
+    #system-update,
     #business {
         grid-column: 1 / -1;
     }
@@ -196,6 +197,13 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
+.integration-heading-logo--system-update {
+    border: 1px solid #ffffff;
+    background: linear-gradient(145deg, #eff6ff 0%, #dbeafe 100%);
+    color: #1d4ed8;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
 .integration-heading-logo--xendit,
 .integration-heading-logo--semaphore,
 .integration-heading-logo--email,
@@ -308,6 +316,145 @@
     font-weight: 600;
     color: #0f172a;
     word-break: break-word;
+}
+
+.system-update-panel {
+    grid-column: 1 / -1;
+}
+
+.system-update-overview {
+    gap: 18px;
+}
+
+.system-update-summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.system-update-summary-grid a {
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.system-update-summary-grid a:hover {
+    text-decoration: underline;
+}
+
+.system-update-command-card {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid rgba(226, 232, 240, 0.85);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.system-update-command-head,
+.system-update-commits-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.system-update-command-head .summary-label {
+    margin: 0 0 4px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #64748b;
+}
+
+.system-update-command-shell,
+.system-update-note,
+.system-update-warning,
+.system-update-commits-head span {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.system-update-command {
+    min-height: 74px;
+    max-height: 160px;
+    margin: 0;
+    padding: 14px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 14px;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.system-update-warning {
+    padding: 10px 12px;
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 12px;
+    background: rgba(251, 191, 36, 0.16);
+    color: #92400e;
+    font-weight: 600;
+}
+
+.system-update-commits {
+    display: grid;
+    gap: 12px;
+}
+
+.system-update-commits-head h3 {
+    margin: 0;
+    font-size: 1.08rem;
+    color: #0f172a;
+}
+
+.system-update-table {
+    min-width: 880px;
+    table-layout: fixed;
+}
+
+.system-update-table th:nth-child(1),
+.system-update-table td:nth-child(1) {
+    width: 120px;
+}
+
+.system-update-table th:nth-child(3),
+.system-update-table td:nth-child(3) {
+    width: 150px;
+}
+
+.system-update-table th:nth-child(4),
+.system-update-table td:nth-child(4) {
+    width: 190px;
+}
+
+.system-update-commit-link {
+    color: #2563eb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.system-update-commit-link:hover {
+    text-decoration: underline;
+}
+
+.system-update-commit-subject {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.system-update-empty {
+    text-align: center;
+    color: #64748b;
 }
 
 .integration-editor[hidden] {
@@ -2800,6 +2947,7 @@ body.theme-dark #xendit,
 body.theme-dark #semaphore,
 body.theme-dark #email,
 body.theme-dark #gcash,
+body.theme-dark #system-update,
 body.theme-dark #mikrotik {
     background: rgba(15, 23, 42, 0.92) !important;
     border-color: rgba(148, 163, 184, 0.12);
@@ -3765,6 +3913,40 @@ body.theme-dark .integration-summary-item .summary-label {
 
 body.theme-dark .integration-summary-item .summary-value {
     color: #e2e8f0;
+}
+
+body.theme-dark .system-update-summary-grid a,
+body.theme-dark .system-update-commit-link {
+    color: #93c5fd;
+}
+
+body.theme-dark .system-update-command-card {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.9));
+    border-color: rgba(71, 85, 105, 0.75);
+}
+
+body.theme-dark .system-update-command {
+    background: #020617;
+    color: #dbeafe;
+    border-color: rgba(96, 165, 250, 0.35);
+}
+
+body.theme-dark .system-update-command-shell,
+body.theme-dark .system-update-note,
+body.theme-dark .system-update-commits-head span,
+body.theme-dark .system-update-empty {
+    color: #94a3b8;
+}
+
+body.theme-dark .system-update-commits-head h3,
+body.theme-dark .system-update-commit-subject {
+    color: #e2e8f0;
+}
+
+body.theme-dark .system-update-warning {
+    background: rgba(146, 64, 14, 0.22);
+    border-color: rgba(251, 191, 36, 0.32);
+    color: #fde68a;
 }
 
 body.theme-dark .modal-header {

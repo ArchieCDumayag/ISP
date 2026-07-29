@@ -86,6 +86,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const mikrotikIntegrationStatus = document.getElementById('mikrotik-integration-status');
     const ipBrowserIntegrationStatus = document.getElementById('ip-browser-integration-status');
     const gcashIntegrationStatus = document.getElementById('gcash-integration-status');
+    const systemUpdatePanel = document.getElementById('system-update');
+    const systemUpdateStatus = document.getElementById('system-update-status');
+    const systemUpdateRefreshBtn = document.getElementById('system-update-refresh');
+    const systemUpdateRepository = document.getElementById('system-update-repository');
+    const systemUpdateBranch = document.getElementById('system-update-branch');
+    const systemUpdateLocal = document.getElementById('system-update-local');
+    const systemUpdateRemote = document.getElementById('system-update-remote');
+    const systemUpdateDifference = document.getElementById('system-update-difference');
+    const systemUpdateChecked = document.getElementById('system-update-checked');
+    const systemUpdateCommandShell = document.getElementById('system-update-command-shell');
+    const systemUpdateCommand = document.getElementById('system-update-command');
+    const systemUpdateCopyBtn = document.getElementById('system-update-copy');
+    const systemUpdateWarning = document.getElementById('system-update-warning');
+    const systemUpdateCommitCount = document.getElementById('system-update-commit-count');
+    const systemUpdateCommitsBody = document.getElementById('system-update-commits-body');
     
     // Account management elements
     const accountsTable = document.getElementById('accounts-table-body');
@@ -100,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     let activeIntegrationEditor = null;
     let latestIntegrationSettings = {};
+    let latestSystemUpdateCommand = '';
     const MIKROTIK_TEST_TIMEOUT_MS = 15000;
     
     // Backend-powered accounts
@@ -763,6 +779,219 @@ document.addEventListener('DOMContentLoaded', () => {
         flash._timeoutId = setTimeout(() => {
             flash.textContent = '';
         }, 4000);
+    };
+
+    const setSystemUpdateBadge = (state, label) => {
+        if (!systemUpdateStatus) return;
+        const normalized = String(state || '').toLowerCase();
+        const className = normalized === 'current'
+            ? 'integration-status-badge integration-status-badge--connected'
+            : normalized === 'error'
+                ? 'integration-status-badge integration-status-badge--not-configured'
+                : 'integration-status-badge integration-status-badge--partial';
+        systemUpdateStatus.className = className;
+        systemUpdateStatus.hidden = false;
+        systemUpdateStatus.removeAttribute('aria-hidden');
+        systemUpdateStatus.textContent = label || 'Checking';
+        systemUpdateStatus.dataset.status = normalized || 'checking';
+    };
+
+    const setSystemUpdateField = (element, value, fallback = '-') => {
+        if (!element) return;
+        element.textContent = String(value ?? '').trim() || fallback;
+    };
+
+    const formatSystemUpdateCommitLabel = (commit = {}) => {
+        const hash = String(commit?.shortHash || '').trim();
+        return hash || '-';
+    };
+
+    const formatSystemUpdateDifference = (payload = {}) => {
+        const comparison = payload.comparison || {};
+        const ahead = Math.max(0, Number(comparison.ahead) || 0);
+        const behind = Math.max(0, Number(comparison.behind) || 0);
+        const parts = [];
+        if (behind > 0) parts.push(`${behind} behind remote`);
+        if (ahead > 0) parts.push(`${ahead} ahead local`);
+        if (!parts.length) parts.push('Up to date');
+        return parts.join(', ');
+    };
+
+    const renderSystemUpdateEmptyRow = (message = 'No commits found.') => {
+        if (!systemUpdateCommitsBody) return;
+        systemUpdateCommitsBody.innerHTML = '';
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 4;
+        cell.className = 'system-update-empty';
+        cell.textContent = message;
+        row.appendChild(cell);
+        systemUpdateCommitsBody.appendChild(row);
+        if (systemUpdateCommitCount) {
+            systemUpdateCommitCount.textContent = '0 shown';
+        }
+    };
+
+    const appendSystemUpdateCell = (row, text, className = '') => {
+        const cell = document.createElement('td');
+        if (className) cell.className = className;
+        cell.textContent = String(text ?? '').trim() || '-';
+        row.appendChild(cell);
+        return cell;
+    };
+
+    const renderSystemUpdateCommits = (commits = []) => {
+        if (!systemUpdateCommitsBody) return;
+        systemUpdateCommitsBody.innerHTML = '';
+        const rows = Array.isArray(commits) ? commits.slice(0, 50) : [];
+        if (!rows.length) {
+            renderSystemUpdateEmptyRow();
+            return;
+        }
+
+        rows.forEach((commit) => {
+            const row = document.createElement('tr');
+            const hashCell = document.createElement('td');
+            const hashLabel = formatSystemUpdateCommitLabel(commit);
+            if (commit?.url) {
+                const link = document.createElement('a');
+                link.className = 'system-update-commit-link';
+                link.href = commit.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.textContent = hashLabel;
+                hashCell.appendChild(link);
+            } else {
+                hashCell.textContent = hashLabel;
+            }
+            row.appendChild(hashCell);
+
+            const subjectCell = document.createElement('td');
+            const subject = document.createElement('span');
+            subject.className = 'system-update-commit-subject';
+            subject.textContent = String(commit?.subject || '').trim() || '(no message)';
+            subject.title = subject.textContent;
+            subjectCell.appendChild(subject);
+            row.appendChild(subjectCell);
+
+            appendSystemUpdateCell(row, commit?.author);
+            appendSystemUpdateCell(row, formatDateTimeDisplay(commit?.committedAt, '-'));
+            systemUpdateCommitsBody.appendChild(row);
+        });
+
+        if (systemUpdateCommitCount) {
+            systemUpdateCommitCount.textContent = `${rows.length} shown`;
+        }
+    };
+
+    const renderSystemUpdateStatus = (payload = {}) => {
+        if (!systemUpdatePanel) return;
+        const repository = payload.repository || {};
+        const branch = payload.branch || {};
+        const local = payload.local || {};
+        const remote = payload.remote || {};
+        const comparison = payload.comparison || {};
+        const command = payload.command || {};
+
+        if (systemUpdateRepository) {
+            const repoName = repository.name || 'ArchieCDumayag/ISP';
+            const repoUrl = repository.url || 'https://github.com/ArchieCDumayag/ISP';
+            systemUpdateRepository.textContent = repoName;
+            systemUpdateRepository.href = repoUrl;
+        }
+
+        setSystemUpdateField(systemUpdateBranch, branch.upstream || branch.remoteRef || branch.local);
+        setSystemUpdateField(systemUpdateLocal, formatSystemUpdateCommitLabel(local));
+        if (systemUpdateLocal) {
+            systemUpdateLocal.title = local.subject || local.hash || '';
+        }
+        setSystemUpdateField(systemUpdateRemote, formatSystemUpdateCommitLabel(remote.commit || remote));
+        if (systemUpdateRemote) {
+            systemUpdateRemote.title = remote.commit?.subject || remote.hash || '';
+        }
+        setSystemUpdateField(systemUpdateDifference, formatSystemUpdateDifference(payload));
+        setSystemUpdateField(systemUpdateChecked, formatDateTimeDisplay(payload.checkedAt || branch.fetchedAt, '-'));
+        setSystemUpdateField(systemUpdateCommandShell, command.shell || 'Server terminal', 'Server terminal');
+        latestSystemUpdateCommand = String(command.value || '').trim();
+        setSystemUpdateField(systemUpdateCommand, latestSystemUpdateCommand, 'No update command available.');
+
+        const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
+        const changedCount = Math.max(0, Number(payload.workingTree?.changedFileCount) || 0);
+        if (changedCount > 0) {
+            warnings.unshift(`Working tree has ${changedCount} local file change${changedCount === 1 ? '' : 's'}; the terminal update may require manual cleanup.`);
+        }
+        if (systemUpdateWarning) {
+            systemUpdateWarning.hidden = !warnings.length;
+            systemUpdateWarning.textContent = warnings.join(' ');
+        }
+
+        if (comparison.updateAvailable) {
+            setSystemUpdateBadge('update', 'Update Available');
+        } else {
+            setSystemUpdateBadge('current', 'Up To Date');
+        }
+        renderSystemUpdateCommits(payload.commits || []);
+    };
+
+    const fetchSystemUpdateStatus = async () => {
+        if (!systemUpdatePanel) return;
+        const unlock = window.withButtonLock
+            ? window.withButtonLock(systemUpdateRefreshBtn, { label: '<i class="ti ti-refresh"></i> Checking...' })
+            : null;
+        setSystemUpdateBadge('checking', 'Checking');
+        if (systemUpdateCommitsBody && !systemUpdateCommitsBody.children.length) {
+            renderSystemUpdateEmptyRow('Loading commits...');
+        }
+
+        try {
+            const response = await fetch('/api/system-update/status', {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.ok === false) {
+                throw new Error(data?.error || 'Failed to load system update status.');
+            }
+            renderSystemUpdateStatus(data);
+        } catch (error) {
+            setSystemUpdateBadge('error', 'Unavailable');
+            setSystemUpdateField(systemUpdateDifference, 'Unable to check updates');
+            setSystemUpdateField(systemUpdateChecked, formatDateTimeDisplay(new Date().toISOString(), '-'));
+            renderSystemUpdateEmptyRow(error.message || 'Failed to load commits.');
+            if (systemUpdateWarning) {
+                systemUpdateWarning.hidden = false;
+                systemUpdateWarning.textContent = error.message || 'Failed to load system update status.';
+            }
+        } finally {
+            if (unlock) unlock();
+        }
+    };
+
+    const copySystemUpdateCommand = async () => {
+        const commandText = String(latestSystemUpdateCommand || systemUpdateCommand?.textContent || '').trim();
+        if (!commandText || commandText === 'Loading...' || commandText === 'No update command available.') {
+            showInlineMessage(systemUpdatePanel, 'No update command available yet.', 'error');
+            return;
+        }
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(commandText);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = commandText;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            showInlineMessage(systemUpdatePanel, 'Update command copied.', 'success');
+        } catch (error) {
+            showInlineMessage(systemUpdatePanel, error.message || 'Unable to copy command.', 'error');
+        }
     };
 
     const collectFormValues = (form) => {
@@ -2119,6 +2348,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Load integration settings on page load
     fetchIntegrationSettings();
+    fetchSystemUpdateStatus();
+
+    if (systemUpdateRefreshBtn) {
+        systemUpdateRefreshBtn.addEventListener('click', fetchSystemUpdateStatus);
+    }
+
+    if (systemUpdateCopyBtn) {
+        systemUpdateCopyBtn.addEventListener('click', copySystemUpdateCommand);
+    }
 
     if (gcashQrFileInput) {
         gcashQrFileInput.addEventListener('change', async () => {

@@ -10,6 +10,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const net = require('net');
+const { execFile } = require('child_process');
 const cors = require('cors');
 const { createRateLimiter } = require('./rate-limiter');
 
@@ -1615,6 +1616,261 @@ const requireStructureOwnerAccess = async (req, res, next) => {
     return next();
 };
 
+const SYSTEM_UPDATE_COMMIT_LIMIT = 50;
+const SYSTEM_UPDATE_GIT_TIMEOUT_MS = 15000;
+const SYSTEM_UPDATE_FETCH_TIMEOUT_MS = 30000;
+const SYSTEM_UPDATE_REPOSITORY_FALLBACK_URL = 'https://github.com/ArchieCDumayag/ISP';
+
+const makeSystemUpdateError = (message, statusCode = 500) => {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    return error;
+};
+
+const normalizeGitCommandOutput = (value) => String(value || '').replace(/\s+$/g, '');
+
+const summarizeGitError = (error, fallback = 'Git command failed.') => {
+    const stderr = normalizeGitCommandOutput(error?.stderr || '');
+    const stdout = normalizeGitCommandOutput(error?.stdout || '');
+    const message = normalizeGitCommandOutput(stderr || stdout || error?.message || fallback);
+    if (error?.killed || error?.signal === 'SIGTERM') {
+        return 'Git command timed out.';
+    }
+    return message || fallback;
+};
+
+const runGitCommand = (args = [], options = {}) => new Promise((resolve, reject) => {
+    execFile('git', args, {
+        cwd: __dirname,
+        windowsHide: true,
+        timeout: options.timeout || SYSTEM_UPDATE_GIT_TIMEOUT_MS,
+        maxBuffer: options.maxBuffer || 1024 * 1024
+    }, (error, stdout, stderr) => {
+        if (error) {
+            error.stdout = stdout;
+            error.stderr = stderr;
+            return reject(error);
+        }
+        return resolve(normalizeGitCommandOutput(stdout));
+    });
+});
+
+const runGitCommandOrEmpty = async (args = [], options = {}) => {
+    try {
+        return await runGitCommand(args, options);
+    } catch {
+        return '';
+    }
+};
+
+const normalizeGitWebUrl = (remoteUrl = '') => {
+    const raw = String(remoteUrl || '').trim();
+    if (!raw) return '';
+    const sshMatch = raw.match(/^git@([^:]+):(.+)$/i);
+    if (sshMatch) {
+        return `https://${sshMatch[1]}/${sshMatch[2].replace(/\.git$/i, '')}`;
+    }
+    if (/^https?:\/\//i.test(raw)) {
+        return raw.replace(/\.git(?:\/)?$/i, '').replace(/\/+$/g, '');
+    }
+    return '';
+};
+
+const repositoryNameFromUrl = (repoUrl = '') => {
+    const normalized = String(repoUrl || '').trim().replace(/\/+$/g, '');
+    const githubMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)$/i);
+    if (githubMatch) return githubMatch[1];
+    const pathName = normalized.replace(/^https?:\/\/[^/]+\//i, '');
+    return pathName || 'Repository';
+};
+
+const splitUpstreamRef = (upstreamRef = '') => {
+    const ref = String(upstreamRef || '').trim();
+    const slashIndex = ref.indexOf('/');
+    if (slashIndex < 0) return { remoteName: '', remoteBranch: ref };
+    return {
+        remoteName: ref.slice(0, slashIndex),
+        remoteBranch: ref.slice(slashIndex + 1)
+    };
+};
+
+const normalizeRemoteBranchName = (value = '') => String(value || '')
+    .trim()
+    .replace(/^refs\/heads\//i, '')
+    .replace(/^refs\/remotes\/[^/]+\//i, '');
+
+const quotePosixArg = (value = '') => {
+    const text = String(value || '');
+    if (/^[A-Za-z0-9_./:@+-]+$/.test(text)) return text;
+    return `'${text.replace(/'/g, `'\\''`)}'`;
+};
+
+const quotePowerShellArg = (value = '') => `'${String(value || '').replace(/'/g, "''")}'`;
+
+const buildSystemUpdateCommand = ({ remoteName, remoteBranch } = {}) => {
+    const remote = String(remoteName || 'origin').trim() || 'origin';
+    const branch = String(remoteBranch || 'main').trim() || 'main';
+    if (process.platform === 'win32') {
+        return {
+            shell: 'PowerShell',
+            value: [
+                `Set-Location ${quotePowerShellArg(__dirname)}`,
+                `git fetch ${quotePowerShellArg(remote)}`,
+                `if ($LASTEXITCODE -eq 0) { git pull --ff-only ${quotePowerShellArg(remote)} ${quotePowerShellArg(branch)} }`,
+                'if ($LASTEXITCODE -eq 0) { npm install }',
+                'if ($LASTEXITCODE -eq 0) { npm start }'
+            ].join('; ')
+        };
+    }
+
+    return {
+        shell: 'Terminal',
+        value: [
+            `cd ${quotePosixArg(__dirname)}`,
+            `git fetch ${quotePosixArg(remote)}`,
+            `git pull --ff-only ${quotePosixArg(remote)} ${quotePosixArg(branch)}`,
+            'npm install',
+            'npm start'
+        ].join(' && ')
+    };
+};
+
+const parseGitCommitLine = (line = '', repoUrl = '') => {
+    const [hash = '', shortHash = '', timestampText = '', author = '', ...subjectParts] = String(line || '').split('\x1f');
+    const timestamp = Number(timestampText);
+    const committedAt = Number.isFinite(timestamp) && timestamp > 0
+        ? new Date(timestamp * 1000).toISOString()
+        : '';
+    const fullHash = String(hash || '').trim();
+    return {
+        hash: fullHash,
+        shortHash: String(shortHash || fullHash.slice(0, 7)).trim(),
+        committedAt,
+        author: String(author || '').trim(),
+        subject: subjectParts.join('\x1f').trim(),
+        url: repoUrl && fullHash ? `${repoUrl}/commit/${fullHash}` : ''
+    };
+};
+
+const parseGitCommitLog = (output = '', repoUrl = '') => String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => parseGitCommitLine(line, repoUrl))
+    .filter((commit) => Boolean(commit.hash));
+
+const buildSystemUpdateStatus = async () => {
+    const warnings = [];
+    const gitRoot = await runGitCommandOrEmpty(['rev-parse', '--show-toplevel']);
+    if (!gitRoot) {
+        throw makeSystemUpdateError('This server folder is not a Git checkout.', 409);
+    }
+
+    const currentBranchRaw = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const detached = currentBranchRaw === 'HEAD';
+    if (detached) {
+        throw makeSystemUpdateError('This server checkout is detached. Check out a tracked branch before using system updates.', 409);
+    }
+
+    const currentBranch = currentBranchRaw;
+    const upstreamRef = await runGitCommandOrEmpty(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+    const splitUpstream = splitUpstreamRef(upstreamRef);
+    const configuredRemote = await runGitCommandOrEmpty(['config', '--get', `branch.${currentBranch}.remote`]);
+    const configuredMerge = await runGitCommandOrEmpty(['config', '--get', `branch.${currentBranch}.merge`]);
+    const remoteName = configuredRemote || splitUpstream.remoteName || 'origin';
+    const remoteBranch = normalizeRemoteBranchName(configuredMerge) || splitUpstream.remoteBranch || currentBranch;
+    const remoteRef = upstreamRef || `${remoteName}/${remoteBranch}`;
+
+    if (!upstreamRef) {
+        warnings.push(`Branch ${currentBranch} has no configured upstream; using ${remoteRef}.`);
+    }
+
+    let fetchedAt = '';
+    try {
+        await runGitCommand(['fetch', '--quiet', '--prune', remoteName], {
+            timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS,
+            maxBuffer: 2 * 1024 * 1024
+        });
+        fetchedAt = new Date().toISOString();
+    } catch (error) {
+        warnings.push(`Remote fetch failed: ${summarizeGitError(error)}`);
+    }
+
+    const remoteUrlRaw = await runGitCommandOrEmpty(['config', '--get', `remote.${remoteName}.url`])
+        || await runGitCommandOrEmpty(['config', '--get', 'remote.origin.url']);
+    const repositoryUrl = normalizeGitWebUrl(remoteUrlRaw) || SYSTEM_UPDATE_REPOSITORY_FALLBACK_URL;
+    const localCommitOutput = await runGitCommandOrEmpty([
+        'log',
+        '-1',
+        '--pretty=format:%H%x1f%h%x1f%ct%x1f%an%x1f%s',
+        'HEAD'
+    ]);
+    const localCommit = parseGitCommitLine(localCommitOutput, repositoryUrl);
+    const remoteHead = await runGitCommandOrEmpty(['rev-parse', remoteRef]);
+    if (!remoteHead) {
+        throw makeSystemUpdateError(`Remote branch ${remoteRef} is not available on this server.`, 409);
+    }
+
+    let ahead = 0;
+    let behind = 0;
+    const countOutput = await runGitCommandOrEmpty(['rev-list', '--left-right', '--count', `HEAD...${remoteRef}`]);
+    if (countOutput) {
+        const [aheadText, behindText] = countOutput.trim().split(/\s+/);
+        ahead = Math.max(0, Number(aheadText) || 0);
+        behind = Math.max(0, Number(behindText) || 0);
+    } else {
+        warnings.push(`Could not compare HEAD with ${remoteRef}.`);
+    }
+
+    const commitsOutput = await runGitCommand([
+        'log',
+        `-${SYSTEM_UPDATE_COMMIT_LIMIT}`,
+        '--pretty=format:%H%x1f%h%x1f%ct%x1f%an%x1f%s',
+        remoteRef
+    ], { maxBuffer: 2 * 1024 * 1024 });
+    const commits = parseGitCommitLog(commitsOutput, repositoryUrl);
+
+    const statusOutput = await runGitCommandOrEmpty(['status', '--porcelain']);
+    const dirtyCount = statusOutput
+        ? statusOutput.split(/\r?\n/).filter((line) => line.trim()).length
+        : 0;
+
+    return {
+        repository: {
+            name: repositoryNameFromUrl(repositoryUrl),
+            url: repositoryUrl,
+            remoteUrl: remoteUrlRaw || ''
+        },
+        branch: {
+            local: currentBranch,
+            upstream: upstreamRef || remoteRef,
+            remote: remoteName,
+            remoteBranch,
+            remoteRef,
+            fetchedAt
+        },
+        local: localCommit,
+        remote: {
+            hash: remoteHead,
+            shortHash: remoteHead.slice(0, 7),
+            commit: commits[0] || null
+        },
+        comparison: {
+            ahead,
+            behind,
+            updateAvailable: behind > 0,
+            upToDate: behind === 0
+        },
+        workingTree: {
+            dirty: dirtyCount > 0,
+            changedFileCount: dirtyCount
+        },
+        command: buildSystemUpdateCommand({ remoteName, remoteBranch }),
+        commits,
+        warnings
+    };
+};
+
 const parseCookieHeader = (cookieHeader = '') =>
     cookieHeader.split(';').reduce((acc, part) => {
         const [key, ...rest] = part.trim().split('=');
@@ -1957,6 +2213,27 @@ app.use('/webhooks/messenger', messengerBotRouter);
 // --- Auth Routes ---
 app.use('/api/auth', authRouter);
 app.use('/api/structure', requireStructureOwnerAccess, structureRouter);
+app.get('/api/system-update/status', requireAuth, async (req, res) => {
+    if (!isAdminUser(req.user)) {
+        return res.status(403).json({ ok: false, error: 'Admin access required.' });
+    }
+
+    try {
+        const status = await buildSystemUpdateStatus();
+        return res.json({
+            ok: true,
+            checkedAt: new Date().toISOString(),
+            ...status
+        });
+    } catch (error) {
+        const statusCode = Number(error?.statusCode || 500);
+        console.error('Failed to load system update status:', error);
+        return res.status(statusCode).json({
+            ok: false,
+            error: error.message || 'Failed to load system update status.'
+        });
+    }
+});
 
 // Hard lock runtime API routes only when the app is explicitly using MySQL.
 // JSON file mode is schema-free and persists through data-store.js.
@@ -2079,6 +2356,7 @@ const PROTECTED_PAGES = new Set([
     'plans.html',
     'coverage.html',
     'coverage-map.html',
+    'coverage-map-app.html',
     'genieacs.html',
     'sms.html',
     'customer-app.html',
@@ -2106,6 +2384,7 @@ const FEATURE_PAGE_MAP = Object.freeze({
     'plans.html': 'plans',
     'coverage.html': 'coverageTable',
     'coverage-map.html': 'coverageMap',
+    'coverage-map-app.html': 'coverageMap',
     'payments.html': 'payments',
     'disconnections.html': 'payments',
     'referrals.html': 'payments',
@@ -2179,6 +2458,10 @@ app.use(async (req, res, next) => {
     const featureKey = FEATURE_PAGE_MAP[pageToCheck];
     if (featureKey && getFlavorFeatures().features[featureKey] === false) {
         return res.status(404).send('Not Found');
+    }
+
+    if (pageToCheck === 'coverage-map-app.html') {
+        return next();
     }
 
     if (pageToCheck === 'update-download.html' || pageToCheck === 'flavors.html') {
@@ -2273,6 +2556,12 @@ app.get('/apply-now', (req, res) => {
     const plan = String(req.query?.plan || '').trim();
     const target = plan ? `/apply-now.html?plan=${encodeURIComponent(plan)}` : '/apply-now.html';
     return res.redirect(target);
+});
+app.get('/coverage-map-app', requireFeature('coverageMap'), (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    return res.sendFile(path.join(__dirname, 'public', 'coverage-map-app.html'));
 });
 // Specific route for index.html to ensure protection
 app.get('/index.html', async (req, res) => {
@@ -4914,6 +5203,248 @@ app.get('/api/public/coverage-areas', requireFeature('coverageTable'), async (_r
     } catch (error) {
         console.error('Failed to load public coverage areas:', error);
         return res.status(500).json({ ok: false, error: 'Failed to load coverage areas.' });
+    }
+});
+
+const PUBLIC_MAP_COORDINATE_KEYS = [
+    'mapPin',
+    'map_pin',
+    'coordinate',
+    'coordinates',
+    'coords',
+    'pin',
+    'locationPin',
+    'gps',
+    'gpsCoordinates'
+];
+
+const toPublicMapText = (value, maxLen = 0) => {
+    const text = String(value ?? '').trim();
+    return maxLen > 0 ? text.slice(0, maxLen) : text;
+};
+
+const toPublicMapNumber = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const hasPublicMapCoordinateValue = (value) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') return Boolean(value.trim());
+    if (Array.isArray(value)) return value.length >= 2;
+    if (typeof value === 'object') {
+        const lat = toPublicMapNumber(value.lat ?? value.latitude);
+        const lng = toPublicMapNumber(value.lng ?? value.lon ?? value.longitude);
+        return lat !== null && lng !== null;
+    }
+    return Boolean(String(value).trim());
+};
+
+const normalizePublicMapCoordinateValue = (value) => {
+    if (typeof value === 'string' || typeof value === 'number') {
+        return toPublicMapText(value, 160);
+    }
+    if (Array.isArray(value)) return value.slice(0, 2);
+    if (value && typeof value === 'object') {
+        return {
+            lat: value.lat ?? value.latitude ?? null,
+            lng: value.lng ?? value.lon ?? value.longitude ?? null
+        };
+    }
+    return '';
+};
+
+const resolvePublicMapBranchId = async () => {
+    if (await isRelationalReady()) {
+        const [branchRows] = await query('SELECT id FROM branches ORDER BY id LIMIT 1');
+        return branchRows && branchRows.length ? branchRows[0].id : null;
+    }
+    return isJsonStorageMode() ? 1 : null;
+};
+
+const getPublicMapCoordinateValue = (source = {}) => {
+    if (!source || typeof source !== 'object') return '';
+    for (const key of PUBLIC_MAP_COORDINATE_KEYS) {
+        const value = source?.[key];
+        if (hasPublicMapCoordinateValue(value)) {
+            return normalizePublicMapCoordinateValue(value);
+        }
+    }
+    return '';
+};
+
+const hasPublicMapCoordinate = (source = {}) => {
+    if (!source || typeof source !== 'object') return false;
+    const lat = toPublicMapNumber(source.lat ?? source.latitude);
+    const lng = toPublicMapNumber(source.lng ?? source.lon ?? source.longitude);
+    return (lat !== null && lng !== null) || hasPublicMapCoordinateValue(getPublicMapCoordinateValue(source));
+};
+
+const sanitizePublicMapCustomer = (customer = {}) => {
+    if (!customer || typeof customer !== 'object') return null;
+    const firstName = toPublicMapText(customer.firstName || customer.first_name, 80);
+    const lastName = toPublicMapText(customer.lastName || customer.last_name, 80);
+    const name = toPublicMapText(customer.name || [firstName, lastName].filter(Boolean).join(' '), 160);
+    const accountNumber = toPublicMapText(
+        customer.accountNumber || customer.account_number || customer.account || customer.id,
+        40
+    );
+    const coordinate = getPublicMapCoordinateValue(customer);
+    const lat = toPublicMapNumber(customer.lat ?? customer.latitude);
+    const lng = toPublicMapNumber(customer.lng ?? customer.lon ?? customer.longitude);
+
+    return {
+        accountNumber,
+        account: accountNumber,
+        id: accountNumber,
+        firstName,
+        lastName,
+        name,
+        mapPin: coordinate,
+        coordinate,
+        coordinates: coordinate,
+        lat,
+        lng,
+        status: toPublicMapText(customer.status, 40),
+        mikrotikStatus: toPublicMapText(customer.mikrotikStatus || customer.status, 40)
+    };
+};
+
+const sanitizePublicMapConnection = (connection = {}) => ({
+    customerId: toPublicMapText(connection.customerId || connection.accountNumber || connection.id, 40),
+    customerName: toPublicMapText(connection.customerName || connection.name || connection.customer, 160),
+    customerRef: toPublicMapText(connection.customerRef || connection.customerId || connection.accountNumber || connection.name, 160),
+    port: toPublicMapNumber(connection.port || connection.customerPort || connection.slot),
+    subscriberStatus: toPublicMapText(connection.subscriberStatus || connection.status, 40)
+});
+
+const sanitizePublicMapNap = (nap = {}) => {
+    if (!nap || typeof nap !== 'object') return null;
+    const coordinate = getPublicMapCoordinateValue(nap);
+    const connections = Array.isArray(nap.connections)
+        ? nap.connections.map(sanitizePublicMapConnection).filter((entry) => (
+            entry.customerId || entry.customerName || entry.customerRef
+        ))
+        : [];
+
+    return {
+        id: toPublicMapText(nap.id || nap.client_uid, 80),
+        code: toPublicMapText(nap.code || 'NAP', 80),
+        location: toPublicMapText(nap.location || nap.area, 160),
+        coordinate,
+        coordinates: coordinate,
+        splitter: toPublicMapText(nap.splitter, 20),
+        linkedOlt: toPublicMapText(nap.linkedOlt || nap.linked_olt, 120),
+        ponRef: toPublicMapText(nap.ponRef || nap.pon_ref, 80),
+        capacity: toPublicMapNumber(nap.capacity),
+        used: toPublicMapNumber(nap.used),
+        totalPorts: toPublicMapNumber(nap.totalPorts),
+        usedPorts: toPublicMapNumber(nap.usedPorts),
+        availablePorts: toPublicMapNumber(nap.availablePorts),
+        onlineSubscribers: toPublicMapNumber(nap.onlineSubscribers),
+        offlineSubscribers: toPublicMapNumber(nap.offlineSubscribers),
+        subscriberStatusAvailable: Boolean(nap.subscriberStatusAvailable),
+        connections
+    };
+};
+
+const isMissingPublicMapPonState = (error) => (
+    /PON schema is not initialized/i.test(String(error?.message || '')) ||
+    error?.code === 'ER_NO_SUCH_TABLE' ||
+    /doesn't exist/i.test(String(error?.message || ''))
+);
+
+app.get('/api/public/coverage-map/customers', requireFeature('coverageMap'), async (_req, res) => {
+    try {
+        const branchId = await resolvePublicMapBranchId();
+        if (!branchId && !isJsonStorageMode()) {
+            return res.json({ ok: true, customers: [] });
+        }
+
+        const readVisibleCustomers = typeof customersModule.readVisibleCustomers === 'function'
+            ? customersModule.readVisibleCustomers
+            : customersModule.readCustomers;
+        const customers = typeof readVisibleCustomers === 'function'
+            ? await readVisibleCustomers(branchId)
+            : [];
+        const publicCustomers = (Array.isArray(customers) ? customers : [])
+            .map(sanitizePublicMapCustomer)
+            .filter((customer) => customer && hasPublicMapCoordinate(customer));
+
+        res.set('Cache-Control', 'no-store');
+        return res.json({ ok: true, customers: publicCustomers });
+    } catch (error) {
+        console.error('Failed to load public coverage map customers:', error);
+        return res.status(500).json({ ok: false, error: 'Failed to load coverage map customers.' });
+    }
+});
+
+app.get('/api/public/coverage-map/pon-state', requireFeature('coverageMap'), async (_req, res) => {
+    try {
+        const branchId = await resolvePublicMapBranchId();
+        if (!branchId) {
+            return res.json({
+                ok: true,
+                schemaReady: false,
+                olts: [],
+                naps: [],
+                subscriberStatusAvailable: false
+            });
+        }
+
+        if (!isJsonStorageMode()) {
+            if (!await isRelationalReady()) {
+                return res.json({
+                    ok: true,
+                    schemaReady: false,
+                    olts: [],
+                    naps: [],
+                    subscriberStatusAvailable: false
+                });
+            }
+            const hasPonTables = typeof ponManagementRouter.hasPonTables === 'function'
+                ? await ponManagementRouter.hasPonTables()
+                : true;
+            if (!hasPonTables) {
+                return res.json({
+                    ok: true,
+                    schemaReady: false,
+                    olts: [],
+                    naps: [],
+                    subscriberStatusAvailable: false
+                });
+            }
+        }
+
+        const loadPonStateForBranch = ponManagementRouter.loadPonStateForBranch;
+        const state = typeof loadPonStateForBranch === 'function'
+            ? await loadPonStateForBranch(branchId)
+            : { olts: [], naps: [], subscriberStatusAvailable: false };
+        const naps = (Array.isArray(state?.naps) ? state.naps : [])
+            .map(sanitizePublicMapNap)
+            .filter(Boolean);
+
+        res.set('Cache-Control', 'no-store');
+        return res.json({
+            ok: true,
+            schemaReady: state?.schemaReady !== false,
+            subscriberStatusAvailable: Boolean(state?.subscriberStatusAvailable),
+            olts: [],
+            naps
+        });
+    } catch (error) {
+        if (isMissingPublicMapPonState(error)) {
+            return res.json({
+                ok: true,
+                schemaReady: false,
+                olts: [],
+                naps: [],
+                subscriberStatusAvailable: false
+            });
+        }
+        console.error('Failed to load public coverage map NAP state:', error);
+        return res.status(500).json({ ok: false, error: 'Failed to load coverage map NAP state.' });
     }
 });
 app.post('/api/public/applications', publicApplicationLimiter, async (req, res) => {

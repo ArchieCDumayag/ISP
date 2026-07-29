@@ -914,7 +914,7 @@
             const customerFilterAreaSelectAll = document.getElementById('customerFilterAreaSelectAll');
             const toast = document.getElementById('toast');
             const accountViewShared = window.AccountViewShared || null;
-            const canUseDirectWifi = () => Boolean(window.directWifiEnabled ?? window.isDanteFlavor);
+            const canUseDirectWifi = () => Boolean(window.directWifiEnabled ?? window.isArchieFlavor);
             const syncDirectWifiVisibility = () => {
                 document.querySelectorAll('.wifi-customer, [data-view-action="change-wifi"]').forEach((button) => {
                     button.hidden = !canUseDirectWifi();
@@ -5552,7 +5552,7 @@
                         }
                         if (action === 'change-wifi') {
                             if (!canUseDirectWifi()) {
-                                showToast('WiFi editor is only available for Dante Fiber.');
+                                showToast('WiFi editor is only available for Archie Fiber.');
                                 return;
                             }
                             const accountNumber = String(currentViewCustomer?.accountNumber || currentViewCustomer?.id || '').trim();
@@ -6029,7 +6029,7 @@
                         event.preventDefault();
                         event.stopPropagation();
                         if (!canUseDirectWifi()) {
-                            showToast('WiFi editor is only available for Dante Fiber.');
+                            showToast('WiFi editor is only available for Archie Fiber.');
                             return;
                         }
                         const accountNumber = String(wifiBtn.dataset.customerId || '').trim();

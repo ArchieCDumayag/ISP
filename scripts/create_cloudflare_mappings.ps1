@@ -2,7 +2,7 @@
 create_cloudflare_mappings.ps1
 
 Usage examples:
-  .\create_cloudflare_mappings.ps1 -ZoneId ZONE_ID -AccountId ACCOUNT_ID -TunnelId TUNNEL_ID -Hostname app.dantefiber.com
+  .\create_cloudflare_mappings.ps1 -ZoneId ZONE_ID -AccountId ACCOUNT_ID -TunnelId TUNNEL_ID -Hostname app.archiefiber.com
   # or provide API token env var CF_API_TOKEN and run as above
 
 This script will:

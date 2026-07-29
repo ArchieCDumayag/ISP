@@ -64,7 +64,7 @@ This file documents how to work on this codebase and the critical operational ru
 
 ## Commands
 - Start local server: `npm start`
-- Start named flavor manually: `npm run flavor:start -- dante-fiber --no-tunnel`
+- Start named flavor manually: `npm run flavor:start -- archie-fiber --no-tunnel`
 - MySQL backup: `npm run backup:mysql`
 
 ## UI Notes

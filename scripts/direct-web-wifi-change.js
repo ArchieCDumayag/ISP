@@ -62,13 +62,13 @@ const usage = () => {
 Direct router/ONU WiFi changer
 
 Dry-run first:
-  node scripts\\direct-web-wifi-change.js --url http://192.168.15.202 --admin-user admin --admin-password admin --ssid24 "DANTE-2G" --password24 "newpass123"
+  node scripts\\direct-web-wifi-change.js --url http://192.168.15.202 --admin-user admin --admin-password admin --ssid24 "ARCHIE-2G" --password24 "newpass123"
 
 Apply change:
-  node scripts\\direct-web-wifi-change.js --url http://192.168.15.202 --admin-user admin --admin-password admin --ssid24 "DANTE-2G" --password24 "newpass123" --apply
+  node scripts\\direct-web-wifi-change.js --url http://192.168.15.202 --admin-user admin --admin-password admin --ssid24 "ARCHIE-2G" --password24 "newpass123" --apply
 
 Visible browser for debugging:
-  node scripts\\direct-web-wifi-change.js --url http://192.168.15.202 --admin-user admin --admin-password admin --ssid "DANTE-WIFI" --wifi-password "newpass123" --show --apply
+  node scripts\\direct-web-wifi-change.js --url http://192.168.15.202 --admin-user admin --admin-password admin --ssid "ARCHIE-WIFI" --wifi-password "newpass123" --show --apply
 
 Optional selector config:
   node scripts\\direct-web-wifi-change.js --config data\\direct-web-wifi.json --apply
@@ -79,7 +79,7 @@ Config shape:
     "adminUser": "admin",
     "adminPassword": "admin",
     "modemTemplate": "m2-2050-yotc",
-    "ssid24": "DANTE-2G",
+    "ssid24": "ARCHIE-2G",
     "password24": "newpass123",
     "wifiPage": "/admin/wlan_basic.asp",
     "selectors": {

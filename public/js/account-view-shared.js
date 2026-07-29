@@ -160,7 +160,7 @@
         });
     };
 
-    const isDirectWifiEnabled = () => Boolean(global.directWifiEnabled ?? global.isDanteFlavor);
+    const isDirectWifiEnabled = () => Boolean(global.directWifiEnabled ?? global.isArchieFlavor);
 
     let browserPlayerModal = null;
     let browserPlayerFrame = null;
@@ -697,7 +697,7 @@
 
     const openWifiChangeForAccount = async (accountNumber, options = {}) => {
         if (!isDirectWifiEnabled()) {
-            showSharedToast('WiFi editor is only available for Dante Fiber.', 'error');
+            showSharedToast('WiFi editor is only available for Archie Fiber.', 'error');
             return false;
         }
         const targetAccount = String(accountNumber || '').trim();

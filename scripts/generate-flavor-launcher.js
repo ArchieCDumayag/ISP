@@ -3,7 +3,7 @@ const { projectRoot, writeLauncher } = require('./flavor-tools');
 
 const name = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
 if (!name) {
-  console.error('Flavor name is required. Example: npm run flavor:launcher -- dante-fiber');
+  console.error('Flavor name is required. Example: npm run flavor:launcher -- archie-fiber');
   process.exit(1);
 }
 

@@ -359,7 +359,7 @@ body {
     color: #0f766e;
 }
 
-body:not(.is-dante-flavor) .customer-table .row-actions .ghost-icon.wifi-customer {
+body:not(.is-archie-flavor) .customer-table .row-actions .ghost-icon.wifi-customer {
     display: none !important;
 }
 

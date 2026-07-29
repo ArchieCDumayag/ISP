@@ -88,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gcashIntegrationStatus = document.getElementById('gcash-integration-status');
     const systemUpdatePanel = document.getElementById('system-update');
     const systemUpdateStatus = document.getElementById('system-update-status');
+    const systemUpdateCheckBtn = document.getElementById('system-update-check');
     const systemUpdateRefreshBtn = document.getElementById('system-update-refresh');
     const systemUpdateRepository = document.getElementById('system-update-repository');
     const systemUpdateBranch = document.getElementById('system-update-branch');
@@ -784,7 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const setSystemUpdateBadge = (state, label) => {
         if (!systemUpdateStatus) return;
         const normalized = String(state || '').toLowerCase();
-        const className = normalized === 'current'
+        const className = normalized === 'current' || normalized === 'updated'
             ? 'integration-status-badge integration-status-badge--connected'
             : normalized === 'error'
                 ? 'integration-status-badge integration-status-badge--not-configured'
@@ -794,6 +795,22 @@ document.addEventListener('DOMContentLoaded', () => {
         systemUpdateStatus.removeAttribute('aria-hidden');
         systemUpdateStatus.textContent = label || 'Checking';
         systemUpdateStatus.dataset.status = normalized || 'checking';
+    };
+
+    const setSystemUpdateActionState = (payload = {}) => {
+        if (!systemUpdateCheckBtn) return;
+        const autoUpdate = payload.autoUpdate || {};
+        const updateRun = payload.updateRun || {};
+        const isRunning = Boolean(updateRun.running || updateRun.status === 'running');
+        const isEnabled = Boolean(autoUpdate.enabled);
+        systemUpdateCheckBtn.disabled = isRunning || !isEnabled;
+        if (isRunning) {
+            systemUpdateCheckBtn.title = updateRun.currentStep || 'System update is running.';
+        } else if (!isEnabled) {
+            systemUpdateCheckBtn.title = autoUpdate.message || 'Automatic updates run only on Ubuntu servers.';
+        } else {
+            systemUpdateCheckBtn.title = 'Check the remote branch and automatically apply updates on Ubuntu.';
+        }
     };
 
     const setSystemUpdateField = (element, value, fallback = '-') => {
@@ -892,6 +909,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const remote = payload.remote || {};
         const comparison = payload.comparison || {};
         const command = payload.command || {};
+        const autoUpdate = payload.autoUpdate || {};
+        const updateRun = payload.updateRun || {};
+        const isRunning = Boolean(updateRun.running || updateRun.status === 'running');
 
         if (systemUpdateRepository) {
             const repoName = repository.name || 'ArchieCDumayag/ISP';
@@ -920,12 +940,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (changedCount > 0) {
             warnings.unshift(`Working tree has ${changedCount} local file change${changedCount === 1 ? '' : 's'}; the terminal update may require manual cleanup.`);
         }
+        if (autoUpdate.enabled === false) {
+            warnings.push(autoUpdate.message || 'Automatic updates run only on Ubuntu servers.');
+        }
+        if (isRunning) {
+            warnings.unshift(updateRun.currentStep || updateRun.message || 'System update is running.');
+        }
         if (systemUpdateWarning) {
             systemUpdateWarning.hidden = !warnings.length;
             systemUpdateWarning.textContent = warnings.join(' ');
         }
 
-        if (comparison.updateAvailable) {
+        setSystemUpdateActionState(payload);
+        if (isRunning) {
+            setSystemUpdateBadge('update', 'Updating');
+        } else if (updateRun.status === 'restart-pending') {
+            setSystemUpdateBadge('updated', 'Restarting');
+        } else if (comparison.updateAvailable) {
             setSystemUpdateBadge('update', 'Update Available');
         } else {
             setSystemUpdateBadge('current', 'Up To Date');
@@ -962,6 +993,70 @@ document.addEventListener('DOMContentLoaded', () => {
                 systemUpdateWarning.hidden = false;
                 systemUpdateWarning.textContent = error.message || 'Failed to load system update status.';
             }
+            setSystemUpdateActionState({
+                autoUpdate: {
+                    enabled: false,
+                    message: error.message || 'Automatic update is unavailable.'
+                }
+            });
+        } finally {
+            if (unlock) unlock();
+        }
+    };
+
+    const checkAndApplySystemUpdate = async () => {
+        if (!systemUpdatePanel) return;
+        const unlock = window.withButtonLock
+            ? window.withButtonLock(systemUpdateCheckBtn, { label: '<i class="ti ti-loader-2"></i> Checking...' })
+            : null;
+        if (window.withButtonLock && !unlock) return;
+
+        setSystemUpdateBadge('checking', 'Checking');
+        if (systemUpdateWarning) {
+            systemUpdateWarning.hidden = false;
+            systemUpdateWarning.textContent = 'Checking remote branch and preparing automatic update...';
+        }
+
+        try {
+            const response = await fetch('/api/system-update/check-and-apply', {
+                method: 'POST',
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.ok === false) {
+                throw new Error(data?.error || 'Failed to check for update.');
+            }
+
+            if (data.status) {
+                renderSystemUpdateStatus(data.status);
+            }
+
+            if (data.applied) {
+                setSystemUpdateBadge('updated', 'Restarting');
+                if (systemUpdateCheckBtn) {
+                    systemUpdateCheckBtn.disabled = true;
+                    systemUpdateCheckBtn.title = 'Update applied. The app is restarting now.';
+                }
+                if (systemUpdateWarning) {
+                    systemUpdateWarning.hidden = false;
+                    systemUpdateWarning.textContent = data.message || 'Update applied. The app is restarting now.';
+                }
+                showInlineMessage(systemUpdatePanel, data.message || 'Update applied. Restarting the app now.', 'success');
+                setTimeout(() => {
+                    fetchSystemUpdateStatus();
+                }, 12000);
+            } else {
+                setSystemUpdateBadge('current', 'Up To Date');
+                showInlineMessage(systemUpdatePanel, data.message || 'Already up to date.', 'success');
+            }
+        } catch (error) {
+            setSystemUpdateBadge('error', 'Unavailable');
+            if (systemUpdateWarning) {
+                systemUpdateWarning.hidden = false;
+                systemUpdateWarning.textContent = error.message || 'Failed to check for update.';
+            }
+            showInlineMessage(systemUpdatePanel, error.message || 'Failed to check for update.', 'error');
         } finally {
             if (unlock) unlock();
         }
@@ -2352,6 +2447,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (systemUpdateRefreshBtn) {
         systemUpdateRefreshBtn.addEventListener('click', fetchSystemUpdateStatus);
+    }
+
+    if (systemUpdateCheckBtn) {
+        systemUpdateCheckBtn.addEventListener('click', checkAndApplySystemUpdate);
     }
 
     if (systemUpdateCopyBtn) {

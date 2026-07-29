@@ -56,7 +56,7 @@
         return null;
     };
 
-    const OLD_BRAND_PATTERN = /Dante Point To Point Pisonet|Micro - Network|Dante P2P Fiber|Dante ISP Billing|Dante Fiber|New Billing System/gi;
+    const OLD_BRAND_PATTERN = /Archie Point To Point Pisonet|Micro - Network|Archie P2P Fiber|Archie ISP Billing|Archie Fiber|New Billing System/gi;
 
     const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -73,7 +73,7 @@
     };
 
     const applyStoredBusinessTitle = () => {
-        const BUSINESS_PROFILE_STORAGE_KEYS = ['billing-business-profile', 'dante-business-profile'];
+        const BUSINESS_PROFILE_STORAGE_KEYS = ['billing-business-profile', 'archie-business-profile'];
         const getStoredBusinessName = () => {
             const parsed = getStoredJson(BUSINESS_PROFILE_STORAGE_KEYS);
             return String(parsed?.businessName || '').trim();
@@ -151,7 +151,7 @@
 
     const applyStoredBusinessFavicon = () => {
         let profile = { businessName: 'Billing', logoUrl: '' };
-        const parsed = getStoredJson(['billing-business-profile', 'dante-business-profile']);
+        const parsed = getStoredJson(['billing-business-profile', 'archie-business-profile']);
         if (parsed) {
             profile = { ...profile, ...parsed };
         }
@@ -161,7 +161,7 @@
     applyStoredBusinessFavicon();
 
     const THEME_STORAGE_KEY = 'billing-theme';
-    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('dante-theme');
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('archie-theme');
     const theme = storedTheme === 'dark' ? 'dark' : 'light';
 
     const root = document.documentElement;

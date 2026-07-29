@@ -364,7 +364,7 @@ const injectIpBrowserAutoLoginScript = (html, autoLoginSettings = {}, targetUrl)
     };
     const configJson = JSON.stringify(config).replace(/</g, '\\u003c');
     const script = `
-<script data-dante-ip-browser-autologin>
+<script data-archie-ip-browser-autologin>
 (() => {
   const config = ${configJson};
   const passwords = (Array.isArray(config.passwords) ? config.passwords : [config.password])
@@ -419,7 +419,7 @@ const injectIpBrowserAutoLoginScript = (html, autoLoginSettings = {}, targetUrl)
     location.search
   ].join(' ');
   const clickLoginLinkIfPresent = () => {
-    const key = 'dante-ip-browser-login-link:' + config.targetKey + ':' + location.pathname;
+    const key = 'archie-ip-browser-login-link:' + config.targetKey + ':' + location.pathname;
     const previous = Number(sessionGet(key, '0') || 0);
     if (previous && Date.now() - previous < 8000) return false;
     const pageText = [
@@ -515,7 +515,7 @@ const injectIpBrowserAutoLoginScript = (html, autoLoginSettings = {}, targetUrl)
     const compactCredentialPage = visibleFields.length <= 8 && !settingsForm;
     if (!explicitLogin && !compactCredentialPage) return;
     if (settingsForm && !explicitLogin) return;
-    const key = 'dante-ip-browser-autologin:' + config.targetKey + ':' + location.pathname;
+    const key = 'archie-ip-browser-autologin:' + config.targetKey + ':' + location.pathname;
     let state = {};
     try {
       state = JSON.parse(sessionGet(key, '{}')) || {};
@@ -1619,7 +1619,20 @@ const requireStructureOwnerAccess = async (req, res, next) => {
 const SYSTEM_UPDATE_COMMIT_LIMIT = 50;
 const SYSTEM_UPDATE_GIT_TIMEOUT_MS = 15000;
 const SYSTEM_UPDATE_FETCH_TIMEOUT_MS = 30000;
+const SYSTEM_UPDATE_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+const SYSTEM_UPDATE_RESTART_DELAY_MS = 1800;
 const SYSTEM_UPDATE_REPOSITORY_FALLBACK_URL = 'https://github.com/ArchieCDumayag/ISP';
+const SYSTEM_UPDATE_DEFAULT_SERVICE_NAME = 'isp-billing';
+let systemUpdateRestartScheduled = false;
+let systemUpdateRunState = {
+    running: false,
+    status: 'idle',
+    startedAt: '',
+    finishedAt: '',
+    currentStep: '',
+    message: '',
+    logs: ''
+};
 
 const makeSystemUpdateError = (message, statusCode = 500) => {
     const error = new Error(message);
@@ -1661,6 +1674,41 @@ const runGitCommandOrEmpty = async (args = [], options = {}) => {
     } catch {
         return '';
     }
+};
+
+const parseOsRelease = () => {
+    if (process.platform !== 'linux') return {};
+    try {
+        const raw = fs.readFileSync('/etc/os-release', 'utf8');
+        return raw.split(/\r?\n/).reduce((acc, line) => {
+            const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
+            if (!match) return acc;
+            const key = match[1];
+            const value = match[2].trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+            acc[key] = value;
+            return acc;
+        }, {});
+    } catch {
+        return {};
+    }
+};
+
+const getSystemUpdatePlatformInfo = () => {
+    const osRelease = parseOsRelease();
+    const distroId = String(osRelease.ID || '').trim().toLowerCase();
+    const distroName = String(osRelease.PRETTY_NAME || osRelease.NAME || '').trim();
+    const isUbuntu = process.platform === 'linux'
+        && (distroId === 'ubuntu' || distroName.toLowerCase().includes('ubuntu'));
+    return {
+        platform: process.platform,
+        distroId,
+        distroName,
+        isUbuntu,
+        enabled: isUbuntu,
+        message: isUbuntu
+            ? 'Automatic updates are enabled on this Ubuntu server.'
+            : 'Automatic updates run only on Ubuntu servers. Use the terminal command on this server.'
+    };
 };
 
 const normalizeGitWebUrl = (remoteUrl = '') => {
@@ -1710,6 +1758,11 @@ const quotePowerShellArg = (value = '') => `'${String(value || '').replace(/'/g,
 const buildSystemUpdateCommand = ({ remoteName, remoteBranch } = {}) => {
     const remote = String(remoteName || 'origin').trim() || 'origin';
     const branch = String(remoteBranch || 'main').trim() || 'main';
+    const serviceName = String(
+        process.env.SYSTEM_UPDATE_SERVICE_NAME ||
+        process.env.ISP_SERVICE_NAME ||
+        SYSTEM_UPDATE_DEFAULT_SERVICE_NAME
+    ).trim() || SYSTEM_UPDATE_DEFAULT_SERVICE_NAME;
     if (process.platform === 'win32') {
         return {
             shell: 'PowerShell',
@@ -1724,13 +1777,13 @@ const buildSystemUpdateCommand = ({ remoteName, remoteBranch } = {}) => {
     }
 
     return {
-        shell: 'Terminal',
+        shell: 'Ubuntu terminal',
         value: [
             `cd ${quotePosixArg(__dirname)}`,
             `git fetch ${quotePosixArg(remote)}`,
             `git pull --ff-only ${quotePosixArg(remote)} ${quotePosixArg(branch)}`,
-            'npm install',
-            'npm start'
+            'if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi',
+            `sudo systemctl restart ${quotePosixArg(serviceName)}`
         ].join(' && ')
     };
 };
@@ -1758,6 +1811,145 @@ const parseGitCommitLog = (output = '', repoUrl = '') => String(output || '')
     .filter(Boolean)
     .map((line) => parseGitCommitLine(line, repoUrl))
     .filter((commit) => Boolean(commit.hash));
+
+const appendSystemUpdateLog = (chunk = '') => {
+    const text = String(chunk || '');
+    if (!text) return;
+    systemUpdateRunState.logs = `${systemUpdateRunState.logs || ''}${text}`;
+    if (systemUpdateRunState.logs.length > 20000) {
+        systemUpdateRunState.logs = systemUpdateRunState.logs.slice(systemUpdateRunState.logs.length - 20000);
+    }
+};
+
+const cloneSystemUpdateRunState = () => ({
+    running: Boolean(systemUpdateRunState.running),
+    status: systemUpdateRunState.status || 'idle',
+    startedAt: systemUpdateRunState.startedAt || '',
+    finishedAt: systemUpdateRunState.finishedAt || '',
+    currentStep: systemUpdateRunState.currentStep || '',
+    message: systemUpdateRunState.message || '',
+    logs: systemUpdateRunState.logs || ''
+});
+
+const runSystemUpdateStep = (label, command, args = [], options = {}) => new Promise((resolve, reject) => {
+    systemUpdateRunState.currentStep = label;
+    appendSystemUpdateLog(`\n[${new Date().toISOString()}] ${label}\n$ ${[command, ...args].join(' ')}\n`);
+    execFile(command, args, {
+        cwd: __dirname,
+        windowsHide: true,
+        timeout: options.timeout || SYSTEM_UPDATE_GIT_TIMEOUT_MS,
+        maxBuffer: options.maxBuffer || 2 * 1024 * 1024
+    }, (error, stdout, stderr) => {
+        if (stdout) appendSystemUpdateLog(stdout);
+        if (stderr) appendSystemUpdateLog(stderr);
+        if (error) {
+            error.stdout = stdout;
+            error.stderr = stderr;
+            return reject(error);
+        }
+        return resolve({ stdout: normalizeGitCommandOutput(stdout), stderr: normalizeGitCommandOutput(stderr) });
+    });
+});
+
+const scheduleSystemUpdateRestart = () => {
+    if (systemUpdateRestartScheduled) return;
+    systemUpdateRestartScheduled = true;
+    const timer = setTimeout(() => {
+        console.log('[system-update] Update applied. Exiting so the Ubuntu service manager can restart the app.');
+        process.exit(0);
+    }, SYSTEM_UPDATE_RESTART_DELAY_MS);
+    if (typeof timer.unref === 'function') {
+        timer.unref();
+    }
+};
+
+const applySystemUpdateIfAvailable = async () => {
+    if (systemUpdateRunState.running) {
+        throw makeSystemUpdateError('A system update is already running.', 409);
+    }
+
+    const platformInfo = getSystemUpdatePlatformInfo();
+    if (!platformInfo.enabled) {
+        throw makeSystemUpdateError(platformInfo.message, 409);
+    }
+
+    const status = await buildSystemUpdateStatus();
+    if (!status.comparison?.updateAvailable) {
+        systemUpdateRunState = {
+            ...systemUpdateRunState,
+            running: false,
+            status: 'idle',
+            currentStep: '',
+            message: 'Already up to date.'
+        };
+        return {
+            applied: false,
+            message: 'Already up to date.',
+            status
+        };
+    }
+
+    if (status.workingTree?.dirty) {
+        throw makeSystemUpdateError(
+            `Working tree has ${status.workingTree.changedFileCount || 0} local file change(s). Commit or stash them before automatic update.`,
+            409
+        );
+    }
+
+    systemUpdateRunState = {
+        running: true,
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        finishedAt: '',
+        currentStep: 'Starting update',
+        message: 'Applying update...',
+        logs: ''
+    };
+
+    try {
+        const remoteName = status.branch?.remote || 'origin';
+        const remoteBranch = status.branch?.remoteBranch || status.branch?.local || 'main';
+        await runSystemUpdateStep('Fetch remote updates', 'git', ['fetch', remoteName, remoteBranch], {
+            timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
+        });
+        await runSystemUpdateStep('Fast-forward tracked branch', 'git', ['pull', '--ff-only', remoteName, remoteBranch], {
+            timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
+        });
+
+        const hasPackageLock = fs.existsSync(path.join(__dirname, 'package-lock.json'));
+        const npmArgs = hasPackageLock
+            ? ['ci', '--omit=dev']
+            : ['install', '--omit=dev'];
+        await runSystemUpdateStep('Install production dependencies', 'npm', npmArgs, {
+            timeout: SYSTEM_UPDATE_INSTALL_TIMEOUT_MS,
+            maxBuffer: 4 * 1024 * 1024
+        });
+
+        systemUpdateRunState.running = false;
+        systemUpdateRunState.status = 'restart-pending';
+        systemUpdateRunState.finishedAt = new Date().toISOString();
+        systemUpdateRunState.currentStep = 'Restart pending';
+        systemUpdateRunState.message = 'Update applied. Restarting the app now.';
+        appendSystemUpdateLog(`\n[${systemUpdateRunState.finishedAt}] Update applied. Restart pending.\n`);
+
+        scheduleSystemUpdateRestart();
+
+        return {
+            applied: true,
+            message: 'Update applied. The app is restarting now; refresh this tab after it comes back.',
+            status,
+            updateRun: cloneSystemUpdateRunState()
+        };
+    } catch (error) {
+        systemUpdateRunState.running = false;
+        systemUpdateRunState.status = 'failed';
+        systemUpdateRunState.finishedAt = new Date().toISOString();
+        systemUpdateRunState.currentStep = '';
+        systemUpdateRunState.message = summarizeGitError(error, 'Automatic update failed.');
+        appendSystemUpdateLog(`\n[${systemUpdateRunState.finishedAt}] Failed: ${systemUpdateRunState.message}\n`);
+        throw makeSystemUpdateError(systemUpdateRunState.message, 500);
+    }
+};
 
 const buildSystemUpdateStatus = async () => {
     const warnings = [];
@@ -1865,6 +2057,8 @@ const buildSystemUpdateStatus = async () => {
             dirty: dirtyCount > 0,
             changedFileCount: dirtyCount
         },
+        autoUpdate: getSystemUpdatePlatformInfo(),
+        updateRun: cloneSystemUpdateRunState(),
         command: buildSystemUpdateCommand({ remoteName, remoteBranch }),
         commits,
         warnings
@@ -2231,6 +2425,29 @@ app.get('/api/system-update/status', requireAuth, async (req, res) => {
         return res.status(statusCode).json({
             ok: false,
             error: error.message || 'Failed to load system update status.'
+        });
+    }
+});
+app.post('/api/system-update/check-and-apply', requireAuth, async (req, res) => {
+    if (!isAdminUser(req.user)) {
+        return res.status(403).json({ ok: false, error: 'Admin access required.' });
+    }
+
+    try {
+        const result = await applySystemUpdateIfAvailable();
+        return res.json({
+            ok: true,
+            checkedAt: new Date().toISOString(),
+            ...result,
+            updateRun: result.updateRun || cloneSystemUpdateRunState()
+        });
+    } catch (error) {
+        const statusCode = Number(error?.statusCode || 500);
+        console.error('Failed to apply system update:', error);
+        return res.status(statusCode).json({
+            ok: false,
+            error: error.message || 'Failed to apply system update.',
+            updateRun: cloneSystemUpdateRunState()
         });
     }
 });
@@ -2757,7 +2974,7 @@ const buildPaymentReceiptPayload = async (req) => {
     const profile = typeof businessProfileRouter.readProfile === 'function'
         ? await businessProfileRouter.readProfile(branchId).catch(() => ({}))
         : {};
-    const businessName = receiptText(profile?.businessName) || 'Dante Fiber';
+    const businessName = receiptText(profile?.businessName) || 'Archie Fiber';
     const resolvedAccount = receiptText(entry?.accountNumber || customer?.accountNumber || accountNumber);
     const resolvedReference = receiptText(entry?.orNumber || entry?.reference || reference || entry?.id || xenditId);
     const resolvedDescription = receiptText(entry?.description || description)
@@ -5619,9 +5836,9 @@ const normalizeFlavorIdentity = (value = '') => String(value || '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-const isDanteFlavorRuntime = () => {
+const isArchieFlavorRuntime = () => {
     const activeFlavor = normalizeFlavorIdentity(process.env.ACTIVE_FLAVOR_NAME);
-    if (activeFlavor) return activeFlavor === 'dante' || activeFlavor === 'dante-fiber';
+    if (activeFlavor) return activeFlavor === 'archie' || activeFlavor === 'archie-fiber';
     return [
         process.env.PUBLIC_BASE_URL,
         process.env.APP_BASE_URL,
@@ -5631,19 +5848,19 @@ const isDanteFlavorRuntime = () => {
         process.env.MYSQL_DATABASE
     ].some((value) => {
         const normalized = normalizeFlavorIdentity(value);
-        return normalized.includes('dantexfiber')
-            || normalized.includes('dante-fiber')
-            || normalized === 'dante';
+        return normalized.includes('archiexfiber')
+            || normalized.includes('archie-fiber')
+            || normalized === 'archie';
     });
 };
 
 app.get('/api/flavor/features', requireAuth, (_req, res) => {
-    const danteFlavor = isDanteFlavorRuntime();
+    const archieFlavor = isArchieFlavorRuntime();
     res.json({
         ...getFlavorFeatures(),
         activeFlavor: process.env.ACTIVE_FLAVOR_NAME || '',
-        isDanteFlavor: danteFlavor,
-        directWifiEnabled: danteFlavor
+        isArchieFlavor: archieFlavor,
+        directWifiEnabled: archieFlavor
     });
 });
 app.get('/api/flavors/status', requireAuth, (req, res) => {
@@ -6010,7 +6227,7 @@ app.post('/api/customers/:accountNumber/direct-connected-devices', requireAuth, 
 });
 
 app.post('/api/customers/:accountNumber/direct-wifi', requireAuth, async (req, res) => {
-    if (!isDanteFlavorRuntime()) {
+    if (!isArchieFlavorRuntime()) {
         return res.status(404).json({ ok: false, error: 'Not Found' });
     }
     if (!isAdminUser(req.user)) {

@@ -28,10 +28,10 @@ const DEFAULT_PROFILE = {
     paymentInstructions: {}
 };
 const LEGACY_DEFAULT_VALUES = new Set([
-    'dante point to point pisonet',
-    'dante fiber',
-    'support@dantefiber.net',
-    'support@dantefiber.com',
+    'archie point to point pisonet',
+    'archie fiber',
+    'support@archiefiber.net',
+    'support@archiefiber.com',
     '0976-160-1988',
     '(02) 8555-1234',
     '8555-1234',

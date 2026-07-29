@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Tab switching functionality
     const tabLinks = document.querySelectorAll('.sms-tab-link');
     const tabContents = document.querySelectorAll('.sms-tab-content');
-    const SMS_ACTIVE_TAB_STORAGE_KEY = 'dante-sms-active-tab';
+    const SMS_ACTIVE_TAB_STORAGE_KEY = 'archie-sms-active-tab';
 
     const setActiveTab = (tabId, { persist = true } = {}) => {
         if (!tabId) return;
@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return Array.from(root.querySelectorAll('input[name="deliveryMethod"]:checked')).map(input => input.value);
     };
 
-    const COMPOSE_DELIVERY_METHODS_STORAGE_KEY = 'dante-sms-compose-delivery-methods';
+    const COMPOSE_DELIVERY_METHODS_STORAGE_KEY = 'archie-sms-compose-delivery-methods';
 
     const getComposeDeliveryMethodInputs = () => {
         return Array.from(document.querySelectorAll('#send-sms input[name="deliveryMethod"]'));

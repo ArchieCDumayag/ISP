@@ -322,6 +322,19 @@
     grid-column: 1 / -1;
 }
 
+.system-update-panel .panel-actions {
+    align-items: center;
+}
+
+.system-update-auto-btn {
+    white-space: nowrap;
+}
+
+.system-update-auto-btn:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
 .system-update-overview {
     gap: 18px;
 }

@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "C:\\Progra~1\\nodejs\\node.exe scripts\\start-flavor.js dante-fiber",
-    "start:local": "C:\\Progra~1\\nodejs\\node.exe scripts\\start-flavor.js dante-fiber --no-tunnel",
+    "start": "C:\\Progra~1\\nodejs\\node.exe scripts\\start-flavor.js archie-fiber",
+    "start:local": "C:\\Progra~1\\nodejs\\node.exe scripts\\start-flavor.js archie-fiber --no-tunnel",
     "flavor:init": "C:\\Progra~1\\nodejs\\node.exe scripts\\apply-flavor.js --init",
     "flavor:apply": "C:\\Progra~1\\nodejs\\node.exe scripts\\apply-flavor.js",
     "flavor:list": "C:\\Progra~1\\nodejs\\node.exe scripts\\apply-flavor.js --list",

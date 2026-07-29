@@ -203,7 +203,7 @@
     box-shadow: 0 10px 22px rgba(20, 184, 166, 0.18);
 }
 
-body:not(.is-dante-flavor) :is(#customerViewModal, #accountInfoModal) .view-action-btn--wifi {
+body:not(.is-archie-flavor) :is(#customerViewModal, #accountInfoModal) .view-action-btn--wifi {
     display: none !important;
 }
 

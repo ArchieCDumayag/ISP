@@ -48,7 +48,7 @@
     };
 
     const fallbackReceipt = () => ({
-        businessName: 'Dante Fiber',
+        businessName: 'Archie Fiber',
         verified: false,
         amountPaid: Number(params.get('amount')) || 0,
         paidBy: clean(params.get('paidBy') || params.get('payer'), 'Customer'),
@@ -57,7 +57,7 @@
         paymentMethod: clean(params.get('method'), 'Online Payment'),
         referenceNumber: clean(params.get('reference') || params.get('ref'), 'Processing'),
         dateTime: clean(params.get('dateTime') || params.get('paidAt'), new Date().toISOString()),
-        receivedBy: 'Dante Fiber',
+        receivedBy: 'Archie Fiber',
         target: clean(params.get('target'))
     });
 
@@ -143,7 +143,7 @@
         ctx.font = 'bold 48px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(clean(data.businessName, 'Dante Fiber').toUpperCase(), width / 2, 78);
+        ctx.fillText(clean(data.businessName, 'Archie Fiber').toUpperCase(), width / 2, 78);
 
         let y = 205;
         ctx.fillStyle = '#727c8d';
@@ -223,7 +223,7 @@
         ctx.fillText('Received by', padding + 28, y + 34);
         ctx.fillStyle = '#242933';
         ctx.font = 'bold 34px Arial, sans-serif';
-        ctx.fillText(clean(data.receivedBy || data.businessName, 'Dante Fiber'), padding + 28, y + 78);
+        ctx.fillText(clean(data.receivedBy || data.businessName, 'Archie Fiber'), padding + 28, y + 78);
 
         return canvas;
     };
@@ -270,7 +270,7 @@
     const renderReceipt = (receipt) => {
         const data = { ...fallbackReceipt(), ...(receipt || {}) };
         currentReceipt = data;
-        if (nodes.businessName) nodes.businessName.textContent = clean(data.businessName, 'Dante Fiber').toUpperCase();
+        if (nodes.businessName) nodes.businessName.textContent = clean(data.businessName, 'Archie Fiber').toUpperCase();
         if (nodes.amount) nodes.amount.textContent = formatCurrency(data.amountPaid);
         if (nodes.paidBy) nodes.paidBy.textContent = clean(data.paidBy, 'Customer');
         if (nodes.account) nodes.account.textContent = clean(data.accountNumber, '-');
@@ -278,7 +278,7 @@
         if (nodes.method) nodes.method.textContent = clean(data.paymentMethod, 'Online Payment');
         if (nodes.reference) nodes.reference.textContent = clean(data.referenceNumber, 'Processing');
         if (nodes.dateTime) nodes.dateTime.textContent = formatDateTime(data.dateTime);
-        if (nodes.receivedBy) nodes.receivedBy.textContent = clean(data.receivedBy || data.businessName, 'Dante Fiber');
+        if (nodes.receivedBy) nodes.receivedBy.textContent = clean(data.receivedBy || data.businessName, 'Archie Fiber');
         if (nodes.verified) {
             nodes.verified.textContent = data.verified
                 ? 'Payment has been recorded successfully.'

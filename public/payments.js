@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const accountInfoPayNowBtn = document.getElementById('accountInfoPayNowBtn');
     const accountInfoSendReminderBtn = document.getElementById('accountInfoSendReminderBtn');
     const accountInfoWifiBtn = document.getElementById('accountInfoWifiBtn');
-    const canUseDirectWifi = () => Boolean(window.directWifiEnabled ?? window.isDanteFlavor);
+    const canUseDirectWifi = () => Boolean(window.directWifiEnabled ?? window.isArchieFlavor);
     const syncAccountInfoWifiVisibility = () => {
         if (accountInfoWifiBtn) accountInfoWifiBtn.hidden = !canUseDirectWifi();
     };
@@ -116,8 +116,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const accountViewShared = window.AccountViewShared || null;
     const SORT_FILTER_STORAGE_KEY = 'paymentsSortFilter';
     const DEFAULT_SORT_FILTER = 'newOld';
-    const BUSINESS_PROFILE_STORAGE_KEY = 'dante-business-profile';
-    const DEFAULT_BUSINESS_NAME = 'Dante Point To Point Pisonet';
+    const BUSINESS_PROFILE_STORAGE_KEY = 'archie-business-profile';
+    const DEFAULT_BUSINESS_NAME = 'Archie Point To Point Pisonet';
     const rootElement = document.documentElement;
     const bodyElement = document.body;
 
@@ -3326,7 +3326,7 @@ document.addEventListener('DOMContentLoaded', function () {
             event.preventDefault();
             event.stopPropagation();
             if (!canUseDirectWifi()) {
-                showToast('WiFi editor is only available for Dante Fiber.');
+                showToast('WiFi editor is only available for Archie Fiber.');
                 return;
             }
             const accountNumber = normalizeAccountNumber(activeAccountInfoAccount);

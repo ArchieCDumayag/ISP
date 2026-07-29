@@ -63,8 +63,8 @@ const installNodeRouterosUnknownReplyGuard = () => {
     try {
         const { Channel } = require('node-routeros/dist/Channel');
         const { RosException } = require('node-routeros/dist/RosException');
-        if (Channel?.prototype && !Channel.prototype.__danteUnknownReplyGuard) {
-            Object.defineProperty(Channel.prototype, '__danteUnknownReplyGuard', {
+        if (Channel?.prototype && !Channel.prototype.__archieUnknownReplyGuard) {
+            Object.defineProperty(Channel.prototype, '__archieUnknownReplyGuard', {
                 value: true,
                 configurable: false,
                 enumerable: false,
@@ -106,9 +106,9 @@ const installNodeRouterosUnknownReplyGuard = () => {
 
     try {
         const { Connector } = require('node-routeros/dist/connector/Connector');
-        if (!Connector?.prototype || Connector.prototype.__danteReceiverGuard) return;
+        if (!Connector?.prototype || Connector.prototype.__archieReceiverGuard) return;
         const originalOnData = Connector.prototype.onData;
-        Object.defineProperty(Connector.prototype, '__danteReceiverGuard', {
+        Object.defineProperty(Connector.prototype, '__archieReceiverGuard', {
             value: true,
             configurable: false,
             enumerable: false,

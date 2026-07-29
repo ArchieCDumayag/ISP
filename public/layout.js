@@ -19,7 +19,7 @@ const normalizeFlavorIdentity = (value = '') => String(value || '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-const detectDanteFlavorFromLocation = () => {
+const detectArchieFlavorFromLocation = () => {
     const port = String(window.location.port || '').trim();
     return port === '3000';
 };
@@ -27,27 +27,27 @@ const detectDanteFlavorFromLocation = () => {
 const applyFlavorMetadata = (payload = {}) => {
     const activeFlavor = String(payload.activeFlavor || '').trim();
     const normalizedFlavor = normalizeFlavorIdentity(activeFlavor);
-    const isDanteFlavor = typeof payload.isDanteFlavor === 'boolean'
-        ? payload.isDanteFlavor
-        : (normalizedFlavor ? ['dante', 'dante-fiber'].includes(normalizedFlavor) : detectDanteFlavorFromLocation());
+    const isArchieFlavor = typeof payload.isArchieFlavor === 'boolean'
+        ? payload.isArchieFlavor
+        : (normalizedFlavor ? ['archie', 'archie-fiber'].includes(normalizedFlavor) : detectArchieFlavorFromLocation());
     const directWifiEnabled = payload.directWifiEnabled === undefined
-        ? isDanteFlavor
+        ? isArchieFlavor
         : Boolean(payload.directWifiEnabled);
 
     window.activeFlavorName = activeFlavor;
-    window.isDanteFlavor = isDanteFlavor;
+    window.isArchieFlavor = isArchieFlavor;
     window.directWifiEnabled = directWifiEnabled;
-    document.documentElement.classList.toggle('is-dante-flavor', isDanteFlavor);
-    document.body?.classList.toggle('is-dante-flavor', isDanteFlavor);
+    document.documentElement.classList.toggle('is-archie-flavor', isArchieFlavor);
+    document.body?.classList.toggle('is-archie-flavor', isArchieFlavor);
     window.dispatchEvent(new CustomEvent('flavor:metadata', {
-        detail: { activeFlavor, isDanteFlavor, directWifiEnabled }
+        detail: { activeFlavor, isArchieFlavor, directWifiEnabled }
     }));
 };
 
 applyFlavorMetadata({
     activeFlavor: window.activeFlavorName || '',
-    isDanteFlavor: detectDanteFlavorFromLocation(),
-    directWifiEnabled: detectDanteFlavorFromLocation()
+    isArchieFlavor: detectArchieFlavorFromLocation(),
+    directWifiEnabled: detectArchieFlavorFromLocation()
 });
 
 (() => {
@@ -487,7 +487,7 @@ window.withSubmitLock = (form, options = {}) => {
 
 document.addEventListener('DOMContentLoaded', () => {
     const THEME_STORAGE_KEY = 'billing-theme';
-    const LEGACY_THEME_STORAGE_KEY = 'dante-theme';
+    const LEGACY_THEME_STORAGE_KEY = 'archie-theme';
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
     const topbarHost = document.getElementById('topbar');
     const sidebarHost = document.getElementById('sidebar');
@@ -611,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentTheme = storedTheme || 'light';
 
     const BUSINESS_PROFILE_STORAGE_KEY = 'billing-business-profile';
-    const LEGACY_BUSINESS_PROFILE_STORAGE_KEY = 'dante-business-profile';
+    const LEGACY_BUSINESS_PROFILE_STORAGE_KEY = 'archie-business-profile';
     const DEFAULT_BUSINESS_PROFILE = {
         businessName: 'Billing System',
         tagline: '',
@@ -775,7 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.title = window.buildBusinessTitle(baseTitle || document.title, name, name);
             return;
         }
-        const oldBrandPattern = /Dante Point To Point Pisonet|Micro - Network|Dante P2P Fiber|Dante ISP Billing|New Billing System|Dante Fiber/g;
+        const oldBrandPattern = /Archie Point To Point Pisonet|Micro - Network|Archie P2P Fiber|Archie ISP Billing|New Billing System|Archie Fiber/g;
         document.title = oldBrandPattern.test(baseTitle)
             ? baseTitle.replace(oldBrandPattern, name)
             : `${baseTitle} - ${name}`;
@@ -864,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const ACTIVITY_LOG_STORAGE_KEY = 'dante-activity-log';
+    const ACTIVITY_LOG_STORAGE_KEY = 'archie-activity-log';
     const ACTIVITY_LOG_API = '/api/activity-log';
     const MAX_ACTIVITY_LOG_ITEMS = 50;
     const HIDDEN_ACTIVITY_USERNAMES = new Set(['archiecd']);

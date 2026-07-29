@@ -5,12 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
-    <title>Settings - Dante Point To Point Pisonet</title>
+    <title>Settings - Archie Point To Point Pisonet</title>
     <script src="theme-init.js?v=2.6"></script>
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/accounts.css?v=4.6">
+    <link rel="stylesheet" href="css/accounts.css?v=4.7">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
 </head>
 
@@ -70,13 +70,16 @@
                                     </span>
                                     <div>
                                         <h2>System Update</h2>
-                                        <p>Checks the tracked Git branch on the server and lists the latest remote commits.</p>
+                                        <p>Checks the tracked Git branch on the server and updates Ubuntu installs automatically when a new version is available.</p>
                                     </div>
                                 </div>
                                 <div class="panel-actions">
                                     <span class="integration-status-badge integration-status-badge--partial" id="system-update-status">Checking</span>
+                                    <button class="primary-btn system-update-auto-btn" type="button" id="system-update-check">
+                                        <i class="ti ti-cloud-download" aria-hidden="true"></i> Check for Update
+                                    </button>
                                     <button class="ghost-btn" type="button" id="system-update-refresh">
-                                        <i class="ti ti-refresh" aria-hidden="true"></i> Refresh
+                                        <i class="ti ti-refresh" aria-hidden="true"></i> Refresh Status
                                     </button>
                                 </div>
                             </header>
@@ -122,7 +125,7 @@
                                         </button>
                                     </div>
                                     <pre id="system-update-command" class="system-update-command" tabindex="0">Loading...</pre>
-                                    <p class="system-update-note">System updates are terminal-based. Run the command on the server terminal, then refresh this tab after the app comes back.</p>
+                                    <p class="system-update-note" id="system-update-auto-note">On Ubuntu, Check for Update applies available updates automatically. Use the terminal command as a fallback, then refresh this tab after the app comes back.</p>
                                     <p class="system-update-warning" id="system-update-warning" hidden></p>
                                 </div>
 
@@ -807,13 +810,12 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="accounts.js?v=3.6"></script>
+    <script src="accounts.js?v=3.7"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 
 </html>
-
 
 
 

@@ -1,9 +1,20 @@
 const crypto = require('crypto');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const {
+  PLAN_TYPES,
+  BILLING_SCHEDULE_MODES,
+  normalizePlanType,
+  normalizeBillingScheduleMode,
+  formatDateOnly,
+  advanceBillingDate,
+  resolveInitialCycleState,
+  resolveCycleCharge,
+  isCycleDue
+} = require('./billing-cycle');
 
 const STORE_KEY = 'temp_workspace_isolated_v1';
 const EXPORT_KIND = 'isp-temp-workspace-export';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 3;
 const PAYMENT_KINDS = new Set(['payment', 'charge', 'rebate', 'discount']);
 const CUSTOMER_STATUSES = new Set(['active', 'inactive']);
 
@@ -24,6 +35,20 @@ const roundMoney = (value, fallback = 0) => {
 const normalizeAccountNumber = (value) => cleanText(value, 24).toUpperCase().replace(/\s+/g, '');
 const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const manilaDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+const formatManilaDate = (value) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const parts = Object.fromEntries(
+    manilaDateFormatter.formatToParts(parsed).map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
 
 function createEmptyWorkspace() {
   return {
@@ -46,8 +71,15 @@ function normalizeCustomer(raw = {}) {
     email: cleanText(raw.email, 160),
     address: cleanText(raw.address, 300),
     planName: cleanText(raw.planName, 120),
+    planType: normalizePlanType(raw.planType),
     monthlyRate: Math.max(0, roundMoney(raw.monthlyRate)),
+    billingScheduleMode: normalizeBillingScheduleMode(raw.billingScheduleMode),
+    billingScheduleConfigured: raw.billingScheduleConfigured === true,
     billingDay: Math.min(31, Math.max(1, Number.parseInt(raw.billingDay, 10) || 1)),
+    activationDate: isIsoDate(raw.activationDate) ? String(raw.activationDate) : '',
+    nextBillingDate: isIsoDate(raw.nextBillingDate) ? String(raw.nextBillingDate) : '',
+    billingCycleInitialized: raw.billingCycleInitialized === true,
+    proratePending: raw.proratePending === true,
     openingBalance: roundMoney(raw.openingBalance),
     status: CUSTOMER_STATUSES.has(cleanText(raw.status, 20).toLowerCase())
       ? cleanText(raw.status, 20).toLowerCase()
@@ -72,6 +104,8 @@ function normalizePayment(raw = {}) {
     reference: cleanText(raw.reference, 120),
     description: cleanText(raw.description, 500),
     recordedBy: cleanText(raw.recordedBy, 120),
+    systemGenerated: raw.systemGenerated === true,
+    cycleKey: cleanText(raw.cycleKey, 80),
     createdAt,
     updatedAt: cleanText(raw.updatedAt, 40) || createdAt
   };
@@ -169,6 +203,14 @@ function buildWorkspaceSnapshot(rawWorkspace) {
 }
 
 function validateCustomerInput(payload, options = {}) {
+  const requestedPlanType = cleanText(payload?.planType, 20).toLowerCase();
+  if (requestedPlanType && !PLAN_TYPES.has(requestedPlanType)) {
+    throw new WorkspaceValidationError('Plan type must be Prepaid, Postpaid, or Prorate.');
+  }
+  const requestedScheduleMode = cleanText(payload?.billingScheduleMode, 20).toLowerCase();
+  if (requestedScheduleMode && !BILLING_SCHEDULE_MODES.has(requestedScheduleMode)) {
+    throw new WorkspaceValidationError('Billing day type must be Date or Number.');
+  }
   const customer = normalizeCustomer({ ...payload, status: payload?.status || 'active' });
   if (!customer.firstName) throw new WorkspaceValidationError('First name is required.');
   if (!customer.lastName) throw new WorkspaceValidationError('Last name is required.');
@@ -180,6 +222,12 @@ function validateCustomerInput(payload, options = {}) {
   }
   if (!options.allowMissingAccount && !customer.accountNumber) {
     throw new WorkspaceValidationError('Account number is required.');
+  }
+  if (options.requireActivationDate && !customer.activationDate) {
+    throw new WorkspaceValidationError('Activation date is required.');
+  }
+  if (customer.billingScheduleMode === 'date' && !customer.nextBillingDate) {
+    throw new WorkspaceValidationError('Next billing date is required when Billing day uses Date.');
   }
   return customer;
 }
@@ -201,6 +249,12 @@ function createWorkspaceStore(options = {}) {
   const writeStore = options.writeJson || writeJson;
   const now = options.now || (() => new Date().toISOString());
   const uuid = options.uuid || (() => crypto.randomUUID());
+  const resolveCurrentDate = (timestamp = now()) => {
+    const override = typeof options.today === 'function' ? options.today() : options.today;
+    const candidate = cleanText(override, 20);
+    if (isIsoDate(candidate)) return candidate;
+    return formatManilaDate(timestamp) || todayIso();
+  };
   let mutationQueue = Promise.resolve();
 
   const readWorkspace = async () => normalizeWorkspace(await readStore(STORE_KEY, createEmptyWorkspace()));
@@ -236,19 +290,92 @@ function createWorkspaceStore(options = {}) {
     return `TMP-${String(workspace.sequences.payment).padStart(7, '0')}`;
   };
 
+  const applyBillingCycles = (workspace, asOfDate, timestamp) => {
+    let changed = false;
+    for (let index = 0; index < workspace.customers.length; index += 1) {
+      let customer = workspace.customers[index];
+      if (!customer.billingCycleInitialized || !customer.billingScheduleConfigured) {
+        customer = {
+          ...customer,
+          activationDate: customer.activationDate || asOfDate,
+          ...resolveInitialCycleState(customer, asOfDate, { legacy: true }),
+          updatedAt: timestamp
+        };
+        workspace.customers[index] = customer;
+        changed = true;
+      }
+
+      if (customer.status !== 'active') continue;
+      let cyclesProcessed = 0;
+      while (isCycleDue(customer.nextBillingDate, asOfDate) && cyclesProcessed < 120) {
+        const cycleDate = customer.nextBillingDate;
+        const charge = resolveCycleCharge(customer, cycleDate);
+        if (!charge || charge.amount <= 0) break;
+        const cycleKey = `${customer.accountNumber}:${cycleDate}`;
+        const alreadyRecorded = workspace.payments.some((payment) => payment.cycleKey === cycleKey);
+        if (!alreadyRecorded) {
+          workspace.payments.push(normalizePayment({
+            id: `temp-cycle-${customer.accountNumber}-${cycleDate}`,
+            receiptNumber: nextReceiptNumber(workspace),
+            accountNumber: customer.accountNumber,
+            kind: 'charge',
+            amount: charge.amount,
+            date: cycleDate,
+            paymentMethod: 'System',
+            description: charge.prorated
+              ? `Prorated recurring charge (${charge.periodStart} to ${charge.periodEnd}, billing day ${customer.billingDay})`
+              : 'Monthly recurring charge',
+            recordedBy: 'Temp billing cycle',
+            systemGenerated: true,
+            cycleKey,
+            createdAt: timestamp,
+            updatedAt: timestamp
+          }));
+        }
+        const nextCycleDate = advanceBillingDate(cycleDate, customer.billingDay, 1);
+        customer = {
+          ...customer,
+          nextBillingDate: formatDateOnly(nextCycleDate),
+          proratePending: false,
+          updatedAt: timestamp
+        };
+        workspace.customers[index] = customer;
+        changed = true;
+        cyclesProcessed += 1;
+      }
+    }
+    return changed;
+  };
+
+  const synchronizeBillingCycles = () => {
+    const result = mutationQueue.then(async () => {
+      const workspace = await readWorkspace();
+      const timestamp = now();
+      const changed = applyBillingCycles(workspace, resolveCurrentDate(timestamp), timestamp);
+      return changed ? saveWorkspace(workspace) : workspace;
+    });
+    mutationQueue = result.then(() => undefined, () => undefined);
+    return result;
+  };
+
   return Object.freeze({
     async getSnapshot() {
-      return buildWorkspaceSnapshot(await readWorkspace());
+      return buildWorkspaceSnapshot(await synchronizeBillingCycles());
     },
 
     async createCustomer(payload) {
       const result = await mutateWorkspace(async (workspace) => {
-        const customer = validateCustomerInput(payload, { allowMissingAccount: true });
+        const timestamp = now();
+        const asOfDate = resolveCurrentDate(timestamp);
+        const customer = validateCustomerInput({
+          ...payload,
+          activationDate: payload?.activationDate || asOfDate
+        }, { allowMissingAccount: true, requireActivationDate: true });
         customer.accountNumber = customer.accountNumber || nextAccountNumber(workspace);
         if (workspace.customers.some((item) => item.accountNumber === customer.accountNumber)) {
           throw new WorkspaceValidationError('That Temp account number already exists.', 409);
         }
-        const timestamp = now();
+        Object.assign(customer, resolveInitialCycleState(customer, asOfDate));
         customer.createdAt = timestamp;
         customer.updatedAt = timestamp;
         workspace.customers.push(customer);
@@ -263,9 +390,37 @@ function createWorkspaceStore(options = {}) {
         const index = workspace.customers.findIndex((customer) => customer.accountNumber === account);
         if (index < 0) throw new WorkspaceValidationError('Temp customer was not found.', 404);
         const existing = workspace.customers[index];
-        const updated = validateCustomerInput({ ...existing, ...payload, accountNumber: account });
+        const timestamp = now();
+        const asOfDate = resolveCurrentDate(timestamp);
+        const updated = validateCustomerInput({
+          ...existing,
+          ...payload,
+          accountNumber: account,
+          activationDate: payload?.activationDate || existing.activationDate || asOfDate
+        }, { requireActivationDate: true });
+        const cycleInputsChanged = (
+          updated.planType !== existing.planType
+          || updated.activationDate !== existing.activationDate
+          || updated.billingScheduleMode !== existing.billingScheduleMode
+          || updated.billingDay !== existing.billingDay
+          || (
+            updated.billingScheduleMode === 'date'
+            && updated.nextBillingDate !== existing.nextBillingDate
+          )
+          || (existing.status !== 'active' && updated.status === 'active')
+          || !existing.billingCycleInitialized
+          || !existing.billingScheduleConfigured
+        );
+        if (cycleInputsChanged) {
+          Object.assign(updated, resolveInitialCycleState(updated, asOfDate));
+        } else {
+          updated.nextBillingDate = existing.nextBillingDate;
+          updated.billingCycleInitialized = existing.billingCycleInitialized;
+          updated.billingScheduleConfigured = existing.billingScheduleConfigured;
+          updated.proratePending = existing.proratePending;
+        }
         updated.createdAt = existing.createdAt;
-        updated.updatedAt = now();
+        updated.updatedAt = timestamp;
         workspace.customers[index] = updated;
         return account;
       });
@@ -337,7 +492,7 @@ function createWorkspaceStore(options = {}) {
     },
 
     async createExport() {
-      const workspace = await readWorkspace();
+      const workspace = await synchronizeBillingCycles();
       return {
         kind: EXPORT_KIND,
         version: SCHEMA_VERSION,

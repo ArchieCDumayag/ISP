@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="/css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="/temp.css?v=1.3">
+    <link rel="stylesheet" href="/temp.css?v=1.7">
     <script src="/theme-init.js?v=2.6"></script>
 </head>
 <body class="temp-workspace">
@@ -32,7 +32,7 @@
             <button class="btn btn-primary" id="exportWorkspaceBtn" type="button">
                 <i class="ti ti-download"></i><span>Export</span>
             </button>
-            <input id="importWorkspaceFile" type="file" accept="application/json,.json" hidden>
+            <input id="importWorkspaceFile" type="file" accept="application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.json,.xlsx,.xls" hidden>
         </div>
     </header>
 
@@ -94,6 +94,7 @@
                             <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="address" data-sort-label="Service address">Service address <i class="ti ti-arrows-sort"></i></button></th>
                             <th>Contact</th>
                             <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="plan" data-sort-label="Plan rate">Plan <i class="ti ti-arrows-sort"></i></button></th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="plan-type" data-sort-label="Plan type">Plan type <i class="ti ti-arrows-sort"></i></button></th>
                             <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="billing" data-sort-label="Billing day">Billing <i class="ti ti-arrows-sort"></i></button></th>
                             <th class="text-end" aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="balance" data-sort-label="Balance">Balance <i class="ti ti-arrows-sort"></i></button></th>
                             <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="status" data-sort-label="Status">Status <i class="ti ti-arrows-sort"></i></button></th>
@@ -163,10 +164,15 @@
                 <label class="form-field"><span>Contact number</span><input class="form-control" id="customerContact" name="contactNumber" maxlength="40"></label>
                 <label class="form-field"><span>Email</span><input class="form-control" id="customerEmail" name="email" type="email" maxlength="160"></label>
                 <label class="form-field form-field--wide"><span>Service address</span><select class="form-select" id="customerAddress" name="address" required><option value="Poblacion">Poblacion</option><option value="Masical">Masical</option></select></label>
+                <label class="form-field"><span>Plan type</span><select class="form-select" id="customerPlanType" name="planType" required><option value="prepaid">Prepaid</option><option value="postpaid" selected>Postpaid</option><option value="prorate">Prorate</option></select></label>
+                <label class="form-field"><span>Activation date</span><input class="form-control" id="customerActivationDate" name="activationDate" type="date" required></label>
                 <label class="form-field"><span>Plan name</span><select class="form-select" id="customerPlan" name="planName" required><option value="Old plan">Old plan (700)</option><option value="Basic">Basic (800)</option><option value="Standard">Standard (1000)</option><option value="Premium">Premium (1200)</option></select></label>
                 <label class="form-field"><span>Monthly rate</span><select class="form-select" id="customerRate" name="monthlyRate" required><option value="700">700</option><option value="800">800</option><option value="1000">1000</option><option value="1200">1200</option></select></label>
-                <label class="form-field"><span>Billing day</span><input class="form-control" id="customerBillingDay" name="billingDay" type="number" min="1" max="31" value="1"></label>
+                <label class="form-field"><span>Billing schedule</span><select class="form-select" id="customerBillingScheduleMode" name="billingScheduleMode" required><option value="date" selected>Date — exact next bill</option><option value="day">Number — monthly billing day</option></select></label>
+                <label class="form-field" id="customerNextBillingDateField"><span>Next billing date</span><input class="form-control" id="customerNextBillingDate" name="nextBillingDate" type="date" required></label>
+                <label class="form-field" id="customerBillingDayField" hidden><span>Billing day number</span><input class="form-control" id="customerBillingDay" name="billingDay" type="number" min="1" max="31" value="1" disabled></label>
                 <label class="form-field"><span>Opening balance</span><div class="money-input"><span>₱</span><input class="form-control" id="customerOpeningBalance" name="openingBalance" type="number" step="0.01" value="0"></div></label>
+                <div class="cycle-hint form-field--wide" id="customerCycleHint" role="note"><i class="ti ti-calendar-time"></i><span></span></div>
                 <label class="form-field form-field--wide"><span>Notes</span><textarea class="form-control" id="customerNotes" name="notes" rows="3" maxlength="1000"></textarea></label>
             </div>
             <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="customerDialog">Cancel</button><button class="btn btn-primary" id="saveCustomerBtn" type="submit"><i class="ti ti-device-floppy"></i> Save customer</button></footer>
@@ -193,12 +199,37 @@
         </form>
     </dialog>
 
+    <dialog class="temp-dialog temp-dialog--export" id="exportFormatDialog">
+        <form method="dialog">
+            <header class="dialog-header">
+                <div><span class="dialog-eyebrow">Complete Temp backup</span><h2>Choose export format</h2></div>
+                <button class="icon-button" type="button" data-close-dialog="exportFormatDialog" aria-label="Close"><i class="ti ti-x"></i></button>
+            </header>
+            <div class="dialog-body">
+                <p class="export-format-intro">Both formats include all isolated Temp customers, billing settings, balances, and transactions and can be imported back into this page.</p>
+                <div class="export-format-grid">
+                    <button class="export-format-option" id="exportJsonBtn" type="button">
+                        <span class="export-format-option__icon export-format-option__icon--json"><i class="ti ti-braces"></i></span>
+                        <span><strong>JSON backup</strong><small>Best for an exact system backup and restore.</small></span>
+                        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                    </button>
+                    <button class="export-format-option" id="exportExcelBtn" type="button">
+                        <span class="export-format-option__icon export-format-option__icon--excel"><i class="ti ti-file-spreadsheet"></i></span>
+                        <span><strong>Excel workbook</strong><small>Metadata, Customers, and Transactions sheets.</small></span>
+                        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+            <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="exportFormatDialog">Cancel</button></footer>
+        </form>
+    </dialog>
+
     <dialog class="temp-dialog temp-dialog--statement" id="statementDialog">
         <header class="dialog-header statement-actions"><div><span class="dialog-eyebrow">Temp customer ledger</span><h2 id="statementTitle">Ledger &amp; payment history</h2></div><div><button class="btn btn-outline-secondary" id="printStatementBtn" type="button"><i class="ti ti-printer"></i> Print</button><button class="icon-button" type="button" data-close-dialog="statementDialog" aria-label="Close"><i class="ti ti-x"></i></button></div></header>
         <div class="dialog-body" id="statementContent"></div>
     </dialog>
 
     <div class="temp-toast" id="tempToast" role="status" aria-live="polite" hidden><i class="ti ti-circle-check"></i><span></span></div>
-    <script src="/temp.js?v=1.5"></script>
+    <script src="/temp.js?v=1.9"></script>
 </body>
 </html>

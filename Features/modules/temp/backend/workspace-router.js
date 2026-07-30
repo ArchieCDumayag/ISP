@@ -1,5 +1,10 @@
 const express = require('express');
 const workspaceStore = require('./workspace-store');
+const {
+  EXCEL_MIME_TYPE,
+  buildWorkspaceExcelBuffer,
+  parseWorkspaceExcelBuffer
+} = require('./workspace-excel');
 
 const router = express.Router();
 
@@ -76,10 +81,21 @@ router.delete('/payments/:paymentId', async (req, res) => {
   }
 });
 
-router.get('/export', async (_req, res) => {
+router.get('/export', async (req, res) => {
   try {
     const payload = await workspaceStore.createExport();
     const date = payload.exportedAt.slice(0, 10);
+    const format = String(req.query.format || 'json').trim().toLowerCase();
+    if (format === 'xlsx' || format === 'excel') {
+      const workbook = buildWorkspaceExcelBuffer(payload);
+      res.set('Content-Type', EXCEL_MIME_TYPE);
+      res.set('Content-Disposition', `attachment; filename="temp-workspace-${date}.xlsx"`);
+      res.set('Content-Length', String(workbook.length));
+      return res.send(workbook);
+    }
+    if (format !== 'json') {
+      throw new workspaceStore.WorkspaceValidationError('Export format must be JSON or Excel.');
+    }
     res.set('Content-Type', 'application/json; charset=utf-8');
     res.set('Content-Disposition', `attachment; filename="temp-workspace-${date}.json"`);
     return res.send(JSON.stringify(payload, null, 2));
@@ -88,13 +104,46 @@ router.get('/export', async (_req, res) => {
   }
 });
 
+const importedSnapshotResponse = (res, snapshot) => res.json({
+  ...snapshot,
+  message: `Imported ${snapshot.summary.customerCount} Temp customers and ${snapshot.summary.paymentCount} transactions.`
+});
+
 router.post('/import', async (req, res) => {
   try {
     const snapshot = await workspaceStore.replaceFromExport(req.body || {});
-    return res.json({
-      ...snapshot,
-      message: `Imported ${snapshot.summary.customerCount} Temp customers and ${snapshot.summary.paymentCount} transactions.`
-    });
+    return importedSnapshotResponse(res, snapshot);
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.post('/import-file', express.raw({ type: 'application/octet-stream', limit: '20mb' }), async (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      throw new workspaceStore.WorkspaceValidationError('Select a JSON or Excel Temp workspace export file.');
+    }
+    let filename = String(req.get('X-Import-Filename') || '').trim();
+    try {
+      filename = decodeURIComponent(filename);
+    } catch (_error) {
+      throw new workspaceStore.WorkspaceValidationError('The import filename is invalid.');
+    }
+    const extension = filename.toLowerCase().match(/\.(json|xlsx|xls)$/)?.[1] || '';
+    let payload;
+    if (extension === 'json') {
+      try {
+        payload = JSON.parse(req.body.toString('utf8').replace(/^\uFEFF/, ''));
+      } catch (_error) {
+        throw new workspaceStore.WorkspaceValidationError('Select a valid Temp workspace JSON export file.');
+      }
+    } else if (extension === 'xlsx' || extension === 'xls') {
+      payload = parseWorkspaceExcelBuffer(req.body);
+    } else {
+      throw new workspaceStore.WorkspaceValidationError('Only exported Temp JSON, XLSX, or XLS files can be imported.');
+    }
+    const snapshot = await workspaceStore.replaceFromExport(payload);
+    return importedSnapshotResponse(res, snapshot);
   } catch (error) {
     return sendError(res, error);
   }

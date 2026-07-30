@@ -275,7 +275,8 @@ textarea { font: inherit; }
 .transaction-debit { color: var(--temp-danger); }
 
 .status-pill,
-.kind-pill {
+.kind-pill,
+.plan-type-pill {
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -291,6 +292,9 @@ textarea { font: inherit; }
 .kind-pill--charge { color: #b42323; background: rgba(214, 57, 57, 0.1); }
 .kind-pill--rebate,
 .kind-pill--discount { color: #17619e; background: rgba(32, 107, 196, 0.1); }
+.plan-type-pill--prepaid { color: #216d30; background: rgba(47, 179, 68, 0.12); }
+.plan-type-pill--postpaid { color: #17619e; background: rgba(32, 107, 196, 0.1); }
+.plan-type-pill--prorate { color: #8a5a00; background: rgba(245, 159, 0, 0.14); }
 
 .row-actions { justify-content: flex-end; gap: 4px; }
 .icon-button {
@@ -339,12 +343,43 @@ textarea { font: inherit; }
 .dialog-footer { justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--temp-border); background: #fbfcfd; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
 .form-field { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: #405064; font-size: 0.76rem; font-weight: 600; }
+.form-field[hidden] { display: none; }
 .form-field small { color: var(--temp-muted); font-weight: 400; }
 .form-field--wide { grid-column: 1 / -1; }
 .form-field textarea { resize: vertical; }
+.cycle-hint { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid #bfd6ee; border-radius: 8px; background: #f2f7fc; color: #285b8d; font-size: 0.73rem; font-weight: 500; line-height: 1.45; }
+.cycle-hint > i { flex: 0 0 auto; margin-top: 1px; font-size: 1rem; }
+.cycle-hint--prepaid { border-color: #b7dfc0; background: #effaf1; color: #216d30; }
+.cycle-hint--prorate { border-color: #f1d49a; background: #fff8e8; color: #8a5a00; }
 .money-input { position: relative; }
 .money-input > span { position: absolute; top: 50%; left: 12px; z-index: 1; color: var(--temp-muted); transform: translateY(-50%); }
 .money-input .form-control { padding-left: 28px; }
+.temp-dialog--export { width: min(720px, calc(100vw - 24px)); }
+.export-format-intro { margin: 0 0 16px; color: var(--temp-muted); font-size: 0.8rem; line-height: 1.6; }
+.export-format-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.export-format-option {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 13px;
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--temp-border);
+    border-radius: 12px;
+    background: var(--temp-surface);
+    color: var(--temp-text);
+    text-align: left;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.export-format-option:hover { border-color: var(--temp-primary); box-shadow: 0 8px 24px rgba(32, 107, 196, 0.12); transform: translateY(-1px); }
+.export-format-option:focus-visible { outline: 3px solid rgba(32, 107, 196, 0.2); outline-offset: 2px; }
+.export-format-option__icon { display: inline-grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; font-size: 1.25rem; }
+.export-format-option__icon--json { background: rgba(245, 159, 0, 0.14); color: #8a5a00; }
+.export-format-option__icon--excel { background: rgba(47, 179, 68, 0.13); color: #216d30; }
+.export-format-option strong,
+.export-format-option small { display: block; }
+.export-format-option strong { font-size: 0.84rem; }
+.export-format-option small { margin-top: 3px; color: var(--temp-muted); font-size: 0.72rem; line-height: 1.4; }
 .temp-dialog--statement { width: min(1120px, calc(100vw - 24px)); }
 .temp-dialog--statement[open] { display: flex; flex-direction: column; }
 .temp-dialog--statement .dialog-body { min-height: 0; flex: 1 1 auto; }
@@ -431,6 +466,7 @@ textarea { font: inherit; }
     .panel-toolbar__actions { display: grid; grid-template-columns: 1fr auto; }
     .panel-toolbar__actions .form-select { width: 100%; min-width: 0; }
     .form-grid { grid-template-columns: 1fr; }
+    .export-format-grid { grid-template-columns: 1fr; }
     .form-field--wide { grid-column: auto; }
     .dialog-body { padding: 15px; }
     .statement-heading { flex-direction: column; }

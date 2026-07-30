@@ -9,12 +9,15 @@
         Premium: 1200
     });
     const TEMP_SERVICE_ADDRESSES = Object.freeze(['Poblacion', 'Masical']);
+    const TEMP_PLAN_TYPES = Object.freeze(['prepaid', 'postpaid', 'prorate']);
+    const TEMP_BILLING_SCHEDULE_MODES = Object.freeze(['date', 'day']);
     const TABLE_SORT_OPTIONS = Object.freeze({
         customer: Object.freeze({
             account: Object.freeze(['account-asc', 'account-desc']),
             name: Object.freeze(['name-asc', 'name-desc']),
             address: Object.freeze(['address-poblacion', 'address-masical']),
             plan: Object.freeze(['plan-asc', 'plan-desc']),
+            'plan-type': Object.freeze(['plan-type-asc', 'plan-type-desc']),
             billing: Object.freeze(['billing-asc', 'billing-desc']),
             balance: Object.freeze(['balance-desc', 'balance-asc']),
             status: Object.freeze(['status-active', 'status-inactive'])
@@ -35,6 +38,8 @@
         'address-masical': 'Masical first',
         'plan-asc': 'lowest plan rate first',
         'plan-desc': 'highest plan rate first',
+        'plan-type-asc': 'plan type A to Z',
+        'plan-type-desc': 'plan type Z to A',
         'billing-asc': 'earliest billing day first',
         'billing-desc': 'latest billing day first',
         'balance-desc': 'highest balance first',
@@ -74,6 +79,28 @@
         return Number.isNaN(parsed.getTime()) ? String(value || '') : dateFormatter.format(parsed);
     };
     const today = () => new Date().toISOString().slice(0, 10);
+    const defaultNextBillingDate = () => {
+        const current = new Date(`${today()}T00:00:00Z`);
+        const targetYear = current.getUTCFullYear() + (current.getUTCMonth() === 11 ? 1 : 0);
+        const targetMonth = (current.getUTCMonth() + 1) % 12;
+        const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+        return [
+            targetYear,
+            String(targetMonth + 1).padStart(2, '0'),
+            String(Math.min(current.getUTCDate(), lastDay)).padStart(2, '0')
+        ].join('-');
+    };
+    const filenameFromDisposition = (disposition, fallback) => {
+        const encoded = String(disposition || '').match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+        if (encoded) {
+            try {
+                return decodeURIComponent(encoded.replace(/^"|"$/g, ''));
+            } catch (_error) {
+                // Fall through to the regular filename form.
+            }
+        }
+        return String(disposition || '').match(/filename="?([^";]+)"?/i)?.[1] || fallback;
+    };
     const titleCase = (value) => String(value || '').replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
     const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, {
         numeric: true,
@@ -96,6 +123,8 @@
             'address-masical': (left, right) => (addressOrder[left.address] ?? 2) - (addressOrder[right.address] ?? 2),
             'plan-asc': (left, right) => Number(left.monthlyRate || 0) - Number(right.monthlyRate || 0),
             'plan-desc': (left, right) => Number(right.monthlyRate || 0) - Number(left.monthlyRate || 0),
+            'plan-type-asc': (left, right) => compareText(left.planType || 'postpaid', right.planType || 'postpaid'),
+            'plan-type-desc': (left, right) => compareText(right.planType || 'postpaid', left.planType || 'postpaid'),
             'billing-asc': (left, right) => Number(left.billingDay || 1) - Number(right.billingDay || 1),
             'billing-desc': (left, right) => Number(right.billingDay || 1) - Number(left.billingDay || 1),
             'balance-desc': (left, right) => Number(right.balance || 0) - Number(left.balance || 0),
@@ -227,18 +256,25 @@
                 customer.contactNumber,
                 customer.email,
                 customer.address,
-                customer.planName
+                customer.planName,
+                customer.planType
             ].some((value) => String(value || '').toLowerCase().includes(term));
         }), tableSortState.customer);
 
-        byId('customerTableBody').innerHTML = customers.map((customer) => `
-            <tr>
+        byId('customerTableBody').innerHTML = customers.map((customer) => {
+            const planType = TEMP_PLAN_TYPES.includes(customer.planType) ? customer.planType : 'postpaid';
+            const billingScheduleMode = TEMP_BILLING_SCHEDULE_MODES.includes(customer.billingScheduleMode)
+                ? customer.billingScheduleMode
+                : 'day';
+            const cycleDetail = customer.nextBillingDate ? `Next ${formatDate(customer.nextBillingDate)}` : 'Cycle pending';
+            return `<tr>
                 <td><span class="account-code">${escapeHtml(customer.accountNumber)}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.fullName)}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.address || 'No address')}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.contactNumber || '—')}</span><span class="cell-secondary">${escapeHtml(customer.email || '')}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.planName || 'No plan')}</span><span class="cell-secondary">${formatMoney(customer.monthlyRate)} / month</span></td>
-                <td><span class="cell-primary">Day ${customer.billingDay}</span><span class="cell-secondary">${customer.paymentCount} transaction${customer.paymentCount === 1 ? '' : 's'}</span></td>
+                <td><span class="plan-type-pill plan-type-pill--${escapeHtml(planType)}">${escapeHtml(titleCase(planType))}</span></td>
+                <td><span class="cell-primary">${billingScheduleMode === 'date' ? 'Exact-date cycle' : `Day ${customer.billingDay}`}</span><span class="cell-secondary">${escapeHtml(cycleDetail)}</span></td>
                 <td class="text-end"><strong class="${balanceClass(customer.balance)}">${formatMoney(customer.balance)}</strong><span class="cell-secondary">${customer.balance > 0 ? 'Amount due' : customer.balance < 0 ? 'Advance credit' : 'Clear'}</span></td>
                 <td><span class="status-pill status-pill--${escapeHtml(customer.status)}"><i class="ti ti-${customer.status === 'active' ? 'circle-check' : 'circle-minus'}"></i>${escapeHtml(customer.status)}</span></td>
                 <td><div class="row-actions">
@@ -247,8 +283,8 @@
                     <button class="icon-button" type="button" data-customer-action="edit" data-account="${escapeHtml(customer.accountNumber)}" title="Edit" aria-label="Edit customer"><i class="ti ti-edit"></i></button>
                     <button class="icon-button icon-button--danger" type="button" data-customer-action="delete" data-account="${escapeHtml(customer.accountNumber)}" title="Delete" aria-label="Delete customer"><i class="ti ti-trash"></i></button>
                 </div></td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
 
         const noResults = customers.length === 0;
         byId('customerEmpty').hidden = !noResults;
@@ -350,6 +386,15 @@
         byId('customerAddress').value = TEMP_SERVICE_ADDRESSES.includes(customer?.address)
             ? customer.address
             : TEMP_SERVICE_ADDRESSES[0];
+        byId('customerPlanType').value = TEMP_PLAN_TYPES.includes(customer?.planType)
+            ? customer.planType
+            : 'postpaid';
+        byId('customerActivationDate').value = customer?.activationDate || today();
+        byId('customerBillingScheduleMode').value = TEMP_BILLING_SCHEDULE_MODES.includes(customer?.billingScheduleMode)
+            ? customer.billingScheduleMode
+            : (customer ? 'day' : 'date');
+        byId('customerNextBillingDate').min = customer ? '' : today();
+        byId('customerNextBillingDate').value = customer?.nextBillingDate || defaultNextBillingDate();
         const storedRate = Number(customer?.monthlyRate);
         const selectedPlan = Object.hasOwn(TEMP_PLAN_RATES, customer?.planName)
             ? customer.planName
@@ -360,6 +405,7 @@
         byId('customerOpeningBalance').value = customer?.openingBalance ?? 0;
         byId('customerStatus').value = customer?.status || 'active';
         byId('customerNotes').value = customer?.notes || '';
+        updateCustomerBillingScheduleFields();
         byId('customerDialog').showModal();
         window.setTimeout(() => byId('customerFirstName').focus(), 0);
     }
@@ -398,7 +444,11 @@
             .filter((payment) => payment.kind === 'charge')
             .reduce((total, payment) => total + Number(payment.amount || 0), 0);
         const totalPayments = paymentHistory.reduce((total, payment) => total + Number(payment.amount || 0), 0);
-        const latestPayment = paymentHistory[0] || null;
+        const planType = TEMP_PLAN_TYPES.includes(customer.planType) ? customer.planType : 'postpaid';
+        const billingScheduleMode = TEMP_BILLING_SCHEDULE_MODES.includes(customer.billingScheduleMode)
+            ? customer.billingScheduleMode
+            : 'day';
+        const nextBillingLabel = customer.nextBillingDate ? formatDate(customer.nextBillingDate) : 'Cycle pending';
         let runningBalance = Number(customer.openingBalance) || 0;
         const ledgerRows = transactions.map((payment) => {
             runningBalance += Number(payment.balanceImpact) || 0;
@@ -423,7 +473,7 @@
                     <div>
                         <div class="statement-customer-line"><h3>${escapeHtml(customer.fullName)}</h3><span class="status-pill status-pill--${escapeHtml(customer.status)}">${escapeHtml(customer.status)}</span></div>
                         <p><span class="account-code">${escapeHtml(customer.accountNumber)}</span> · ${escapeHtml(customer.address || 'No address')}</p>
-                        <p>${escapeHtml(customer.planName || 'No plan')} · ${formatMoney(customer.monthlyRate)} monthly · Billing day ${customer.billingDay}</p>
+                        <p>${escapeHtml(customer.planName || 'No plan')} · ${formatMoney(customer.monthlyRate)} monthly · ${escapeHtml(titleCase(planType))} · ${billingScheduleMode === 'date' ? `Exact-date cycle (${escapeHtml(nextBillingLabel)})` : `Billing day ${customer.billingDay}`}</p>
                     </div>
                     <div class="statement-balance"><span>Current balance</span><strong class="${balanceClass(customer.balance)}">${formatMoney(customer.balance)}</strong><small>${customer.balance > 0 ? 'Amount due' : customer.balance < 0 ? 'Advance credit' : 'Account is clear'}</small></div>
                 </div>
@@ -431,7 +481,7 @@
                     <div><span>Opening balance</span><strong>${formatMoney(customer.openingBalance)}</strong></div>
                     <div><span>Total charges</span><strong class="transaction-debit">${formatMoney(totalCharges)}</strong></div>
                     <div><span>Payments received</span><strong class="transaction-credit">${formatMoney(totalPayments)}</strong></div>
-                    <div><span>Last payment</span><strong>${latestPayment ? formatDate(latestPayment.date) : 'None yet'}</strong></div>
+                    <div><span>Next billing</span><strong>${escapeHtml(nextBillingLabel)}</strong></div>
                 </div>
                 <section class="statement-section" aria-labelledby="ledgerHeading">
                     <div class="statement-section__heading"><div><span class="statement-section__icon"><i class="ti ti-list-details"></i></span><div><h4 id="ledgerHeading">Account ledger</h4><p>All charges, payments, rebates, and discounts in balance order.</p></div></div><span class="statement-count">${transactions.length} transaction${transactions.length === 1 ? '' : 's'}</span></div>
@@ -483,6 +533,40 @@
         const selectedRate = Number(byId('customerRate').value);
         byId('customerPlan').value = Object.keys(TEMP_PLAN_RATES)
             .find((planName) => TEMP_PLAN_RATES[planName] === selectedRate) || 'Old plan';
+    }
+
+    function updateCustomerBillingScheduleFields() {
+        const billingScheduleMode = byId('customerBillingScheduleMode').value;
+        const usesExactDate = billingScheduleMode === 'date';
+        byId('customerNextBillingDateField').hidden = !usesExactDate;
+        byId('customerNextBillingDate').disabled = !usesExactDate;
+        byId('customerNextBillingDate').required = usesExactDate;
+        byId('customerBillingDayField').hidden = usesExactDate;
+        byId('customerBillingDay').disabled = usesExactDate;
+        if (usesExactDate && !byId('customerNextBillingDate').value) {
+            byId('customerNextBillingDate').value = defaultNextBillingDate();
+        }
+        updateCustomerCycleHint();
+    }
+
+    function updateCustomerCycleHint() {
+        const planType = byId('customerPlanType').value;
+        const billingScheduleMode = byId('customerBillingScheduleMode').value;
+        const billingDay = Math.min(31, Math.max(1, Number(byId('customerBillingDay').value) || 1));
+        const nextBillingDate = byId('customerNextBillingDate').value;
+        const hint = byId('customerCycleHint');
+        hint.classList.toggle('cycle-hint--prepaid', planType === 'prepaid');
+        hint.classList.toggle('cycle-hint--prorate', planType === 'prorate');
+        if (billingScheduleMode === 'date') {
+            const selectedDate = nextBillingDate ? formatDate(nextBillingDate) : 'the selected date';
+            hint.querySelector('span').textContent = `Opening balance stays manual. The first automatic full monthly charge is on ${selectedDate}, then it repeats monthly.`;
+            return;
+        }
+        if (planType === 'prorate') {
+            hint.querySelector('span').textContent = `The first charge is prorated from Activation date to Billing day ${billingDay}. Later cycles charge the full monthly rate.`;
+            return;
+        }
+        hint.querySelector('span').textContent = `The full monthly rate is automatically charged every month on Billing day ${billingDay}. Opening balance remains exactly as entered.`;
     }
 
     async function savePayment(event) {
@@ -548,30 +632,80 @@
         }
     }
 
-    function exportWorkspace() {
-        const link = document.createElement('a');
-        link.href = `${API_ROOT}/export?t=${Date.now()}`;
-        link.hidden = true;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+    async function exportWorkspace(format) {
+        const normalizedFormat = format === 'xlsx' ? 'xlsx' : 'json';
+        const formatButtons = [byId('exportJsonBtn'), byId('exportExcelBtn')];
+        formatButtons.forEach((button) => { button.disabled = true; });
+        try {
+            const response = await fetch(`${API_ROOT}/export?format=${normalizedFormat}`, {
+                credentials: 'same-origin'
+            });
+            if (response.status === 401) {
+                window.location.assign('/login.html');
+                throw new Error('Your session expired. Sign in again.');
+            }
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.error || `Export failed (${response.status}).`);
+            }
+            const blob = await response.blob();
+            const fallback = `temp-workspace.${normalizedFormat === 'xlsx' ? 'xlsx' : 'json'}`;
+            const filename = filenameFromDisposition(response.headers.get('Content-Disposition'), fallback);
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = filename;
+            link.hidden = true;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+            byId('exportFormatDialog').close();
+            showToast(`Complete Temp backup exported as ${normalizedFormat === 'xlsx' ? 'Excel' : 'JSON'}.`);
+        } catch (error) {
+            showToast(error.message || 'Unable to export the Temp workspace.', 'error');
+        } finally {
+            formatButtons.forEach((button) => { button.disabled = false; });
+        }
     }
 
     async function importWorkspace(file) {
         if (!file) return;
+        const extension = file.name.toLowerCase().match(/\.(json|xlsx|xls)$/)?.[1];
+        if (!extension) {
+            showToast('Select an exported Temp JSON, XLSX, or XLS file.', 'error');
+            byId('importWorkspaceFile').value = '';
+            return;
+        }
+        if (!window.confirm('Importing this file will replace every Temp customer and transaction. Continue?')) {
+            byId('importWorkspaceFile').value = '';
+            return;
+        }
+        const importButton = byId('importWorkspaceBtn');
+        importButton.disabled = true;
         try {
-            const payload = JSON.parse(await file.text());
-            if (payload.kind !== 'isp-temp-workspace-export') throw new Error('Select a valid Temp workspace export file.');
-            const customerCount = Array.isArray(payload.data?.customers) ? payload.data.customers.length : 0;
-            const paymentCount = Array.isArray(payload.data?.payments) ? payload.data.payments.length : 0;
-            if (!window.confirm(`Replace this Temp workspace with ${customerCount} customers and ${paymentCount} transactions from the file?`)) return;
-            const result = await api('/import', { method: 'POST', body: payload });
+            const response = await fetch(`${API_ROOT}/import-file`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'X-Import-Filename': encodeURIComponent(file.name)
+                },
+                body: file
+            });
+            if (response.status === 401) {
+                window.location.assign('/login.html');
+                throw new Error('Your session expired. Sign in again.');
+            }
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || `Import failed (${response.status}).`);
             updateState(result);
             renderAll();
             showToast(result.message || 'Temp workspace imported.');
         } catch (error) {
             showToast(error.message || 'Unable to import that file.', 'error');
         } finally {
+            importButton.disabled = false;
             byId('importWorkspaceFile').value = '';
         }
     }
@@ -605,9 +739,15 @@
     byId('customerForm').addEventListener('submit', saveCustomer);
     byId('customerPlan').addEventListener('change', () => synchronizeCustomerPlanAndRate('plan'));
     byId('customerRate').addEventListener('change', () => synchronizeCustomerPlanAndRate('rate'));
+    byId('customerPlanType').addEventListener('change', updateCustomerCycleHint);
+    byId('customerBillingScheduleMode').addEventListener('change', updateCustomerBillingScheduleFields);
+    byId('customerNextBillingDate').addEventListener('change', updateCustomerCycleHint);
+    byId('customerBillingDay').addEventListener('input', updateCustomerCycleHint);
     byId('paymentForm').addEventListener('submit', savePayment);
     byId('refreshWorkspaceBtn').addEventListener('click', () => loadWorkspace({ notify: true }));
-    byId('exportWorkspaceBtn').addEventListener('click', exportWorkspace);
+    byId('exportWorkspaceBtn').addEventListener('click', () => byId('exportFormatDialog').showModal());
+    byId('exportJsonBtn').addEventListener('click', () => exportWorkspace('json'));
+    byId('exportExcelBtn').addEventListener('click', () => exportWorkspace('xlsx'));
     byId('importWorkspaceBtn').addEventListener('click', () => byId('importWorkspaceFile').click());
     byId('importWorkspaceFile').addEventListener('change', (event) => importWorkspace(event.target.files?.[0]));
     byId('printStatementBtn').addEventListener('click', () => window.print());

@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const XLSX = require('xlsx');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -23,8 +24,63 @@ async function main() {
   console.log('PASS Temp isolated backend descriptor');
 
   const storeModule = require(path.join(projectRoot, 'Features/modules/temp/backend/workspace-store'));
+  const cycleModule = require(path.join(projectRoot, 'Features/modules/temp/backend/billing-cycle'));
+  const excelModule = require(path.join(projectRoot, 'Features/modules/temp/backend/workspace-excel'));
   assert.strictEqual(storeModule.STORE_KEY, 'temp_workspace_isolated_v1');
+  assert.strictEqual(storeModule.SCHEMA_VERSION, 3);
   assert(!['customers', 'payments', 'plans'].includes(storeModule.STORE_KEY));
+  assert.deepStrictEqual(Array.from(cycleModule.PLAN_TYPES).sort(), ['postpaid', 'prepaid', 'prorate']);
+  assert.deepStrictEqual(Array.from(cycleModule.BILLING_SCHEDULE_MODES).sort(), ['date', 'day']);
+  const prorateState = cycleModule.resolveInitialCycleState({
+    planType: 'prorate',
+    billingScheduleMode: 'day',
+    activationDate: '2026-07-20',
+    billingDay: 5
+  }, '2026-07-30');
+  assert.deepStrictEqual(prorateState, {
+    billingCycleInitialized: true,
+    billingScheduleConfigured: true,
+    nextBillingDate: '2026-08-05',
+    proratePending: true
+  });
+  assert.deepStrictEqual(cycleModule.resolveCycleCharge({
+    planType: 'prorate',
+    billingScheduleMode: 'day',
+    activationDate: '2026-07-20',
+    billingDay: 5,
+    monthlyRate: 1000,
+    proratePending: true
+  }, '2026-08-05'), {
+    amount: 516,
+    prorated: true,
+    periodStart: '2026-07-20',
+    periodEnd: '2026-08-04'
+  });
+  const exactDateState = cycleModule.resolveInitialCycleState({
+    planType: 'prepaid',
+    billingScheduleMode: 'date',
+    nextBillingDate: '2026-08-15',
+    billingDay: 1
+  }, '2026-07-30');
+  assert.deepStrictEqual(exactDateState, {
+    billingCycleInitialized: true,
+    billingScheduleConfigured: true,
+    nextBillingDate: '2026-08-15',
+    proratePending: false,
+    billingDay: 15
+  });
+  assert.deepStrictEqual(cycleModule.resolveCycleCharge({
+    planType: 'prorate',
+    billingScheduleMode: 'date',
+    monthlyRate: 1000,
+    proratePending: true
+  }, '2026-08-15'), {
+    amount: 1000,
+    prorated: false,
+    periodStart: '',
+    periodEnd: ''
+  });
+  console.log('PASS Temp billing-cycle calculation helpers');
 
   const mainCustomerSentinel = [{ accountNumber: 'MAIN-001', firstName: 'Main', lastName: 'Location' }];
   const mainPaymentSentinel = { 'MAIN-001': { history: [{ amount: 999 }] } };
@@ -54,6 +110,27 @@ async function main() {
     billingDay: 12
   });
   assert.strictEqual(customer.accountNumber, 'TMP000001');
+  assert.strictEqual(customer.planType, 'postpaid');
+  assert.strictEqual(customer.billingScheduleMode, 'day');
+  assert.strictEqual(customer.billingScheduleConfigured, true);
+  assert.strictEqual(customer.activationDate, '2026-07-30');
+  assert.strictEqual(customer.nextBillingDate, '2026-08-12');
+  const editedCustomer = await isolatedStore.updateCustomer(customer.accountNumber, {
+    firstName: 'Other Edited',
+    lastName: 'Location',
+    planName: 'Temp Plan',
+    planType: 'postpaid',
+    monthlyRate: 1000,
+    openingBalance: 500,
+    activationDate: '2026-07-30',
+    billingScheduleMode: 'date',
+    nextBillingDate: '2026-08-20',
+    status: 'active'
+  });
+  assert.strictEqual(editedCustomer.firstName, 'Other Edited');
+  assert.strictEqual(editedCustomer.billingScheduleMode, 'date');
+  assert.strictEqual(editedCustomer.nextBillingDate, '2026-08-20');
+  assert.strictEqual(editedCustomer.billingDay, 20);
   await isolatedStore.createPayment({
     accountNumber: customer.accountNumber,
     kind: 'charge',
@@ -82,15 +159,201 @@ async function main() {
   );
   console.log('PASS Temp customer/payment storage isolation and balance behavior');
 
+  const cycleMemory = new Map();
+  let cycleToday = '2026-07-30';
+  let cycleClock = 0;
+  let cycleUuid = 0;
+  const cycleStore = storeModule.createWorkspaceStore({
+    readJson: async (key, fallback) => cycleMemory.has(key) ? cycleMemory.get(key) : fallback,
+    writeJson: async (key, value) => cycleMemory.set(key, JSON.parse(JSON.stringify(value))),
+    today: () => cycleToday,
+    now: () => `${cycleToday}T00:00:${String(cycleClock++).padStart(2, '0')}.000Z`,
+    uuid: () => `cycle-manual-${++cycleUuid}`
+  });
+  const prepaidCustomer = await cycleStore.createCustomer({
+    firstName: 'Prepaid',
+    lastName: 'Client',
+    planType: 'prepaid',
+    activationDate: '2026-07-30',
+    planName: 'Old plan',
+    monthlyRate: 700,
+    openingBalance: 125,
+    billingScheduleMode: 'date',
+    nextBillingDate: '2026-08-15'
+  });
+  const prepaidDayCustomer = await cycleStore.createCustomer({
+    firstName: 'Prepaid Day',
+    lastName: 'Client',
+    planType: 'prepaid',
+    activationDate: '2026-07-30',
+    planName: 'Old plan',
+    monthlyRate: 700,
+    openingBalance: 0,
+    billingScheduleMode: 'day',
+    billingDay: 2
+  });
+  const postpaidCustomer = await cycleStore.createCustomer({
+    firstName: 'Postpaid',
+    lastName: 'Client',
+    planType: 'postpaid',
+    activationDate: '2026-07-30',
+    planName: 'Basic',
+    monthlyRate: 800,
+    openingBalance: 50,
+    billingScheduleMode: 'day',
+    billingDay: 31
+  });
+  const prorateCustomer = await cycleStore.createCustomer({
+    firstName: 'Prorate',
+    lastName: 'Client',
+    planType: 'prorate',
+    activationDate: '2026-07-20',
+    planName: 'Standard',
+    monthlyRate: 1000,
+    openingBalance: 250,
+    billingScheduleMode: 'day',
+    billingDay: 5
+  });
+  assert.strictEqual(prepaidCustomer.nextBillingDate, '2026-08-15');
+  assert.strictEqual(prepaidCustomer.billingDay, 15);
+  assert.strictEqual(prepaidDayCustomer.nextBillingDate, '2026-08-02');
+  assert.strictEqual(postpaidCustomer.nextBillingDate, '2026-07-31');
+  assert.strictEqual(prorateCustomer.nextBillingDate, '2026-08-05');
+  assert.strictEqual((await cycleStore.getSnapshot()).payments.length, 0);
+
+  cycleToday = '2026-07-31';
+  let cycleSnapshot = await cycleStore.getSnapshot();
+  let postpaidCharges = cycleSnapshot.payments.filter((entry) => entry.accountNumber === postpaidCustomer.accountNumber);
+  assert.strictEqual(postpaidCharges.length, 1);
+  assert.strictEqual(postpaidCharges[0].amount, 800);
+  assert.strictEqual(postpaidCharges[0].date, '2026-07-31');
+  assert.strictEqual(postpaidCharges[0].systemGenerated, true);
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === postpaidCustomer.accountNumber).balance, 850);
+
+  cycleToday = '2026-08-02';
+  cycleSnapshot = await cycleStore.getSnapshot();
+  const prepaidDayCharges = cycleSnapshot.payments.filter((entry) => entry.accountNumber === prepaidDayCustomer.accountNumber);
+  assert.strictEqual(prepaidDayCharges.length, 1);
+  assert.strictEqual(prepaidDayCharges[0].amount, 700);
+  assert.strictEqual(prepaidDayCharges[0].date, '2026-08-02');
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prepaidDayCustomer.accountNumber).nextBillingDate, '2026-09-02');
+
+  cycleToday = '2026-08-05';
+  cycleSnapshot = await cycleStore.getSnapshot();
+  const prorateCharges = cycleSnapshot.payments.filter((entry) => entry.accountNumber === prorateCustomer.accountNumber);
+  assert.strictEqual(prorateCharges.length, 1);
+  assert.strictEqual(prorateCharges[0].amount, 516);
+  assert.match(prorateCharges[0].description, /Prorated recurring charge/);
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prorateCustomer.accountNumber).balance, 766);
+  assert.strictEqual(cycleSnapshot.payments.filter((entry) => entry.accountNumber === prepaidCustomer.accountNumber).length, 0);
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prepaidCustomer.accountNumber).balance, 125);
+  const paymentCountAfterFirstProrate = cycleSnapshot.payments.length;
+  assert.strictEqual((await cycleStore.getSnapshot()).payments.length, paymentCountAfterFirstProrate);
+
+  cycleToday = '2026-08-15';
+  cycleSnapshot = await cycleStore.getSnapshot();
+  let prepaidDateCharges = cycleSnapshot.payments.filter((entry) => entry.accountNumber === prepaidCustomer.accountNumber);
+  assert.strictEqual(prepaidDateCharges.length, 1);
+  assert.strictEqual(prepaidDateCharges[0].amount, 700);
+  assert.strictEqual(prepaidDateCharges[0].date, '2026-08-15');
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prepaidCustomer.accountNumber).balance, 825);
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prepaidCustomer.accountNumber).nextBillingDate, '2026-09-15');
+  const paymentCountAfterExactDateCharge = cycleSnapshot.payments.length;
+  assert.strictEqual((await cycleStore.getSnapshot()).payments.length, paymentCountAfterExactDateCharge);
+
+  cycleToday = '2026-09-05';
+  cycleSnapshot = await cycleStore.getSnapshot();
+  const updatedProrate = cycleSnapshot.customers.find((entry) => entry.accountNumber === prorateCustomer.accountNumber);
+  const updatedProrateCharges = cycleSnapshot.payments.filter((entry) => entry.accountNumber === prorateCustomer.accountNumber);
+  assert.deepStrictEqual(updatedProrateCharges.map((entry) => entry.amount).sort((left, right) => left - right), [516, 1000]);
+  assert.strictEqual(updatedProrate.nextBillingDate, '2026-10-05');
+  assert.strictEqual(updatedProrate.balance, 1766);
+  assert.strictEqual(cycleSnapshot.payments.filter((entry) => entry.accountNumber === prepaidCustomer.accountNumber).length, 1);
+
+  cycleToday = '2026-09-15';
+  cycleSnapshot = await cycleStore.getSnapshot();
+  prepaidDateCharges = cycleSnapshot.payments.filter((entry) => entry.accountNumber === prepaidCustomer.accountNumber);
+  assert.deepStrictEqual(prepaidDateCharges.map((entry) => entry.amount), [700, 700]);
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prepaidCustomer.accountNumber).nextBillingDate, '2026-10-15');
+  assert.strictEqual(cycleSnapshot.customers.find((entry) => entry.accountNumber === prepaidCustomer.accountNumber).balance, 1525);
+  console.log('PASS isolated Date/Number schedules and automatic Prepaid, Postpaid, and Prorate cycle behavior');
+
+  const legacyMemory = new Map([[storeModule.STORE_KEY, {
+    schemaVersion: 2,
+    customers: [{
+      accountNumber: 'TMP000001',
+      firstName: 'Legacy',
+      lastName: 'Prepaid',
+      planType: 'prepaid',
+      planName: 'Old plan',
+      monthlyRate: 700,
+      billingDay: 15,
+      activationDate: '2026-07-01',
+      nextBillingDate: '',
+      billingCycleInitialized: true,
+      openingBalance: 700,
+      status: 'active'
+    }],
+    payments: [],
+    sequences: { customer: 1, payment: 0 }
+  }]]);
+  const legacyStore = storeModule.createWorkspaceStore({
+    readJson: async (key, fallback) => legacyMemory.has(key) ? legacyMemory.get(key) : fallback,
+    writeJson: async (key, value) => legacyMemory.set(key, JSON.parse(JSON.stringify(value))),
+    today: () => '2026-07-30',
+    now: () => '2026-07-30T00:00:00.000Z'
+  });
+  const legacySnapshot = await legacyStore.getSnapshot();
+  assert.strictEqual(legacySnapshot.payments.length, 0);
+  assert.strictEqual(legacySnapshot.customers[0].billingScheduleMode, 'day');
+  assert.strictEqual(legacySnapshot.customers[0].billingScheduleConfigured, true);
+  assert.strictEqual(legacySnapshot.customers[0].nextBillingDate, '2026-08-15');
+  assert.strictEqual(legacySnapshot.customers[0].balance, 700);
+  console.log('PASS legacy Prepaid migration starts at the next future cycle without back-billing');
+
   const exported = await isolatedStore.createExport();
   assert.strictEqual(exported.kind, storeModule.EXPORT_KIND);
   assert.strictEqual(exported.data.customers.length, 1);
   assert.strictEqual(exported.data.payments.length, 2);
+  const excelBuffer = excelModule.buildWorkspaceExcelBuffer(exported);
+  assert(Buffer.isBuffer(excelBuffer));
+  assert.strictEqual(excelBuffer[0], 0x50);
+  assert.strictEqual(excelBuffer[1], 0x4b);
+  const parsedExcelExport = excelModule.parseWorkspaceExcelBuffer(excelBuffer);
+  assert.deepStrictEqual(parsedExcelExport, exported);
+  const workbook = XLSX.read(excelBuffer, { type: 'buffer' });
+  assert.deepStrictEqual(workbook.SheetNames, [
+    excelModule.SHEET_NAMES.metadata,
+    excelModule.SHEET_NAMES.customers,
+    excelModule.SHEET_NAMES.payments
+  ]);
+  assert.deepStrictEqual(
+    XLSX.utils.sheet_to_json(workbook.Sheets[excelModule.SHEET_NAMES.customers], { header: 1 })[0],
+    Array.from(excelModule.CUSTOMER_FIELDS)
+  );
+  assert.deepStrictEqual(
+    XLSX.utils.sheet_to_json(workbook.Sheets[excelModule.SHEET_NAMES.payments], { header: 1 })[0],
+    Array.from(excelModule.PAYMENT_FIELDS)
+  );
+  const excelRestore = await isolatedStore.replaceFromExport(parsedExcelExport);
+  assert.strictEqual(excelRestore.summary.customerCount, 1);
+  assert.strictEqual(excelRestore.summary.paymentCount, 2);
+  const jsonRestore = await isolatedStore.replaceFromExport(JSON.parse(JSON.stringify(exported)));
+  assert.strictEqual(jsonRestore.summary.customerCount, 1);
+  assert.strictEqual(jsonRestore.summary.paymentCount, 2);
+  assert.throws(
+    () => excelModule.parseWorkspaceExcelBuffer(Buffer.from('not an Excel workbook')),
+    /valid Temp workspace Excel export file|Excel file must contain/
+  );
+  assert.throws(
+    () => excelModule.buildWorkspaceExcelBuffer({ ...exported, kind: 'main-customer-export' }),
+    /valid Temp workspace export file/
+  );
   await assert.rejects(
     isolatedStore.replaceFromExport({ kind: 'main-customer-export', data: exported.data }),
     /valid Temp workspace export/
   );
-  console.log('PASS Temp-only export/import contract');
+  console.log('PASS complete Temp JSON and Excel export/import round-trip contract');
 
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, 'Features/modules/temp/module.json'), 'utf8'));
   assert.deepStrictEqual(manifest.apiPrefixes, ['/api/temp']);
@@ -109,8 +372,12 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=1.5'));
-  assert(tempHtml.includes('/temp.css?v=1.3'));
+  assert(tempHtml.includes('/temp.js?v=1.9'));
+  assert(tempHtml.includes('/temp.css?v=1.7'));
+  assert(tempHtml.includes('id="exportFormatDialog"'));
+  assert(tempHtml.includes('id="exportJsonBtn"'));
+  assert(tempHtml.includes('id="exportExcelBtn"'));
+  assert(tempHtml.includes('.json,.xlsx,.xls'));
   [
     ['Old plan', '700'],
     ['Basic', '800'],
@@ -123,7 +390,31 @@ async function main() {
   ['Poblacion', 'Masical'].forEach((address) => {
     assert(tempHtml.includes(`<option value="${address}">${address}</option>`));
   });
+  ['prepaid', 'postpaid', 'prorate'].forEach((planType) => {
+    assert(tempHtml.includes(`<option value="${planType}"`));
+  });
+  assert(tempHtml.includes('id="customerPlanType"'));
+  assert(tempHtml.includes('id="customerActivationDate"'));
+  assert(tempHtml.includes('id="customerBillingScheduleMode"'));
+  assert(tempHtml.includes('id="customerNextBillingDate"'));
+  assert(tempHtml.includes('id="customerBillingDayField" hidden'));
+  assert(tempHtml.includes('<option value="date" selected>Date — exact next bill</option>'));
+  assert(tempHtml.includes('<option value="day">Number — monthly billing day</option>'));
+  assert(tempHtml.includes('id="customerCycleHint"'));
   assert(tempJs.includes("const TEMP_SERVICE_ADDRESSES = Object.freeze(['Poblacion', 'Masical']);"));
+  assert(tempJs.includes("const TEMP_PLAN_TYPES = Object.freeze(['prepaid', 'postpaid', 'prorate']);"));
+  assert(tempJs.includes("const TEMP_BILLING_SCHEDULE_MODES = Object.freeze(['date', 'day']);"));
+  assert(tempJs.includes('const filenameFromDisposition ='));
+  assert(tempJs.includes("async function exportWorkspace(format)"));
+  assert(tempJs.includes("exportWorkspace('json')"));
+  assert(tempJs.includes("exportWorkspace('xlsx')"));
+  assert(tempJs.includes("fetch(`${API_ROOT}/import-file`"));
+  assert(tempJs.includes("'Content-Type': 'application/octet-stream'"));
+  assert(tempJs.includes('replace every Temp customer and transaction'));
+  assert(tempJs.includes('function updateCustomerBillingScheduleFields()'));
+  assert(tempJs.includes('The first automatic full monthly charge is on'));
+  assert(!tempJs.includes('Manual renewal'));
+  assert(!tempJs.includes('Prepaid has no automatic monthly charge'));
   assert(tempJs.includes("TEMP_SERVICE_ADDRESSES.includes(customer?.address)"));
   assert(tempJs.includes('const TEMP_PLAN_RATES = Object.freeze({'));
   assert(tempJs.includes("synchronizeCustomerPlanAndRate('plan')"));
@@ -134,9 +425,11 @@ async function main() {
   assert(tempJs.includes('id="customerPaymentHistory"'));
   assert(tempJs.includes("payment.kind === 'payment'"));
   assert(tempJs.includes('Payments received from this customer only.'));
-  assert.strictEqual((tempHtml.match(/data-sort-group="customer"/g) || []).length, 7);
+  assert(tempHtml.includes('data-sort-column="plan-type" data-sort-label="Plan type">Plan type'));
+  assert(tempJs.includes('plan-type-pill--${escapeHtml(planType)}'));
+  assert.strictEqual((tempHtml.match(/data-sort-group="customer"/g) || []).length, 8);
   assert.strictEqual((tempHtml.match(/data-sort-group="payment"/g) || []).length, 4);
-  ['account', 'name', 'address', 'plan', 'billing', 'balance', 'status'].forEach((column) => {
+  ['account', 'name', 'address', 'plan', 'plan-type', 'billing', 'balance', 'status'].forEach((column) => {
     assert(tempHtml.includes(`data-sort-group="customer" data-sort-column="${column}"`));
   });
   ['date', 'receipt', 'customer', 'amount'].forEach((column) => {
@@ -161,12 +454,13 @@ async function main() {
     globalThis.sortCustomerRows = sortCustomerRows;
     globalThis.sortPaymentRows = sortPaymentRows;`, sortSandbox);
   const customerSamples = [
-    { accountNumber: 'TMP2', fullName: 'Alpha Client', address: 'Masical', monthlyRate: 800, billingDay: 20, balance: 100, status: 'inactive' },
-    { accountNumber: 'TMP10', fullName: 'Bravo Client', address: 'Poblacion', monthlyRate: 1200, billingDay: 5, balance: -50, status: 'active' },
-    { accountNumber: 'TMP1', fullName: 'Charlie Client', address: 'Poblacion', monthlyRate: 700, billingDay: 10, balance: 500, status: 'active' }
+    { accountNumber: 'TMP2', fullName: 'Alpha Client', address: 'Masical', planType: 'prorate', monthlyRate: 800, billingDay: 20, balance: 100, status: 'inactive' },
+    { accountNumber: 'TMP10', fullName: 'Bravo Client', address: 'Poblacion', planType: 'postpaid', monthlyRate: 1200, billingDay: 5, balance: -50, status: 'active' },
+    { accountNumber: 'TMP1', fullName: 'Charlie Client', address: 'Poblacion', planType: 'prepaid', monthlyRate: 700, billingDay: 10, balance: 500, status: 'active' }
   ];
   assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'account-asc'), (item) => item.accountNumber), ['TMP1', 'TMP2', 'TMP10']);
   assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'plan-asc'), (item) => item.monthlyRate), [700, 800, 1200]);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'plan-type-asc'), (item) => item.planType), ['postpaid', 'prepaid', 'prorate']);
   assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'balance-desc'), (item) => item.balance), [500, 100, -50]);
   assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'address-poblacion'), (item) => item.address), ['Poblacion', 'Poblacion', 'Masical']);
   assert.strictEqual(sortSandbox.sortCustomerRows(customerSamples, 'status-inactive')[0].status, 'inactive');
@@ -187,6 +481,14 @@ async function main() {
   assert(tempCss.includes('.statement-table--payments'));
   assert(tempCss.includes('.temp-dialog--statement[open]'));
   assert(tempCss.includes('.table-sort-button.active'));
+  assert(tempCss.includes('.cycle-hint--prorate'));
+  assert(tempCss.includes('.plan-type-pill--prepaid'));
+  assert(tempCss.includes('.plan-type-pill--postpaid'));
+  assert(tempCss.includes('.plan-type-pill--prorate'));
+  assert(tempCss.includes('.form-field[hidden]'));
+  assert(tempCss.includes('.temp-dialog--export'));
+  assert(tempCss.includes('.export-format-grid'));
+  assert(tempCss.includes('.export-format-option'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
   assert(!tempHtml.includes('<iframe'), 'Temp must not embed canonical business pages');
@@ -196,6 +498,14 @@ async function main() {
     assert(!source.includes('/api/customers'), 'Temp must not call the main customer API');
     assert(!source.includes('/api/payments'), 'Temp must not call the main payment API');
   });
+  const routerSource = fs.readFileSync(
+    path.join(projectRoot, 'Features/modules/temp/backend/workspace-router.js'),
+    'utf8'
+  );
+  assert(routerSource.includes("req.query.format || 'json'"));
+  assert(routerSource.includes("router.post('/import-file'"));
+  assert(routerSource.includes("express.raw({ type: 'application/octet-stream', limit: '20mb' })"));
+  assert(routerSource.includes('parseWorkspaceExcelBuffer(req.body)'));
   console.log('PASS standalone one-page Customer and Billing workspace');
 
   ['public/sidebar.html', 'public/topbar.html', 'public/index.html'].forEach((relativePath) => {

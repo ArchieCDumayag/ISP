@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-07-29
+Last reviewed: 2026-07-30
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -48,18 +48,22 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - Admin collector login and information flows resolve next-due calculations directly from the migrated Collector backend.
 - Owner-only routes require localhost plus `STRUCTURE_OWNER_ID`.
 - Sensitive integration data requires `CONFIG_MASTER_KEY`; production sessions require `SESSION_TOKEN_SECRET`.
+- IP Browser integration settings support up to 100 enabled/disabled router profiles. Each profile stores a label, ordered exact IP/IP:port, IPv4 CIDR, or wildcard match rules, protected username/password data, optional page selectors, and submit delay. Exact host/port matches outrank host matches, which outrank CIDR and wildcard rules; profile order breaks ties.
+- IP Browser profile credentials and usernames are redacted from `/api/integrations` responses and represented only by presence flags. Blank username/password values sent while editing an existing profile preserve the stored secrets. The legacy top-level IP Browser credentials remain the fallback when no profile matches.
 
 ## Verification contract
 
-- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, ten web files, server wiring, and canonical installer paths.
+- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, ten web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, and profile-editor structure.
 - `npm run refactor:phase3` runs structural, core, Admin, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public Admin files, protected-page redirects, owner-page denial, and unauthenticated API denial.
+- The 2026-07-30 IP Browser profile change passed JavaScript syntax checks, HTML structure parsing, `npm run refactor:admin`, and the complete `npm test` Phase 12 suite. Interactive browser-control verification was unavailable in that session.
 
 ## Known risks and follow-up
 
 - Auth/session/account changes are high risk and require negative authorization tests.
 - Never expose secrets through API responses, logs, contexts, coordination updates, or commits.
+- Overlapping IP Browser CIDR or wildcard profiles can both match the same target; the more specific score wins and profile order breaks equal-score ties. Keep match rules narrow and non-overlapping when practical.
 - Owner-only route guards must preserve both localhost and owner checks.
 - `auth.js` still contains Collector/Technician login contracts; coordinate those module migrations.
 - Admin CSS is shared by Network pages; preserve its unchanged public URL.
@@ -68,6 +72,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 
 ## Latest meaningful changes
 
+- 2026-07-30: Added protected multi-router IP Browser profiles with exact IP/port, CIDR, and wildcard matching; Accounts now manages per-profile credentials/selectors/delay while keeping the former global login as the unmatched-device fallback.
 - 2026-07-29: Phase 12 revalidated Admin through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all eleven Admin root shims, switched cross-module imports to canonical Billing paths, and changed structure-package requirements to the canonical Admin installer only.
 - 2026-07-29: Phase 3 moved eleven backend implementations and ten web files into this module, added manifest runtime entries, preserved root imports and public URLs, made installer paths repository-root-safe, and added Admin regression gates.

@@ -8,6 +8,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const genieacsForm = document.getElementById('genieacs-form');
     const mikrotikForm = document.getElementById('mikrotik-form');
     const ipBrowserForm = document.getElementById('ip-browser-form');
+    const ipBrowserAddProfileBtn = document.getElementById('ip-browser-add-profile');
+    const ipBrowserProfileBody = document.getElementById('ip-browser-profile-body');
+    const ipBrowserProfileModal = document.getElementById('ipBrowserProfileModal');
+    const ipBrowserProfileModalTitle = document.getElementById('ipBrowserProfileModalTitle');
+    const ipBrowserProfileModalForm = document.getElementById('ipBrowserProfileModalForm');
+    const closeIpBrowserProfileModal = document.getElementById('closeIpBrowserProfileModal');
+    const cancelIpBrowserProfileModal = document.getElementById('cancelIpBrowserProfileModal');
+    const saveIpBrowserProfile = document.getElementById('saveIpBrowserProfile');
+    const ipBrowserProfileLabelInput = document.getElementById('ipBrowserProfileLabel');
+    const ipBrowserProfileMatchesInput = document.getElementById('ipBrowserProfileMatches');
+    const ipBrowserProfileUsernameInput = document.getElementById('ipBrowserProfileUsername');
+    const ipBrowserProfilePasswordInput = document.getElementById('ipBrowserProfilePassword');
+    const ipBrowserProfileUsernameSelectorInput = document.getElementById('ipBrowserProfileUsernameSelector');
+    const ipBrowserProfilePasswordSelectorInput = document.getElementById('ipBrowserProfilePasswordSelector');
+    const ipBrowserProfileSubmitSelectorInput = document.getElementById('ipBrowserProfileSubmitSelector');
+    const ipBrowserProfileDelayInput = document.getElementById('ipBrowserProfileDelay');
+    const ipBrowserProfileEnabledInput = document.getElementById('ipBrowserProfileEnabled');
     const mikrotikRouterBody = document.getElementById('mikrotik-router-body');
     const mikrotikDefaultSelect = document.getElementById('mikrotik-default-select');
     const mikrotikModal = document.getElementById('mikrotikModal');
@@ -75,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ipBrowserDisplayStatus = document.getElementById('ip-browser-display-status');
     const ipBrowserDisplayUsername = document.getElementById('ip-browser-display-username');
     const ipBrowserDisplayPassword = document.getElementById('ip-browser-display-password');
-    const ipBrowserDisplayDelay = document.getElementById('ip-browser-display-delay');
+    const ipBrowserDisplayProfiles = document.getElementById('ip-browser-display-profiles');
     const gcashDisplayName = document.getElementById('gcash-display-name');
     const gcashDisplayNumber = document.getElementById('gcash-display-number');
     const gcashDisplayQr = document.getElementById('gcash-display-qr');
@@ -599,10 +616,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setSummaryValue(ipBrowserDisplayUsername, savedValueSummary(ipBrowserSettings, 'username'));
         setSummaryValue(ipBrowserDisplayPassword, secretSummary(ipBrowserSettings, 'password', 0, 0));
         setSummaryValue(
-            ipBrowserDisplayDelay,
-            ipBrowserSettings.delayMs !== undefined && ipBrowserSettings.delayMs !== null
-                ? `${ipBrowserSettings.delayMs} ms`
-                : ''
+            ipBrowserDisplayProfiles,
+            String((Array.isArray(ipBrowserSettings.profiles) ? ipBrowserSettings.profiles : []).length)
         );
 
         setSummaryValue(gcashDisplayName, gcashSettings.accountName);
@@ -680,11 +695,14 @@ document.addEventListener('DOMContentLoaded', () => {
             isSavedSecret(ipBrowserSettings, 'username') &&
             isSavedSecret(ipBrowserSettings, 'password')
         );
-        if (ipBrowserSettings.autoLoginEnabled && ipBrowserHasCredentials) {
+        const ipBrowserHasProfiles = (Array.isArray(ipBrowserSettings.profiles) ? ipBrowserSettings.profiles : [])
+            .some((profile) => profile?.enabled !== false && isSavedSecret(profile, 'username') && isSavedSecret(profile, 'password'));
+        if (ipBrowserSettings.autoLoginEnabled && (ipBrowserHasCredentials || ipBrowserHasProfiles)) {
             ipBrowserStatus = 'connected';
         } else if (
             ipBrowserSettings.autoLoginEnabled ||
             ipBrowserHasCredentials ||
+            ipBrowserHasProfiles ||
             ipBrowserSettings.usernameSelector ||
             ipBrowserSettings.passwordSelector ||
             ipBrowserSettings.submitSelector
@@ -791,6 +809,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && ipBrowserProfileModal?.classList.contains('active')) {
+            closeIpBrowserProfileModalFn();
+            return;
+        }
         if (e.key === 'Escape' && mikrotikModal?.classList.contains('active')) {
             closeMikrotikModalFn();
             return;
@@ -1175,6 +1197,143 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateRouterId = () => `router-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     let mikrotikRouters = [];
     let editingMikrotikId = null;
+    const generateIpBrowserProfileId = () => `ip-browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    let ipBrowserProfiles = [];
+    let editingIpBrowserProfileId = null;
+
+    const normalizeIpBrowserMatchList = (value) => {
+        const source = Array.isArray(value) ? value : String(value || '').split(/[\r\n,;]+/);
+        return Array.from(new Set(
+            source
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+        ));
+    };
+
+    const normalizeIpBrowserProfile = (profile = {}) => {
+        const delayMs = Number(profile.delayMs);
+        const username = String(profile.username || '').trim();
+        const password = String(profile.password || '');
+        return {
+            id: String(profile.id || '').trim() || generateIpBrowserProfileId(),
+            label: String(profile.label || profile.name || '').trim() || 'Router profile',
+            enabled: profile.enabled !== false,
+            matches: normalizeIpBrowserMatchList(profile.matches || profile.matchTargets || profile.targets),
+            username,
+            usernameSet: Boolean(profile.usernameSet || username),
+            password,
+            passwordSet: Boolean(profile.passwordSet || password),
+            usernameSelector: String(profile.usernameSelector || '').trim(),
+            passwordSelector: String(profile.passwordSelector || '').trim(),
+            submitSelector: String(profile.submitSelector || '').trim(),
+            delayMs: Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 5000 ? delayMs : 600
+        };
+    };
+
+    const setIpBrowserProfiles = (profiles = []) => {
+        ipBrowserProfiles = (Array.isArray(profiles) ? profiles : []).map(normalizeIpBrowserProfile);
+    };
+
+    const createIpBrowserProfileRow = (profile) => {
+        const row = document.createElement('tr');
+        row.dataset.profileId = profile.id;
+
+        const labelCell = document.createElement('td');
+        labelCell.textContent = profile.label || 'Router profile';
+
+        const matchesCell = document.createElement('td');
+        const matchList = document.createElement('span');
+        matchList.className = 'ip-browser-profile-match-list';
+        matchList.textContent = profile.matches.join(', ') || '-';
+        matchList.title = profile.matches.join('\n');
+        matchesCell.appendChild(matchList);
+
+        const usernameCell = document.createElement('td');
+        usernameCell.textContent = profile.username || (profile.usernameSet ? 'Saved' : '-');
+
+        const statusCell = document.createElement('td');
+        const status = document.createElement('span');
+        status.className = `ip-browser-profile-status${profile.enabled ? '' : ' is-disabled'}`;
+        status.textContent = profile.enabled ? 'Enabled' : 'Disabled';
+        statusCell.appendChild(status);
+
+        const delayCell = document.createElement('td');
+        delayCell.textContent = `${profile.delayMs} ms`;
+
+        const actionsCell = document.createElement('td');
+        const actions = document.createElement('div');
+        actions.className = 'table-actions';
+        const editButton = document.createElement('button');
+        editButton.className = 'icon-btn';
+        editButton.type = 'button';
+        editButton.dataset.ipBrowserProfileAction = 'edit';
+        editButton.setAttribute('aria-label', `Edit ${profile.label || 'router profile'}`);
+        editButton.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+        const removeButton = document.createElement('button');
+        removeButton.className = 'icon-btn danger';
+        removeButton.type = 'button';
+        removeButton.dataset.ipBrowserProfileAction = 'remove';
+        removeButton.setAttribute('aria-label', `Remove ${profile.label || 'router profile'}`);
+        removeButton.innerHTML = '<i class="fa-solid fa-trash" aria-hidden="true"></i>';
+        actions.append(editButton, removeButton);
+        actionsCell.appendChild(actions);
+
+        row.append(labelCell, matchesCell, usernameCell, statusCell, delayCell, actionsCell);
+        return row;
+    };
+
+    const renderIpBrowserProfiles = () => {
+        if (!ipBrowserProfileBody) return;
+        ipBrowserProfileBody.innerHTML = '';
+        if (!ipBrowserProfiles.length) {
+            const row = document.createElement('tr');
+            row.className = 'ip-browser-profile-empty-row';
+            const cell = document.createElement('td');
+            cell.colSpan = 6;
+            cell.textContent = 'No router profiles. Default credentials will be used.';
+            row.appendChild(cell);
+            ipBrowserProfileBody.appendChild(row);
+            return;
+        }
+        ipBrowserProfiles.forEach((profile) => {
+            ipBrowserProfileBody.appendChild(createIpBrowserProfileRow(profile));
+        });
+    };
+
+    const openIpBrowserProfileModal = (profile = null) => {
+        if (!ipBrowserProfileModal) return;
+        ipBrowserProfileModalForm?.reset();
+        editingIpBrowserProfileId = profile?.id || null;
+        if (ipBrowserProfileModalTitle) {
+            ipBrowserProfileModalTitle.textContent = profile ? 'Edit Router Profile' : 'Add Router Profile';
+        }
+        if (ipBrowserProfileLabelInput) ipBrowserProfileLabelInput.value = profile?.label || '';
+        if (ipBrowserProfileMatchesInput) ipBrowserProfileMatchesInput.value = (profile?.matches || []).join('\n');
+        if (ipBrowserProfileUsernameInput) {
+            ipBrowserProfileUsernameInput.value = '';
+            ipBrowserProfileUsernameInput.placeholder = profile?.usernameSet ? 'Saved - leave blank to keep' : '';
+        }
+        if (ipBrowserProfilePasswordInput) {
+            ipBrowserProfilePasswordInput.value = '';
+            ipBrowserProfilePasswordInput.placeholder = profile?.passwordSet ? 'Saved - leave blank to keep' : '';
+        }
+        if (ipBrowserProfileUsernameSelectorInput) ipBrowserProfileUsernameSelectorInput.value = profile?.usernameSelector || '';
+        if (ipBrowserProfilePasswordSelectorInput) ipBrowserProfilePasswordSelectorInput.value = profile?.passwordSelector || '';
+        if (ipBrowserProfileSubmitSelectorInput) ipBrowserProfileSubmitSelectorInput.value = profile?.submitSelector || '';
+        if (ipBrowserProfileDelayInput) ipBrowserProfileDelayInput.value = profile?.delayMs ?? 600;
+        if (ipBrowserProfileEnabledInput) ipBrowserProfileEnabledInput.checked = profile?.enabled !== false;
+        bringOverlayToFront(ipBrowserProfileModal, 2700);
+        ipBrowserProfileModal.classList.add('active');
+        ipBrowserProfileLabelInput?.focus({ preventScroll: true });
+    };
+
+    const closeIpBrowserProfileModalFn = () => {
+        if (!ipBrowserProfileModal) return;
+        ipBrowserProfileModal.classList.remove('active');
+        ipBrowserProfileModal.style.removeProperty('z-index');
+        ipBrowserProfileModalForm?.reset();
+        editingIpBrowserProfileId = null;
+    };
 
     const normalizeRouter = (router = {}) => {
         const id = String(router.id || '').trim() || generateRouterId();
@@ -1450,6 +1609,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (ipBrowserForm) {
+            setIpBrowserProfiles(ipBrowserSettings.profiles || []);
+            renderIpBrowserProfiles();
             const enabledInput = ipBrowserForm.querySelector('input[name="autoLoginEnabled"]');
             const usernameInput = ipBrowserForm.querySelector('input[name="username"]');
             const passwordInput = ipBrowserForm.querySelector('input[name="password"]');
@@ -1710,6 +1871,143 @@ document.addEventListener('DOMContentLoaded', () => {
             persistMikrotikFromState('Default router updated.');
         });
     }
+
+    if (ipBrowserAddProfileBtn) {
+        ipBrowserAddProfileBtn.addEventListener('click', () => {
+            if (ipBrowserProfiles.length >= 100) {
+                showInlineMessage(ipBrowserPanel, 'IP Browser supports up to 100 router profiles.', 'error');
+                return;
+            }
+            openIpBrowserProfileModal();
+        });
+    }
+
+    [closeIpBrowserProfileModal, cancelIpBrowserProfileModal].forEach((button) => {
+        button?.addEventListener('click', closeIpBrowserProfileModalFn);
+    });
+
+    ipBrowserProfileModal?.addEventListener('click', (event) => {
+        if (event.target === ipBrowserProfileModal) closeIpBrowserProfileModalFn();
+    });
+
+    if (saveIpBrowserProfile) {
+        saveIpBrowserProfile.addEventListener('click', () => {
+            const current = editingIpBrowserProfileId
+                ? ipBrowserProfiles.find((profile) => profile.id === editingIpBrowserProfileId)
+                : null;
+            const label = String(ipBrowserProfileLabelInput?.value || '').trim();
+            const matches = normalizeIpBrowserMatchList(ipBrowserProfileMatchesInput?.value || '');
+            const username = String(ipBrowserProfileUsernameInput?.value || '').trim();
+            const password = String(ipBrowserProfilePasswordInput?.value || '');
+            const delayRaw = String(ipBrowserProfileDelayInput?.value ?? '').trim();
+            const delayMs = delayRaw ? Number(delayRaw) : 600;
+            if (!label) {
+                showInlineMessage(ipBrowserPanel, 'Router profile name is required.', 'error');
+                ipBrowserProfileLabelInput?.focus();
+                return;
+            }
+            if (!matches.length) {
+                showInlineMessage(ipBrowserPanel, 'Add at least one gateway, assigned IP, CIDR, or wildcard match.', 'error');
+                ipBrowserProfileMatchesInput?.focus();
+                return;
+            }
+            if (matches.some((rule) => rule.length > 200)) {
+                showInlineMessage(ipBrowserPanel, 'Each gateway or IP match must be 200 characters or fewer.', 'error');
+                return;
+            }
+            const invalidCidr = matches.find((rule) => {
+                if (!rule.includes('/') || /^https?:\/\//i.test(rule)) return false;
+                const match = rule.match(/^((?:\d{1,3}\.){3}\d{1,3})\/(\d{1,2})$/);
+                if (!match) return true;
+                const octets = match[1].split('.').map(Number);
+                return octets.some((part) => part < 0 || part > 255) || Number(match[2]) > 32;
+            });
+            if (invalidCidr) {
+                showInlineMessage(ipBrowserPanel, `Invalid CIDR match: ${invalidCidr}`, 'error');
+                return;
+            }
+            if (!username && !current?.usernameSet) {
+                showInlineMessage(ipBrowserPanel, 'Router profile username is required.', 'error');
+                ipBrowserProfileUsernameInput?.focus();
+                return;
+            }
+            if (!password && !current?.passwordSet) {
+                showInlineMessage(ipBrowserPanel, 'Router profile password is required.', 'error');
+                ipBrowserProfilePasswordInput?.focus();
+                return;
+            }
+            if (!Number.isFinite(delayMs) || delayMs < 0 || delayMs > 5000) {
+                showInlineMessage(ipBrowserPanel, 'Router profile delay must be between 0 and 5000 ms.', 'error');
+                return;
+            }
+            const selectorChecks = [
+                validateCssSelector(ipBrowserProfileUsernameSelectorInput?.value, 'Profile username selector'),
+                validateCssSelector(ipBrowserProfilePasswordSelectorInput?.value, 'Profile password selector'),
+                validateCssSelector(ipBrowserProfileSubmitSelectorInput?.value, 'Profile submit selector')
+            ];
+            const invalidSelector = selectorChecks.find((result) => !result.valid);
+            if (invalidSelector) {
+                showInlineMessage(ipBrowserPanel, invalidSelector.message, 'error');
+                return;
+            }
+
+            const otherRules = new Map();
+            ipBrowserProfiles.forEach((profile) => {
+                if (profile.id === editingIpBrowserProfileId) return;
+                profile.matches.forEach((rule) => otherRules.set(rule.toLowerCase(), profile.label));
+            });
+            const duplicateRule = matches.find((rule) => otherRules.has(rule.toLowerCase()));
+            if (duplicateRule) {
+                showInlineMessage(
+                    ipBrowserPanel,
+                    `${duplicateRule} is already assigned to ${otherRules.get(duplicateRule.toLowerCase())}.`,
+                    'error'
+                );
+                return;
+            }
+
+            const nextProfile = normalizeIpBrowserProfile({
+                ...(current || {}),
+                id: current?.id || generateIpBrowserProfileId(),
+                label,
+                matches,
+                username: username || current?.username || '',
+                usernameSet: Boolean(username || current?.usernameSet),
+                password: password || current?.password || '',
+                passwordSet: Boolean(password || current?.passwordSet),
+                usernameSelector: ipBrowserProfileUsernameSelectorInput?.value,
+                passwordSelector: ipBrowserProfilePasswordSelectorInput?.value,
+                submitSelector: ipBrowserProfileSubmitSelectorInput?.value,
+                delayMs,
+                enabled: Boolean(ipBrowserProfileEnabledInput?.checked)
+            });
+            if (current) {
+                ipBrowserProfiles = ipBrowserProfiles.map((profile) => (
+                    profile.id === current.id ? nextProfile : profile
+                ));
+            } else {
+                ipBrowserProfiles = [...ipBrowserProfiles, nextProfile];
+            }
+            renderIpBrowserProfiles();
+            closeIpBrowserProfileModalFn();
+        });
+    }
+
+    ipBrowserProfileBody?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-ip-browser-profile-action]');
+        if (!button) return;
+        const profileId = button.closest('tr')?.dataset.profileId || '';
+        const profile = ipBrowserProfiles.find((entry) => entry.id === profileId);
+        if (!profile) return;
+        if (button.dataset.ipBrowserProfileAction === 'edit') {
+            openIpBrowserProfileModal(profile);
+            return;
+        }
+        if (button.dataset.ipBrowserProfileAction === 'remove') {
+            ipBrowserProfiles = ipBrowserProfiles.filter((entry) => entry.id !== profileId);
+            renderIpBrowserProfiles();
+        }
+    });
 
     // Account table actions
     const handleAccountAction = async (button, action, accountName, accountId) => {
@@ -2203,11 +2501,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const username = String(formData.username || '').trim();
         const password = String(formData.password || '');
         const delayRaw = String(formData.delayMs ?? '').trim();
-        if (enabled && !username && !current.usernameSet) {
-            return { valid: false, message: 'IP Browser username is required.' };
-        }
-        if (enabled && !password && !current.passwordSet) {
-            return { valid: false, message: 'IP Browser password is required.' };
+        const defaultCredentialsReady = Boolean(
+            (username || current.usernameSet) &&
+            (password || current.passwordSet)
+        );
+        const enabledProfileReady = ipBrowserProfiles.some((profile) => (
+            profile.enabled &&
+            profile.matches.length &&
+            profile.usernameSet &&
+            profile.passwordSet
+        ));
+        if (enabled && !defaultCredentialsReady && !enabledProfileReady) {
+            return {
+                valid: false,
+                message: 'Add default credentials or at least one enabled router profile with credentials.'
+            };
         }
         if (delayRaw) {
             const delayMs = Number(delayRaw);
@@ -2218,7 +2526,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectorChecks = [
             validateCssSelector(formData.usernameSelector, 'Username selector'),
             validateCssSelector(formData.passwordSelector, 'Password selector'),
-            validateCssSelector(formData.submitSelector, 'Submit selector')
+            validateCssSelector(formData.submitSelector, 'Submit selector'),
+            ...ipBrowserProfiles.flatMap((profile) => ([
+                validateCssSelector(profile.usernameSelector, `${profile.label} username selector`),
+                validateCssSelector(profile.passwordSelector, `${profile.label} password selector`),
+                validateCssSelector(profile.submitSelector, `${profile.label} submit selector`)
+            ]))
         ];
         return selectorChecks.find((result) => !result.valid) || { valid: true };
     };
@@ -2233,7 +2546,19 @@ document.addEventListener('DOMContentLoaded', () => {
             usernameSelector: String(formData.usernameSelector || '').trim(),
             passwordSelector: String(formData.passwordSelector || '').trim(),
             submitSelector: String(formData.submitSelector || '').trim(),
-            delayMs: Number.isFinite(delayMs) ? delayMs : 600
+            delayMs: Number.isFinite(delayMs) ? delayMs : 600,
+            profiles: ipBrowserProfiles.map((profile) => ({
+                id: profile.id,
+                label: profile.label,
+                enabled: profile.enabled,
+                matches: profile.matches.slice(),
+                username: profile.username,
+                password: profile.password,
+                usernameSelector: profile.usernameSelector,
+                passwordSelector: profile.passwordSelector,
+                submitSelector: profile.submitSelector,
+                delayMs: profile.delayMs
+            }))
         };
     };
 
@@ -2886,4 +3211,3 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
-

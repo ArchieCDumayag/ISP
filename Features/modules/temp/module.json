@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "temp",
+  "displayName": "Temp Workspace",
+  "status": "active-hidden",
+  "contextFile": "Features/modules/temp/Module_context.md",
+  "coordinationLock": "Features/modules/temp",
+  "runtime": {
+    "backend": "backend/index.js",
+    "web": "web"
+  },
+  "apiPrefixes": [
+    "/api/temp"
+  ],
+  "webEntryPoints": [
+    "Features/modules/temp/web/temp.html"
+  ],
+  "ownedPaths": [
+    "Features/modules/temp/**"
+  ]
+}

@@ -33,6 +33,7 @@ const { backend: collectorBackend, webRoot: COLLECTOR_WEB_ROOT } = requireModule
 const { backend: technicianBackend, webRoot: TECHNICIAN_WEB_ROOT } = requireModuleRuntime('technician');
 const { backend: financeBackend, webRoot: FINANCE_WEB_ROOT } = requireModuleRuntime('finance');
 const { backend: customerAppBackend, webRoot: CUSTOMER_APP_WEB_ROOT } = requireModuleRuntime('customer-app');
+const { backend: tempBackend } = requireModuleRuntime('temp');
 const MODULE_WEB_ROOTS = Object.freeze(
     [...MODULE_RUNTIMES.values()].map((runtime) => runtime.webRoot).filter(Boolean)
 );
@@ -68,10 +69,11 @@ const businessProfileRouter = adminBackend.load('businessProfile');
 const appDownloadsRouter = adminBackend.load('appDownloads');
 const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
 const integrationSettingsRouter = adminBackend.load('integrationSettings');
-const { loadIntegrationSettings } = integrationSettingsRouter;
+const { loadIntegrationSettings, resolveIpBrowserProfile } = integrationSettingsRouter;
 const paymentConfirmationsRouter = billingBackend.load('paymentConfirmations');
 const mikrotikRouter = networkBackend.load('mikrotik');
 const jobsRouter = technicianBackend.load('jobs');
+const tempWorkspaceRouter = tempBackend.load('workspace');
 const philippinesAddresses = customerManagementBackend.load('philippinesAddresses');
 const customerDraftSubmissionsModule = customerManagementBackend.load('customerDraftSubmissions');
 const customerDraftAdminRouter = customerDraftSubmissionsModule.adminRouter || require('express').Router();
@@ -341,8 +343,22 @@ const looksLikeTemplateUrlValue = (value = '') => {
         || /<%[^%]*%>/.test(text);
 };
 
-const normalizeIpBrowserAutoLoginSettings = (settings = {}) => {
-    const raw = settings?.ipBrowser && typeof settings.ipBrowser === 'object' ? settings.ipBrowser : {};
+const normalizeIpBrowserAutoLoginSettings = (settings = {}, target = null) => {
+    const defaults = settings?.ipBrowser && typeof settings.ipBrowser === 'object' ? settings.ipBrowser : {};
+    const matchedProfile = typeof resolveIpBrowserProfile === 'function'
+        ? resolveIpBrowserProfile(settings, target)
+        : null;
+    const raw = matchedProfile
+        ? {
+            ...defaults,
+            ...matchedProfile,
+            autoLoginEnabled: defaults.autoLoginEnabled,
+            usernameSelector: matchedProfile.usernameSelector || defaults.usernameSelector,
+            passwordSelector: matchedProfile.passwordSelector || defaults.passwordSelector,
+            submitSelector: matchedProfile.submitSelector || defaults.submitSelector,
+            delayMs: matchedProfile.delayMs ?? defaults.delayMs
+        }
+        : defaults;
     const username = String(raw.username || '').trim();
     const password = raw.password != null ? String(raw.password) : '';
     const fallbackPasswords = Array.isArray(raw.passwordFallbacks)
@@ -362,13 +378,18 @@ const normalizeIpBrowserAutoLoginSettings = (settings = {}) => {
         usernameSelector: String(raw.usernameSelector || '').trim(),
         passwordSelector: String(raw.passwordSelector || '').trim(),
         submitSelector: String(raw.submitSelector || '').trim(),
-        delayMs: Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 5000 ? delayMs : 600
+        delayMs: Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 5000 ? delayMs : 600,
+        profileId: String(matchedProfile?.id || '').trim(),
+        profileLabel: String(matchedProfile?.label || '').trim()
     };
 };
 
-const loadIpBrowserAutoLoginSettings = async (req) => {
+const loadIpBrowserAutoLoginSettings = async (req, target = null) => {
     try {
-        return normalizeIpBrowserAutoLoginSettings(await loadIntegrationSettings(req.user?.branchId || null));
+        return normalizeIpBrowserAutoLoginSettings(
+            await loadIntegrationSettings(req.user?.branchId || null),
+            target
+        );
     } catch (error) {
         console.warn('IP browser auto-login disabled because settings could not be loaded:', error.message || error);
         return normalizeIpBrowserAutoLoginSettings({});
@@ -852,7 +873,7 @@ const handleLegacyIpBrowserHttp09Response = (req, res, targetUrl, bodyBuffer) =>
         }
 
         try {
-            const autoLoginSettings = await loadIpBrowserAutoLoginSettings(req);
+            const autoLoginSettings = await loadIpBrowserAutoLoginSettings(req, targetUrl);
             const rewritten = rewriteIpBrowserProxyText(parsed.body.toString('utf8'), targetUrl, contentType, { autoLoginSettings });
             res.status(statusCode).type(contentType || 'text/html').send(rewritten);
             resolve(true);
@@ -899,7 +920,7 @@ const isRetryableIpBrowserProxyRequest = (req, attempt) => {
 const handleIpBrowserProxyRequest = (req, res, targetUrl, attempt = 1) => {
     const bodyBuffer = buildProxyRequestBody(req);
     const transport = targetUrl.protocol === 'https:' ? https : http;
-    const autoLoginSettingsPromise = loadIpBrowserAutoLoginSettings(req);
+    const autoLoginSettingsPromise = loadIpBrowserAutoLoginSettings(req, targetUrl);
     const proxyReq = transport.request(targetUrl, {
         method: req.method,
         headers: pickIpBrowserProxyHeaders(req, targetUrl, bodyBuffer),
@@ -2692,6 +2713,7 @@ const PROTECTED_PAGES = new Set([
     'customer-app-popup-reminder.html',
     'customer-portal.html',
     'accounts.html',
+    'temp.html',
     'thermal-print.html',
     'billing-statement.html',
     'account-statement.html',
@@ -6284,11 +6306,11 @@ app.post('/api/customers/:accountNumber/direct-connected-devices', requireAuth, 
             });
         }
 
-        const ipBrowser = normalizeIpBrowserAutoLoginSettings(settings);
+        const ipBrowser = normalizeIpBrowserAutoLoginSettings(settings, targetUrl);
         if (!ipBrowser.username || !ipBrowser.password) {
             return res.status(400).json({
                 ok: false,
-                error: 'Set IP Browser username and password in Accounts > Integrations first.'
+                error: 'Add a matching IP Browser router profile or default username/password in Accounts > Integrations first.'
             });
         }
 
@@ -6401,11 +6423,11 @@ app.post('/api/customers/:accountNumber/direct-wifi', requireAuth, async (req, r
             });
         }
 
-        const ipBrowser = normalizeIpBrowserAutoLoginSettings(settings);
+        const ipBrowser = normalizeIpBrowserAutoLoginSettings(settings, targetUrl);
         if (!ipBrowser.username || !ipBrowser.password) {
             return res.status(400).json({
                 ok: false,
-                error: 'Set IP Browser username and password in Accounts > Integrations first.'
+                error: 'Add a matching IP Browser router profile or default username/password in Accounts > Integrations first.'
             });
         }
 
@@ -6474,6 +6496,9 @@ app.post('/api/customers/:accountNumber/direct-wifi', requireAuth, async (req, r
 app.use('/api/customers', customersPublicRouter);
 // Protected customer routes
 app.use('/api/customers', requireAuth, customersRouter);
+// Hidden secondary-location workspace. Its router owns a distinct storage key
+// and never delegates to the canonical customer or billing data stores.
+app.use('/api/temp', requireAuth, tempWorkspaceRouter);
 // Public ticket submission (no auth)
 app.use('/api/tickets', requireFeature('tickets'), ticketsPublicRouter);
 // Protected ticket routes

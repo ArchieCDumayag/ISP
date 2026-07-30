@@ -34,9 +34,9 @@ The current application is a manifest-driven modular monolith:
 - `server.js` is the only repository-root JavaScript composition file and owns route mounts plus remaining cross-module handlers.
 - Business implementations live only under `Features/modules/*/backend`; the former root CommonJS aliases were retired in Phase 11.
 - Shared infrastructure lives only under canonical `core/` paths.
-- `public/` contains the shared shell and integration-owned browser assets; all eight business modules own canonical module web roots.
+- `public/` contains the shared shell and integration-owned browser assets; eight business modules plus the hidden Temp auxiliary module own canonical module web roots.
 - `Features/modules/` is the authoritative module ownership layer for parallel Codex work.
-- Module manifests map canonical ownership and declare live backend/web runtime entries for all eight business modules; `server.js` composes all runtimes from this registry.
+- Module manifests map canonical ownership and declare live backend/web runtime entries for all eight business modules plus Temp; `server.js` composes all nine runtimes from this registry.
 - Runtime files must only be physically moved in a dedicated compatibility migration.
 
 Canonical shared runtime structure:
@@ -97,6 +97,12 @@ Canonical Customer App runtime structure:
 - Former Customer App root backend aliases: retired in Phase 11
 - Customer Management consumes canonical Customer App FCM/inbox helpers directly; shared customer/modem/payment composition remains in `server.js`
 
+Canonical Temp auxiliary runtime structure:
+
+- `Features/modules/temp/backend`: dedicated `/api/temp` customer/ledger router and isolated `temp_workspace_isolated_v1` persistence used only by the secondary-location workspace.
+- `Features/modules/temp/web`: hidden Admin-only `/temp.html` standalone Customer and Billing UI plus its CSS/JavaScript assets; it never embeds or calls the main-location pages/APIs.
+- Temp is intentionally absent from shared navigation. The direct URL is unlisted, not public; shared Admin authentication remains the security boundary.
+
 ## Modules
 
 | Module | Ownership folder | Primary scope |
@@ -109,6 +115,7 @@ Canonical Customer App runtime structure:
 | Finance | `Features/modules/finance` | Expenses and payroll |
 | Customer App | `Features/modules/customer-app` | Customer portal/app, notifications, Firebase, Messenger, SMS |
 | Admin | `Features/modules/admin` | Authentication, accounts, business profile, integrations, activity, updates/downloads |
+| Temp Workspace | `Features/modules/temp` | Hidden secondary-location customer and billing ledger with isolated data, API, and backup files |
 
 Each module contains `README.md`, `module.json`, and `Module_context.md`. The manifest's `ownedPaths` field is the machine-readable source-ownership map.
 
@@ -120,9 +127,11 @@ Shared code includes `server.js`, database/storage helpers, environment loading,
 
 - Default: `STORAGE_DRIVER=json`; missing or blank storage configuration resolves to JSON, only an explicit `mysql` value enables relational mode, and unsupported values are rejected.
 - JSON runtime data: `data/*.json`
+- Temp secondary-location records use the exclusive `temp_workspace_isolated_v1` store key (`data/temp_workspace_isolated_v1.json` in JSON mode or a distinct `app_store` row in MySQL mode) and never share the canonical customer/payment stores.
 - Optional relational mode: `STORAGE_DRIVER=mysql`
 - Dashboard `/api/export/customers-full` produces metadata, customer-name/balance/list/full-data views, canonical customers, plans, payment entries, all branch tickets/jobs, SMS messages, SMS automation runs, flattened PON/NAP connections, and chunked branch PON state. `/api/import/customers-full` restores the canonical sheets (derived customer views are regenerated), upserting all JSON-backed records without requesting MySQL. MySQL mode retains its relational transaction and returns a configuration-focused `503` when unavailable. Empty-sheet `note: No records` placeholders are ignored.
 - Sensitive integration configuration depends on `CONFIG_MASTER_KEY`.
+- IP Browser auto-login supports protected per-router profiles stored inside each branch's integration settings. Profiles select credentials from the assigned-IP target using exact host/port, exact host, IPv4 CIDR, or wildcard rules in specificity order; unmatched targets continue using the legacy default IP Browser credentials. The same resolver is used by proxied browser pages, direct WiFi changes, and connected-device scans.
 - Production requires a strong `SESSION_TOKEN_SECRET`.
 - `.env`, `data/`, logs, backups, Firebase/service-account files, and `.ai_coord/` are ignored.
 - Do not record secret values in any context or coordination update.
@@ -144,6 +153,7 @@ npm run refactor:phase7
 npm run refactor:phase8
 npm run refactor:phase9
 npm run refactor:phase10
+npm run refactor:temp
 npm run refactor:phase11
 npm run refactor:phase12
 npm test
@@ -158,12 +168,14 @@ The local development login page is `http://localhost:3100/login.html` when the 
 - Shared `public/css/tabler-app.css` applies Tabler's installed default sans-serif stack (`Inter Var`, `Inter`, then system fallbacks) to all rendered UI text across every module page; code-like elements retain Tabler's monospace stack and icon-font classes retain their dedicated fonts.
 - Module pages and API prefixes are recorded in each `Module_context.md` and `module.json`.
 - Any change to shared navigation, route mounts, common middleware, auth/session contracts, storage contracts, or cross-module response shapes is integration work.
+- `/temp.html` and `/api/temp` are protected for Admin sessions and deliberately have no sidebar/dashboard link. They form a standalone secondary-location workspace and never read, write, embed, or call the canonical Customer Management/Billing stores, pages, or APIs.
 
 ## Known risks
 
 - All eight business modules have physical filesystem/runtime boundaries and canonical-only dependency paths; shared `server.js` composition remains a deliberate integration boundary.
 - `server.js` is large and is a frequent cross-module integration point.
 - The general repository-root static fallback was removed; shared assets must live in `public/` and module assets in module `web/` roots.
+- Temp is a deliberately lightweight isolated ledger and does not inherit the main Billing scheduler, network enforcement, tickets, SMS, collector, or customer-portal automations.
 - On 2026-07-29, `npm audit --omit=dev` reports 28 dependency findings (2 low, 12 moderate, 12 high, and 2 critical); the direct `xlsx` dependency has high-severity findings for which npm reports no fix. Remediation requires a separate compatibility/security task.
 - `@jobuntux/psgc` declares Node.js 22 or newer, while this server currently runs Node.js 20; smoke testing succeeds, but the engine mismatch remains.
 - Fixed bootstrap account credentials must be generated/rotated per production deployment and never copied into context files.

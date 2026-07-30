@@ -1760,6 +1760,148 @@ body.theme-dark .settings-table.pppoe-table thead th {
     color: #64748b;
     padding: 18px 20px;
 }
+
+#ip-browser-form {
+    width: 100%;
+}
+
+.ip-browser-master-toggle {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    border-radius: 16px;
+    background: rgba(239, 246, 255, 0.72);
+    color: #1e293b;
+}
+
+.ip-browser-master-toggle > span:last-child {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.ip-browser-master-toggle strong {
+    font-size: 0.95rem;
+}
+
+.ip-browser-master-toggle small,
+.ip-browser-section-heading p,
+.form-field small,
+.ip-browser-match-hint {
+    color: #64748b;
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.ip-browser-default-card {
+    padding: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.ip-browser-default-card .form-grid {
+    margin-top: 18px;
+}
+
+.ip-browser-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.ip-browser-section-heading h3,
+.ip-browser-section-heading p {
+    margin: 0;
+}
+
+.ip-browser-section-heading h3 {
+    color: #0f172a;
+    font-size: 1rem;
+}
+
+.ip-browser-section-heading p {
+    margin-top: 4px;
+}
+
+.ip-browser-section-heading--profiles {
+    align-items: flex-end;
+}
+
+.ip-browser-profile-table-wrapper {
+    width: 100%;
+    border-radius: 18px;
+}
+
+.ip-browser-profile-table th:nth-child(4),
+.ip-browser-profile-table td:nth-child(4),
+.ip-browser-profile-table th:nth-child(5),
+.ip-browser-profile-table td:nth-child(5),
+.ip-browser-profile-table th:nth-child(6),
+.ip-browser-profile-table td:nth-child(6) {
+    text-align: center;
+}
+
+.ip-browser-profile-table th:nth-child(6),
+.ip-browser-profile-table td:nth-child(6) {
+    width: 120px;
+}
+
+.ip-browser-profile-empty-row td {
+    padding: 18px 20px;
+    text-align: center !important;
+    color: #64748b;
+}
+
+.ip-browser-profile-match-list {
+    display: block;
+    max-width: 320px;
+    overflow: hidden;
+    color: #475569;
+    font-family: var(--tblr-font-monospace, monospace);
+    font-size: 0.8rem;
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ip-browser-profile-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.ip-browser-profile-status.is-disabled {
+    background: rgba(148, 163, 184, 0.16);
+    color: #64748b;
+}
+
+.form-field--wide {
+    grid-column: 1 / -1;
+}
+
+.modal-container--ip-browser-profile {
+    width: min(820px, 94vw);
+    max-width: 820px;
+}
+
+.modal-container--ip-browser-profile .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ip-browser-profile-enabled-field {
+    align-self: end;
+}
 .mikrotik-router-card {
     width: 100%;
     padding: 18px;
@@ -2962,7 +3104,8 @@ body.theme-dark #semaphore,
 body.theme-dark #email,
 body.theme-dark #gcash,
 body.theme-dark #system-update,
-body.theme-dark #mikrotik {
+body.theme-dark #mikrotik,
+body.theme-dark #ip-browser {
     background: rgba(15, 23, 42, 0.92) !important;
     border-color: rgba(148, 163, 184, 0.12);
     box-shadow: 0 26px 48px rgba(2, 6, 23, 0.75);
@@ -3031,6 +3174,28 @@ body.theme-dark .mikrotik-router-empty {
     color: #94a3b8;
 }
 body.theme-dark .mikrotik-empty-row td {
+    color: #94a3b8;
+}
+body.theme-dark .ip-browser-master-toggle,
+body.theme-dark .ip-browser-default-card {
+    background: rgba(15, 23, 42, 0.7);
+    border-color: rgba(148, 163, 184, 0.24);
+}
+body.theme-dark .ip-browser-master-toggle,
+body.theme-dark .ip-browser-section-heading h3 {
+    color: #e2e8f0;
+}
+body.theme-dark .ip-browser-master-toggle small,
+body.theme-dark .ip-browser-section-heading p,
+body.theme-dark .ip-browser-match-hint,
+body.theme-dark .ip-browser-profile-match-list,
+body.theme-dark .ip-browser-profile-empty-row td {
+    color: #94a3b8;
+}
+body.theme-dark .ip-browser-profile-status {
+    color: #86efac;
+}
+body.theme-dark .ip-browser-profile-status.is-disabled {
     color: #94a3b8;
 }
 body.theme-dark .pppoe-router-picker label {
@@ -3521,6 +3686,10 @@ body.theme-dark .ghost-btn--link {
     z-index: 2210;
 }
 
+#ipBrowserProfileModal.modal-overlay {
+    z-index: 2610;
+}
+
 #mikrotikModal.modal-overlay .modal-container {
     position: relative;
     z-index: 1;
@@ -3647,6 +3816,19 @@ body.theme-dark .ghost-btn--link {
 @media (max-width: 760px) {
     #integrationModalBody .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .modal-container--ip-browser-profile .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-field--wide {
+        grid-column: auto;
+    }
+
+    .ip-browser-section-heading--profiles {
+        align-items: stretch;
+        flex-direction: column;
     }
 }
 

@@ -14,7 +14,8 @@ const expectedModuleIds = [
   'customer-management',
   'finance',
   'network',
-  'technician'
+  'technician',
+  'temp'
 ];
 const phaseDocuments = [
   'phase-01-baseline.md',
@@ -91,7 +92,7 @@ modules.forEach((module) => {
     `Final cross-module gate is missing from ${module.id} context`
   );
 });
-pass('eight canonical module ownership and runtime boundaries');
+pass('nine canonical module ownership and runtime boundaries');
 
 phaseDocuments.forEach((document) => assertFile(`docs/refactor/${document}`));
 const phaseLedger = read('docs/refactor/PHASES.md');

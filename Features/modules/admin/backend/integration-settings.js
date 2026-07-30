@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const net = require('net');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
@@ -69,7 +70,8 @@ const DEFAULT_SETTINGS = {
         usernameSelector: '',
         passwordSelector: '',
         submitSelector: '',
-        delayMs: 600
+        delayMs: 600,
+        profiles: []
     }
 };
 const INTEGRATION_PROVIDER_KEYS = ['gcash', 'xendit', 'semaphore', 'email', 'genieacs', 'mikrotik', 'pppoe', 'ipBrowser'];
@@ -89,8 +91,185 @@ const normalizeSecretList = (value) => {
     ));
 };
 
+const makeIpBrowserProfileId = () => {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return `ip-browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const normalizeIpBrowserProfile = (raw = {}) => {
+    const delayMs = Number(raw.delayMs);
+    const matches = normalizeSecretList(
+        raw.matches
+        ?? raw.matchTargets
+        ?? raw.targets
+        ?? raw.gateways
+        ?? raw.gateway
+        ?? raw.address
+    );
+    return {
+        id: String(raw.id || '').trim() || makeIpBrowserProfileId(),
+        label: String(raw.label || raw.name || '').trim() || 'Router profile',
+        enabled: raw.enabled == null ? true : coerceEnabled(raw.enabled),
+        matches,
+        username: String(raw.username || '').trim(),
+        password: raw.password != null ? String(raw.password) : '',
+        passwordFallbacks: normalizeSecretList(raw.passwordFallbacks ?? raw.fallbackPasswords),
+        usernameSelector: String(raw.usernameSelector || '').trim(),
+        passwordSelector: String(raw.passwordSelector || '').trim(),
+        submitSelector: String(raw.submitSelector || '').trim(),
+        delayMs: Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 5000 ? delayMs : 600
+    };
+};
+
+const normalizeIpBrowserSettings = (settings = {}) => {
+    const raw = settings?.ipBrowser && typeof settings.ipBrowser === 'object'
+        ? settings.ipBrowser
+        : {};
+    const profiles = [];
+    const seenIds = new Set();
+    (Array.isArray(raw.profiles) ? raw.profiles : []).forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const profile = normalizeIpBrowserProfile(entry);
+        while (seenIds.has(profile.id)) profile.id = makeIpBrowserProfileId();
+        seenIds.add(profile.id);
+        profiles.push(profile);
+    });
+    const delayMs = Number(raw.delayMs);
+    return {
+        ...settings,
+        ipBrowser: {
+            ...DEFAULT_SETTINGS.ipBrowser,
+            ...raw,
+            autoLoginEnabled: coerceEnabled(raw.autoLoginEnabled ?? raw.enabled),
+            username: String(raw.username || '').trim(),
+            password: raw.password != null ? String(raw.password) : '',
+            passwordFallbacks: normalizeSecretList(raw.passwordFallbacks ?? raw.fallbackPasswords),
+            usernameSelector: String(raw.usernameSelector || '').trim(),
+            passwordSelector: String(raw.passwordSelector || '').trim(),
+            submitSelector: String(raw.submitSelector || '').trim(),
+            delayMs: Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 5000 ? delayMs : 600,
+            profiles
+        }
+    };
+};
+
+const parseIpv4Number = (value = '') => {
+    const host = String(value || '').trim();
+    if (net.isIP(host) !== 4) return null;
+    return host.split('.').reduce((result, part) => ((result << 8) | Number(part)) >>> 0, 0);
+};
+
+const parseIpBrowserTarget = (target) => {
+    if (!target) return null;
+    try {
+        const parsed = target instanceof URL
+            ? target
+            : new URL(/^https?:\/\//i.test(String(target)) ? String(target) : `http://${String(target)}`);
+        const hostname = String(parsed.hostname || '').trim().replace(/^\[|\]$/g, '').toLowerCase();
+        if (!hostname) return null;
+        const port = String(parsed.port || '').trim();
+        return {
+            hostname,
+            port,
+            host: port ? `${hostname}:${port}` : hostname
+        };
+    } catch {
+        return null;
+    }
+};
+
+const scoreIpBrowserMatch = (target, rawRule = '') => {
+    const rule = String(rawRule || '').trim().toLowerCase();
+    if (!target || !rule) return -1;
+    if (rule === '*') return 1;
+
+    const cidrMatch = rule.match(/^((?:\d{1,3}\.){3}\d{1,3})\/(\d{1,2})$/);
+    if (cidrMatch) {
+        const targetNumber = parseIpv4Number(target.hostname);
+        const networkNumber = parseIpv4Number(cidrMatch[1]);
+        const prefixLength = Number(cidrMatch[2]);
+        if (targetNumber == null || networkNumber == null || prefixLength < 0 || prefixLength > 32) return -1;
+        const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
+        return (targetNumber & mask) === (networkNumber & mask) ? 300 + prefixLength : -1;
+    }
+
+    if (rule.includes('*')) {
+        const escaped = rule.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+        let pattern;
+        try {
+            pattern = new RegExp(`^${escaped}$`, 'i');
+        } catch {
+            return -1;
+        }
+        const literalLength = rule.replace(/\*/g, '').length;
+        if (pattern.test(target.host)) return 220 + literalLength;
+        if (pattern.test(target.hostname)) return 200 + literalLength;
+        return -1;
+    }
+
+    let normalizedRule = rule;
+    let hasExplicitPort = false;
+    try {
+        const parsedRule = new URL(/^https?:\/\//i.test(rule) ? rule : `http://${rule}`);
+        const hostname = String(parsedRule.hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+        const port = String(parsedRule.port || '').trim();
+        if (hostname) {
+            normalizedRule = port ? `${hostname}:${port}` : hostname;
+            hasExplicitPort = Boolean(port);
+        }
+    } catch {
+        normalizedRule = rule.replace(/^\[|\]$/g, '');
+    }
+    if (hasExplicitPort) return normalizedRule === target.host ? 500 : -1;
+    return normalizedRule === target.hostname ? 450 : -1;
+};
+
+const resolveIpBrowserProfile = (settings = {}, target) => {
+    const normalized = normalizeIpBrowserSettings(settings);
+    const targetDetails = parseIpBrowserTarget(target);
+    if (!targetDetails) return null;
+    let best = null;
+    normalized.ipBrowser.profiles.forEach((profile, index) => {
+        if (profile.enabled === false || !profile.username || !profile.password) return;
+        const score = profile.matches.reduce(
+            (highest, rule) => Math.max(highest, scoreIpBrowserMatch(targetDetails, rule)),
+            -1
+        );
+        if (score < 0) return;
+        if (!best || score > best.score || (score === best.score && index < best.index)) {
+            best = { profile, score, index };
+        }
+    });
+    return best ? { ...best.profile } : null;
+};
+
+const preserveIpBrowserProfileSecrets = (incomingProfiles, currentProfiles) => {
+    if (!Array.isArray(incomingProfiles)) return currentProfiles;
+    const currentById = new Map(
+        (Array.isArray(currentProfiles) ? currentProfiles : [])
+            .filter((profile) => profile && typeof profile === 'object')
+            .map((profile) => [String(profile.id || '').trim(), profile])
+    );
+    return incomingProfiles.map((profile) => {
+        if (!profile || typeof profile !== 'object') return profile;
+        const current = currentById.get(String(profile.id || '').trim()) || {};
+        const next = { ...profile };
+        ['username', 'password'].forEach((field) => {
+            if (!hasNonEmptyValue(next[field]) && hasNonEmptyValue(current[field])) next[field] = current[field];
+        });
+        if (
+            !hasOwn(next, 'passwordFallbacks')
+            && !hasOwn(next, 'fallbackPasswords')
+            && normalizeSecretList(current.passwordFallbacks).length
+        ) {
+            next.passwordFallbacks = current.passwordFallbacks;
+        }
+        return next;
+    });
+};
+
 function sanitizeSettingsForClient(settings = {}) {
-    const normalized = normalizeMikrotikSettings(settings || {});
+    const normalized = normalizeIntegrationSettings(settings || {});
     const xendit = normalized.xendit || {};
     const semaphore = normalized.semaphore || {};
     const email = normalized.email || {};
@@ -133,7 +312,17 @@ function sanitizeSettingsForClient(settings = {}) {
             passwordSet: hasNonEmptyValue(ipBrowser.password),
             passwordFallbacks: [],
             passwordFallbacksSet: normalizeSecretList(ipBrowser.passwordFallbacks).length > 0,
-            passwordFallbackCount: normalizeSecretList(ipBrowser.passwordFallbacks).length
+            passwordFallbackCount: normalizeSecretList(ipBrowser.passwordFallbacks).length,
+            profiles: (Array.isArray(ipBrowser.profiles) ? ipBrowser.profiles : []).map((profile) => ({
+                ...profile,
+                username: redactSecretValue(profile.username),
+                usernameSet: hasNonEmptyValue(profile.username),
+                password: redactSecretValue(profile.password),
+                passwordSet: hasNonEmptyValue(profile.password),
+                passwordFallbacks: [],
+                passwordFallbacksSet: normalizeSecretList(profile.passwordFallbacks).length > 0,
+                passwordFallbackCount: normalizeSecretList(profile.passwordFallbacks).length
+            }))
         }
     };
 }
@@ -178,6 +367,7 @@ function preserveSecretFields(provider, incoming = {}, current = {}) {
         ) {
             next.passwordFallbacks = current.passwordFallbacks;
         }
+        next.profiles = preserveIpBrowserProfileSecrets(next.profiles, current?.profiles);
     }
     return next;
 }
@@ -319,6 +509,9 @@ const normalizeMikrotikSettings = (settings = {}) => {
     };
 };
 
+const normalizeIntegrationSettings = (settings = {}) =>
+    normalizeIpBrowserSettings(normalizeMikrotikSettings(settings));
+
 const hasUsableMikrotikRouter = (settings = {}) => {
     const normalized = normalizeMikrotikSettings(settings);
     if (!normalized?.mikrotik?.enabled) {
@@ -383,7 +576,7 @@ async function loadSettings(branchId = null) {
             const [rows] = await query('SELECT id FROM branches ORDER BY id LIMIT 1');
             branchId = rows && rows.length ? rows[0].id : null;
         }
-        if (!branchId) return normalizeMikrotikSettings({ ...DEFAULT_SETTINGS });
+        if (!branchId) return normalizeIntegrationSettings({ ...DEFAULT_SETTINGS });
         const [rows] = await query(
             `SELECT secret_json FROM integration_settings WHERE branch_id = ? AND provider = 'core' LIMIT 1`,
             [branchId]
@@ -396,18 +589,18 @@ async function loadSettings(branchId = null) {
                 throw new IntegrationSettingsUnreadableError(branchId, error);
             }
             const merged = { ...DEFAULT_SETTINGS, ...(decrypted && typeof decrypted === 'object' ? decrypted : {}) };
-            return normalizeMikrotikSettings(merged);
+            return normalizeIntegrationSettings(merged);
         }
-        return normalizeMikrotikSettings({ ...DEFAULT_SETTINGS });
+        return normalizeIntegrationSettings({ ...DEFAULT_SETTINGS });
     }
     const parsed = await readJson(STORE_KEY, null);
     const merged = { ...DEFAULT_SETTINGS, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
-    return normalizeMikrotikSettings(merged);
+    return normalizeIntegrationSettings(merged);
 }
 
 async function saveSettings(nextSettings, branchId = null) {
     const merged = { ...DEFAULT_SETTINGS, ...nextSettings };
-    const normalized = normalizeMikrotikSettings(merged);
+    const normalized = normalizeIntegrationSettings(merged);
     if (await isRelationalReady()) {
         await ensureIntegrationSecretJsonCapacity();
         if (!branchId) {
@@ -505,24 +698,37 @@ router.put('/:provider', requireAuthForIntegrationSettings, async (req, res, nex
                 email: { ...current.email, ...normalized }
             };
         } else if (provider === 'ipBrowser') {
-            const delayMs = Number(incoming.delayMs);
-            const hasIncomingFallbacks = hasOwn(incoming, 'passwordFallbacks')
-                || hasOwn(incoming, 'fallbackPasswords');
-            const normalized = {
-                autoLoginEnabled: coerceEnabled(incoming.autoLoginEnabled ?? incoming.enabled),
-                username: String(incoming.username || '').trim(),
-                password: incoming.password != null ? String(incoming.password) : '',
-                passwordFallbacks: hasIncomingFallbacks
-                    ? normalizeSecretList(incoming.passwordFallbacks ?? incoming.fallbackPasswords)
-                    : normalizeSecretList(current.ipBrowser?.passwordFallbacks),
-                usernameSelector: String(incoming.usernameSelector || '').trim(),
-                passwordSelector: String(incoming.passwordSelector || '').trim(),
-                submitSelector: String(incoming.submitSelector || '').trim(),
-                delayMs: Number.isFinite(delayMs) && delayMs >= 0 && delayMs <= 5000 ? delayMs : 600
-            };
+            if (Array.isArray(incoming.profiles) && incoming.profiles.length > 100) {
+                return res.status(400).json({ ok: false, error: 'IP Browser supports up to 100 router profiles.' });
+            }
+            const normalized = normalizeIpBrowserSettings({
+                ipBrowser: {
+                    ...(current.ipBrowser || {}),
+                    ...incoming,
+                    autoLoginEnabled: incoming.autoLoginEnabled
+                        ?? incoming.enabled
+                        ?? current.ipBrowser?.autoLoginEnabled,
+                    profiles: Array.isArray(incoming.profiles)
+                        ? incoming.profiles
+                        : current.ipBrowser?.profiles
+                }
+            }).ipBrowser;
+            const invalidProfile = normalized.profiles.find((profile) => (
+                !profile.label
+                || !profile.matches.length
+                || profile.matches.some((rule) => rule.length > 200)
+                || !profile.username
+                || !profile.password
+            ));
+            if (invalidProfile) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'Every IP Browser profile needs a name, at least one IP/gateway match, a username, and a password.'
+                });
+            }
             nextSettings = {
                 ...current,
-                ipBrowser: { ...current.ipBrowser, ...normalized }
+                ipBrowser: normalized
             };
         } else {
             nextSettings = {
@@ -543,6 +749,9 @@ module.exports.loadIntegrationSettings = loadSettings;
 module.exports.saveIntegrationSettings = saveSettings;
 module.exports.resolveMikrotikRouter = resolveMikrotikRouter;
 module.exports.normalizeMikrotikSettings = normalizeMikrotikSettings;
+module.exports.normalizeIpBrowserSettings = normalizeIpBrowserSettings;
+module.exports.resolveIpBrowserProfile = resolveIpBrowserProfile;
+module.exports.preserveIpBrowserProfileSecrets = preserveIpBrowserProfileSecrets;
 module.exports.hasUsableMikrotikRouter = hasUsableMikrotikRouter;
 module.exports.IntegrationSettingsUnreadableError = IntegrationSettingsUnreadableError;
 module.exports.isIntegrationSettingsUnreadableError = isIntegrationSettingsUnreadableError;

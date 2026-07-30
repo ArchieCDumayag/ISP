@@ -48,8 +48,9 @@
     "refactor:phase9": "npm run refactor:verify && npm run refactor:core && npm run refactor:admin && npm run refactor:customer-management && npm run refactor:billing && npm run refactor:network && npm run refactor:collector && npm run refactor:technician && npm run refactor:finance && npm run check:security && npm run refactor:smoke",
     "refactor:customer-app": "node scripts/refactor/check-customer-app-compatibility.js",
     "refactor:phase10": "npm run refactor:verify && npm run refactor:core && npm run refactor:admin && npm run refactor:customer-management && npm run refactor:billing && npm run refactor:network && npm run refactor:collector && npm run refactor:technician && npm run refactor:finance && npm run refactor:customer-app && npm run check:security && npm run refactor:smoke",
+    "refactor:temp": "node scripts/refactor/check-temp-compatibility.js",
     "refactor:integration": "node scripts/refactor/check-integration-cleanup.js",
-    "refactor:phase11": "npm run refactor:verify && npm run refactor:core && npm run refactor:admin && npm run refactor:customer-management && npm run refactor:billing && npm run refactor:network && npm run refactor:collector && npm run refactor:technician && npm run refactor:finance && npm run refactor:customer-app && npm run refactor:integration && npm run check:security && npm run refactor:smoke",
+    "refactor:phase11": "npm run refactor:verify && npm run refactor:core && npm run refactor:admin && npm run refactor:customer-management && npm run refactor:billing && npm run refactor:network && npm run refactor:collector && npm run refactor:technician && npm run refactor:finance && npm run refactor:customer-app && npm run refactor:temp && npm run refactor:integration && npm run check:security && npm run refactor:smoke",
     "refactor:cutover": "node scripts/refactor/check-cutover-readiness.js",
     "refactor:phase12": "npm run refactor:phase11 && npm run refactor:cutover",
     "test": "npm run refactor:phase12"

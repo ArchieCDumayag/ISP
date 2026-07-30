@@ -52,7 +52,8 @@ const expectedIds = [
   'customer-management',
   'finance',
   'network',
-  'technician'
+  'technician',
+  'temp'
 ];
 assert.deepStrictEqual(modules.map((module) => module.id), expectedIds);
 modules.forEach((module) => {

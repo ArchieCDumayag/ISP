@@ -27,7 +27,8 @@ const expectedModuleIds = [
   'customer-management',
   'finance',
   'network',
-  'technician'
+  'technician',
+  'temp'
 ];
 const runtimes = loadModuleRuntimes({ requireBackend: true, requireWeb: true, refresh: true });
 assert.deepStrictEqual([...runtimes.keys()], expectedModuleIds);
@@ -44,7 +45,7 @@ runtimes.forEach((runtime) => {
     );
   });
 });
-console.log('PASS eight complete manifest-driven module runtimes and canonical ownership maps');
+console.log('PASS nine complete manifest-driven module runtimes and canonical ownership maps');
 
 [
   'api.js',

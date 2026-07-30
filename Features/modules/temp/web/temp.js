@@ -669,6 +669,41 @@
         }
     }
 
+    async function exportCollectorWorkbook() {
+        const button = byId('exportCollectorBtn');
+        button.disabled = true;
+        try {
+            const response = await fetch(`${API_ROOT}/collector-export`, { credentials: 'same-origin' });
+            if (response.status === 401) {
+                window.location.assign('/login.html');
+                throw new Error('Your session expired. Sign in again.');
+            }
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.error || `Collector export failed (${response.status}).`);
+            }
+            const blob = await response.blob();
+            const filename = filenameFromDisposition(
+                response.headers.get('Content-Disposition'),
+                'temp-collector.xlsx'
+            );
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = filename;
+            link.hidden = true;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+            showToast('Collector Excel exported.');
+        } catch (error) {
+            showToast(error.message || 'Unable to export the Collector Excel file.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
     async function importWorkspace(file) {
         if (!file) return;
         const extension = file.name.toLowerCase().match(/\.(json|xlsx|xls)$/)?.[1];
@@ -774,6 +809,7 @@
     byId('clearWorkspaceBtn').addEventListener('click', clearWorkspaceData);
     byId('refreshWorkspaceBtn').addEventListener('click', () => loadWorkspace({ notify: true }));
     byId('exportWorkspaceBtn').addEventListener('click', () => byId('exportFormatDialog').showModal());
+    byId('exportCollectorBtn').addEventListener('click', exportCollectorWorkbook);
     byId('exportJsonBtn').addEventListener('click', () => exportWorkspace('json'));
     byId('exportExcelBtn').addEventListener('click', () => exportWorkspace('xlsx'));
     byId('importWorkspaceBtn').addEventListener('click', () => byId('importWorkspaceFile').click());

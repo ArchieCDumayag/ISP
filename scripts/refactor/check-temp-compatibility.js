@@ -335,6 +335,64 @@ async function main() {
     XLSX.utils.sheet_to_json(workbook.Sheets[excelModule.SHEET_NAMES.payments], { header: 1 })[0],
     Array.from(excelModule.PAYMENT_FIELDS)
   );
+  const collectorReport = excelModule.buildCollectorRows(exported, { reportDate: '2026-08-15' });
+  assert.strictEqual(collectorReport.rows.length, 1);
+  assert.deepStrictEqual(collectorReport.rows[0], {
+    Account: customer.accountNumber,
+    Customer: 'Other Edited Location',
+    'Service address': '',
+    Plan: 'Temp Plan (1000)',
+    'Plan type': 'Postpaid',
+    Billing: 'Date 2026-08-20',
+    Balance: 800,
+    Due: 800
+  });
+  const pendingCollectorPayload = JSON.parse(JSON.stringify(exported));
+  pendingCollectorPayload.data.customers[0].nextBillingDate = '2026-08-15';
+  const billingDateReachedReport = excelModule.buildCollectorRows(
+    pendingCollectorPayload,
+    { reportDate: '2026-08-15' }
+  );
+  assert.strictEqual(billingDateReachedReport.rows[0].Balance, 800);
+  assert.strictEqual(billingDateReachedReport.rows[0].Due, 1800);
+
+  const generatedCollectorPayload = JSON.parse(JSON.stringify(pendingCollectorPayload));
+  generatedCollectorPayload.data.customers[0].nextBillingDate = '2026-09-15';
+  generatedCollectorPayload.data.payments.push({
+    id: 'collector-cycle-2026-08-15',
+    receiptNumber: 'TMP-0000003',
+    accountNumber: customer.accountNumber,
+    kind: 'charge',
+    amount: 1000,
+    date: '2026-08-15',
+    paymentMethod: 'System',
+    reference: '',
+    description: 'Monthly recurring charge',
+    recordedBy: 'Temp billing cycle',
+    systemGenerated: true,
+    cycleKey: `${customer.accountNumber}:2026-08-15`,
+    createdAt: '2026-08-15T00:00:00.000Z',
+    updatedAt: '2026-08-15T00:00:00.000Z'
+  });
+  const generatedCollectorReport = excelModule.buildCollectorRows(
+    generatedCollectorPayload,
+    { reportDate: '2026-08-15' }
+  );
+  assert.strictEqual(generatedCollectorReport.rows[0].Balance, 1800);
+  assert.strictEqual(generatedCollectorReport.rows[0].Due, 1800);
+  const collectorBuffer = excelModule.buildCollectorExcelBuffer(exported, { reportDate: '2026-08-15' });
+  assert(Buffer.isBuffer(collectorBuffer));
+  assert.strictEqual(collectorBuffer[0], 0x50);
+  assert.strictEqual(collectorBuffer[1], 0x4b);
+  const collectorWorkbook = XLSX.read(collectorBuffer, { type: 'buffer' });
+  assert.deepStrictEqual(collectorWorkbook.SheetNames, [excelModule.SHEET_NAMES.collector]);
+  const collectorMatrix = XLSX.utils.sheet_to_json(
+    collectorWorkbook.Sheets[excelModule.SHEET_NAMES.collector],
+    { header: 1, raw: true }
+  );
+  assert.deepStrictEqual(collectorMatrix[0], Array.from(excelModule.COLLECTOR_HEADERS));
+  assert.deepStrictEqual(collectorMatrix[1], Object.values(collectorReport.rows[0]));
+  console.log('PASS Collector Excel current balance and billing-date-gated due calculation');
   const excelRestore = await isolatedStore.replaceFromExport(parsedExcelExport);
   assert.strictEqual(excelRestore.summary.customerCount, 1);
   assert.strictEqual(excelRestore.summary.paymentCount, 2);
@@ -380,9 +438,11 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=2.0'));
-  assert(tempHtml.includes('/temp.css?v=1.8'));
+  assert(tempHtml.includes('/temp.js?v=2.1'));
+  assert(tempHtml.includes('/temp.css?v=1.9'));
   assert(tempHtml.includes('id="clearWorkspaceBtn"'));
+  assert(tempHtml.includes('id="exportCollectorBtn"'));
+  assert(tempHtml.includes('Collector Excel'));
   assert(tempHtml.includes('id="exportFormatDialog"'));
   assert(tempHtml.includes('id="exportJsonBtn"'));
   assert(tempHtml.includes('id="exportExcelBtn"'));
@@ -421,6 +481,9 @@ async function main() {
   assert(tempJs.includes("'Content-Type': 'application/octet-stream'"));
   assert(tempJs.includes('replace every Temp customer and transaction'));
   assert(tempJs.includes('async function clearWorkspaceData()'));
+  assert(tempJs.includes('async function exportCollectorWorkbook()'));
+  assert(tempJs.includes("fetch(`${API_ROOT}/collector-export`"));
+  assert(tempJs.includes("showToast('Collector Excel exported.')"));
   assert(tempJs.includes('Permanently delete all'));
   assert(tempJs.includes('This cannot be undone. Export a backup first'));
   assert(tempJs.includes("api('/workspace', { method: 'DELETE' })"));
@@ -502,7 +565,7 @@ async function main() {
   assert(tempCss.includes('.temp-dialog--export'));
   assert(tempCss.includes('.export-format-grid'));
   assert(tempCss.includes('.export-format-option'));
-  assert(tempCss.includes('grid-template-columns: repeat(4, 1fr)'));
+  assert(tempCss.includes('grid-template-columns: repeat(5, 1fr)'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
   assert(!tempHtml.includes('<iframe'), 'Temp must not embed canonical business pages');
@@ -520,6 +583,8 @@ async function main() {
   assert(routerSource.includes("router.post('/import-file'"));
   assert(routerSource.includes("router.delete('/workspace'"));
   assert(routerSource.includes('workspaceStore.clearAllData()'));
+  assert(routerSource.includes("router.get('/collector-export'"));
+  assert(routerSource.includes('buildCollectorExcelBuffer(payload, { reportDate })'));
   assert(routerSource.includes("express.raw({ type: 'application/octet-stream', limit: '20mb' })"));
   assert(routerSource.includes('parseWorkspaceExcelBuffer(req.body)'));
   console.log('PASS standalone one-page Customer and Billing workspace');

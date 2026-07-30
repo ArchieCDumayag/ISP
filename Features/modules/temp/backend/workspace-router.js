@@ -3,6 +3,7 @@ const workspaceStore = require('./workspace-store');
 const {
   EXCEL_MIME_TYPE,
   buildWorkspaceExcelBuffer,
+  resolveCollectorReportDate,
   buildCollectorExcelBuffer,
   parseWorkspaceExcelBuffer
 } = require('./workspace-excel');
@@ -94,7 +95,7 @@ router.delete('/workspace', async (_req, res) => {
 router.get('/collector-export', async (req, res) => {
   try {
     const payload = await workspaceStore.createExport();
-    const reportDate = String(req.query.date || payload.exportedAt).slice(0, 10);
+    const reportDate = resolveCollectorReportDate(payload, req.query.date);
     const workbook = buildCollectorExcelBuffer(payload, { reportDate });
     res.set('Content-Type', EXCEL_MIME_TYPE);
     res.set('Content-Disposition', `attachment; filename="temp-collector-${reportDate.slice(0, 7)}.xlsx"`);

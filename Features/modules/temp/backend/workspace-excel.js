@@ -3,6 +3,12 @@ const { EXPORT_KIND, WorkspaceValidationError } = require('./workspace-store');
 
 const EXCEL_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MAX_IMPORT_ROWS = 100000;
+const collectorDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
 const SHEET_NAMES = Object.freeze({
   metadata: 'Metadata',
   customers: 'Customers',
@@ -153,8 +159,17 @@ const moneyValue = (value) => {
   return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : 0;
 };
 
+const formatCollectorDate = (value) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const parts = Object.fromEntries(
+    collectorDateFormatter.formatToParts(parsed).map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
 const resolveCollectorReportDate = (payload, requestedDate) => {
-  const candidate = String(requestedDate || payload.exportedAt || '').slice(0, 10);
+  const candidate = String(requestedDate || formatCollectorDate(payload.exportedAt) || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
     throw invalidWorkbook('A valid Collector report date is required.');
   }
@@ -383,6 +398,7 @@ module.exports = {
   CUSTOMER_FIELDS,
   PAYMENT_FIELDS,
   buildWorkspaceExcelBuffer,
+  resolveCollectorReportDate,
   buildCollectorRows,
   buildCollectorExcelBuffer,
   parseWorkspaceExcelBuffer

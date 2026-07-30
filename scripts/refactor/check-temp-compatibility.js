@@ -380,6 +380,11 @@ async function main() {
   );
   assert.strictEqual(generatedCollectorReport.rows[0].Balance, 1800);
   assert.strictEqual(generatedCollectorReport.rows[0].Due, 1800);
+  generatedCollectorPayload.exportedAt = '2026-08-14T16:30:00.000Z';
+  const manilaBoundaryCollectorReport = excelModule.buildCollectorRows(generatedCollectorPayload);
+  assert.strictEqual(manilaBoundaryCollectorReport.reportDate, '2026-08-15');
+  assert.strictEqual(manilaBoundaryCollectorReport.rows[0].Balance, 1800);
+  assert.strictEqual(manilaBoundaryCollectorReport.rows[0].Due, 1800);
   const collectorBuffer = excelModule.buildCollectorExcelBuffer(exported, { reportDate: '2026-08-15' });
   assert(Buffer.isBuffer(collectorBuffer));
   assert.strictEqual(collectorBuffer[0], 0x50);
@@ -392,7 +397,7 @@ async function main() {
   );
   assert.deepStrictEqual(collectorMatrix[0], Array.from(excelModule.COLLECTOR_HEADERS));
   assert.deepStrictEqual(collectorMatrix[1], Object.values(collectorReport.rows[0]));
-  console.log('PASS Collector Excel current balance and billing-date-gated due calculation');
+  console.log('PASS Collector Excel Manila-date current balance and billing-date-gated due calculation');
   const excelRestore = await isolatedStore.replaceFromExport(parsedExcelExport);
   assert.strictEqual(excelRestore.summary.customerCount, 1);
   assert.strictEqual(excelRestore.summary.paymentCount, 2);

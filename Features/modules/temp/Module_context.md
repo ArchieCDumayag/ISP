@@ -41,6 +41,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - `POST/PUT/DELETE /api/temp/payments` manages only Temp ledger entries. Charges increase balances; payments, rebates, and discounts reduce balances.
 - `DELETE /api/temp/workspace` clears all Temp customers and transactions and resets Temp account/receipt sequences. The page requires explicit destructive confirmation and recommends exporting a backup first.
 - `GET /api/temp/export?format=json|xlsx` downloads the same complete `isp-temp-workspace-export` backup as JSON or Excel. Excel contains Metadata, Customers, and Transactions sheets.
+- `GET /api/temp/collector-export` downloads a report-only Collector workbook with Account, Customer, Service address, Plan, Plan type, Billing, current Balance, and Due. Due equals Balance before the next billing date; on/after that date it adds the monthly rate only if the automatic cycle charge is not already in Balance.
 - `POST /api/temp/import` retains the JSON API contract. `POST /api/temp/import-file` accepts exported JSON, XLSX, or XLS bytes, validates the complete file, and replaces only the isolated Temp workspace.
 - Temp account numbers default to `TMP` plus six digits; receipt numbers default to `TMP-` plus seven digits.
 
@@ -69,6 +70,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 
 ## Latest meaningful changes
 
+- 2026-07-30: Updated Collector Excel so Balance is current, Due stays unchanged before billing, and the monthly rate is generated only when billing is reached without double-counting automatic charges.
 - 2026-07-30: Added a confirmed Clear data action that resets only the isolated Temp workspace and leaves canonical Customer Management and Billing storage untouched.
 - 2026-07-30: Added an export-format confirmation dialog, complete JSON or Excel downloads, and strict JSON/XLSX/XLS restore with exact customer, billing-cycle, sequence, and transaction round-trip coverage.
 - 2026-07-30: Added exact Date and monthly Number billing schedules; Date mode defers the first automatic full charge to the chosen next-bill date, and Prepaid now generates the full monthly rate automatically with safe next-future migration for existing records.

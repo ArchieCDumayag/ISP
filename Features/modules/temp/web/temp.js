@@ -2,6 +2,55 @@
     'use strict';
 
     const API_ROOT = '/api/temp';
+    const TEMP_PLAN_RATES = Object.freeze({
+        'Old plan': 700,
+        Basic: 800,
+        Standard: 1000,
+        Premium: 1200
+    });
+    const TEMP_SERVICE_ADDRESSES = Object.freeze(['Poblacion', 'Masical']);
+    const TABLE_SORT_OPTIONS = Object.freeze({
+        customer: Object.freeze({
+            account: Object.freeze(['account-asc', 'account-desc']),
+            name: Object.freeze(['name-asc', 'name-desc']),
+            address: Object.freeze(['address-poblacion', 'address-masical']),
+            plan: Object.freeze(['plan-asc', 'plan-desc']),
+            billing: Object.freeze(['billing-asc', 'billing-desc']),
+            balance: Object.freeze(['balance-desc', 'balance-asc']),
+            status: Object.freeze(['status-active', 'status-inactive'])
+        }),
+        payment: Object.freeze({
+            date: Object.freeze(['date-desc', 'date-asc']),
+            receipt: Object.freeze(['receipt-desc', 'receipt-asc']),
+            customer: Object.freeze(['customer-asc', 'customer-desc']),
+            amount: Object.freeze(['amount-desc', 'amount-asc'])
+        })
+    });
+    const SORT_DESCRIPTIONS = Object.freeze({
+        'account-asc': 'account number ascending',
+        'account-desc': 'account number descending',
+        'name-asc': 'customer name A to Z',
+        'name-desc': 'customer name Z to A',
+        'address-poblacion': 'Poblacion first',
+        'address-masical': 'Masical first',
+        'plan-asc': 'lowest plan rate first',
+        'plan-desc': 'highest plan rate first',
+        'billing-asc': 'earliest billing day first',
+        'billing-desc': 'latest billing day first',
+        'balance-desc': 'highest balance first',
+        'balance-asc': 'lowest balance first',
+        'status-active': 'active customers first',
+        'status-inactive': 'inactive customers first',
+        'date-desc': 'newest date first',
+        'date-asc': 'oldest date first',
+        'receipt-desc': 'newest receipt first',
+        'receipt-asc': 'oldest receipt first',
+        'customer-asc': 'customer name A to Z',
+        'customer-desc': 'customer name Z to A',
+        'amount-desc': 'highest amount first',
+        'amount-asc': 'lowest amount first'
+    });
+    const tableSortState = { customer: 'name-asc', payment: 'date-desc' };
     const currency = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
     const dateFormatter = new Intl.DateTimeFormat('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
     const state = {
@@ -26,6 +75,94 @@
     };
     const today = () => new Date().toISOString().slice(0, 10);
     const titleCase = (value) => String(value || '').replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+    const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base'
+    });
+
+    function sortCustomerRows(customers, sortKey) {
+        const addressOrder = sortKey === 'address-masical'
+            ? { Masical: 0, Poblacion: 1 }
+            : { Poblacion: 0, Masical: 1 };
+        const statusOrder = sortKey === 'status-inactive'
+            ? { inactive: 0, active: 1 }
+            : { active: 0, inactive: 1 };
+        const comparators = {
+            'name-asc': (left, right) => compareText(left.fullName, right.fullName),
+            'name-desc': (left, right) => compareText(right.fullName, left.fullName),
+            'account-asc': (left, right) => compareText(left.accountNumber, right.accountNumber),
+            'account-desc': (left, right) => compareText(right.accountNumber, left.accountNumber),
+            'address-poblacion': (left, right) => (addressOrder[left.address] ?? 2) - (addressOrder[right.address] ?? 2),
+            'address-masical': (left, right) => (addressOrder[left.address] ?? 2) - (addressOrder[right.address] ?? 2),
+            'plan-asc': (left, right) => Number(left.monthlyRate || 0) - Number(right.monthlyRate || 0),
+            'plan-desc': (left, right) => Number(right.monthlyRate || 0) - Number(left.monthlyRate || 0),
+            'billing-asc': (left, right) => Number(left.billingDay || 1) - Number(right.billingDay || 1),
+            'billing-desc': (left, right) => Number(right.billingDay || 1) - Number(left.billingDay || 1),
+            'balance-desc': (left, right) => Number(right.balance || 0) - Number(left.balance || 0),
+            'balance-asc': (left, right) => Number(left.balance || 0) - Number(right.balance || 0),
+            'status-active': (left, right) => (statusOrder[left.status] ?? 2) - (statusOrder[right.status] ?? 2),
+            'status-inactive': (left, right) => (statusOrder[left.status] ?? 2) - (statusOrder[right.status] ?? 2)
+        };
+        const comparator = comparators[sortKey] || comparators['name-asc'];
+        return [...customers].sort((left, right) => comparator(left, right) || compareText(left.accountNumber, right.accountNumber));
+    }
+
+    function sortPaymentRows(payments, sortKey) {
+        const compareDatesNewest = (left, right) => compareText(right.date, left.date)
+            || compareText(right.createdAt, left.createdAt);
+        const comparators = {
+            'date-desc': compareDatesNewest,
+            'date-asc': (left, right) => compareText(left.date, right.date) || compareText(left.createdAt, right.createdAt),
+            'amount-desc': (left, right) => Number(right.amount || 0) - Number(left.amount || 0),
+            'amount-asc': (left, right) => Number(left.amount || 0) - Number(right.amount || 0),
+            'receipt-desc': (left, right) => compareText(right.receiptNumber, left.receiptNumber),
+            'receipt-asc': (left, right) => compareText(left.receiptNumber, right.receiptNumber),
+            'customer-asc': (left, right) => compareText(left.customerName, right.customerName),
+            'customer-desc': (left, right) => compareText(right.customerName, left.customerName)
+        };
+        const comparator = comparators[sortKey] || comparators['date-desc'];
+        return [...payments].sort((left, right) => comparator(left, right) || compareDatesNewest(left, right));
+    }
+
+    function sortDirection(sortKey) {
+        return sortKey.endsWith('-desc') || sortKey === 'address-masical' || sortKey === 'status-inactive'
+            ? 'descending'
+            : 'ascending';
+    }
+
+    function renderSortHeaders(group) {
+        const currentSort = tableSortState[group];
+        document.querySelectorAll(`[data-sort-group="${group}"]`).forEach((button) => {
+            const options = TABLE_SORT_OPTIONS[group]?.[button.dataset.sortColumn] || [];
+            const isActive = options.includes(currentSort);
+            const activeDirection = isActive ? sortDirection(currentSort) : null;
+            const nextSort = isActive && currentSort === options[0] ? options[1] : options[0];
+            const label = button.dataset.sortLabel || button.textContent.trim();
+            const icon = button.querySelector('i');
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-pressed', String(isActive));
+            button.closest('th')?.setAttribute('aria-sort', activeDirection || 'none');
+            if (icon) icon.className = `ti ti-${isActive ? `sort-${activeDirection}` : 'arrows-sort'}`;
+            const action = `Click to sort ${SORT_DESCRIPTIONS[nextSort] || label.toLowerCase()}.`;
+            button.title = isActive
+                ? `${label}: ${SORT_DESCRIPTIONS[currentSort]}. ${action}`
+                : action;
+            button.setAttribute('aria-label', button.title);
+        });
+    }
+
+    function handleTableSort(event) {
+        const button = event.currentTarget;
+        const group = button.dataset.sortGroup;
+        const options = TABLE_SORT_OPTIONS[group]?.[button.dataset.sortColumn];
+        if (!options) return;
+        tableSortState[group] = options.includes(tableSortState[group]) && tableSortState[group] === options[0]
+            ? options[1]
+            : options[0];
+        if (group === 'customer') renderCustomers();
+        if (group === 'payment') renderPayments();
+        renderSortHeaders(group);
+    }
 
     function showToast(message, type = 'success') {
         const toast = byId('tempToast');
@@ -81,7 +218,7 @@
     function renderCustomers() {
         const term = byId('customerSearch').value.trim().toLowerCase();
         const status = byId('customerStatusFilter').value;
-        const customers = state.customers.filter((customer) => {
+        const customers = sortCustomerRows(state.customers.filter((customer) => {
             if (status && customer.status !== status) return false;
             if (!term) return true;
             return [
@@ -92,19 +229,20 @@
                 customer.address,
                 customer.planName
             ].some((value) => String(value || '').toLowerCase().includes(term));
-        });
+        }), tableSortState.customer);
 
         byId('customerTableBody').innerHTML = customers.map((customer) => `
             <tr>
                 <td><span class="account-code">${escapeHtml(customer.accountNumber)}</span></td>
-                <td><span class="cell-primary">${escapeHtml(customer.fullName)}</span><span class="cell-secondary" title="${escapeHtml(customer.address)}">${escapeHtml(customer.address || 'No address')}</span></td>
+                <td><span class="cell-primary">${escapeHtml(customer.fullName)}</span></td>
+                <td><span class="cell-primary">${escapeHtml(customer.address || 'No address')}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.contactNumber || '—')}</span><span class="cell-secondary">${escapeHtml(customer.email || '')}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.planName || 'No plan')}</span><span class="cell-secondary">${formatMoney(customer.monthlyRate)} / month</span></td>
                 <td><span class="cell-primary">Day ${customer.billingDay}</span><span class="cell-secondary">${customer.paymentCount} transaction${customer.paymentCount === 1 ? '' : 's'}</span></td>
                 <td class="text-end"><strong class="${balanceClass(customer.balance)}">${formatMoney(customer.balance)}</strong><span class="cell-secondary">${customer.balance > 0 ? 'Amount due' : customer.balance < 0 ? 'Advance credit' : 'Clear'}</span></td>
                 <td><span class="status-pill status-pill--${escapeHtml(customer.status)}"><i class="ti ti-${customer.status === 'active' ? 'circle-check' : 'circle-minus'}"></i>${escapeHtml(customer.status)}</span></td>
                 <td><div class="row-actions">
-                    <button class="icon-button" type="button" data-customer-action="statement" data-account="${escapeHtml(customer.accountNumber)}" title="Statement" aria-label="Open statement"><i class="ti ti-file-description"></i></button>
+                    <button class="icon-button" type="button" data-customer-action="statement" data-account="${escapeHtml(customer.accountNumber)}" title="Ledger &amp; payment history" aria-label="Open ledger and payment history"><i class="ti ti-file-description"></i></button>
                     <button class="icon-button" type="button" data-customer-action="payment" data-account="${escapeHtml(customer.accountNumber)}" title="Add transaction" aria-label="Add transaction"><i class="ti ti-cash-plus"></i></button>
                     <button class="icon-button" type="button" data-customer-action="edit" data-account="${escapeHtml(customer.accountNumber)}" title="Edit" aria-label="Edit customer"><i class="ti ti-edit"></i></button>
                     <button class="icon-button icon-button--danger" type="button" data-customer-action="delete" data-account="${escapeHtml(customer.accountNumber)}" title="Delete" aria-label="Delete customer"><i class="ti ti-trash"></i></button>
@@ -121,7 +259,7 @@
     function renderPayments() {
         const term = byId('paymentSearch').value.trim().toLowerCase();
         const kind = byId('paymentKindFilter').value;
-        const payments = state.payments.filter((payment) => {
+        const payments = sortPaymentRows(state.payments.filter((payment) => {
             if (kind && payment.kind !== kind) return false;
             if (!term) return true;
             return [
@@ -132,13 +270,14 @@
                 payment.paymentMethod,
                 payment.description
             ].some((value) => String(value || '').toLowerCase().includes(term));
-        });
+        }), tableSortState.payment);
 
         byId('paymentTableBody').innerHTML = payments.map((payment) => {
             const credit = payment.kind !== 'charge';
             return `
                 <tr>
-                    <td><span class="cell-primary">${formatDate(payment.date)}</span><span class="cell-secondary account-code">${escapeHtml(payment.receiptNumber)}</span></td>
+                    <td><span class="cell-primary">${formatDate(payment.date)}</span></td>
+                    <td><span class="account-code">${escapeHtml(payment.receiptNumber)}</span></td>
                     <td><span class="cell-primary">${escapeHtml(payment.customerName)}</span><span class="cell-secondary account-code">${escapeHtml(payment.accountNumber)}</span></td>
                     <td><span class="kind-pill kind-pill--${escapeHtml(payment.kind)}">${escapeHtml(titleCase(payment.kind))}</span></td>
                     <td><span class="cell-primary">${escapeHtml(payment.paymentMethod || '—')}</span><span class="cell-secondary" title="${escapeHtml(payment.reference)}">${escapeHtml(payment.reference || payment.description || '')}</span></td>
@@ -168,6 +307,8 @@
         renderSummary();
         renderCustomers();
         renderPayments();
+        renderSortHeaders('customer');
+        renderSortHeaders('payment');
         renderPaymentCustomerOptions(byId('paymentCustomer').value);
     }
 
@@ -206,9 +347,15 @@
         byId('customerLastName').value = customer?.lastName || '';
         byId('customerContact').value = customer?.contactNumber || '';
         byId('customerEmail').value = customer?.email || '';
-        byId('customerAddress').value = customer?.address || '';
-        byId('customerPlan').value = customer?.planName || '';
-        byId('customerRate').value = customer?.monthlyRate ?? 0;
+        byId('customerAddress').value = TEMP_SERVICE_ADDRESSES.includes(customer?.address)
+            ? customer.address
+            : TEMP_SERVICE_ADDRESSES[0];
+        const storedRate = Number(customer?.monthlyRate);
+        const selectedPlan = Object.hasOwn(TEMP_PLAN_RATES, customer?.planName)
+            ? customer.planName
+            : Object.keys(TEMP_PLAN_RATES).find((planName) => TEMP_PLAN_RATES[planName] === storedRate) || 'Old plan';
+        byId('customerPlan').value = selectedPlan;
+        byId('customerRate').value = String(TEMP_PLAN_RATES[selectedPlan]);
         byId('customerBillingDay').value = customer?.billingDay || 1;
         byId('customerOpeningBalance').value = customer?.openingBalance ?? 0;
         byId('customerStatus').value = customer?.status || 'active';
@@ -240,19 +387,64 @@
     function openStatement(accountNumber) {
         const customer = state.customers.find((item) => item.accountNumber === accountNumber);
         if (!customer) return;
-        const payments = state.payments
+        const transactions = state.payments
             .filter((payment) => payment.accountNumber === accountNumber)
             .sort((left, right) => left.date.localeCompare(right.date) || left.createdAt.localeCompare(right.createdAt));
+        const paymentHistory = transactions
+            .filter((payment) => payment.kind === 'payment')
+            .slice()
+            .sort((left, right) => right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt));
+        const totalCharges = transactions
+            .filter((payment) => payment.kind === 'charge')
+            .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+        const totalPayments = paymentHistory.reduce((total, payment) => total + Number(payment.amount || 0), 0);
+        const latestPayment = paymentHistory[0] || null;
         let runningBalance = Number(customer.openingBalance) || 0;
-        const rows = payments.map((payment) => {
+        const ledgerRows = transactions.map((payment) => {
             runningBalance += Number(payment.balanceImpact) || 0;
-            return `<tr><td>${formatDate(payment.date)}</td><td>${escapeHtml(payment.receiptNumber)}</td><td>${escapeHtml(titleCase(payment.kind))}</td><td>${escapeHtml(payment.reference || payment.description || '—')}</td><td>${formatMoney(runningBalance)}</td></tr>`;
+            const details = [payment.paymentMethod, payment.reference || payment.description].filter(Boolean).join(' · ') || '—';
+            const debit = payment.kind === 'charge' ? formatMoney(payment.amount) : '—';
+            const credit = payment.kind === 'charge' ? '—' : formatMoney(payment.amount);
+            return `<tr><td>${formatDate(payment.date)}</td><td class="account-code">${escapeHtml(payment.receiptNumber)}</td><td><span class="kind-pill kind-pill--${escapeHtml(payment.kind)}">${escapeHtml(titleCase(payment.kind))}</span></td><td>${escapeHtml(details)}</td><td class="text-end transaction-debit">${debit}</td><td class="text-end transaction-credit">${credit}</td><td class="text-end"><strong class="${balanceClass(runningBalance)}">${formatMoney(runningBalance)}</strong></td></tr>`;
         }).join('');
-        byId('statementTitle').textContent = `${customer.fullName} — Statement`;
+        const paymentHistoryRows = paymentHistory.map((payment) => `
+            <tr>
+                <td>${formatDate(payment.date)}</td>
+                <td class="account-code">${escapeHtml(payment.receiptNumber)}</td>
+                <td>${escapeHtml(payment.paymentMethod || '—')}</td>
+                <td>${escapeHtml(payment.reference || payment.description || '—')}</td>
+                <td>${escapeHtml(payment.recordedBy || 'Admin')}</td>
+                <td class="text-end"><strong class="transaction-credit">${formatMoney(payment.amount)}</strong></td>
+            </tr>`).join('');
+        byId('statementTitle').textContent = `${customer.fullName} — Ledger & payment history`;
         byId('statementContent').innerHTML = `
             <article class="statement-card">
-                <div class="statement-heading"><div><h3>${escapeHtml(customer.fullName)}</h3><p>${escapeHtml(customer.accountNumber)} · ${escapeHtml(customer.address || 'No address')}</p><p>${escapeHtml(customer.planName || 'No plan')} · Billing day ${customer.billingDay}</p></div><div class="statement-balance"><span class="cell-secondary">Current balance</span><strong class="${balanceClass(customer.balance)}">${formatMoney(customer.balance)}</strong></div></div>
-                <table class="statement-table"><thead><tr><th>Date</th><th>Receipt</th><th>Type</th><th>Details</th><th>Running balance</th></tr></thead><tbody><tr><td>—</td><td>—</td><td>Opening balance</td><td>Starting account balance</td><td>${formatMoney(customer.openingBalance)}</td></tr>${rows || '<tr><td colspan="5">No transactions recorded.</td></tr>'}</tbody></table>
+                <div class="statement-heading">
+                    <div>
+                        <div class="statement-customer-line"><h3>${escapeHtml(customer.fullName)}</h3><span class="status-pill status-pill--${escapeHtml(customer.status)}">${escapeHtml(customer.status)}</span></div>
+                        <p><span class="account-code">${escapeHtml(customer.accountNumber)}</span> · ${escapeHtml(customer.address || 'No address')}</p>
+                        <p>${escapeHtml(customer.planName || 'No plan')} · ${formatMoney(customer.monthlyRate)} monthly · Billing day ${customer.billingDay}</p>
+                    </div>
+                    <div class="statement-balance"><span>Current balance</span><strong class="${balanceClass(customer.balance)}">${formatMoney(customer.balance)}</strong><small>${customer.balance > 0 ? 'Amount due' : customer.balance < 0 ? 'Advance credit' : 'Account is clear'}</small></div>
+                </div>
+                <div class="statement-summary" aria-label="Customer ledger summary">
+                    <div><span>Opening balance</span><strong>${formatMoney(customer.openingBalance)}</strong></div>
+                    <div><span>Total charges</span><strong class="transaction-debit">${formatMoney(totalCharges)}</strong></div>
+                    <div><span>Payments received</span><strong class="transaction-credit">${formatMoney(totalPayments)}</strong></div>
+                    <div><span>Last payment</span><strong>${latestPayment ? formatDate(latestPayment.date) : 'None yet'}</strong></div>
+                </div>
+                <section class="statement-section" aria-labelledby="ledgerHeading">
+                    <div class="statement-section__heading"><div><span class="statement-section__icon"><i class="ti ti-list-details"></i></span><div><h4 id="ledgerHeading">Account ledger</h4><p>All charges, payments, rebates, and discounts in balance order.</p></div></div><span class="statement-count">${transactions.length} transaction${transactions.length === 1 ? '' : 's'}</span></div>
+                    <div class="statement-table-wrap">
+                        <table class="statement-table statement-table--ledger" id="customerLedgerTable"><thead><tr><th>Date</th><th>Receipt</th><th>Type</th><th>Details</th><th class="text-end">Debit</th><th class="text-end">Credit</th><th class="text-end">Balance</th></tr></thead><tbody><tr class="statement-opening-row"><td>—</td><td>—</td><td>Opening</td><td>Starting account balance</td><td class="text-end">—</td><td class="text-end">—</td><td class="text-end"><strong>${formatMoney(customer.openingBalance)}</strong></td></tr>${ledgerRows || '<tr><td class="statement-empty-row" colspan="7">No ledger transactions recorded.</td></tr>'}</tbody></table>
+                    </div>
+                </section>
+                <section class="statement-section" aria-labelledby="paymentHistoryHeading">
+                    <div class="statement-section__heading"><div><span class="statement-section__icon statement-section__icon--success"><i class="ti ti-history"></i></span><div><h4 id="paymentHistoryHeading">Payment history</h4><p>Payments received from this customer only.</p></div></div><div class="statement-section__total"><span>${paymentHistory.length} payment${paymentHistory.length === 1 ? '' : 's'}</span><strong>${formatMoney(totalPayments)}</strong></div></div>
+                    <div class="statement-table-wrap">
+                        <table class="statement-table statement-table--payments" id="customerPaymentHistory"><thead><tr><th>Date</th><th>Receipt</th><th>Method</th><th>Reference</th><th>Recorded by</th><th class="text-end">Amount</th></tr></thead><tbody>${paymentHistoryRows || '<tr><td class="statement-empty-row" colspan="6">No payments recorded for this customer.</td></tr>'}</tbody></table>
+                    </div>
+                </section>
             </article>`;
         byId('statementDialog').showModal();
     }
@@ -281,6 +473,16 @@
         } finally {
             button.disabled = false;
         }
+    }
+
+    function synchronizeCustomerPlanAndRate(source) {
+        if (source === 'plan') {
+            byId('customerRate').value = String(TEMP_PLAN_RATES[byId('customerPlan').value] || 700);
+            return;
+        }
+        const selectedRate = Number(byId('customerRate').value);
+        byId('customerPlan').value = Object.keys(TEMP_PLAN_RATES)
+            .find((planName) => TEMP_PLAN_RATES[planName] === selectedRate) || 'Old plan';
     }
 
     async function savePayment(event) {
@@ -395,11 +597,14 @@
     byId('customerStatusFilter').addEventListener('change', renderCustomers);
     byId('paymentSearch').addEventListener('input', renderPayments);
     byId('paymentKindFilter').addEventListener('change', renderPayments);
+    document.querySelectorAll('[data-sort-group]').forEach((button) => button.addEventListener('click', handleTableSort));
     byId('customerTableBody').addEventListener('click', handleCustomerAction);
     byId('paymentTableBody').addEventListener('click', handlePaymentAction);
     byId('addCustomerBtn').addEventListener('click', () => openCustomerDialog());
     byId('addPaymentBtn').addEventListener('click', () => openPaymentDialog());
     byId('customerForm').addEventListener('submit', saveCustomer);
+    byId('customerPlan').addEventListener('change', () => synchronizeCustomerPlanAndRate('plan'));
+    byId('customerRate').addEventListener('change', () => synchronizeCustomerPlanAndRate('rate'));
     byId('paymentForm').addEventListener('submit', savePayment);
     byId('refreshWorkspaceBtn').addEventListener('click', () => loadWorkspace({ notify: true }));
     byId('exportWorkspaceBtn').addEventListener('click', exportWorkspace);
@@ -408,6 +613,8 @@
     byId('printStatementBtn').addEventListener('click', () => window.print());
     window.addEventListener('hashchange', () => activatePanel(location.hash.toLowerCase() === '#billing' ? 'billing' : 'customers', { updateHash: false }));
 
+    renderSortHeaders('customer');
+    renderSortHeaders('payment');
     activatePanel(location.hash.toLowerCase() === '#billing' ? 'billing' : 'customers', { updateHash: false });
     loadWorkspace();
 })();

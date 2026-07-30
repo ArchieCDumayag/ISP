@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -108,8 +109,84 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=1.0'));
-  assert(tempHtml.includes('/temp.css?v=1.0'));
+  assert(tempHtml.includes('/temp.js?v=1.5'));
+  assert(tempHtml.includes('/temp.css?v=1.3'));
+  [
+    ['Old plan', '700'],
+    ['Basic', '800'],
+    ['Standard', '1000'],
+    ['Premium', '1200']
+  ].forEach(([planName, rate]) => {
+    assert(tempHtml.includes(`<option value="${planName}">${planName} (${rate})</option>`));
+    assert(tempHtml.includes(`<option value="${rate}">${rate}</option>`));
+  });
+  ['Poblacion', 'Masical'].forEach((address) => {
+    assert(tempHtml.includes(`<option value="${address}">${address}</option>`));
+  });
+  assert(tempJs.includes("const TEMP_SERVICE_ADDRESSES = Object.freeze(['Poblacion', 'Masical']);"));
+  assert(tempJs.includes("TEMP_SERVICE_ADDRESSES.includes(customer?.address)"));
+  assert(tempJs.includes('const TEMP_PLAN_RATES = Object.freeze({'));
+  assert(tempJs.includes("synchronizeCustomerPlanAndRate('plan')"));
+  assert(tempJs.includes("synchronizeCustomerPlanAndRate('rate')"));
+  assert(tempHtml.includes('Ledger &amp; payment history'));
+  assert(tempJs.includes('id="customerLedgerTable"'));
+  assert(tempJs.includes('id="paymentHistoryHeading">Payment history</h4>'));
+  assert(tempJs.includes('id="customerPaymentHistory"'));
+  assert(tempJs.includes("payment.kind === 'payment'"));
+  assert(tempJs.includes('Payments received from this customer only.'));
+  assert.strictEqual((tempHtml.match(/data-sort-group="customer"/g) || []).length, 7);
+  assert.strictEqual((tempHtml.match(/data-sort-group="payment"/g) || []).length, 4);
+  ['account', 'name', 'address', 'plan', 'billing', 'balance', 'status'].forEach((column) => {
+    assert(tempHtml.includes(`data-sort-group="customer" data-sort-column="${column}"`));
+  });
+  ['date', 'receipt', 'customer', 'amount'].forEach((column) => {
+    assert(tempHtml.includes(`data-sort-group="payment" data-sort-column="${column}"`));
+  });
+  assert(!tempHtml.includes('id="customerSort"'));
+  assert(!tempHtml.includes('id="paymentSort"'));
+  assert(tempHtml.includes('aria-sort="ascending"'));
+  assert(tempHtml.includes('aria-sort="descending"'));
+  assert(tempJs.includes('function sortCustomerRows(customers, sortKey)'));
+  assert(tempJs.includes('function sortPaymentRows(payments, sortKey)'));
+  assert(tempJs.includes("const tableSortState = { customer: 'name-asc', payment: 'date-desc' };"));
+  assert(tempJs.includes('function renderSortHeaders(group)'));
+  assert(tempJs.includes('function handleTableSort(event)'));
+  assert(tempJs.includes("document.querySelectorAll('[data-sort-group]').forEach"));
+
+  const sortHelperStart = tempJs.indexOf('const compareText =');
+  const sortHelperEnd = tempJs.indexOf('function showToast');
+  assert(sortHelperStart >= 0 && sortHelperEnd > sortHelperStart, 'Temp sort helper block is missing');
+  const sortSandbox = {};
+  vm.runInNewContext(`${tempJs.slice(sortHelperStart, sortHelperEnd)}
+    globalThis.sortCustomerRows = sortCustomerRows;
+    globalThis.sortPaymentRows = sortPaymentRows;`, sortSandbox);
+  const customerSamples = [
+    { accountNumber: 'TMP2', fullName: 'Alpha Client', address: 'Masical', monthlyRate: 800, billingDay: 20, balance: 100, status: 'inactive' },
+    { accountNumber: 'TMP10', fullName: 'Bravo Client', address: 'Poblacion', monthlyRate: 1200, billingDay: 5, balance: -50, status: 'active' },
+    { accountNumber: 'TMP1', fullName: 'Charlie Client', address: 'Poblacion', monthlyRate: 700, billingDay: 10, balance: 500, status: 'active' }
+  ];
+  assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'account-asc'), (item) => item.accountNumber), ['TMP1', 'TMP2', 'TMP10']);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'plan-asc'), (item) => item.monthlyRate), [700, 800, 1200]);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'balance-desc'), (item) => item.balance), [500, 100, -50]);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortCustomerRows(customerSamples, 'address-poblacion'), (item) => item.address), ['Poblacion', 'Poblacion', 'Masical']);
+  assert.strictEqual(sortSandbox.sortCustomerRows(customerSamples, 'status-inactive')[0].status, 'inactive');
+
+  const paymentSamples = [
+    { id: 'p1', receiptNumber: 'TMP-2', customerName: 'Zulu Client', date: '2026-01-01', createdAt: '2026-01-01T08:00:00.000Z', amount: 100 },
+    { id: 'p2', receiptNumber: 'TMP-10', customerName: 'Alpha Client', date: '2026-02-01', createdAt: '2026-02-01T08:00:00.000Z', amount: 50 },
+    { id: 'p3', receiptNumber: 'TMP-1', customerName: 'Mike Client', date: '2026-02-01', createdAt: '2026-02-01T09:00:00.000Z', amount: 500 }
+  ];
+  assert.deepStrictEqual(Array.from(sortSandbox.sortPaymentRows(paymentSamples, 'date-desc'), (item) => item.id), ['p3', 'p2', 'p1']);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortPaymentRows(paymentSamples, 'amount-asc'), (item) => item.amount), [50, 100, 500]);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortPaymentRows(paymentSamples, 'receipt-desc'), (item) => item.receiptNumber), ['TMP-10', 'TMP-2', 'TMP-1']);
+  assert.deepStrictEqual(Array.from(sortSandbox.sortPaymentRows(paymentSamples, 'customer-asc'), (item) => item.customerName), ['Alpha Client', 'Mike Client', 'Zulu Client']);
+  console.log('PASS Temp customer and transaction sorting behavior');
+
+  assert(tempCss.includes('.statement-summary'));
+  assert(tempCss.includes('.statement-section'));
+  assert(tempCss.includes('.statement-table--payments'));
+  assert(tempCss.includes('.temp-dialog--statement[open]'));
+  assert(tempCss.includes('.table-sort-button.active'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
   assert(!tempHtml.includes('<iframe'), 'Temp must not embed canonical business pages');

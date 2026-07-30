@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="/css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="/temp.css?v=1.0">
+    <link rel="stylesheet" href="/temp.css?v=1.3">
     <script src="/theme-init.js?v=2.6"></script>
 </head>
 <body class="temp-workspace">
@@ -87,8 +87,18 @@
                     </div>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-vcenter temp-table">
-                        <thead><tr><th>Account</th><th>Customer</th><th>Contact</th><th>Plan</th><th>Billing</th><th class="text-end">Balance</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+                    <table class="table table-vcenter temp-table temp-table--customers">
+                        <thead><tr>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="account" data-sort-label="Account number">Account <i class="ti ti-arrows-sort"></i></button></th>
+                            <th aria-sort="ascending"><button class="table-sort-button active" type="button" data-sort-group="customer" data-sort-column="name" data-sort-label="Customer name">Customer <i class="ti ti-sort-ascending"></i></button></th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="address" data-sort-label="Service address">Service address <i class="ti ti-arrows-sort"></i></button></th>
+                            <th>Contact</th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="plan" data-sort-label="Plan rate">Plan <i class="ti ti-arrows-sort"></i></button></th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="billing" data-sort-label="Billing day">Billing <i class="ti ti-arrows-sort"></i></button></th>
+                            <th class="text-end" aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="balance" data-sort-label="Balance">Balance <i class="ti ti-arrows-sort"></i></button></th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="customer" data-sort-column="status" data-sort-label="Status">Status <i class="ti ti-arrows-sort"></i></button></th>
+                            <th class="text-end">Actions</th>
+                        </tr></thead>
                         <tbody id="customerTableBody"></tbody>
                     </table>
                 </div>
@@ -116,8 +126,17 @@
                     </div>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-vcenter temp-table">
-                        <thead><tr><th>Date / Receipt</th><th>Customer</th><th>Type</th><th>Method / Reference</th><th>Recorded by</th><th class="text-end">Amount</th><th class="text-end">Actions</th></tr></thead>
+                    <table class="table table-vcenter temp-table temp-table--payments">
+                        <thead><tr>
+                            <th aria-sort="descending"><button class="table-sort-button active" type="button" data-sort-group="payment" data-sort-column="date" data-sort-label="Transaction date">Date <i class="ti ti-sort-descending"></i></button></th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="payment" data-sort-column="receipt" data-sort-label="Receipt number">Receipt <i class="ti ti-arrows-sort"></i></button></th>
+                            <th aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="payment" data-sort-column="customer" data-sort-label="Customer name">Customer <i class="ti ti-arrows-sort"></i></button></th>
+                            <th>Type</th>
+                            <th>Method / Reference</th>
+                            <th>Recorded by</th>
+                            <th class="text-end" aria-sort="none"><button class="table-sort-button" type="button" data-sort-group="payment" data-sort-column="amount" data-sort-label="Amount">Amount <i class="ti ti-arrows-sort"></i></button></th>
+                            <th class="text-end">Actions</th>
+                        </tr></thead>
                         <tbody id="paymentTableBody"></tbody>
                     </table>
                 </div>
@@ -143,9 +162,9 @@
                 <label class="form-field"><span>Last name</span><input class="form-control" id="customerLastName" name="lastName" maxlength="80" required></label>
                 <label class="form-field"><span>Contact number</span><input class="form-control" id="customerContact" name="contactNumber" maxlength="40"></label>
                 <label class="form-field"><span>Email</span><input class="form-control" id="customerEmail" name="email" type="email" maxlength="160"></label>
-                <label class="form-field form-field--wide"><span>Service address</span><input class="form-control" id="customerAddress" name="address" maxlength="300"></label>
-                <label class="form-field"><span>Plan name</span><input class="form-control" id="customerPlan" name="planName" maxlength="120" placeholder="e.g. Home 50 Mbps"></label>
-                <label class="form-field"><span>Monthly rate</span><div class="money-input"><span>₱</span><input class="form-control" id="customerRate" name="monthlyRate" type="number" min="0" step="0.01" value="0"></div></label>
+                <label class="form-field form-field--wide"><span>Service address</span><select class="form-select" id="customerAddress" name="address" required><option value="Poblacion">Poblacion</option><option value="Masical">Masical</option></select></label>
+                <label class="form-field"><span>Plan name</span><select class="form-select" id="customerPlan" name="planName" required><option value="Old plan">Old plan (700)</option><option value="Basic">Basic (800)</option><option value="Standard">Standard (1000)</option><option value="Premium">Premium (1200)</option></select></label>
+                <label class="form-field"><span>Monthly rate</span><select class="form-select" id="customerRate" name="monthlyRate" required><option value="700">700</option><option value="800">800</option><option value="1000">1000</option><option value="1200">1200</option></select></label>
                 <label class="form-field"><span>Billing day</span><input class="form-control" id="customerBillingDay" name="billingDay" type="number" min="1" max="31" value="1"></label>
                 <label class="form-field"><span>Opening balance</span><div class="money-input"><span>₱</span><input class="form-control" id="customerOpeningBalance" name="openingBalance" type="number" step="0.01" value="0"></div></label>
                 <label class="form-field form-field--wide"><span>Notes</span><textarea class="form-control" id="customerNotes" name="notes" rows="3" maxlength="1000"></textarea></label>
@@ -175,11 +194,11 @@
     </dialog>
 
     <dialog class="temp-dialog temp-dialog--statement" id="statementDialog">
-        <header class="dialog-header statement-actions"><div><span class="dialog-eyebrow">Temp customer ledger</span><h2 id="statementTitle">Account statement</h2></div><div><button class="btn btn-outline-secondary" id="printStatementBtn" type="button"><i class="ti ti-printer"></i> Print</button><button class="icon-button" type="button" data-close-dialog="statementDialog" aria-label="Close"><i class="ti ti-x"></i></button></div></header>
+        <header class="dialog-header statement-actions"><div><span class="dialog-eyebrow">Temp customer ledger</span><h2 id="statementTitle">Ledger &amp; payment history</h2></div><div><button class="btn btn-outline-secondary" id="printStatementBtn" type="button"><i class="ti ti-printer"></i> Print</button><button class="icon-button" type="button" data-close-dialog="statementDialog" aria-label="Close"><i class="ti ti-x"></i></button></div></header>
         <div class="dialog-body" id="statementContent"></div>
     </dialog>
 
     <div class="temp-toast" id="tempToast" role="status" aria-live="polite" hidden><i class="ti ti-circle-check"></i><span></span></div>
-    <script src="/temp.js?v=1.0"></script>
+    <script src="/temp.js?v=1.5"></script>
 </body>
 </html>

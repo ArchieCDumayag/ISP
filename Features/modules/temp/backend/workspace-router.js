@@ -81,6 +81,15 @@ router.delete('/payments/:paymentId', async (req, res) => {
   }
 });
 
+router.delete('/workspace', async (_req, res) => {
+  try {
+    const snapshot = await workspaceStore.clearAllData();
+    return res.json({ ...snapshot, message: 'All Temp customers and transactions were cleared.' });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
 router.get('/export', async (req, res) => {
   try {
     const payload = await workspaceStore.createExport();

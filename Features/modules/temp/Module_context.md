@@ -39,6 +39,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - `GET /api/temp/workspace` returns Temp customers, billing schedule mode/next date, ledger transactions, calculated balances, and summary totals.
 - `POST/PUT/DELETE /api/temp/customers` manages only Temp customers. Customers with ledger transactions cannot be deleted until those Temp transactions are removed.
 - `POST/PUT/DELETE /api/temp/payments` manages only Temp ledger entries. Charges increase balances; payments, rebates, and discounts reduce balances.
+- `DELETE /api/temp/workspace` clears all Temp customers and transactions and resets Temp account/receipt sequences. The page requires explicit destructive confirmation and recommends exporting a backup first.
 - `GET /api/temp/export?format=json|xlsx` downloads the same complete `isp-temp-workspace-export` backup as JSON or Excel. Excel contains Metadata, Customers, and Transactions sheets.
 - `POST /api/temp/import` retains the JSON API contract. `POST /api/temp/import-file` accepts exported JSON, XLSX, or XLS bytes, validates the complete file, and replaces only the isolated Temp workspace.
 - Temp account numbers default to `TMP` plus six digits; receipt numbers default to `TMP-` plus seven digits.
@@ -68,6 +69,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 
 ## Latest meaningful changes
 
+- 2026-07-30: Added a confirmed Clear data action that resets only the isolated Temp workspace and leaves canonical Customer Management and Billing storage untouched.
 - 2026-07-30: Added an export-format confirmation dialog, complete JSON or Excel downloads, and strict JSON/XLSX/XLS restore with exact customer, billing-cycle, sequence, and transaction round-trip coverage.
 - 2026-07-30: Added exact Date and monthly Number billing schedules; Date mode defers the first automatic full charge to the chosen next-bill date, and Prepaid now generates the full monthly rate automatically with safe next-future migration for existing records.
 - 2026-07-30: Added a dedicated color-coded and sortable Plan type column to the Temp client list.

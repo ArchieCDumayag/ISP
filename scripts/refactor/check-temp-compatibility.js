@@ -355,6 +355,14 @@ async function main() {
   );
   console.log('PASS complete Temp JSON and Excel export/import round-trip contract');
 
+  const clearedSnapshot = await isolatedStore.clearAllData();
+  assert.strictEqual(clearedSnapshot.summary.customerCount, 0);
+  assert.strictEqual(clearedSnapshot.summary.paymentCount, 0);
+  assert.deepStrictEqual(memory.get(storeModule.STORE_KEY).sequences, { customer: 0, payment: 0 });
+  assert.deepStrictEqual(memory.get('customers'), mainCustomerSentinel);
+  assert.deepStrictEqual(memory.get('payments'), mainPaymentSentinel);
+  console.log('PASS confirmed clear-all storage contract remains Temp-only');
+
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, 'Features/modules/temp/module.json'), 'utf8'));
   assert.deepStrictEqual(manifest.apiPrefixes, ['/api/temp']);
 
@@ -372,8 +380,9 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=1.9'));
-  assert(tempHtml.includes('/temp.css?v=1.7'));
+  assert(tempHtml.includes('/temp.js?v=2.0'));
+  assert(tempHtml.includes('/temp.css?v=1.8'));
+  assert(tempHtml.includes('id="clearWorkspaceBtn"'));
   assert(tempHtml.includes('id="exportFormatDialog"'));
   assert(tempHtml.includes('id="exportJsonBtn"'));
   assert(tempHtml.includes('id="exportExcelBtn"'));
@@ -411,6 +420,10 @@ async function main() {
   assert(tempJs.includes("fetch(`${API_ROOT}/import-file`"));
   assert(tempJs.includes("'Content-Type': 'application/octet-stream'"));
   assert(tempJs.includes('replace every Temp customer and transaction'));
+  assert(tempJs.includes('async function clearWorkspaceData()'));
+  assert(tempJs.includes('Permanently delete all'));
+  assert(tempJs.includes('This cannot be undone. Export a backup first'));
+  assert(tempJs.includes("api('/workspace', { method: 'DELETE' })"));
   assert(tempJs.includes('function updateCustomerBillingScheduleFields()'));
   assert(tempJs.includes('The first automatic full monthly charge is on'));
   assert(!tempJs.includes('Manual renewal'));
@@ -489,6 +502,7 @@ async function main() {
   assert(tempCss.includes('.temp-dialog--export'));
   assert(tempCss.includes('.export-format-grid'));
   assert(tempCss.includes('.export-format-option'));
+  assert(tempCss.includes('grid-template-columns: repeat(4, 1fr)'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
   assert(!tempHtml.includes('<iframe'), 'Temp must not embed canonical business pages');
@@ -504,6 +518,8 @@ async function main() {
   );
   assert(routerSource.includes("req.query.format || 'json'"));
   assert(routerSource.includes("router.post('/import-file'"));
+  assert(routerSource.includes("router.delete('/workspace'"));
+  assert(routerSource.includes('workspaceStore.clearAllData()'));
   assert(routerSource.includes("express.raw({ type: 'application/octet-stream', limit: '20mb' })"));
   assert(routerSource.includes('parseWorkspaceExcelBuffer(req.body)'));
   console.log('PASS standalone one-page Customer and Billing workspace');

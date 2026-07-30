@@ -453,7 +453,7 @@ textarea { font: inherit; }
     .temp-brand__icon { width: 40px; height: 40px; }
     .temp-title-row { gap: 5px; }
     .temp-brand h1 { font-size: 1rem; }
-    .temp-header__actions { display: grid; grid-template-columns: repeat(3, 1fr); }
+    .temp-header__actions { display: grid; grid-template-columns: repeat(4, 1fr); }
     .temp-header__actions .btn { padding-inline: 8px; }
     .temp-header__actions .btn span { display: none; }
     .temp-main { padding: 12px 8px 28px; }

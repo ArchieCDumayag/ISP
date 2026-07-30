@@ -710,6 +710,33 @@
         }
     }
 
+    async function clearWorkspaceData() {
+        const customerCount = state.customers.length;
+        const transactionCount = state.payments.length;
+        if (!customerCount && !transactionCount) {
+            showToast('The Temp workspace is already empty.');
+            return;
+        }
+        const confirmed = window.confirm(
+            `Permanently delete all ${customerCount} Temp customers and ${transactionCount} transactions? `
+            + 'This cannot be undone. Export a backup first if you may need these records.'
+        );
+        if (!confirmed) return;
+
+        const button = byId('clearWorkspaceBtn');
+        button.disabled = true;
+        try {
+            const result = await api('/workspace', { method: 'DELETE' });
+            updateState(result);
+            renderAll();
+            showToast(result.message || 'All Temp data was cleared.');
+        } catch (error) {
+            showToast(error.message || 'Unable to clear the Temp workspace.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
     document.querySelectorAll('[data-panel]').forEach((tab) => {
         tab.addEventListener('click', () => activatePanel(tab.dataset.panel));
         tab.addEventListener('keydown', (event) => {
@@ -744,6 +771,7 @@
     byId('customerNextBillingDate').addEventListener('change', updateCustomerCycleHint);
     byId('customerBillingDay').addEventListener('input', updateCustomerCycleHint);
     byId('paymentForm').addEventListener('submit', savePayment);
+    byId('clearWorkspaceBtn').addEventListener('click', clearWorkspaceData);
     byId('refreshWorkspaceBtn').addEventListener('click', () => loadWorkspace({ notify: true }));
     byId('exportWorkspaceBtn').addEventListener('click', () => byId('exportFormatDialog').showModal());
     byId('exportJsonBtn').addEventListener('click', () => exportWorkspace('json'));

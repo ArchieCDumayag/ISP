@@ -491,6 +491,15 @@ function createWorkspaceStore(options = {}) {
       return { ok: true, id: result.value };
     },
 
+    async clearAllData() {
+      const result = await mutateWorkspace(async (workspace) => {
+        const locationName = workspace.locationName || createEmptyWorkspace().locationName;
+        Object.assign(workspace, createEmptyWorkspace(), { locationName });
+        return true;
+      });
+      return buildWorkspaceSnapshot(result.workspace);
+    },
+
     async createExport() {
       const workspace = await synchronizeBillingCycles();
       return {

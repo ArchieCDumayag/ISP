@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customers.css?v=3.0">
+    <link rel="stylesheet" href="css/customers.css?v=3.1">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
@@ -37,6 +37,11 @@
             </div>
             <div class="header-actions">
                 <button class="ghost-btn import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import clients</button>
+                <button class="ghost-btn import-warning-review-btn" id="importWarningReviewBtn" type="button" hidden>
+                    <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+                    Review import warnings
+                    <span class="import-warning-review-count" id="importWarningReviewCount">0</span>
+                </button>
                 <button class="ghost-btn export-clients-btn" id="exportClientsBtn" type="button"><i class="ti ti-file-export" aria-hidden="true"></i> Export clients</button>
                 <input type="file" class="import-clients-input" id="importClientsFile" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Import clients Excel file">
                 <button class="add-btn" id="openModalBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add customer</button> 
@@ -856,6 +861,48 @@
         </div>
     </div>
 
+    <div id="importWarningModal" class="modal customer-modal import-warning-modal" role="dialog" aria-modal="true" aria-labelledby="importWarningModalTitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <p class="modal-eyebrow">CLIENTS LIST import</p>
+                    <h2 id="importWarningModalTitle">Review import warnings</h2>
+                    <p class="modal-subtitle">Correct the skipped rows below, then retry only those records.</p>
+                </div>
+                <button class="close-modal" id="closeImportWarningModalBtn" type="button" aria-label="Close import warning review">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="import-warning-summary" id="importWarningSummary" role="status"></div>
+                <div class="import-warning-error" id="importWarningError" role="alert" hidden></div>
+                <div class="import-warning-table-wrap">
+                    <table class="import-warning-table">
+                        <thead>
+                            <tr>
+                                <th>Row</th>
+                                <th>Customer / warning</th>
+                                <th>Account #</th>
+                                <th>Plan type</th>
+                                <th>Existing plan</th>
+                                <th>Plan name/value</th>
+                                <th>Monthly rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="importWarningRows"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="ghost-btn" id="cancelImportWarningBtn" type="button">Close</button>
+                <button class="primary-btn" id="retryImportWarningBtn" type="button">
+                    <i class="ti ti-refresh" aria-hidden="true"></i>
+                    Apply fixes
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="layout.js?v=3.9"></script>
@@ -868,6 +915,15 @@
             const creditOverrideModal = document.getElementById('creditOverrideModal');
             const openBtn = document.getElementById('openModalBtn');
             const importClientsBtn = document.getElementById('importClientsBtn');
+            const importWarningReviewBtn = document.getElementById('importWarningReviewBtn');
+            const importWarningReviewCount = document.getElementById('importWarningReviewCount');
+            const importWarningModal = document.getElementById('importWarningModal');
+            const importWarningSummary = document.getElementById('importWarningSummary');
+            const importWarningError = document.getElementById('importWarningError');
+            const importWarningRows = document.getElementById('importWarningRows');
+            const closeImportWarningModalBtn = document.getElementById('closeImportWarningModalBtn');
+            const cancelImportWarningBtn = document.getElementById('cancelImportWarningBtn');
+            const retryImportWarningBtn = document.getElementById('retryImportWarningBtn');
             const exportClientsBtn = document.getElementById('exportClientsBtn');
             const importClientsFileInput = document.getElementById('importClientsFile');
             const closeBtn = document.getElementById('closeModalBtn');
@@ -1670,6 +1726,9 @@
 
             // Plans catalog/state to enrich the Plan column with correct price/suffix
             let plansCatalog = { prepaid: [], postpaid: [] };
+            let importWarningRecords = [];
+            let importWarningRetryBusy = false;
+            let importWarningLastTrigger = null;
             const planById = new Map();
             const planByName = new Map();
             const normalizePlanId = (value) => String(value || '').trim().toLowerCase();
@@ -4426,6 +4485,9 @@
             }
 
             function closeSecondaryCustomerModals() {
+                if (importWarningModal?.classList.contains('show')) {
+                    closeImportWarningModal({ restoreFocus: false });
+                }
                 if (viewModal?.classList.contains('show')) {
                     closeViewModal();
                 }
@@ -4893,6 +4955,256 @@
                 }, 3000);
             }
 
+            function getImportWarningCatalogPlans() {
+                return ['prepaid', 'postpaid'].flatMap((category) => (
+                    (Array.isArray(plansCatalog?.[category]) ? plansCatalog[category] : []).map((plan, index) => ({
+                        key: `${category}:${String(plan?.id || plan?.name || index)}`,
+                        id: String(plan?.id || '').trim(),
+                        name: String(plan?.name || plan?.label || '').trim(),
+                        category,
+                        price: Number(plan?.price)
+                    }))
+                )).filter((plan) => plan.name);
+            }
+
+            function setImportWarningError(message = '') {
+                if (!importWarningError) return;
+                const text = String(message || '').trim();
+                importWarningError.textContent = text;
+                importWarningError.hidden = !text;
+            }
+
+            function syncImportWarningReviewButton() {
+                const count = importWarningRecords.length;
+                if (importWarningReviewBtn) importWarningReviewBtn.hidden = count === 0;
+                if (importWarningReviewCount) importWarningReviewCount.textContent = String(count);
+            }
+
+            function renderImportWarningRows(records = []) {
+                importWarningRecords = (Array.isArray(records) ? records : [])
+                    .filter((entry) => entry && typeof entry === 'object' && entry.record);
+                syncImportWarningReviewButton();
+                setImportWarningError('');
+                if (importWarningSummary) {
+                    const count = importWarningRecords.length;
+                    importWarningSummary.textContent = count
+                        ? `${count} skipped row${count === 1 ? '' : 's'} can be corrected without importing the successful rows again.`
+                        : 'All import warnings have been resolved.';
+                }
+                if (!importWarningRows) return;
+                if (!importWarningRecords.length) {
+                    importWarningRows.innerHTML = '<tr><td colspan="7" class="import-warning-empty">No skipped rows remain.</td></tr>';
+                    return;
+                }
+
+                const catalogPlans = getImportWarningCatalogPlans();
+                importWarningRows.innerHTML = importWarningRecords.map((detail, index) => {
+                    const record = detail.record || {};
+                    const rowNumber = Number(detail.rowNumber || record.rowNumber || index + 1);
+                    const customerName = String(
+                        detail.customerName
+                        || [record.firstName, record.middleName, record.lastName].filter(Boolean).join(' ')
+                        || 'Unnamed customer'
+                    ).trim();
+                    const issueText = (Array.isArray(detail.issues) ? detail.issues : [])
+                        .map((issue) => String(issue?.message || '').trim())
+                        .filter(Boolean)
+                        .join(' ');
+                    const category = normalizePlanCategory(record.planCategory || 'postpaid') || 'postpaid';
+                    const planValue = String(record.planValue || '').trim();
+                    const planAmount = Number(record.planAmount);
+                    const selectedPlan = catalogPlans.find((plan) => {
+                        if (plan.category !== category) return false;
+                        const normalizedValue = planValue.toLowerCase();
+                        if (normalizedValue && [plan.id, plan.name].some((value) => String(value || '').toLowerCase() === normalizedValue)) {
+                            return true;
+                        }
+                        return Number.isFinite(planAmount)
+                            && planAmount > 0
+                            && Number.isFinite(plan.price)
+                            && Number(plan.price.toFixed(2)) === Number(planAmount.toFixed(2));
+                    });
+                    const planOptions = catalogPlans.map((plan) => {
+                        const price = Number.isFinite(plan.price) ? plan.price : 0;
+                        const label = `${plan.category === 'prepaid' ? 'Prepaid' : 'Postpaid'} · ${plan.name}${price > 0 ? ` · ₱${price.toLocaleString('en-US')}` : ''}`;
+                        return `<option value="${escapeHtml(plan.key)}"
+                            data-plan-name="${escapeHtml(plan.name)}"
+                            data-plan-category="${escapeHtml(plan.category)}"
+                            data-plan-price="${escapeHtml(price > 0 ? price : '')}"
+                            ${selectedPlan?.key === plan.key ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+                    }).join('');
+                    return `
+                        <tr data-import-warning-index="${index}">
+                            <td class="import-warning-row-number">${escapeHtml(rowNumber)}</td>
+                            <td>
+                                <strong>${escapeHtml(customerName)}</strong>
+                                <span class="import-warning-message">${escapeHtml(issueText || 'Review this row before retrying.')}</span>
+                            </td>
+                            <td>
+                                <input class="import-warning-input" data-warning-field="accountNumber" type="text"
+                                    value="${escapeHtml(record.accountNumber || '')}" aria-label="Account number for row ${escapeHtml(rowNumber)}">
+                            </td>
+                            <td>
+                                <select class="import-warning-select" data-warning-field="planCategory" aria-label="Plan type for row ${escapeHtml(rowNumber)}">
+                                    <option value="postpaid" ${category === 'postpaid' ? 'selected' : ''}>Postpaid</option>
+                                    <option value="prepaid" ${category === 'prepaid' ? 'selected' : ''}>Prepaid</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select class="import-warning-select" data-warning-field="catalogPlan" aria-label="Existing plan for row ${escapeHtml(rowNumber)}">
+                                    <option value="">Create from rate</option>
+                                    ${planOptions}
+                                </select>
+                            </td>
+                            <td>
+                                <input class="import-warning-input" data-warning-field="planValue" type="text"
+                                    value="${escapeHtml(planValue)}" placeholder="Plan name" aria-label="Plan name for row ${escapeHtml(rowNumber)}">
+                            </td>
+                            <td>
+                                <input class="import-warning-input" data-warning-field="planAmount" type="number" min="0.01" step="0.01"
+                                    value="${Number.isFinite(planAmount) && planAmount > 0 ? escapeHtml(planAmount) : ''}"
+                                    placeholder="0.00" aria-label="Monthly rate for row ${escapeHtml(rowNumber)}">
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            function applyImportWarningPlanSelection(row) {
+                const planSelect = row?.querySelector('[data-warning-field="catalogPlan"]');
+                const selected = planSelect?.selectedOptions?.[0];
+                if (!selected || !selected.value) return;
+                const categoryInput = row.querySelector('[data-warning-field="planCategory"]');
+                const planValueInput = row.querySelector('[data-warning-field="planValue"]');
+                const planAmountInput = row.querySelector('[data-warning-field="planAmount"]');
+                if (categoryInput) categoryInput.value = selected.dataset.planCategory || 'postpaid';
+                if (planValueInput) planValueInput.value = selected.dataset.planName || '';
+                if (planAmountInput) planAmountInput.value = selected.dataset.planPrice || '';
+            }
+
+            function openImportWarningModal(trigger = importWarningReviewBtn) {
+                if (!importWarningRecords.length || !importWarningModal) {
+                    showToast('No import warnings need review.');
+                    return;
+                }
+                closeSecondaryCustomerModals();
+                importWarningLastTrigger = trigger || importWarningReviewBtn;
+                importWarningModal.classList.add('show');
+                importWarningModal.setAttribute('aria-hidden', 'false');
+                refreshModalBackdrop();
+                setTimeout(() => {
+                    importWarningRows?.querySelector('input, select')?.focus();
+                }, 0);
+            }
+
+            function closeImportWarningModal({ restoreFocus = true } = {}) {
+                if (!importWarningModal) return;
+                if (importWarningModal.contains(document.activeElement)) {
+                    document.activeElement.blur();
+                }
+                importWarningModal.classList.remove('show');
+                importWarningModal.setAttribute('aria-hidden', 'true');
+                refreshModalBackdrop();
+                if (restoreFocus && importWarningLastTrigger?.focus) importWarningLastTrigger.focus();
+            }
+
+            function setImportWarningRetryBusy(isBusy) {
+                importWarningRetryBusy = Boolean(isBusy);
+                if (retryImportWarningBtn) {
+                    retryImportWarningBtn.disabled = importWarningRetryBusy;
+                    retryImportWarningBtn.innerHTML = importWarningRetryBusy
+                        ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Applying fixes...'
+                        : '<i class="ti ti-refresh" aria-hidden="true"></i> Apply fixes';
+                }
+                importWarningModal?.querySelectorAll('input, select').forEach((field) => {
+                    field.disabled = importWarningRetryBusy;
+                });
+            }
+
+            function collectImportWarningCorrections() {
+                const corrections = [];
+                let firstInvalidField = null;
+                importWarningRows?.querySelectorAll('[data-import-warning-index]').forEach((row) => {
+                    const index = Number(row.dataset.importWarningIndex);
+                    const detail = importWarningRecords[index];
+                    if (!detail?.record) return;
+                    const accountInput = row.querySelector('[data-warning-field="accountNumber"]');
+                    const categoryInput = row.querySelector('[data-warning-field="planCategory"]');
+                    const catalogPlanInput = row.querySelector('[data-warning-field="catalogPlan"]');
+                    const planValueInput = row.querySelector('[data-warning-field="planValue"]');
+                    const planAmountInput = row.querySelector('[data-warning-field="planAmount"]');
+                    const accountNumber = String(accountInput?.value || '').trim();
+                    const planValue = String(planValueInput?.value || '').trim();
+                    const planAmount = Number(planAmountInput?.value);
+
+                    [accountInput, catalogPlanInput, planValueInput, planAmountInput].forEach((field) => {
+                        field?.classList.remove('is-invalid');
+                    });
+                    if (!accountNumber) {
+                        accountInput?.classList.add('is-invalid');
+                        firstInvalidField ||= accountInput;
+                    }
+                    if (!catalogPlanInput?.value && (!Number.isFinite(planAmount) || planAmount <= 0)) {
+                        catalogPlanInput?.classList.add('is-invalid');
+                        planAmountInput?.classList.add('is-invalid');
+                        firstInvalidField ||= catalogPlanInput || planAmountInput;
+                    }
+
+                    corrections.push({
+                        ...detail.record,
+                        rowNumber: Number(detail.rowNumber || detail.record.rowNumber || index + 1),
+                        accountNumber,
+                        planCategory: categoryInput?.value || 'postpaid',
+                        planValue,
+                        planAmount: Number.isFinite(planAmount) && planAmount > 0 ? planAmount : null
+                    });
+                });
+                if (firstInvalidField) {
+                    setImportWarningError('Enter the missing account number and select an existing plan or provide a valid monthly rate.');
+                    firstInvalidField.focus();
+                    return [];
+                }
+                return corrections;
+            }
+
+            async function retryImportWarningCorrections() {
+                if (importWarningRetryBusy) return;
+                const records = collectImportWarningCorrections();
+                if (!records.length) return;
+                setImportWarningError('');
+                setImportWarningRetryBusy(true);
+                try {
+                    const response = await fetch('/api/customers/import-client-corrections', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ records })
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || payload?.ok === false) {
+                        throw new Error(payload?.message || payload?.error || `Correction failed (${response.status})`);
+                    }
+
+                    await loadPlans();
+                    await loadCustomers();
+                    const remainingWarnings = Array.isArray(payload.warningRecords) ? payload.warningRecords : [];
+                    renderImportWarningRows(remainingWarnings);
+                    const imported = Number(payload.imported || 0);
+                    const skipped = Number(payload.skipped || 0);
+                    if (remainingWarnings.length) {
+                        setImportWarningError(`${remainingWarnings.length} row${remainingWarnings.length === 1 ? '' : 's'} still need correction.`);
+                        showToast(`Updated ${imported} corrected row${imported === 1 ? '' : 's'}. ${skipped} still skipped.`);
+                        return;
+                    }
+                    closeImportWarningModal({ restoreFocus: false });
+                    showToast(`Import warnings resolved. ${imported} customer record${imported === 1 ? '' : 's'} updated.`);
+                } catch (error) {
+                    setImportWarningError(error?.message || 'Unable to apply import corrections.');
+                } finally {
+                    setImportWarningRetryBusy(false);
+                }
+            }
+
             function setImportClientsBusy(isBusy) {
                 if (!importClientsBtn) return;
                 importClientsBtn.disabled = Boolean(isBusy);
@@ -4999,12 +5311,19 @@
                     const updated = Number(payload.updated || 0);
                     const plansCreated = Number(payload.plansCreated || 0);
                     const skipped = Number(payload.skipped || 0);
-                    const warning = Array.isArray(payload.warnings) && payload.warnings.length
-                        ? ` Warning: ${payload.warnings[0]}`
+                    const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+                    const warningRecords = Array.isArray(payload.warningRecords) ? payload.warningRecords : [];
+                    const reviewCount = warningRecords.length || warnings.length;
+                    const warning = reviewCount
+                        ? ` ${reviewCount} skipped row${reviewCount === 1 ? '' : 's'} need review.`
                         : '';
                     showToast(`Imported ${imported} client${imported === 1 ? '' : 's'} (${created} new, ${updated} updated). Plans added: ${plansCreated}. Skipped: ${skipped}.${warning}`);
-                    if (payload.warnings?.length) {
-                        console.warn('Client import warnings:', payload.warnings);
+                    renderImportWarningRows(warningRecords);
+                    if (warnings.length) {
+                        console.warn('Client import warnings:', warnings);
+                    }
+                    if (warningRecords.length) {
+                        openImportWarningModal(importClientsBtn);
                     }
                 } catch (error) {
                     showToast(`Import failed: ${error.message || error}`);
@@ -5260,6 +5579,27 @@
                     void importClientsFromFile(importClientsFileInput.files?.[0] || null);
                 });
             }
+            importWarningReviewBtn?.addEventListener('click', () => {
+                openImportWarningModal(importWarningReviewBtn);
+            });
+            closeImportWarningModalBtn?.addEventListener('click', () => closeImportWarningModal());
+            cancelImportWarningBtn?.addEventListener('click', () => closeImportWarningModal());
+            retryImportWarningBtn?.addEventListener('click', () => {
+                void retryImportWarningCorrections();
+            });
+            importWarningRows?.addEventListener('change', (event) => {
+                const field = event.target?.closest?.('[data-warning-field]');
+                if (!field) return;
+                field.classList.remove('is-invalid');
+                if (field.dataset.warningField === 'catalogPlan') {
+                    applyImportWarningPlanSelection(field.closest('[data-import-warning-index]'));
+                }
+                setImportWarningError('');
+            });
+            importWarningRows?.addEventListener('input', (event) => {
+                event.target?.classList?.remove('is-invalid');
+                setImportWarningError('');
+            });
             if (exportClientsBtn) {
                 exportClientsBtn.addEventListener('click', () => {
                     void exportClientsExcel();
@@ -5756,10 +6096,17 @@
                 if (event.target === creditOverrideModal) {
                     closeCreditOverridePrompt({ confirmed: false, addAmount: 0, newCreditLimit: 0 });
                 }
+                if (event.target === importWarningModal) {
+                    closeImportWarningModal();
+                }
             });
 
             // Close modal with Escape key
             window.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && importWarningModal?.classList.contains('show')) {
+                    closeImportWarningModal();
+                    return;
+                }
                 if (event.key === 'Escape' && mapPinPickerModal?.classList.contains('show')) {
                     closeMapPinPicker();
                     return;

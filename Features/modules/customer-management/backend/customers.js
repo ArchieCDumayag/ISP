@@ -2850,6 +2850,7 @@ const triggerBranchServiceRefreshSafe = (branchId, source = 'customers') => {
 
 const IMPORT_CLIENTS_SHEET_NAME = 'CLIENTS LIST';
 const IMPORT_CLIENTS_WARNING_LIMIT = 100;
+const IMPORT_CLIENT_CORRECTION_LIMIT = 100;
 const getCustomerImportXlsxModule = () => {
     if (!customerImportXlsxModule) {
         customerImportXlsxModule = require('xlsx');
@@ -3075,7 +3076,12 @@ const persistImportedPlans = async (plans = [], branchId = null) => {
     });
     await writeJson(STORE_KEYS.plans, list);
 };
-const ensurePlansForImportedClientRecords = async (records = [], branchId = null, warnings = []) => {
+const ensurePlansForImportedClientRecords = async (
+    records = [],
+    branchId = null,
+    warnings = [],
+    addWarningDetail = null
+) => {
     const plans = await readPlans(branchId);
     const usedIds = new Set((Array.isArray(plans) ? plans : []).map((plan) => String(plan?.id || '').trim()).filter(Boolean));
     const createdPlans = [];
@@ -3091,7 +3097,15 @@ const ensurePlansForImportedClientRecords = async (records = [], branchId = null
         }
 
         if (!Number.isFinite(Number(record.planAmount)) || Number(record.planAmount) <= 0) {
-            pushWarning(`Row ${record.rowNumber}: skipped plan creation because Plan is blank or invalid.`);
+            const message = `Row ${record.rowNumber}: skipped plan creation because Plan is blank or invalid.`;
+            pushWarning(message);
+            if (typeof addWarningDetail === 'function') {
+                addWarningDetail(record, {
+                    code: 'invalid_plan',
+                    message,
+                    fields: ['planCategory', 'planValue', 'planAmount']
+                });
+            }
             return;
         }
 
@@ -3204,28 +3218,120 @@ const mergeImportedClientValue = (incoming, fallback = '') => {
     const text = normalizeImportText(incoming);
     return text || fallback || '';
 };
+const normalizeImportedClientCorrectionRecord = (raw = {}) => {
+    const planValue = normalizeImportText(raw.planValue ?? raw.planName ?? raw.plan);
+    const planAmount = parseImportNumber(raw.planAmount ?? raw.monthlyRate ?? planValue);
+    const planCategory = normalizeImportedPlanCategory(raw.planCategory ?? raw.planType);
+    const activationDate = parseImportedDateOnly(raw.activationDate);
+    const billingCycle = normalizeImportText(raw.billingCycle);
+    const billDate = parseImportedDateOnly(raw.billDate)
+        || buildImportedBillingDate(billingCycle, planCategory, activationDate);
+    return {
+        rowNumber: Math.max(1, Number.parseInt(raw.rowNumber, 10) || 1),
+        accountNumber: formatImportedAccountNumber(raw.accountNumber),
+        activationDate,
+        planCategory,
+        status: normalizeImportedClientStatus(raw.status),
+        planValue,
+        planAmount,
+        firstName: normalizeImportText(raw.firstName),
+        middleName: normalizeImportText(raw.middleName),
+        lastName: normalizeImportText(raw.lastName),
+        mobileRaw: normalizePhilippineMobile(raw.mobileRaw ?? raw.mobile),
+        email: normalizeImportText(raw.email),
+        street: normalizeImportText(raw.street),
+        province: normalizeImportText(raw.province),
+        municipality: normalizeImportText(raw.municipality),
+        barangay: normalizeImportText(raw.barangay),
+        area: normalizeImportText(raw.area),
+        mapPin: normalizeImportText(raw.mapPin),
+        pppoeUsername: normalizeImportText(raw.pppoeUsername),
+        referredBy: normalizeImportText(raw.referredBy),
+        billingCycle,
+        billDate,
+        dueDate: parseImportedDateOnly(raw.dueDate) || billDate,
+        creditLimit: parseImportNumber(raw.creditLimit),
+        facebookUsername: normalizeImportText(raw.facebookUsername)
+    };
+};
 const importClientListRecords = async ({ records = [], branchId, importedBy = null } = {}) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
         throw createError(400, 'Branch assignment missing for this admin account.');
     }
 
+    const sourceRecords = (Array.isArray(records) ? records : [])
+        .map((record) => normalizeImportedClientCorrectionRecord(record));
+    if (!sourceRecords.length) {
+        throw createError(400, 'No importable clients found in CLIENTS LIST.');
+    }
+
     const warnings = [];
+    const warningDetailsByRow = new Map();
     const pushWarning = (message) => {
         if (warnings.length < IMPORT_CLIENTS_WARNING_LIMIT) warnings.push(message);
     };
-    const validRecords = (Array.isArray(records) ? records : []).filter((record) => {
+    const addWarningDetail = (record, issue = {}) => {
+        const rowNumber = Math.max(1, Number.parseInt(record?.rowNumber, 10) || 1);
+        const key = `${rowNumber}:${String(record?.accountNumber || '').trim()}`;
+        let detail = warningDetailsByRow.get(key);
+        if (!detail) {
+            detail = {
+                rowNumber,
+                accountNumber: String(record?.accountNumber || '').trim(),
+                customerName: [record?.firstName, record?.middleName, record?.lastName]
+                    .map((value) => normalizeImportText(value))
+                    .filter(Boolean)
+                    .join(' '),
+                issues: [],
+                record: normalizeImportedClientCorrectionRecord(record)
+            };
+            warningDetailsByRow.set(key, detail);
+        }
+        const code = normalizeImportText(issue.code) || 'import_warning';
+        if (!detail.issues.some((entry) => entry.code === code)) {
+            detail.issues.push({
+                code,
+                message: normalizeImportText(issue.message) || 'Review this import row.',
+                fields: Array.isArray(issue.fields)
+                    ? issue.fields.map((field) => normalizeImportText(field)).filter(Boolean)
+                    : []
+            });
+        }
+    };
+    let skipped = 0;
+    const validRecords = sourceRecords.filter((record) => {
         if (!record?.accountNumber) {
-            pushWarning(`Row ${record?.rowNumber || '?'} skipped: account number is missing.`);
+            const message = `Row ${record?.rowNumber || '?'} skipped: account number is missing.`;
+            pushWarning(message);
+            addWarningDetail(record, {
+                code: 'missing_account_number',
+                message,
+                fields: ['accountNumber']
+            });
+            skipped += 1;
             return false;
         }
         return true;
     });
     if (!validRecords.length) {
-        throw createError(400, 'No importable clients found in CLIENTS LIST.');
+        return {
+            created: 0,
+            updated: 0,
+            skipped,
+            imported: 0,
+            plansCreated: 0,
+            warnings,
+            warningRecords: Array.from(warningDetailsByRow.values())
+        };
     }
 
-    const { createdPlans } = await ensurePlansForImportedClientRecords(validRecords, scopedBranchId, warnings);
+    const { createdPlans } = await ensurePlansForImportedClientRecords(
+        validRecords,
+        scopedBranchId,
+        warnings,
+        addWarningDetail
+    );
     const allCustomers = await readCustomers();
     const existingIndexByAccount = new Map();
     allCustomers.forEach((customer, index) => {
@@ -3237,14 +3343,19 @@ const importClientListRecords = async ({ records = [], branchId, importedBy = nu
     const nowIso = now.toISOString();
     let created = 0;
     let updated = 0;
-    let skipped = 0;
     const importedAccounts = [];
 
     validRecords.forEach((record) => {
         const plan = record.resolvedPlan;
         if (!plan) {
             skipped += 1;
-            pushWarning(`Row ${record.rowNumber}: skipped ${record.accountNumber} because no matching plan could be resolved.`);
+            const message = `Row ${record.rowNumber}: skipped ${record.accountNumber} because no matching plan could be resolved.`;
+            pushWarning(message);
+            addWarningDetail(record, {
+                code: 'invalid_plan',
+                message,
+                fields: ['planCategory', 'planValue', 'planAmount']
+            });
             return;
         }
 
@@ -3348,7 +3459,8 @@ const importClientListRecords = async ({ records = [], branchId, importedBy = nu
         skipped,
         imported: created + updated,
         plansCreated: createdPlans.length,
-        warnings
+        warnings,
+        warningRecords: Array.from(warningDetailsByRow.values())
     };
 };
 const parseImportBase64Payload = (payload = {}) => {
@@ -6284,6 +6396,36 @@ router.post('/import-clients', express.raw({
     }
 });
 
+// POST /api/customers/import-client-corrections - Retry only corrected CLIENTS LIST rows
+router.post('/import-client-corrections', express.json({ limit: '2mb' }), async (req, res, next) => {
+    try {
+        const branchId = req.user?.branchId || null;
+        if (!branchId) {
+            return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
+        }
+
+        const correctionRecords = Array.isArray(req.body?.records) ? req.body.records : [];
+        if (!correctionRecords.length) {
+            return res.status(400).json({ ok: false, error: 'No corrected import rows were submitted.' });
+        }
+        if (correctionRecords.length > IMPORT_CLIENT_CORRECTION_LIMIT) {
+            return res.status(400).json({
+                ok: false,
+                error: `A maximum of ${IMPORT_CLIENT_CORRECTION_LIMIT} corrected rows can be retried at once.`
+            });
+        }
+
+        const result = await importClientListRecords({
+            records: correctionRecords.map((record) => normalizeImportedClientCorrectionRecord(record)),
+            branchId,
+            importedBy: req.user || null
+        });
+        return res.json({ ok: true, correctedRows: correctionRecords.length, ...result });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // GET /api/customers/:id - Get a single customer by ID
 router.get('/:id', async (req, res, next) => {
     try {
@@ -6453,3 +6595,4 @@ module.exports.scheduleCustomerArchiveCleanupWithPppoe = scheduleCustomerArchive
 module.exports.sanitizeCustomerForAdmin = sanitizeCustomerForAdmin;
 module.exports.resolveStoredAccountPrefixId = resolveStoredAccountPrefixId;
 module.exports.generateAccountNumber = generateAccountNumber;
+module.exports.normalizeImportedClientCorrectionRecord = normalizeImportedClientCorrectionRecord;

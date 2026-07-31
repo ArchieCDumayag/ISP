@@ -80,6 +80,34 @@ webFiles.forEach((relativePath) => {
 assert(!fs.existsSync(path.join(projectRoot, 'customers.css')));
 console.log(`PASS Customer Management web root (${webFiles.length} files)`);
 
+const customerRouter = backend.load('customers');
+assert.strictEqual(typeof customerRouter.normalizeImportedClientCorrectionRecord, 'function');
+const normalizedImportCorrection = customerRouter.normalizeImportedClientCorrectionRecord({
+  rowNumber: 360,
+  accountNumber: 100000360,
+  firstName: 'Import',
+  lastName: 'Warning',
+  planType: 'postpaid',
+  planName: 'Standard',
+  monthlyRate: '1,000',
+  billingCycle: 'last of the month'
+});
+assert.strictEqual(normalizedImportCorrection.rowNumber, 360);
+assert.strictEqual(normalizedImportCorrection.accountNumber, '100000360');
+assert.strictEqual(normalizedImportCorrection.planCategory, 'postpaid');
+assert.strictEqual(normalizedImportCorrection.planValue, 'Standard');
+assert.strictEqual(normalizedImportCorrection.planAmount, 1000);
+
+const customersPageSource = fs.readFileSync(path.join(webRoot, 'customers.html'), 'utf8');
+const customersCssSource = fs.readFileSync(path.join(webRoot, 'css/customers.css'), 'utf8');
+assert(customersPageSource.includes('id="importWarningReviewBtn"'));
+assert(customersPageSource.includes('id="importWarningModal"'));
+assert(customersPageSource.includes("fetch('/api/customers/import-client-corrections'"));
+assert(customersPageSource.includes('renderImportWarningRows(warningRecords)'));
+assert(customersCssSource.includes('.import-warning-modal .modal-content'));
+assert(customersCssSource.includes('.import-warning-review-btn[hidden]'));
+console.log('PASS CLIENTS LIST import warning review and correction UI contract');
+
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(serverSource.includes('const MODULE_RUNTIMES = loadModuleRuntimes({'));
 assert(serverSource.includes("requireModuleRuntime('customer-management')"));
@@ -243,6 +271,8 @@ const customerSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/customer-management/backend/customers.js'),
   'utf8'
 );
+assert(customerSource.includes("router.post('/import-client-corrections'"));
+assert(customerSource.includes('warningRecords: Array.from(warningDetailsByRow.values())'));
 assert(customerSource.includes('path.join(PUBLIC_ROOT, ...relativePath)'));
 assert(customerSource.includes("path.join(PROJECT_ROOT, '.cloudflared', 'config.yml')"));
 assert(customerSource.includes(['require', "('../../admin/backend/auth')"].join('')));

@@ -7,6 +7,7 @@ Owns the subscriber lifecycle: public applications, customer profiles, addresses
 - `module.json` declares `backend/index.js` and `web/` as live runtime entries.
 - `backend/index.js` lazily exposes customer, draft, archive, coverage, referral, and address services to `server.js`.
 - `web/` is mounted at the application root after page authorization guards, preserving existing page and asset URLs.
+- The `customers.html` CLIENTS LIST importer returns structured warning rows and provides a review modal that corrects skipped account/plan fields before retrying only those records.
 - The former eight root CommonJS shims were retired in Phase 11; all dependencies use canonical module paths.
 - Shared shell/vendor assets continue to come from `public/`.
 

@@ -6,6 +6,12 @@
   const collectorApprovalCount = document.getElementById('collectorApprovalCount');
   const collectorApprovalTotal = document.getElementById('collectorApprovalTotal');
   const collectorApprovalsEmptyState = document.getElementById('collectorApprovalsEmptyState');
+  const collectorRescheduleList = document.getElementById('collectorRescheduleList');
+  const collectorRescheduleCount = document.getElementById('collectorRescheduleCount');
+  const collectorReschedulesEmptyState = document.getElementById('collectorReschedulesEmptyState');
+  const collectorRescheduleCollectorFilter = document.getElementById('collectorRescheduleCollectorFilter');
+  const collectorRescheduleStatusFilter = document.getElementById('collectorRescheduleStatusFilter');
+  const collectorRescheduleRefresh = document.getElementById('collectorRescheduleRefresh');
   const assignmentList = document.getElementById('assignmentList');
   const assignmentCount = document.getElementById('assignmentCount');
   const monthlySummary = document.getElementById('monthlySummary');
@@ -54,6 +60,7 @@
   let areaTotalsCache = {};
   let areaUnpaidCache = {};
   let collectorApprovalRecords = [];
+  let collectorRescheduleRecords = [];
   let areaStatsPromise = null;
   let collectorAreaReportCache = {};
   let areaReportCache = {};
@@ -584,6 +591,146 @@
       const status = Number(err?.status || 0);
       const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
       renderCollectorApprovalNotice(err?.message || 'Failed to load pending collector payments.', tone);
+    }
+  }
+
+  function isActiveCollectorReschedule(record = {}) {
+    return String(record?.status || '').trim().toLowerCase() === 'rescheduled';
+  }
+
+  function getCollectorRescheduleName(record = {}) {
+    const direct = String(record?.collectorName || record?.collectorUsername || '').trim();
+    if (direct) return direct;
+    const collectorId = String(record?.collectorId || '').trim();
+    return collectorId ? getCollectorName(collectorId) : 'Collector';
+  }
+
+  function populateCollectorRescheduleFilter() {
+    if (!collectorRescheduleCollectorFilter) return;
+    const previous = collectorRescheduleCollectorFilter.value;
+    const options = new Map();
+    collectorAccountsCache.forEach((account) => {
+      const id = getCollectorId(account);
+      if (id) options.set(id, getCollectorName(id));
+    });
+    collectorRescheduleRecords.forEach((record) => {
+      const id = String(record?.collectorId || '').trim();
+      if (id) options.set(id, getCollectorRescheduleName(record));
+    });
+    collectorRescheduleCollectorFilter.innerHTML = '<option value="">All collectors</option>';
+    [...options.entries()]
+      .sort((left, right) => left[1].localeCompare(right[1], undefined, { sensitivity: 'base', numeric: true }))
+      .forEach(([id, name]) => {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = name;
+        collectorRescheduleCollectorFilter.appendChild(option);
+      });
+    collectorRescheduleCollectorFilter.value = options.has(previous) ? previous : '';
+  }
+
+  function collectorRescheduleStatusLabel(record = {}) {
+    if (isActiveCollectorReschedule(record)) return 'Active';
+    return String(record?.historyType || record?.status || 'History').trim() || 'History';
+  }
+
+  function renderCollectorReschedules() {
+    if (!collectorRescheduleList) return;
+    const collectorId = String(collectorRescheduleCollectorFilter?.value || '').trim();
+    const status = String(collectorRescheduleStatusFilter?.value || 'active').trim().toLowerCase();
+    const rows = collectorRescheduleRecords.filter((record) => {
+      if (collectorId && String(record?.collectorId || '').trim() !== collectorId) return false;
+      if (status === 'all') return true;
+      return status === 'active' ? isActiveCollectorReschedule(record) : !isActiveCollectorReschedule(record);
+    });
+
+    const activeCount = rows.filter(isActiveCollectorReschedule).length;
+    if (collectorRescheduleCount) {
+      collectorRescheduleCount.textContent = status === 'active'
+        ? `${activeCount} active`
+        : `${rows.length} record${rows.length === 1 ? '' : 's'}`;
+    }
+    collectorRescheduleList.innerHTML = '';
+    if (!rows.length) {
+      if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'flex';
+      return;
+    }
+    if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'none';
+
+    rows.forEach((record) => {
+      const active = isActiveCollectorReschedule(record);
+      const tr = document.createElement('tr');
+      const accountNumber = String(record?.accountNumber || '').trim();
+      const area = String(record?.area || '').trim();
+      const scheduleDate = formatCollectorPaymentDate(record?.rescheduledDate);
+      const preferredTime = String(record?.preferredTime || '').trim();
+      const result = String(record?.result || '').trim();
+      const notes = String(record?.notes || '').trim();
+      const statusLabel = collectorRescheduleStatusLabel(record);
+      tr.innerHTML = `
+        <td>
+          <div class="collector-approval-copy">
+            <strong>${escapeHtml(scheduleDate)}</strong>
+            <span>${escapeHtml(preferredTime || 'Any time')}</span>
+          </div>
+        </td>
+        <td>
+          <div class="collector-approval-copy">
+            <strong>${escapeHtml(record?.customerName || accountNumber || 'Client')}</strong>
+            <span>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</span>
+          </div>
+        </td>
+        <td>
+          <div class="collector-approval-copy">
+            <strong>${escapeHtml(getCollectorRescheduleName(record))}</strong>
+            <span>${escapeHtml(formatCollectorPaymentDate(record?.createdAt))}</span>
+          </div>
+        </td>
+        <td>
+          <div class="collector-approval-copy collector-reschedule-details">
+            <strong>${escapeHtml(result || 'Collection follow-up')}</strong>
+            <span title="${escapeHtml(notes)}">${escapeHtml(notes || 'No notes')}</span>
+          </div>
+        </td>
+        <td><span class="badge ${active ? 'bg-warning-lt text-warning' : 'bg-secondary-lt text-secondary'}">${escapeHtml(statusLabel)}</span></td>
+      `;
+      collectorRescheduleList.appendChild(tr);
+    });
+  }
+
+  function renderCollectorRescheduleNotice(message, tone = 'danger') {
+    collectorRescheduleRecords = [];
+    populateCollectorRescheduleFilter();
+    if (!collectorRescheduleList) return;
+    const className = tone === 'muted' ? 'text-secondary' : 'text-danger';
+    collectorRescheduleList.innerHTML = `<tr><td colspan="5" class="text-center ${className} py-3">${escapeHtml(message)}</td></tr>`;
+    if (collectorRescheduleCount) collectorRescheduleCount.textContent = 'Unavailable';
+    if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'none';
+  }
+
+  async function loadCollectorReschedules() {
+    if (!collectorRescheduleList) return;
+    if (collectorRescheduleRefresh) collectorRescheduleRefresh.disabled = true;
+    try {
+      const response = await fetch('/api/collector/payments/reschedules?status=all&limit=1000', {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const error = new Error(payload?.error || payload?.message || 'Failed to load rescheduled clients.');
+        error.status = response.status;
+        throw error;
+      }
+      collectorRescheduleRecords = Array.isArray(payload?.records) ? payload.records : [];
+      populateCollectorRescheduleFilter();
+      renderCollectorReschedules();
+    } catch (error) {
+      console.warn('Failed to load collector reschedules', error);
+      const tone = [401, 403, 404].includes(Number(error?.status || 0)) ? 'muted' : 'danger';
+      renderCollectorRescheduleNotice(error?.message || 'Failed to load rescheduled clients.', tone);
+    } finally {
+      if (collectorRescheduleRefresh) collectorRescheduleRefresh.disabled = false;
     }
   }
 
@@ -1367,6 +1514,7 @@
     collectorAccountsCache = collectorAccounts
       .map((acc) => ({ ...acc, _id: getCollectorId(acc) }))
       .filter((acc) => acc._id);
+    populateCollectorRescheduleFilter();
 
     if (targetSelect) {
       if (!collectorAccountsCache.length) {
@@ -1691,6 +1839,10 @@
       });
   });
 
+  collectorRescheduleCollectorFilter?.addEventListener('change', renderCollectorReschedules);
+  collectorRescheduleStatusFilter?.addEventListener('change', renderCollectorReschedules);
+  collectorRescheduleRefresh?.addEventListener('click', () => loadCollectorReschedules().catch(() => {}));
+
   document.addEventListener('click', (event) => {
     const collectorApprovalBtn = event.target.closest('[data-collector-approval-collector-action]');
     if (collectorApprovalBtn) {
@@ -1740,6 +1892,7 @@
 
   loadAreas().catch(() => {});
   loadCollectorApprovals().catch(() => {});
+  loadCollectorReschedules().catch(() => {});
   loadCollectors()
     .then(() => loadReport())
     .catch(() => {

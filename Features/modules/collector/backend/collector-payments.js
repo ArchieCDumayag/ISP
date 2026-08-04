@@ -9,8 +9,10 @@ const { triggerBranchServiceRefresh } = require('../../billing/backend/payment-s
 const { resolveCollectorNextDue } = require('./collector-next-due');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const paymentRecordsRouter = require('../../billing/backend/payment-records');
+const collectorReschedulesRouter = require('./collector-reschedules');
 
 const router = express.Router();
+router.use('/reschedules', collectorReschedulesRouter);
 const REFERENCE_MAX_LENGTH = 32;
 const PAYMENT_METHOD_MAX_LENGTH = 40;
 const MANILA_OFFSET_SUFFIX = '+08:00';

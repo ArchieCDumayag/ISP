@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.6">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.7">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -90,6 +90,49 @@
                             <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
                                 <i class="ti ti-circle-check" aria-hidden="true"></i>
                                 <p>No pending collector payments.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="collector-approval-panel collector-reschedule-panel" aria-labelledby="collectorRescheduleTitle">
+                        <div class="collector-approval-panel__header collector-reschedule-panel__header">
+                            <div>
+                                <h2 id="collectorRescheduleTitle">Rescheduled Clients</h2>
+                                <p>Follow-up schedules uploaded by collectors from the Android app.</p>
+                            </div>
+                            <div class="collector-reschedule-filters">
+                                <label class="visually-hidden" for="collectorRescheduleCollectorFilter">Collector</label>
+                                <select class="form-select form-select-sm" id="collectorRescheduleCollectorFilter">
+                                    <option value="">All collectors</option>
+                                </select>
+                                <label class="visually-hidden" for="collectorRescheduleStatusFilter">Status</label>
+                                <select class="form-select form-select-sm" id="collectorRescheduleStatusFilter">
+                                    <option value="active">Active schedules</option>
+                                    <option value="history">Schedule history</option>
+                                    <option value="all">All schedules</option>
+                                </select>
+                                <button class="btn btn-outline-primary btn-sm btn-icon" type="button" id="collectorRescheduleRefresh" title="Refresh rescheduled clients" aria-label="Refresh rescheduled clients">
+                                    <i class="ti ti-refresh" aria-hidden="true"></i>
+                                </button>
+                                <span class="badge bg-primary-lt text-primary" id="collectorRescheduleCount">0 active</span>
+                            </div>
+                        </div>
+                        <div class="table-responsive collector-approval-table-wrapper collector-reschedule-table-wrapper">
+                            <table class="table table-vcenter table-sm collectors-table collector-approval-table collector-reschedule-table">
+                                <thead>
+                                    <tr>
+                                        <th>Schedule</th>
+                                        <th>Client</th>
+                                        <th>Collector</th>
+                                        <th>Follow-up details</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="collectorRescheduleList"></tbody>
+                            </table>
+                            <div class="empty-state p-3" id="collectorReschedulesEmptyState" style="display:none;">
+                                <i class="ti ti-calendar-off" aria-hidden="true"></i>
+                                <p>No rescheduled clients match this filter.</p>
                             </div>
                         </div>
                     </section>
@@ -216,12 +259,11 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=2.7"></script>
+    <script src="js/collectors-page.js?v=2.8"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>
-
 
 
 

@@ -193,6 +193,58 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
     width: 5.75rem;
 }
 
+.collectors-board .collector-reschedule-filters {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .375rem;
+    flex-wrap: wrap;
+}
+
+.collectors-board .collector-reschedule-filters .form-select {
+    width: auto;
+    min-width: 9.5rem;
+    min-height: 1.875rem;
+    padding-top: .25rem;
+    padding-bottom: .25rem;
+    font-size: .75rem;
+}
+
+.collectors-board .collector-reschedule-filters .btn-icon {
+    width: 1.875rem;
+    min-width: 1.875rem;
+    height: 1.875rem;
+    min-height: 1.875rem;
+}
+
+.collectors-board .collector-reschedule-table {
+    min-width: 900px;
+}
+
+.collectors-board .collector-reschedule-table th:nth-child(1),
+.collectors-board .collector-reschedule-table td:nth-child(1) {
+    width: 9rem;
+}
+
+.collectors-board .collector-reschedule-table th:nth-child(2),
+.collectors-board .collector-reschedule-table td:nth-child(2) {
+    width: 13rem;
+}
+
+.collectors-board .collector-reschedule-table th:nth-child(3),
+.collectors-board .collector-reschedule-table td:nth-child(3) {
+    width: 11rem;
+}
+
+.collectors-board .collector-reschedule-table th:last-child,
+.collectors-board .collector-reschedule-table td:last-child {
+    width: 7.5rem;
+}
+
+.collectors-board .collector-reschedule-details span {
+    max-width: 22rem;
+}
+
 .collectors-board .collector-approval-group-row td {
     background: var(--tblr-bg-surface-secondary, #f8fafc) !important;
     padding: .5rem !important;
@@ -974,6 +1026,19 @@ body.theme-dark .collectors-board .collector-approval-group__copy span,
     .collectors-board .collector-approval-panel__actions {
         justify-content: flex-start;
         width: 100%;
+    }
+
+    .collectors-board .collector-reschedule-panel__header {
+        align-items: stretch;
+    }
+
+    .collectors-board .collector-reschedule-filters {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .collectors-board .collector-reschedule-filters .form-select {
+        flex: 1 1 9.5rem;
     }
 
     .collectors-board .collector-approval-group {

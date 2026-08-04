@@ -1,14 +1,14 @@
 # Collector
 
-Owns field collection operations: collector-area assignment, collector authentication-dependent workflows, payment capture, receipt reprints, approval queues, remittances, and collection reporting.
+Owns field collection operations: collector-area assignment, collector authentication-dependent workflows, payment capture, receipt reprints, rescheduled-client follow-ups, approval queues, remittances, and collection reporting.
 
 ## Runtime entry points
 
 - Backend descriptor: `backend/index.js`
-- Canonical backend implementations: `backend/collector-next-due.js`, `backend/collector-payments.js`, `backend/collectors.js`, and `backend/routes/collectors.js`
+- Canonical backend implementations: `backend/collector-next-due.js`, `backend/collector-payments.js`, `backend/collector-reschedules.js`, `backend/collectors.js`, and `backend/routes/collectors.js`
 - Canonical pages and browser assets: `web/`
 - Admin pages: collector assignments/approvals and collection history
-- Main APIs: `/api/collectors`, `/api/collector/payments`, plus collector session endpoints under `/api/auth`
+- Main APIs: `/api/collectors`, `/api/collector/payments` (including `/reschedules`), plus collector session endpoints under `/api/auth`
 
 ## Boundaries
 

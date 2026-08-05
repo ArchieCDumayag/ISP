@@ -1536,6 +1536,89 @@ async function enforcePppoeGracePeriod(now = new Date()) {
   return { disabled: totalDisabled, enabled: totalEnabled, disconnected: totalDisconnected };
 }
 
+function resolvePrepaidScheduledBillDate(customer = {}, now = new Date()) {
+  const todayLocal = getManilaStartOfDay(now);
+  const explicitBillDate = parseDateOnly(customer?.billDate);
+  const activationDate = parseDateOnly(customer?.activationDate);
+  const seedDate = explicitBillDate || activationDate || todayLocal;
+  const firstOfSeedMonth = buildMonthlyCycleDate(seedDate.getFullYear(), seedDate.getMonth(), 1, false);
+  return alignBillDateOnOrAfterActivationDate(firstOfSeedMonth, customer?.activationDate, false);
+}
+
+async function generateDuePrepaidMonthlyCycles({
+  branchId,
+  accountNumber,
+  customer,
+  planAmount,
+  payments,
+  now = new Date()
+}) {
+  const todayLocal = getManilaStartOfDay(now);
+  let billDate = resolvePrepaidScheduledBillDate(customer, now);
+  if (!billDate) {
+    return { customer, changed: false, customerDatesChanged: false };
+  }
+
+  if (!payments[accountNumber]) payments[accountNumber] = { history: [] };
+  if (!Array.isArray(payments[accountNumber].history)) payments[accountNumber].history = [];
+
+  let changed = false;
+  let guard = 0;
+  while (billDate <= todayLocal && guard < 120) {
+    const billId = makeBillId(accountNumber, billDate.getFullYear(), billDate.getMonth());
+    const alreadyExists = payments[accountNumber].history.some((entry) => entry.id === billId);
+
+    if (!alreadyExists) {
+      const firstBillingCharge = resolveFirstBillingCharge(customer, billDate, planAmount);
+      if ((Number(firstBillingCharge.amount) || 0) > 0 && !firstBillingCharge.skipInitialCharge) {
+        const chargeDescription = firstBillingCharge.prorated
+          ? `Monthly Recurring Charge (Prorated ${formatDateOnly(firstBillingCharge.periodStart)} to ${formatDateOnly(firstBillingCharge.periodEnd)})`
+          : 'Monthly Recurring Charge';
+        const entry = {
+          id: billId,
+          amount: firstBillingCharge.amount,
+          date: formatDateOnly(billDate),
+          kind: 'charge',
+          reference: undefined,
+          description: chargeDescription,
+          type: 'charge',
+          direction: 'debit',
+          recordedAt: formatManilaDateTime(now) || new Date().toISOString(),
+          recordedBy: SYSTEM_RECORDER,
+          payer: 'System'
+        };
+
+        try {
+          await withTransaction(async (connection) => {
+            await assignEntryNumbers(connection, entry);
+            await assertEntryNumbersAvailable(connection, branchId, entry);
+            return insertPaymentEntry(entry, branchId, accountNumber, connection);
+          });
+          payments[accountNumber].history.push(entry);
+          changed = true;
+        } catch (error) {
+          if (error?.code !== 'ER_DUP_ENTRY') throw error;
+        }
+      }
+    }
+
+    billDate = advanceMonthlyCycleDate(billDate, 1, false);
+    guard += 1;
+  }
+
+  const nextBillDate = formatDateOnly(billDate);
+  const customerDatesChanged = Boolean(
+    nextBillDate
+    && String(customer?.billDate || '') !== nextBillDate
+  );
+
+  return {
+    customer: customerDatesChanged ? { ...customer, billDate: nextBillDate } : customer,
+    changed: changed || customerDatesChanged,
+    customerDatesChanged
+  };
+}
+
 async function runMonthlyBillingForBranch(branchId, now = new Date(), options = {}) {
   await applyDueScheduledPrepaidPlanChangesForBranch(branchId, now);
   const syncCustomerStatus = options?.syncCustomerStatus !== false;
@@ -1606,7 +1689,6 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
     const statusState = resolveCustomerStatusState(customer);
     if (statusState.status !== STATUS_ACTIVE && !continueDisconnectedBilling) continue;
     const planCategory = resolvePlanCategory(customer, plans);
-    if (planCategory === 'prepaid') continue;
     if (!hasAssignedPlan(customer)) continue;
 
     let planAmount = Number(customer.planAmount) || 0;
@@ -1615,6 +1697,23 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
       if (Number.isFinite(lookup) && lookup > 0) planAmount = lookup;
     }
     if (!accountNumber || planAmount <= 0) continue;
+
+    if (planCategory === 'prepaid') {
+      const prepaidResult = await generateDuePrepaidMonthlyCycles({
+        branchId,
+        accountNumber,
+        customer,
+        planAmount,
+        payments,
+        now
+      });
+      if (prepaidResult.customerDatesChanged) {
+        customers[index] = prepaidResult.customer;
+        customerDatesChanged = true;
+      }
+      if (prepaidResult.changed) changed = true;
+      continue;
+    }
 
     let billDate = resolveScheduledBillDate(customer, now);
     if (!billDate) continue;
@@ -1832,6 +1931,7 @@ function scheduleBilling() {
 
 module.exports = {
   scheduleBilling,
+  resolvePrepaidScheduledBillDate,
   runMonthlyBillingOnce,
   runMonthlyBillingOnceForBranch,
   runMonthlyBillingCatchUp,

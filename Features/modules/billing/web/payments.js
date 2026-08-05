@@ -1077,7 +1077,12 @@ document.addEventListener('DOMContentLoaded', function () {
         return parsed ? parsed.getTime() : 0;
     };
     const getEffectivePaymentHistory = (history = []) => {
-        const source = (Array.isArray(history) ? history : []).filter(isEffectivePaymentStatusForPayments);
+        const source = (Array.isArray(history) ? history : [])
+            .filter(isEffectivePaymentStatusForPayments)
+            .filter((entry) => !(
+                resolveEntryDirection(entry) === 'debit'
+                && isPrepaidAutoChargeEntry(entry)
+            ));
         const entries = source
             .map((entry, index) => ({
                 entry,
@@ -1670,7 +1675,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const openingPreviousBalance = isOpeningPreviousBalanceRawForPayments(entry);
         const direction = openingPreviousBalance ? 'debit' : resolveBreakdownDirectionForPayments(entry);
         const kind = openingPreviousBalance ? 'bill' : resolveBreakdownKindForPayments(entry);
-        const dateObj = safeBreakdownDate(entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at);
+        const dateObj = safeBreakdownDate(direction === 'debit'
+            ? (entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || entry?.created_at)
+            : (entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at));
         return {
             raw: entry || {},
             index,
@@ -1704,7 +1711,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const isPrepaidAutoChargeEntryForPayments = (entry = {}) => Boolean(
         entry?.isPrepaidAutoCharge || isPrepaidAutoChargeRawForPayments(entry?.raw || entry)
     );
-    const findIgnoredOpeningAutoChargeOrdersForPayments = (entries = []) => {
+    const findIgnoredOpeningAutoChargeOrdersForPayments = (customer = {}, entries = []) => {
+        if (resolveBreakdownPlanTypeForPayments(customer) === 'prepaid') {
+            return new Set(entries
+                .filter((entry) => entry.direction === 'debit' && isPrepaidAutoChargeEntryForPayments(entry))
+                .map((entry) => entry.sortOrder));
+        }
+
         const openingAdjustments = entries.filter((entry) => (
             (
                 entry.direction === 'debit'
@@ -2139,6 +2152,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     };
     const resolveBreakdownBillingDayForPayments = (customer = {}, fallbackDate = null) => {
+        if (resolveBreakdownPlanTypeForPayments(customer) === 'prepaid') return 1;
         if (hasMonthEndBillingCycle(customer)) return 31;
         const candidates = [
             safeBreakdownDate(customer.billDate),
@@ -2154,7 +2168,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     const buildBreakdownRowsFromPostedDebitsForPayments = (customer, entries, context) => {
         const rows = [];
-        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrdersForPayments(entries);
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrdersForPayments(customer, entries);
         const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
@@ -2359,12 +2373,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return rows;
     };
     const buildBreakdownRowsForPayments = (customer = {}, customers = []) => {
-        const entries = (Array.isArray(customer.history) ? customer.history : [])
+        const normalizedEntries = (Array.isArray(customer.history) ? customer.history : [])
             .filter(isEffectivePaymentStatusForPayments)
             .map(normalizeBreakdownEntryForPayments)
             .filter(Boolean)
             .sort(compareBreakdownEntriesForPayments)
             .map((entry, sortOrder) => ({ ...entry, sortOrder }));
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrdersForPayments(customer, normalizedEntries);
+        const entries = normalizedEntries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const context = createBreakdownReferralContextForPayments(customer, entries, customers);
         let rows = [];
         if (entries.some((entry) => entry.direction === 'debit')) {
@@ -2398,8 +2414,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const isPrepaidBillChargeEntry = (entry = {}) => {
         if (resolveEntryDirection(entry) !== 'debit') return false;
         if (isOpeningPreviousBalanceEntry(entry)) return false;
-        const description = String(entry?.description || '').trim().toLowerCase();
-        return description.includes('prepaid renewal charge') || isMonthlyChargeEntry(entry);
+        return isMonthlyChargeEntry(entry);
     };
     const hasCurrentMonthBillCharge = (customer = {}, planCategory = 'postpaid', cycleDate = new Date()) => {
         const history = getEffectivePaymentHistory(Array.isArray(customer?.history) ? customer.history : []);
@@ -3841,13 +3856,20 @@ document.addEventListener('DOMContentLoaded', function () {
             const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > EPSILON;
 
             if (planCategory === 'prepaid') {
-                billingCycleDisplay = 'Monthly prepaid';
-                const prepaidExpiry = customer.prepaidExpirationAt || customer.dueDate;
-                if (prepaidExpiry) {
-                    billingCycleMeta = `Paid through: ${formatDateTime(prepaidExpiry, 'Not set')}`;
-                } else {
-                    billingCycleMeta = 'No expiry set';
-                }
+                const cycleToday = new Date();
+                const currentCycleRow = getCurrentMonthBreakdownRowForPayments(customer, cycleToday);
+                const currentCycleDate = currentCycleRow?.billDate
+                    || new Date(cycleToday.getFullYear(), cycleToday.getMonth(), 1);
+                const nextCycleDate = new Date(
+                    currentCycleDate.getFullYear(),
+                    currentCycleDate.getMonth() + 1,
+                    1
+                );
+                const cycleStatus = currentCycleRow?.paymentStatus === 'paid'
+                    ? 'Paid'
+                    : (currentCycleRow?.paymentStatus === 'unpaid' ? 'Unpaid' : 'Not generated');
+                billingCycleDisplay = `Current: ${formatDate(formatDateISO(currentCycleDate))} · ${cycleStatus}`;
+                billingCycleMeta = `Next: ${formatDate(formatDateISO(nextCycleDate))}`;
             } else if (billDate && !isNaN(billDate)) {
                 const getOrdinalSuffix = (d) => {
                     if (d > 3 && d < 21) return 'th';

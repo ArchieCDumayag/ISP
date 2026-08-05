@@ -15,6 +15,7 @@ This is the durable project-wide memory for all Codex sessions. Read it with `AG
 - Development checkout uses `.env`, JSON storage, app port `3100`, and customer-upstream port `4101`.
 - Start development with `npm start` or `node server.js` from `/home/archiecd/ISP`.
 - Existing production runs separately from `/opt/isp-billing` as `isp-billing.service` on ports `3000` and `4001`.
+- The Windows test origin at `http://localhost:3000` is assigned to the locally managed `thre3j-billing` Cloudflare Tunnel for the requested `3jtestserver.com` hostname. Public DNS remains pending until the domain is registered in the Cloudflare account.
 - The Ubuntu installer validates the canonical Customer App `company-info.html` runtime before dependency installation and explicitly restarts an existing systemd service after Git updates, preventing stale pre-module routes from remaining active.
 - Never modify or restart production unless the user explicitly requests it.
 - Lock `runtime/server` before changing the development runtime.

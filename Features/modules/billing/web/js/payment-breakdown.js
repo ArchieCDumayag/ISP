@@ -56,8 +56,10 @@ document.addEventListener('DOMContentLoaded', () => {
         account: document.getElementById('subscriberInfoAccount'),
         planType: document.getElementById('subscriberInfoPlanType'),
         plan: document.getElementById('subscriberInfoPlan'),
+        billingCycleLabel: document.getElementById('subscriberInfoBillingCycleLabel'),
         billingCycle: document.getElementById('subscriberInfoBillingCycle'),
         activationDate: document.getElementById('subscriberInfoActivationDate'),
+        dueDateLabel: document.getElementById('subscriberInfoDueDateLabel'),
         dueDate: document.getElementById('subscriberInfoDueDate'),
         creditLimit: document.getElementById('subscriberInfoCreditLimit'),
         area: document.getElementById('subscriberInfoArea'),
@@ -579,7 +581,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const openingPreviousBalance = isOpeningPreviousBalanceRaw(entry);
         const direction = openingPreviousBalance ? 'debit' : resolveDirection(entry);
         const kind = openingPreviousBalance ? 'bill' : resolveKind(entry);
-        const dateObj = safeDate(entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at);
+        const dateObj = safeDate(direction === 'debit'
+            ? (entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || entry?.created_at)
+            : (entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at));
         return {
             raw: entry || {},
             index,
@@ -697,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (explicit) return explicit;
 
         const planBilling = String(record.planBilling || record.billing || '').trim();
-        const planType = normalizePlanTypeValue(planOverride?.planCategory) || resolvePlanType(record);
+        const planType = resolvePlanType(record);
         if (planType === 'prepaid') return 'Monthly';
 
         const cycleDate = safeDate(record.billDate)
@@ -841,11 +845,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const planName = resolvePlanLabel(record);
         const planType = resolvePlanType(record);
         const billDate = safeDate(record.billDate) || safeDate(record.dueDate);
-        const billingCycle = resolveBillingCycleLabel(record, billDate);
         const status = resolveSubscriberStatus(record);
         const joined = String(record.since || record.joinDate || '').trim();
         const creditLimit = Number(record.creditLimit);
-        const currentDueDate = resolveCurrentDueDate(record, rows);
         const metaParts = [
             account ? `Account ${account}` : '',
             joined ? `Joined ${joined}` : '',
@@ -866,9 +868,42 @@ document.addEventListener('DOMContentLoaded', () => {
             subscriberInfo.plan,
             `${planName}${planAmount ? ` • ${formatCurrency(planAmount)}` : ''}`
         );
-        setSubscriberText(subscriberInfo.billingCycle, billingCycle);
         setSubscriberText(subscriberInfo.activationDate, formatRecordDate(record.activationDate || record.activation_date));
-        setSubscriberText(subscriberInfo.dueDate, formatRecordDate(currentDueDate || record.dueDate || record.prepaidExpirationAt || record.billDate));
+        if (planType === 'prepaid') {
+            const today = getTodayBillingDate();
+            const todayParts = getZonedDateParts(today);
+            const currentCycleRow = (Array.isArray(rows) ? rows : [])
+                .filter((row) => row?.billDate && isSameBillingMonth(row.billDate, today))
+                .slice(-1)[0] || null;
+            const currentCycleDate = currentCycleRow?.billDate || (
+                todayParts ? buildMonthlyDate(todayParts.year, todayParts.month, 1) : null
+            );
+            const currentCycleParts = getZonedDateParts(currentCycleDate);
+            const nextCycleParts = currentCycleParts
+                ? getNextMonthParts(currentCycleParts.year, currentCycleParts.month)
+                : null;
+            const nextCycleDate = nextCycleParts
+                ? buildMonthlyDate(nextCycleParts.year, nextCycleParts.month, 1)
+                : null;
+            const cycleStatus = currentCycleRow?.paymentStatus === 'paid'
+                ? 'Paid'
+                : (currentCycleRow?.paymentStatus === 'unpaid' ? 'Unpaid' : 'Not generated');
+
+            setSubscriberText(subscriberInfo.billingCycleLabel, 'Current Cycle');
+            setSubscriberText(
+                subscriberInfo.billingCycle,
+                `${formatRecordDate(currentCycleDate)} — ${cycleStatus}`
+            );
+            setSubscriberText(subscriberInfo.dueDateLabel, 'Next Cycle');
+            setSubscriberText(subscriberInfo.dueDate, formatRecordDate(nextCycleDate));
+        } else {
+            const billingCycle = resolveBillingCycleLabel(record, billDate);
+            const currentDueDate = resolveCurrentDueDate(record, rows);
+            setSubscriberText(subscriberInfo.billingCycleLabel, 'Billing Cycle');
+            setSubscriberText(subscriberInfo.billingCycle, billingCycle);
+            setSubscriberText(subscriberInfo.dueDateLabel, 'Due Date');
+            setSubscriberText(subscriberInfo.dueDate, formatRecordDate(currentDueDate || record.dueDate || record.billDate));
+        }
         setSubscriberText(subscriberInfo.creditLimit, Number.isFinite(creditLimit) ? formatCurrency(creditLimit) : '');
         setSubscriberText(subscriberInfo.area, resolveAreaText(record));
         setSubscriberText(subscriberInfo.contact, resolveContactText(record));
@@ -1131,7 +1166,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ].join('-');
     };
 
-    const findIgnoredOpeningAutoChargeOrders = (entries = []) => {
+    const findIgnoredOpeningAutoChargeOrders = (record = {}, entries = []) => {
+        if (resolvePlanType(record) === 'prepaid') {
+            return new Set(entries
+                .filter((entry) => entry.direction === 'debit' && isPrepaidAutoChargeEntry(entry))
+                .map((entry) => entry.sortOrder));
+        }
+
         const openingAdjustments = entries.filter((entry) => (
             (
                 entry.direction === 'debit'
@@ -1478,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const resolveBillingDay = (record = {}, fallbackDate = null) => {
+        if (resolvePlanType(record) === 'prepaid') return 1;
         if (hasMonthEndBillingCycle(record)) return 31;
         const candidates = [
             safeDate(record.billDate),
@@ -1511,7 +1553,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const buildRowsFromPostedDebits = (record, entries, context) => {
         const rows = [];
-        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(entries);
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, entries);
         const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
@@ -1821,12 +1863,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const buildBreakdownRows = (record = {}, customers = []) => {
-        const entries = (Array.isArray(record.history) ? record.history : [])
+        const normalizedEntries = (Array.isArray(record.history) ? record.history : [])
             .filter(isEffectivePaymentStatus)
             .map(normalizeEntry)
             .filter(Boolean)
             .sort(compareEntries)
             .map((entry, sortOrder) => ({ ...entry, sortOrder }));
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, normalizedEntries);
+        const entries = normalizedEntries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const context = createReferralContext(record, entries, customers);
         let rows = [];
         if (entries.some((entry) => entry.direction === 'debit')) {

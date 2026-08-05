@@ -12,6 +12,22 @@
   const collectorRescheduleCollectorFilter = document.getElementById('collectorRescheduleCollectorFilter');
   const collectorRescheduleStatusFilter = document.getElementById('collectorRescheduleStatusFilter');
   const collectorRescheduleRefresh = document.getElementById('collectorRescheduleRefresh');
+  const collectorRescheduleCreate = document.getElementById('collectorRescheduleCreate');
+  const collectorScheduleModal = document.getElementById('collectorScheduleModal');
+  const collectorScheduleForm = document.getElementById('collectorScheduleForm');
+  const collectorScheduleModalTitle = document.getElementById('collectorScheduleModalTitle');
+  const collectorScheduleModalSubtitle = document.getElementById('collectorScheduleModalSubtitle');
+  const collectorScheduleRecordId = document.getElementById('collectorScheduleRecordId');
+  const collectorScheduleCustomer = document.getElementById('collectorScheduleCustomer');
+  const collectorScheduleCollector = document.getElementById('collectorScheduleCollector');
+  const collectorScheduleDate = document.getElementById('collectorScheduleDate');
+  const collectorScheduleTime = document.getElementById('collectorScheduleTime');
+  const collectorScheduleResult = document.getElementById('collectorScheduleResult');
+  const collectorScheduleNotes = document.getElementById('collectorScheduleNotes');
+  const collectorScheduleMessage = document.getElementById('collectorScheduleMessage');
+  const collectorScheduleSave = document.getElementById('collectorScheduleSave');
+  const closeCollectorScheduleModal = document.getElementById('closeCollectorScheduleModal');
+  const cancelCollectorScheduleModal = document.getElementById('cancelCollectorScheduleModal');
   const assignmentList = document.getElementById('assignmentList');
   const assignmentCount = document.getElementById('assignmentCount');
   const monthlySummary = document.getElementById('monthlySummary');
@@ -667,6 +683,19 @@
       const result = String(record?.result || '').trim();
       const notes = String(record?.notes || '').trim();
       const statusLabel = collectorRescheduleStatusLabel(record);
+      const recordId = String(record?.id || '').trim();
+      const actions = active && recordId
+        ? `
+          <div class="btn-list flex-nowrap justify-content-center">
+            <button class="btn btn-outline-primary btn-sm btn-icon" type="button" data-collector-reschedule-action="edit" data-record-id="${escapeHtml(recordId)}" title="Edit schedule" aria-label="Edit schedule">
+              <i class="ti ti-edit" aria-hidden="true"></i>
+            </button>
+            <button class="btn btn-outline-danger btn-sm btn-icon" type="button" data-collector-reschedule-action="delete" data-record-id="${escapeHtml(recordId)}" title="Delete schedule" aria-label="Delete schedule">
+              <i class="ti ti-trash" aria-hidden="true"></i>
+            </button>
+          </div>
+        `
+        : '<span class="text-secondary">&mdash;</span>';
       tr.innerHTML = `
         <td>
           <div class="collector-approval-copy">
@@ -693,6 +722,7 @@
           </div>
         </td>
         <td><span class="badge ${active ? 'bg-warning-lt text-warning' : 'bg-secondary-lt text-secondary'}">${escapeHtml(statusLabel)}</span></td>
+        <td class="text-center">${actions}</td>
       `;
       collectorRescheduleList.appendChild(tr);
     });
@@ -703,7 +733,7 @@
     populateCollectorRescheduleFilter();
     if (!collectorRescheduleList) return;
     const className = tone === 'muted' ? 'text-secondary' : 'text-danger';
-    collectorRescheduleList.innerHTML = `<tr><td colspan="5" class="text-center ${className} py-3">${escapeHtml(message)}</td></tr>`;
+    collectorRescheduleList.innerHTML = `<tr><td colspan="6" class="text-center ${className} py-3">${escapeHtml(message)}</td></tr>`;
     if (collectorRescheduleCount) collectorRescheduleCount.textContent = 'Unavailable';
     if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'none';
   }
@@ -731,6 +761,208 @@
       renderCollectorRescheduleNotice(error?.message || 'Failed to load rescheduled clients.', tone);
     } finally {
       if (collectorRescheduleRefresh) collectorRescheduleRefresh.disabled = false;
+    }
+  }
+
+  function collectorScheduleToday() {
+    const now = new Date();
+    const local = new Date(now.getTime() - (now.getTimezoneOffset() * 60000));
+    return local.toISOString().slice(0, 10);
+  }
+
+  function setCollectorScheduleMessage(message = '', tone = 'info') {
+    if (!collectorScheduleMessage) return;
+    const colors = {
+      info: 'var(--app-muted, #64748b)',
+      success: 'var(--tblr-success, #2fb344)',
+      danger: 'var(--tblr-danger, #d63939)'
+    };
+    collectorScheduleMessage.style.color = colors[tone] || colors.info;
+    collectorScheduleMessage.textContent = message;
+  }
+
+  function findCollectorScheduleCustomer(accountNumber = '') {
+    const wanted = String(accountNumber || '').trim();
+    return clientReviewCustomers.find((customer) => getClientAccountNumber(customer) === wanted) || null;
+  }
+
+  function assignedCollectorIdsForArea(area = '') {
+    const wanted = normalizeAreaKey(area);
+    const match = Object.entries(normalizeAssignments(assignmentsByArea || {}))
+      .find(([name]) => normalizeAreaKey(name) === wanted);
+    return match ? match[1].map((id) => String(id || '').trim()).filter(Boolean) : [];
+  }
+
+  function populateCollectorScheduleCustomers(selectedAccountNumber = '', fallbackRecord = null) {
+    if (!collectorScheduleCustomer) return;
+    const selected = String(selectedAccountNumber || '').trim();
+    const byAccount = new Map();
+    clientReviewCustomers.forEach((customer) => {
+      const accountNumber = getClientAccountNumber(customer);
+      if (accountNumber) byAccount.set(accountNumber, customer);
+    });
+    collectorScheduleCustomer.innerHTML = '<option value="">Select client</option>';
+    [...byAccount.entries()]
+      .sort((left, right) => getClientDisplayName(left[1]).localeCompare(getClientDisplayName(right[1]), undefined, { sensitivity: 'base', numeric: true }))
+      .forEach(([accountNumber, customer]) => {
+        const option = document.createElement('option');
+        const area = getClientArea(customer);
+        option.value = accountNumber;
+        option.textContent = `${getClientDisplayName(customer)} (#${accountNumber})${area ? ` - ${area}` : ''}`;
+        collectorScheduleCustomer.appendChild(option);
+      });
+    if (selected && !byAccount.has(selected) && fallbackRecord) {
+      const option = document.createElement('option');
+      option.value = selected;
+      option.textContent = `${fallbackRecord.customerName || 'Client'} (#${selected})${fallbackRecord.area ? ` - ${fallbackRecord.area}` : ''}`;
+      collectorScheduleCustomer.appendChild(option);
+    }
+    collectorScheduleCustomer.value = selected;
+  }
+
+  function populateCollectorScheduleCollectors(selectedCollectorId = '', fallbackRecord = null) {
+    if (!collectorScheduleCollector) return;
+    const selected = String(selectedCollectorId || '').trim();
+    const customer = findCollectorScheduleCustomer(collectorScheduleCustomer?.value);
+    const area = getClientArea(customer) || String(fallbackRecord?.area || '').trim();
+    const assignedIds = new Set(assignedCollectorIdsForArea(area));
+    const candidates = getDisplayCollectors().filter((account) => assignedIds.has(getCollectorId(account)));
+    collectorScheduleCollector.innerHTML = '<option value="">Select collector</option>';
+    candidates.forEach((account) => {
+      const id = getCollectorId(account);
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = getCollectorName(id);
+      collectorScheduleCollector.appendChild(option);
+    });
+    if (selected && !candidates.some((account) => getCollectorId(account) === selected) && fallbackRecord) {
+      const option = document.createElement('option');
+      option.value = selected;
+      option.textContent = getCollectorRescheduleName(fallbackRecord);
+      collectorScheduleCollector.appendChild(option);
+    }
+    collectorScheduleCollector.value = selected;
+    collectorScheduleCollector.disabled = Boolean(collectorScheduleRecordId?.value) || !candidates.length;
+    if (!collectorScheduleRecordId?.value && !candidates.length && area) {
+      setCollectorScheduleMessage('Assign a collector to this client area before creating the schedule.', 'danger');
+    } else if (!collectorScheduleRecordId?.value) {
+      setCollectorScheduleMessage('');
+    }
+  }
+
+  async function openCollectorScheduleModal(record = null) {
+    if (!collectorScheduleModal || !collectorScheduleForm) return;
+    collectorScheduleForm.reset();
+    const editing = Boolean(record?.id);
+    if (collectorScheduleRecordId) collectorScheduleRecordId.value = editing ? String(record.id) : '';
+    if (collectorScheduleModalTitle) collectorScheduleModalTitle.textContent = editing ? 'Edit Collector Schedule' : 'Create Collector Schedule';
+    if (collectorScheduleModalSubtitle) {
+      collectorScheduleModalSubtitle.textContent = editing
+        ? 'Changes appear on the assigned collector device after the next Sync.'
+        : 'Assign a client follow-up that will appear after the collector taps Sync in Android.';
+    }
+    if (collectorScheduleDate) collectorScheduleDate.value = editing ? String(record.rescheduledDate || '').slice(0, 10) : collectorScheduleToday();
+    if (collectorScheduleTime) collectorScheduleTime.value = editing ? String(record.preferredTime || '') : '';
+    if (collectorScheduleResult) collectorScheduleResult.value = editing ? String(record.result || '') : 'Collection follow-up';
+    if (collectorScheduleNotes) collectorScheduleNotes.value = editing ? String(record.notes || '') : '';
+    if (collectorScheduleCustomer) collectorScheduleCustomer.disabled = true;
+    if (collectorScheduleCollector) collectorScheduleCollector.disabled = true;
+    setCollectorScheduleMessage('Loading clients and assignments...');
+    collectorScheduleModal.classList.add('show');
+    collectorScheduleModal.setAttribute('aria-hidden', 'false');
+
+    try {
+      await Promise.all([
+        loadClientReviewCustomers(),
+        collectorAccountsCache.length ? Promise.resolve() : loadCollectors(null)
+      ]);
+      const accountNumber = editing ? String(record.accountNumber || '').trim() : '';
+      populateCollectorScheduleCustomers(accountNumber, record);
+      if (collectorScheduleCustomer) collectorScheduleCustomer.disabled = editing;
+      populateCollectorScheduleCollectors(editing ? String(record.collectorId || '').trim() : '', record);
+      if (editing && collectorScheduleCollector) collectorScheduleCollector.disabled = true;
+      if (!editing) setCollectorScheduleMessage('Select a client to see collectors assigned to its area.');
+      setTimeout(() => collectorScheduleCustomer?.focus(), 50);
+    } catch (error) {
+      setCollectorScheduleMessage(error?.message || 'Unable to load clients and collectors.', 'danger');
+    }
+  }
+
+  function closeCollectorScheduleEditor() {
+    if (!collectorScheduleModal) return;
+    collectorScheduleModal.classList.remove('show');
+    collectorScheduleModal.setAttribute('aria-hidden', 'true');
+    setCollectorScheduleMessage('');
+  }
+
+  async function saveCollectorSchedule() {
+    if (!collectorScheduleForm?.reportValidity()) return;
+    const recordId = String(collectorScheduleRecordId?.value || '').trim();
+    const payload = {
+      accountNumber: String(collectorScheduleCustomer?.value || '').trim(),
+      collectorId: String(collectorScheduleCollector?.value || '').trim(),
+      rescheduledDate: String(collectorScheduleDate?.value || '').trim(),
+      preferredTime: String(collectorScheduleTime?.value || '').trim(),
+      result: String(collectorScheduleResult?.value || '').trim(),
+      notes: String(collectorScheduleNotes?.value || '').trim()
+    };
+    if (!payload.collectorId) {
+      setCollectorScheduleMessage('Select a collector assigned to this client area.', 'danger');
+      return;
+    }
+    if (collectorScheduleSave) collectorScheduleSave.disabled = true;
+    setCollectorScheduleMessage(recordId ? 'Updating schedule...' : 'Creating schedule...');
+    try {
+      const response = await fetch(recordId
+        ? `/api/collector/payments/reschedules/${encodeURIComponent(recordId)}`
+        : '/api/collector/payments/reschedules', {
+        method: recordId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok === false) {
+        throw new Error(result?.error || result?.message || 'Failed to save collector schedule.');
+      }
+      closeCollectorScheduleEditor();
+      await loadCollectorReschedules();
+      toast(recordId ? 'Collector schedule updated.' : 'Collector schedule created.', 'ok');
+    } catch (error) {
+      setCollectorScheduleMessage(error?.message || 'Failed to save collector schedule.', 'danger');
+    } finally {
+      if (collectorScheduleSave) collectorScheduleSave.disabled = false;
+    }
+  }
+
+  async function deleteCollectorSchedule(record, triggerButton = null) {
+    if (!record?.id) return;
+    const clientName = String(record.customerName || record.accountNumber || 'this client').trim();
+    const confirmed = window.appConfirm
+      ? await window.appConfirm(`Delete the active schedule for ${clientName}? The collector will receive the removal after the next Sync.`, {
+        title: 'Delete Collector Schedule',
+        okText: 'Delete Schedule',
+        type: 'danger'
+      })
+      : window.confirm(`Delete the active schedule for ${clientName}?`);
+    if (!confirmed) return;
+    if (triggerButton) triggerButton.disabled = true;
+    try {
+      const response = await fetch(`/api/collector/payments/reschedules/${encodeURIComponent(record.id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok === false) {
+        throw new Error(result?.error || result?.message || 'Failed to delete collector schedule.');
+      }
+      await loadCollectorReschedules();
+      toast('Collector schedule deleted.', 'ok');
+    } catch (error) {
+      toast(error?.message || 'Failed to delete collector schedule.', 'danger');
+      if (triggerButton) triggerButton.disabled = false;
     }
   }
 
@@ -1842,8 +2074,33 @@
   collectorRescheduleCollectorFilter?.addEventListener('change', renderCollectorReschedules);
   collectorRescheduleStatusFilter?.addEventListener('change', renderCollectorReschedules);
   collectorRescheduleRefresh?.addEventListener('click', () => loadCollectorReschedules().catch(() => {}));
+  collectorRescheduleCreate?.addEventListener('click', () => openCollectorScheduleModal().catch(() => {}));
+  collectorScheduleCustomer?.addEventListener('change', () => populateCollectorScheduleCollectors());
+  closeCollectorScheduleModal?.addEventListener('click', closeCollectorScheduleEditor);
+  cancelCollectorScheduleModal?.addEventListener('click', closeCollectorScheduleEditor);
+  collectorScheduleModal?.addEventListener('click', (event) => {
+    if (event.target === collectorScheduleModal) closeCollectorScheduleEditor();
+  });
+  collectorScheduleForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveCollectorSchedule().catch(() => {});
+  });
 
   document.addEventListener('click', (event) => {
+    const scheduleActionButton = event.target.closest('[data-collector-reschedule-action]');
+    if (scheduleActionButton) {
+      const recordId = scheduleActionButton.getAttribute('data-record-id') || '';
+      const action = scheduleActionButton.getAttribute('data-collector-reschedule-action') || '';
+      const record = collectorRescheduleRecords.find((item) => String(item?.id || '') === recordId);
+      if (!record) return;
+      if (action === 'edit') {
+        openCollectorScheduleModal(record).catch(() => {});
+      } else if (action === 'delete') {
+        deleteCollectorSchedule(record, scheduleActionButton).catch(() => {});
+      }
+      return;
+    }
+
     const collectorApprovalBtn = event.target.closest('[data-collector-approval-collector-action]');
     if (collectorApprovalBtn) {
       const collectorKey = collectorApprovalBtn.getAttribute('data-collector-key') || '';

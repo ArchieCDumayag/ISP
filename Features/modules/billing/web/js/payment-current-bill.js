@@ -337,7 +337,9 @@
         const openingPreviousBalance = isOpeningPreviousBalanceRaw(entry);
         const direction = openingPreviousBalance ? 'debit' : resolveDirection(entry);
         const kind = openingPreviousBalance ? 'bill' : resolveKind(entry);
-        const dateObj = safeDate(entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at);
+        const dateObj = safeDate(direction === 'debit'
+            ? (entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || entry?.created_at)
+            : (entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at));
         return {
             raw: entry || {},
             index,
@@ -633,7 +635,13 @@
         if (!parts) return '';
         return [parts.year, String(parts.month).padStart(2, '0'), String(parts.day).padStart(2, '0')].join('-');
     };
-    const findIgnoredOpeningAutoChargeOrders = (entries = []) => {
+    const findIgnoredOpeningAutoChargeOrders = (record = {}, entries = []) => {
+        if (resolvePlanType(record) === 'prepaid') {
+            return new Set(entries
+                .filter((entry) => entry.direction === 'debit' && isPrepaidAutoChargeEntry(entry))
+                .map((entry) => entry.sortOrder));
+        }
+
         const openingAdjustments = entries.filter((entry) => (
             (entry.direction === 'debit' && isOpeningPreviousBalanceEntry(entry))
             || (entry.direction === 'credit' && isOpeningAdvanceEntry(entry))
@@ -884,6 +892,7 @@
         };
     };
     const resolveBillingDay = (record = {}, fallbackDate = null) => {
+        if (resolvePlanType(record) === 'prepaid') return 1;
         if (hasMonthEndBillingCycle(record)) return 31;
         const candidates = [
             safeDate(record.billDate),
@@ -899,7 +908,7 @@
     };
     const buildRowsFromPostedDebits = (record, entries, context) => {
         const rows = [];
-        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(entries);
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, entries);
         const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
         if (!debitEntries.length) return rows;
@@ -1110,11 +1119,13 @@
         return rows;
     };
     const buildBreakdownRows = (record = {}, customers = []) => {
-        const entries = (Array.isArray(record.history) ? record.history : [])
+        const normalizedEntries = (Array.isArray(record.history) ? record.history : [])
             .map(normalizeEntry)
             .filter(Boolean)
             .sort(compareEntries)
             .map((entry, sortOrder) => ({ ...entry, sortOrder }));
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, normalizedEntries);
+        const entries = normalizedEntries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
         const context = createReferralContext(record, entries, customers);
         let rows = [];
         if (entries.some((entry) => entry.direction === 'debit')) {
@@ -1139,7 +1150,7 @@
             const direct = Number(record.balance);
             return Number.isFinite(direct) ? roundMoney(direct) : 0;
         }
-        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(entries);
+        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, entries);
         return entries
             .filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder))
             .reduce((balance, entry) => applyEntryToBalance(balance, entry), 0);

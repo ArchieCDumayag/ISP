@@ -7,17 +7,98 @@ body.layout-fluid-vertical .collectors-page {
     gap: .75rem;
 }
 
-body.layout-fluid-vertical .collectors-page .collectors-board.card {
-    width: min(100%, 980px);
+body.layout-fluid-vertical .collectors-page .collector-page-heading {
+    width: min(100%, 1440px);
+    padding: .25rem 0 .125rem;
 }
 
-.collectors-board.collector-assignment-shell {
+body.layout-fluid-vertical .collectors-page .collectors-dashboard-grid {
+    display: grid;
+    grid-template-areas:
+        "assignment reschedules"
+        "payments payments";
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+    align-items: start;
+    gap: .75rem;
+    width: min(100%, 1440px);
+}
+
+body.layout-fluid-vertical .collectors-dashboard-grid > .collectors-board.card {
+    width: 100%;
+    min-width: 0;
+}
+
+.collectors-assignment-card {
+    grid-area: assignment;
+}
+
+.collectors-reschedule-card {
+    grid-area: reschedules;
+}
+
+.collectors-payments-card {
+    grid-area: payments;
+}
+
+.collectors-reschedule-card .collector-reschedule-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+.collectors-reschedule-card .collector-reschedule-filters {
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.collector-page-heading .page-pretitle {
+    color: var(--tblr-primary, #206bc4);
+    font-size: .625rem;
+    letter-spacing: .08em;
+}
+
+.collector-page-heading .page-title {
+    margin: .125rem 0;
+    color: var(--app-text, #172033);
+    font-size: 1.25rem;
+    line-height: 1.25;
+}
+
+.collector-page-heading .text-secondary {
+    font-size: .75rem;
+    line-height: 1.35;
+}
+
+.collectors-board.collector-assignment-shell,
+.collectors-board.collectors-section-card {
     gap: 0 !important;
+    margin: 0 !important;
     padding: 0 !important;
     border-radius: var(--tblr-border-radius-lg, .5rem) !important;
     background: var(--app-surface, #fff) !important;
     box-shadow: none !important;
     overflow: hidden;
+}
+
+.collectors-board .collector-section-heading {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    min-width: 0;
+}
+
+.collectors-board .collector-section-heading > div {
+    min-width: 0;
+}
+
+.collectors-board .collector-section-heading .avatar {
+    width: 2rem;
+    min-width: 2rem;
+    height: 2rem;
+    font-size: 1rem;
+}
+
+.collectors-board .collector-section-header {
+    border-bottom: 1px solid var(--app-border, #e6e7e9);
 }
 
 .collectors-board .collector-assignment-header {
@@ -103,8 +184,8 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
 .collectors-board .collector-approval-panel {
     display: grid;
     gap: .5rem;
-    padding: .75rem 1rem !important;
-    border-bottom: 1px solid var(--app-border, #e6e7e9);
+    padding: 1rem !important;
+    border-bottom: 0;
 }
 
 .collectors-board .collector-approval-panel__header {
@@ -201,6 +282,14 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
     flex-wrap: wrap;
 }
 
+.collectors-board .collector-reschedule-create {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    min-height: 1.875rem;
+    white-space: nowrap;
+}
+
 .collectors-board .collector-reschedule-filters .form-select {
     width: auto;
     min-width: 9.5rem;
@@ -218,7 +307,7 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
 }
 
 .collectors-board .collector-reschedule-table {
-    min-width: 900px;
+    min-width: 1020px;
 }
 
 .collectors-board .collector-reschedule-table th:nth-child(1),
@@ -236,9 +325,14 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
     width: 11rem;
 }
 
+.collectors-board .collector-reschedule-table th:nth-child(5),
+.collectors-board .collector-reschedule-table td:nth-child(5) {
+    width: 7.5rem;
+}
+
 .collectors-board .collector-reschedule-table th:last-child,
 .collectors-board .collector-reschedule-table td:last-child {
-    width: 7.5rem;
+    width: 5.75rem;
 }
 
 .collectors-board .collector-reschedule-details span {
@@ -507,6 +601,10 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
     --app-form-modal-width: 680px;
 }
 
+.collectors-tabler-modal.collector-schedule-modal {
+    --app-form-modal-width: 720px;
+}
+
 .collectors-tabler-modal .modal-dialog {
     width: min(var(--app-form-modal-width), calc(100vw - 2rem)) !important;
     max-width: min(var(--app-form-modal-width), calc(100vw - 2rem)) !important;
@@ -539,6 +637,38 @@ body.layout-fluid-vertical .collectors-page .collectors-board.card {
 .collectors-tabler-modal .modal-footer,
 .collectors-tabler-modal .form-actions.modal-footer {
     padding: .625rem 1rem !important;
+}
+
+.collector-schedule-modal__body .form-label {
+    margin-bottom: .25rem;
+    color: var(--app-text, #172033);
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.collector-schedule-modal__body .form-control,
+.collector-schedule-modal__body .form-select {
+    min-height: 2.125rem;
+    font-size: .8125rem;
+}
+
+.collector-schedule-modal__body textarea.form-control {
+    min-height: 6rem;
+    resize: vertical;
+}
+
+.collector-schedule-modal__body .modal-message {
+    min-height: 1.125rem;
+    margin: .625rem 0 0;
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.collector-schedule-modal__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
 }
 
 .assignment-modal__body {
@@ -950,10 +1080,17 @@ body.theme-dark .assignment-modal .assignment-client-review__empty--error,
 
 body.theme-dark .collectors-board.collector-assignment-shell,
 [data-bs-theme=dark] .collectors-board.collector-assignment-shell,
+body.theme-dark .collectors-board.collectors-section-card,
+[data-bs-theme=dark] .collectors-board.collectors-section-card,
 body.theme-dark .collectors-board .collector-stat-card,
 [data-bs-theme=dark] .collectors-board .collector-stat-card {
     background: var(--app-surface, #0f172a) !important;
     border-color: var(--app-border, rgba(148, 163, 184, .22)) !important;
+}
+
+body.theme-dark .collector-page-heading .page-title,
+[data-bs-theme=dark] .collector-page-heading .page-title {
+    color: var(--app-text, #f8fafc);
 }
 
 body.theme-dark .collectors-board .collector-assignment-table thead th,
@@ -999,8 +1136,18 @@ body.theme-dark .collectors-board .collector-approval-group__copy span,
     color: var(--app-muted, #94a3b8);
 }
 
+@media (max-width: 1100px) {
+    body.layout-fluid-vertical .collectors-page .collectors-dashboard-grid {
+        grid-template-areas:
+            "assignment"
+            "reschedules"
+            "payments";
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 @media (max-width: 760px) {
-    body.layout-fluid-vertical .collectors-page .collectors-board.card {
+    body.layout-fluid-vertical .collectors-page .collector-page-heading {
         width: 100%;
     }
 
@@ -1035,6 +1182,11 @@ body.theme-dark .collectors-board .collector-approval-group__copy span,
     .collectors-board .collector-reschedule-filters {
         justify-content: flex-start;
         width: 100%;
+    }
+
+    .collectors-board .collector-reschedule-create {
+        flex: 1 1 100%;
+        justify-content: center;
     }
 
     .collectors-board .collector-reschedule-filters .form-select {

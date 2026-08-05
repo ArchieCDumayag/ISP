@@ -3020,10 +3020,6 @@ router.post('/:accountNumber', async (req, res, next) => {
             ? normalizedPaymentEntry.kind.toLowerCase().trim()
             : 'payment';
         const amountValue = Number(paymentEntry?.amount);
-        const skipPrepaidAutoCharge = paymentEntry?.skipPrepaidAutoCharge === true
-            || paymentEntry?.skipAutoCharge === true
-            || String(paymentEntry?.skipPrepaidAutoCharge || paymentEntry?.skipAutoCharge || '').trim().toLowerCase() === 'true';
-
         // Ensure 'kind' is one of the allowed values, default to 'payment' if not.
         const kind = allowedKinds.has(requestedKind) ? requestedKind : 'payment';
         const direction = (kind === 'charge' || kind === 'bill') ? 'debit' : 'credit';
@@ -3053,8 +3049,6 @@ router.post('/:accountNumber', async (req, res, next) => {
         if (!currentCustomer) {
             return next(createError(404, 'Customer not found'));
         }
-        const isPrepaid = currentCustomer ? isPrepaidCustomer(currentCustomer) : false;
-
         let providedReference = '';
         try {
             providedReference = sanitizeReferenceInput(paymentEntry.reference);
@@ -3123,21 +3117,6 @@ router.post('/:accountNumber', async (req, res, next) => {
         delete newEntry.skipPrepaidAutoCharge;
         delete newEntry.skipAutoCharge;
 
-        const shouldAutoCharge = isPrepaid && kind === 'payment' && !skipPrepaidAutoCharge;
-        const chargeEntry = shouldAutoCharge ? {
-            id: `charge-${accountNumber}-${entryStamp}`,
-            amount: amountValue,
-            date: paymentEntry.date,
-            kind: 'charge',
-            reference: undefined,
-            description: 'Prepaid renewal charge',
-            type: 'charge',
-            direction: 'debit',
-            recordedAt: newEntry.recordedAt,
-            recordedBy: recorder,
-            payer: newEntry.payer
-        } : null;
-
         if (relational) {
             await withTransaction(async (connection) => {
                 await assignEntryNumbers(connection, newEntry);
@@ -3150,16 +3129,6 @@ router.post('/:accountNumber', async (req, res, next) => {
                 }
                 await insertPaymentEntry(newEntry, branchId, accountNumber, connection);
 
-                if (chargeEntry) {
-                    await assignEntryNumbers(connection, chargeEntry);
-                    await assertEntryNumbersAvailable(connection, branchId, chargeEntry);
-                    const chargeFingerprint = `${accountNumber}|${chargeEntry.reference}|charge|${(Math.abs(Number(chargeEntry.amount) || 0)).toFixed(2)}`;
-                    chargeEntry.fingerprint = chargeFingerprint;
-                    if (await hasPaymentFingerprint(branchId, accountNumber, chargeFingerprint, connection)) {
-                        throw createError(409, 'Payment already recorded (duplicate request).');
-                    }
-                    await insertPaymentEntry(chargeEntry, branchId, accountNumber, connection);
-                }
             });
         } else {
             const fallbackFingerprint = `${accountNumber}|${newEntry.reference}|${kind}|${(Math.abs(Number(paymentEntry.amount) || 0)).toFixed(2)}`;
@@ -3168,12 +3137,7 @@ router.post('/:accountNumber', async (req, res, next) => {
                 return next(createError(409, 'Payment already recorded (duplicate request).'));
             }
             newEntry.fingerprint = fallbackFingerprint;
-            if (chargeEntry) {
-                chargeEntry.fingerprint = `${accountNumber}|${chargeEntry.reference || ''}|charge|${(Math.abs(Number(chargeEntry.amount) || 0)).toFixed(2)}`;
-                payments[accountNumber].history.unshift(newEntry, chargeEntry);
-            } else {
-                payments[accountNumber].history.unshift(newEntry);
-            }
+            payments[accountNumber].history.unshift(newEntry);
             await writePayments(payments);
         }
         if (isPositiveCreditEntry(newEntry)) {
@@ -3668,42 +3632,12 @@ const handleXenditWebhook = async (req, res, next) => {
             xenditId: payload.id ? String(payload.id) : undefined
         };
 
-        const customersForAccount = await readCustomers(branchId);
-        const currentCustomer = customersForAccount.find((customer) => (
-            String(customer?.accountNumber || '') === String(accountNumber)
-        ));
-        const shouldAutoCharge = currentCustomer ? isPrepaidCustomer(currentCustomer) : false;
-        const chargeEntry = shouldAutoCharge ? {
-            id: `charge-${accountNumber}-${payload.id || Date.now()}`,
-            amount,
-            date: recordedAt,
-            kind: 'charge',
-            reference: undefined,
-            description: 'Prepaid renewal charge',
-            type: 'charge',
-            direction: 'debit',
-            recordedAt,
-            recordedBy: entry.recordedBy,
-            payer: entry.payer,
-            status,
-            paymentMethod: entry.paymentMethod
-        } : null;
         if (relational) {
             try {
                 await withTransaction(async (connection) => {
                     await assignEntryNumbers(connection, entry);
                     await assertEntryNumbersAvailable(connection, branchId, entry);
                     await insertPaymentEntry(entry, branchId, accountNumber, connection);
-
-                    if (chargeEntry) {
-                        await assignEntryNumbers(connection, chargeEntry);
-                        await assertEntryNumbersAvailable(connection, branchId, chargeEntry);
-                        chargeEntry.fingerprint = `${accountNumber}|${chargeEntry.reference || ''}|charge|${(Math.abs(Number(chargeEntry.amount) || 0)).toFixed(2)}`;
-                        if (await hasPaymentFingerprint(branchId, accountNumber, chargeEntry.fingerprint, connection)) {
-                            throw createError(409, 'Payment already recorded (duplicate request).');
-                        }
-                        await insertPaymentEntry(chargeEntry, branchId, accountNumber, connection);
-                    }
                 });
             } catch (error) {
                 if (error?.status === 409) {
@@ -3716,12 +3650,7 @@ const handleXenditWebhook = async (req, res, next) => {
             if (!payments[accountNumber]) {
                 payments[accountNumber] = { history: [] };
             }
-            if (chargeEntry) {
-                chargeEntry.fingerprint = `${accountNumber}|${chargeEntry.reference || ''}|charge|${(Math.abs(Number(chargeEntry.amount) || 0)).toFixed(2)}`;
-                payments[accountNumber].history.unshift(entry, chargeEntry);
-            } else {
-                payments[accountNumber].history.unshift(entry);
-            }
+            payments[accountNumber].history.unshift(entry);
             await writePayments(payments);
         }
         if (isPositiveCreditEntry(entry)) {

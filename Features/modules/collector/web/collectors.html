@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=1.7">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -19,11 +19,24 @@
         <div class="app-main page-wrapper">
             <div id="topbar"></div>
             <main class="page collectors-page">
-                <section class="card collector-assignment-shell collectors-board" aria-labelledby="collectorAssignmentTitle">
-                    <div class="card-header collector-assignment-header">
-                        <div class="collector-assignment-heading">
-                            <h1 class="card-title" id="collectorAssignmentTitle">Collector Area Assignment</h1>
-                            <p class="text-secondary mb-0">Manage collector coverage and monthly collection performance.</p>
+                <header class="collector-page-heading" aria-labelledby="collectorWorkspaceTitle">
+                    <div class="page-pretitle">Collections</div>
+                    <h1 class="page-title" id="collectorWorkspaceTitle">Collector Operations</h1>
+                    <p class="text-secondary mb-0">Manage area coverage, payment approvals, and client follow-up schedules in one page.</p>
+                </header>
+
+                <div class="collectors-dashboard-grid">
+                <section class="card collector-assignment-shell collectors-board collectors-section-card collectors-assignment-card" aria-labelledby="collectorAssignmentTitle">
+                    <div class="card-status-top bg-primary"></div>
+                    <div class="card-header collector-assignment-header collector-section-header">
+                        <div class="collector-section-heading">
+                            <span class="avatar avatar-sm bg-primary-lt text-primary" aria-hidden="true">
+                                <i class="ti ti-map-pin"></i>
+                            </span>
+                            <div class="collector-assignment-heading">
+                                <h2 class="card-title" id="collectorAssignmentTitle">Collector Area Assignment</h2>
+                                <p class="text-secondary mb-0">Manage collector coverage and monthly collection performance.</p>
+                            </div>
                         </div>
                         <button class="btn btn-primary btn-sm collector-assign-btn" type="button" id="newAssignmentBtn">
                             <i class="ti ti-plus" aria-hidden="true"></i>
@@ -63,80 +76,6 @@
 
                     <div id="assignMessage" class="assignment-toast"></div>
 
-                    <section class="collector-approval-panel" aria-labelledby="collectorApprovalTitle">
-                        <div class="collector-approval-panel__header">
-                            <div>
-                                <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
-                                <p>Admin approval required before payments count in collector totals.</p>
-                            </div>
-                            <div class="collector-approval-panel__actions">
-                                <span class="collector-approval-total" id="collectorApprovalTotal">PHP 0.00</span>
-                                <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
-                            </div>
-                        </div>
-                        <div class="table-responsive collector-approval-table-wrapper">
-                            <table class="table table-vcenter table-sm collectors-table collector-approval-table">
-                                <thead>
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Paid Client</th>
-                                        <th class="text-end">Amount</th>
-                                        <th>Reference</th>
-                                        <th class="text-center">Reject</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="collectorApprovalList"></tbody>
-                            </table>
-                            <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
-                                <i class="ti ti-circle-check" aria-hidden="true"></i>
-                                <p>No pending collector payments.</p>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="collector-approval-panel collector-reschedule-panel" aria-labelledby="collectorRescheduleTitle">
-                        <div class="collector-approval-panel__header collector-reschedule-panel__header">
-                            <div>
-                                <h2 id="collectorRescheduleTitle">Rescheduled Clients</h2>
-                                <p>Follow-up schedules uploaded by collectors from the Android app.</p>
-                            </div>
-                            <div class="collector-reschedule-filters">
-                                <label class="visually-hidden" for="collectorRescheduleCollectorFilter">Collector</label>
-                                <select class="form-select form-select-sm" id="collectorRescheduleCollectorFilter">
-                                    <option value="">All collectors</option>
-                                </select>
-                                <label class="visually-hidden" for="collectorRescheduleStatusFilter">Status</label>
-                                <select class="form-select form-select-sm" id="collectorRescheduleStatusFilter">
-                                    <option value="active">Active schedules</option>
-                                    <option value="history">Schedule history</option>
-                                    <option value="all">All schedules</option>
-                                </select>
-                                <button class="btn btn-outline-primary btn-sm btn-icon" type="button" id="collectorRescheduleRefresh" title="Refresh rescheduled clients" aria-label="Refresh rescheduled clients">
-                                    <i class="ti ti-refresh" aria-hidden="true"></i>
-                                </button>
-                                <span class="badge bg-primary-lt text-primary" id="collectorRescheduleCount">0 active</span>
-                            </div>
-                        </div>
-                        <div class="table-responsive collector-approval-table-wrapper collector-reschedule-table-wrapper">
-                            <table class="table table-vcenter table-sm collectors-table collector-approval-table collector-reschedule-table">
-                                <thead>
-                                    <tr>
-                                        <th>Schedule</th>
-                                        <th>Client</th>
-                                        <th>Collector</th>
-                                        <th>Follow-up details</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="collectorRescheduleList"></tbody>
-                            </table>
-                            <div class="empty-state p-3" id="collectorReschedulesEmptyState" style="display:none;">
-                                <i class="ti ti-calendar-off" aria-hidden="true"></i>
-                                <p>No rescheduled clients match this filter.</p>
-                            </div>
-                        </div>
-                    </section>
-
                     <div class="table-responsive assignment-table-wrapper">
                         <table class="table table-vcenter table-sm collectors-table collector-assignment-table">
                             <thead>
@@ -170,7 +109,160 @@
                     </div>
                 </section>
 
+                <section class="card collectors-board collectors-section-card collectors-reschedule-card" aria-labelledby="collectorRescheduleTitle">
+                    <div class="card-status-top bg-azure"></div>
+                    <div class="collector-approval-panel collector-reschedule-panel">
+                        <div class="collector-approval-panel__header collector-reschedule-panel__header">
+                            <div class="collector-section-heading">
+                                <span class="avatar avatar-sm bg-azure-lt text-azure" aria-hidden="true">
+                                    <i class="ti ti-calendar-event"></i>
+                                </span>
+                                <div>
+                                    <h2 id="collectorRescheduleTitle">Rescheduled Clients</h2>
+                                    <p>Follow-up schedules uploaded by collectors from the Android app.</p>
+                                </div>
+                            </div>
+                            <div class="collector-reschedule-filters">
+                                <button class="btn btn-primary btn-sm collector-reschedule-create" type="button" id="collectorRescheduleCreate">
+                                    <i class="ti ti-plus" aria-hidden="true"></i>
+                                    <span>Create Schedule</span>
+                                </button>
+                                <label class="visually-hidden" for="collectorRescheduleCollectorFilter">Collector</label>
+                                <select class="form-select form-select-sm" id="collectorRescheduleCollectorFilter">
+                                    <option value="">All collectors</option>
+                                </select>
+                                <label class="visually-hidden" for="collectorRescheduleStatusFilter">Status</label>
+                                <select class="form-select form-select-sm" id="collectorRescheduleStatusFilter">
+                                    <option value="active">Active schedules</option>
+                                    <option value="history">Schedule history</option>
+                                    <option value="all">All schedules</option>
+                                </select>
+                                <button class="btn btn-outline-primary btn-sm btn-icon" type="button" id="collectorRescheduleRefresh" title="Refresh rescheduled clients" aria-label="Refresh rescheduled clients">
+                                    <i class="ti ti-refresh" aria-hidden="true"></i>
+                                </button>
+                                <span class="badge bg-primary-lt text-primary" id="collectorRescheduleCount">0 active</span>
+                            </div>
+                        </div>
+                        <div class="table-responsive collector-approval-table-wrapper collector-reschedule-table-wrapper">
+                            <table class="table table-vcenter table-sm collectors-table collector-approval-table collector-reschedule-table">
+                                <thead>
+                                    <tr>
+                                        <th>Schedule</th>
+                                        <th>Client</th>
+                                        <th>Collector</th>
+                                        <th>Follow-up details</th>
+                                        <th>Status</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="collectorRescheduleList"></tbody>
+                            </table>
+                            <div class="empty-state p-3" id="collectorReschedulesEmptyState" style="display:none;">
+                                <i class="ti ti-calendar-off" aria-hidden="true"></i>
+                                <p>No rescheduled clients match this filter.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card collectors-board collectors-section-card collectors-payments-card" aria-labelledby="collectorApprovalTitle">
+                    <div class="card-status-top bg-warning"></div>
+                    <div class="collector-approval-panel">
+                        <div class="collector-approval-panel__header">
+                            <div class="collector-section-heading">
+                                <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true">
+                                    <i class="ti ti-cash"></i>
+                                </span>
+                                <div>
+                                    <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
+                                    <p>Admin approval is required before payments count in collector totals.</p>
+                                </div>
+                            </div>
+                            <div class="collector-approval-panel__actions">
+                                <span class="collector-approval-total" id="collectorApprovalTotal">PHP 0.00</span>
+                                <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
+                            </div>
+                        </div>
+                        <div class="table-responsive collector-approval-table-wrapper">
+                            <table class="table table-vcenter table-sm collectors-table collector-approval-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Paid Client</th>
+                                        <th class="text-end">Amount</th>
+                                        <th>Reference</th>
+                                        <th class="text-center">Reject</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="collectorApprovalList"></tbody>
+                            </table>
+                            <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
+                                <i class="ti ti-circle-check" aria-hidden="true"></i>
+                                <p>No pending collector payments.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                </div>
             </main>
+        </div>
+    </div>
+
+    <!-- Admin Collector Schedule Modal -->
+    <div id="collectorScheduleModal" class="modal modal-blur tabler-form-modal collector-schedule-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable collector-schedule-modal__dialog">
+            <div class="modal-content collector-schedule-modal__content">
+                <div class="modal-header collector-schedule-modal__header">
+                    <div>
+                        <h2 class="modal-title" id="collectorScheduleModalTitle">Create Collector Schedule</h2>
+                        <p class="modal-subtitle mb-0" id="collectorScheduleModalSubtitle">Assign a client follow-up that will appear after the collector taps Sync in Android.</p>
+                    </div>
+                    <button class="btn-close" type="button" id="closeCollectorScheduleModal" aria-label="Close"></button>
+                </div>
+                <form class="collector-schedule-form tabler-modal-form" id="collectorScheduleForm">
+                    <div class="modal-body collector-schedule-modal__body">
+                        <input type="hidden" id="collectorScheduleRecordId" name="recordId">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-7">
+                                <label class="form-label" for="collectorScheduleCustomer">Client</label>
+                                <select class="form-select" id="collectorScheduleCustomer" name="accountNumber" required>
+                                    <option value="">Select client</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-5">
+                                <label class="form-label" for="collectorScheduleCollector">Collector</label>
+                                <select class="form-select" id="collectorScheduleCollector" name="collectorId" required>
+                                    <option value="">Select collector</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="collectorScheduleDate">Schedule date</label>
+                                <input class="form-control" type="date" id="collectorScheduleDate" name="rescheduledDate" required>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="collectorScheduleTime">Preferred time</label>
+                                <input class="form-control" type="text" id="collectorScheduleTime" name="preferredTime" maxlength="80" placeholder="Example: 9:00 AM or afternoon">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="collectorScheduleResult">Follow-up reason</label>
+                                <input class="form-control" type="text" id="collectorScheduleResult" name="result" maxlength="160" placeholder="Example: Promised payment follow-up" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="collectorScheduleNotes">Instructions or notes</label>
+                                <textarea class="form-control" id="collectorScheduleNotes" name="notes" rows="4" maxlength="1200" placeholder="Add the information the collector needs for this visit." required></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-message" id="collectorScheduleMessage" role="status" aria-live="polite"></div>
+                    </div>
+                    <div class="modal-footer collector-schedule-modal__actions">
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorScheduleModal">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm" id="collectorScheduleSave">
+                            <i class="ti ti-device-floppy" aria-hidden="true"></i>
+                            <span>Save Schedule</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -259,12 +351,8 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=2.8"></script>
+    <script src="js/collectors-page.js?v=2.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>
-
-
-
-

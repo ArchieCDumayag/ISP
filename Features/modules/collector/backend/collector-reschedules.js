@@ -1,9 +1,11 @@
 const crypto = require('crypto');
 const express = require('express');
 const createError = require('http-errors');
+const { loadAccounts } = require('../../admin/backend/accounts-store');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
+const { accountHasRole } = require('../../../../core/security/role-utils');
 
 const router = express.Router();
 const STORE_KEY = 'collector_followups';
@@ -48,9 +50,33 @@ function getActor(req) {
   return {
     id: cleanText(source.id, 120),
     username: cleanText(source.username, 160),
-    name: cleanText(source.name || source.username || 'Collector', 200),
+    name: cleanText(source.name || source.username || (req.collector ? 'Collector' : 'Admin'), 200),
     branchId: normalizeBranchId(source.branchId),
-    isCollector: !!req.collector
+    isCollector: !!req.collector,
+    isAdmin: !req.collector && accountHasRole(source, 'Admin')
+  };
+}
+
+function requireAdminActor(req) {
+  const actor = getActor(req);
+  if (actor.isCollector || !actor.isAdmin) {
+    throw createError(403, 'Admin access required to manage collector schedules.');
+  }
+  return actor;
+}
+
+function accountId(account = {}) {
+  return cleanText(account.id ?? account.accountId ?? account.username, 120);
+}
+
+function collectorActor(account = {}) {
+  return {
+    id: accountId(account),
+    username: cleanText(account.username, 160),
+    name: cleanText(account.name || account.username || 'Collector', 200),
+    branchId: normalizeBranchId(account.branchId),
+    isCollector: true,
+    isAdmin: false
   };
 }
 
@@ -143,6 +169,88 @@ async function loadAssignedCustomer(req, accountNumber) {
   };
 }
 
+async function loadAdminScheduleTarget(req, accountNumber, requestedCollectorId) {
+  const admin = requireAdminActor(req);
+  const collectorId = cleanText(requestedCollectorId, 120);
+  if (!collectorId) throw createError(400, 'collectorId is required.');
+
+  const accounts = await loadAccounts();
+  const collectorAccount = (Array.isArray(accounts) ? accounts : []).find((account) => (
+    accountId(account) === collectorId
+    && accountHasRole(account, 'Collector')
+    && account?.isActive !== false
+  ));
+  if (!collectorAccount) throw createError(404, 'Collector account not found or inactive.');
+
+  const collector = collectorActor(collectorAccount);
+  if (admin.branchId && collector.branchId && admin.branchId !== collector.branchId) {
+    throw createError(403, 'Collector belongs to a different branch.');
+  }
+  const requestedBranchId = admin.branchId || collector.branchId;
+
+  if (await isRelationalReady()) {
+    const params = [accountNumber];
+    let sql = `SELECT
+         account_number AS accountNumber,
+         name AS customerName,
+         first_name AS firstName,
+         last_name AS lastName,
+         area,
+         branch_id AS branchId
+       FROM customers
+       WHERE account_number = ?`;
+    if (requestedBranchId) {
+      sql += ' AND branch_id = ?';
+      params.push(requestedBranchId);
+    }
+    sql += ' LIMIT 1';
+    const [customerRows] = await query(sql, params);
+    const customer = Array.isArray(customerRows) && customerRows.length ? customerRows[0] : null;
+    if (!customer) throw createError(404, 'Customer not found.');
+
+    const branchId = requestedBranchId || normalizeBranchId(customer.branchId);
+    if (!branchId) throw createError(400, 'Branch assignment missing for this schedule.');
+    if (collector.branchId && collector.branchId !== branchId) {
+      throw createError(403, 'Collector and customer belong to different branches.');
+    }
+    const [assignmentRows] = await query(
+      `SELECT collector_user_id AS collectorId
+       FROM collector_assignments
+       WHERE branch_id = ? AND LOWER(TRIM(area_name)) = LOWER(TRIM(?))`,
+      [branchId, cleanText(customer.area)]
+    );
+    const assignedIds = (assignmentRows || [])
+      .map((row) => cleanText(row.collectorId, 120))
+      .filter(Boolean);
+    if (!assignedIds.includes(collector.id)) {
+      throw createError(403, 'Assign this collector to the customer area before scheduling.');
+    }
+    return { customer, branchId, actor: collector, admin };
+  }
+
+  const [customers, collectorData] = await Promise.all([
+    readJson('customers', []),
+    readJson('collectors', { assignments: {} })
+  ]);
+  const customer = (Array.isArray(customers) ? customers : []).find((item) => {
+    if (normalizeAccountNumber(item?.accountNumber) !== accountNumber) return false;
+    const customerBranchId = normalizeBranchId(item?.branchId);
+    return !requestedBranchId || !customerBranchId || customerBranchId === requestedBranchId;
+  });
+  if (!customer) throw createError(404, 'Customer not found.');
+
+  const branchId = requestedBranchId || normalizeBranchId(customer.branchId);
+  const customerBranchId = normalizeBranchId(customer.branchId);
+  if (collector.branchId && customerBranchId && collector.branchId !== customerBranchId) {
+    throw createError(403, 'Collector and customer belong to different branches.');
+  }
+  const assignedIds = getJsonAssignmentIds(collectorData?.assignments || {}, customer.area);
+  if (!assignedIds.includes(collector.id)) {
+    throw createError(403, 'Assign this collector to the customer area before scheduling.');
+  }
+  return { customer, branchId, actor: collector, admin };
+}
+
 function mutateRecords(mutator) {
   const operation = mutationQueue
     .catch(() => {})
@@ -161,7 +269,7 @@ function mutateRecords(mutator) {
   return operation;
 }
 
-function buildRecord(req, customer, branchId, actor) {
+function buildRecord(req, customer, branchId, collector, creator = collector) {
   const body = req.body || {};
   const accountNumber = normalizeAccountNumber(body.accountNumber);
   const rescheduledDate = normalizeDate(body.rescheduledDate);
@@ -175,20 +283,26 @@ function buildRecord(req, customer, branchId, actor) {
   if (!notes) throw createError(400, 'Reason or notes are required.');
 
   const now = new Date().toISOString();
+  const source = creator.isCollector ? 'collector' : 'admin';
   return {
     id: `followup-${crypto.randomUUID()}`,
-    clientRecordId: clientRecordId || `android-${crypto.randomUUID()}`,
+    clientRecordId: clientRecordId || `${source}-${crypto.randomUUID()}`,
     branchId: normalizeBranchId(branchId),
     accountNumber,
     customerName: customerName(customer, accountNumber),
     area: cleanText(customer.area, 240),
-    collectorId: actor.id,
-    collectorName: actor.name,
-    collectorUsername: actor.username,
+    collectorId: collector.id,
+    collectorName: collector.name,
+    collectorUsername: collector.username,
     result,
     rescheduledDate,
     preferredTime,
     notes,
+    source,
+    createdById: creator.id,
+    createdByName: creator.name,
+    createdByUsername: creator.username,
+    createdByRole: creator.isCollector ? 'Collector' : 'Admin',
     status: ACTIVE_STATUS,
     historyType: '',
     createdAt: normalizeIsoDate(body.createdAt, now),
@@ -250,19 +364,26 @@ router.get('/', async (req, res, next) => {
 });
 
 // POST /api/collector/payments/reschedules
-// Collector-only, idempotent upload from the Android app.
+// Collector uploads remain idempotent. Admins may create schedules for an assigned collector.
 router.post('/', async (req, res, next) => {
   try {
     const accountNumber = normalizeAccountNumber(req.body?.accountNumber);
     if (!accountNumber) throw createError(400, 'accountNumber is required.');
-    const { customer, branchId, actor } = await loadAssignedCustomer(req, accountNumber);
-    const incoming = buildRecord(req, customer, branchId, actor);
+    const requestActor = getActor(req);
+    const target = requestActor.isCollector
+      ? await loadAssignedCustomer(req, accountNumber)
+      : await loadAdminScheduleTarget(req, accountNumber, req.body?.collectorId);
+    const { customer, branchId, actor: collector } = target;
+    const creator = requestActor.isCollector ? collector : target.admin;
+    const incoming = buildRecord(req, customer, branchId, collector, creator);
     const saved = await mutateRecords(async (records) => {
-      const duplicate = records.find((record) => (
-        cleanText(record.collectorId, 120) === actor.id
-        && recordMatchesBranch(record, branchId)
-        && cleanText(record.clientRecordId, 160) === incoming.clientRecordId
-      ));
+      const duplicate = creator.isCollector
+        ? records.find((record) => (
+          cleanText(record.collectorId, 120) === collector.id
+          && recordMatchesBranch(record, branchId)
+          && cleanText(record.clientRecordId, 160) === incoming.clientRecordId
+        ))
+        : null;
       if (duplicate) return { record: duplicate, created: false };
 
       const archivedAt = new Date().toISOString();
@@ -273,7 +394,7 @@ router.post('/', async (req, res, next) => {
         record.status = HISTORY_STATUS;
         record.historyType = 'Rescheduled again';
         record.archivedAt = archivedAt;
-        record.archivedBy = actor.name;
+        record.archivedBy = creator.name;
         record.updatedAt = archivedAt;
       });
       records.unshift(incoming);
@@ -282,6 +403,91 @@ router.post('/', async (req, res, next) => {
     res.status(saved.created ? 201 : 200).json({ ok: true, ...saved });
   } catch (error) {
     next(error?.status ? error : createError(500, error.message || 'Failed to save collector reschedule.'));
+  }
+});
+
+async function updateAdminSchedule(req, res, next) {
+  try {
+    const admin = requireAdminActor(req);
+    const recordId = cleanText(req.params?.id, 180);
+    if (!recordId) throw createError(400, 'Schedule id is required.');
+    const updated = await mutateRecords(async (records) => {
+      const record = records.find((item) => cleanText(item?.id, 180) === recordId);
+      if (!record || !recordMatchesBranch(record, admin.branchId)) {
+        throw createError(404, 'Collector schedule not found.');
+      }
+      if (!isActiveRecord(record)) {
+        throw createError(409, 'Only active schedules can be edited.');
+      }
+      const requestedAccountNumber = normalizeAccountNumber(req.body?.accountNumber);
+      if (requestedAccountNumber && requestedAccountNumber !== normalizeAccountNumber(record.accountNumber)) {
+        throw createError(400, 'Customer cannot be changed after a schedule is created.');
+      }
+      const requestedCollectorId = cleanText(req.body?.collectorId, 120);
+      if (requestedCollectorId && requestedCollectorId !== cleanText(record.collectorId, 120)) {
+        throw createError(400, 'Collector cannot be changed after a schedule is created.');
+      }
+
+      const rescheduledDate = normalizeDate(req.body?.rescheduledDate ?? record.rescheduledDate);
+      const result = cleanText(req.body?.result ?? record.result, 160);
+      const notes = cleanText(req.body?.notes ?? record.notes, 1200);
+      const preferredTime = cleanText(req.body?.preferredTime ?? record.preferredTime, 80);
+      if (!rescheduledDate) throw createError(400, 'A valid rescheduledDate in yyyy-MM-dd format is required.');
+      if (!result) throw createError(400, 'Follow-up reason is required.');
+      if (!notes) throw createError(400, 'Reason or notes are required.');
+
+      const updatedAt = new Date().toISOString();
+      record.rescheduledDate = rescheduledDate;
+      record.preferredTime = preferredTime;
+      record.result = result;
+      record.notes = notes;
+      record.updatedAt = updatedAt;
+      record.updatedById = admin.id;
+      record.updatedByName = admin.name;
+      record.updatedByUsername = admin.username;
+      return record;
+    });
+    res.json({ ok: true, record: updated });
+  } catch (error) {
+    next(error?.status ? error : createError(500, error.message || 'Failed to update collector schedule.'));
+  }
+}
+
+// PUT/PATCH /api/collector/payments/reschedules/:id
+// Admin-only schedule detail updates. Collector and customer remain immutable so cached Android records reconcile safely.
+router.put('/:id', updateAdminSchedule);
+router.patch('/:id', updateAdminSchedule);
+
+// DELETE /api/collector/payments/reschedules/:id
+// Admin-only audited deletion. A history tombstone remains so Android Sync can remove cached active reminders.
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const admin = requireAdminActor(req);
+    const recordId = cleanText(req.params?.id, 180);
+    if (!recordId) throw createError(400, 'Schedule id is required.');
+    const deleted = await mutateRecords(async (records) => {
+      const record = records.find((item) => cleanText(item?.id, 180) === recordId);
+      if (!record || !recordMatchesBranch(record, admin.branchId)) {
+        throw createError(404, 'Collector schedule not found.');
+      }
+      if (cleanText(record.historyType).toLowerCase() === 'deleted') {
+        return { record, changed: false };
+      }
+      const deletedAt = new Date().toISOString();
+      record.status = HISTORY_STATUS;
+      record.historyType = 'Deleted';
+      record.archivedAt = deletedAt;
+      record.archivedBy = admin.name;
+      record.deletedAt = deletedAt;
+      record.deletedById = admin.id;
+      record.deletedByName = admin.name;
+      record.deletedByUsername = admin.username;
+      record.updatedAt = deletedAt;
+      return { record, changed: true };
+    });
+    res.json({ ok: true, deleted: true, ...deleted });
+  } catch (error) {
+    next(error?.status ? error : createError(500, error.message || 'Failed to delete collector schedule.'));
   }
 });
 

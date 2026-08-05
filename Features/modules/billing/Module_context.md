@@ -1,6 +1,6 @@
 # Billing Module Context
 
-Last reviewed: 2026-07-29
+Last reviewed: 2026-08-05
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -39,6 +39,8 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 ## Data and dependencies
 
 - JSON is the default storage mode; optional relational paths use shared DB helpers.
+- Prepaid accounts receive one idempotent monthly recurring charge on the first day of each Manila billing month; overdue prepaid cycles catch up in one scheduler run. Postpaid month-end scheduling is unchanged.
+- Multiple payments are credits against the existing monthly cycle. Excess credit becomes advance for the next cycle; deprecated per-payment `Prepaid renewal charge` debits remain in raw audit history but are excluded from effective balances and breakdown rows.
 - Payment confirmation proof paths remain rooted at shared `public/uploads` through `core/runtime/paths`.
 - Payment backups remain rooted at `data/payment-backups`, and Cloudflared configuration remains rooted at `.cloudflared/config.yml`.
 - Depends on Customer Management for customer identity, plan assignment, referral state, and archive visibility.
@@ -59,12 +61,15 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 ## Validation
 
 - `npm run refactor:billing` verifies the descriptor, retirement of thirteen root entries, 34 web files, server wiring, repository-root data paths, and representative normalization/profile/balance behavior.
+- `node Features/modules/billing/tests/prepaid-billing-cycle.test.js` covers first-of-month prepaid dates, same-month payment consolidation, legacy debit exclusion, advance carry-over, and unchanged postpaid month-end rows.
 - `npm run refactor:phase5` runs inventory, Core, Admin, Customer Management, Billing, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Billing asset/page URLs, feature/auth boundaries, the public plan API, and unauthenticated API denial on ports `3190`/`4190`.
 
 ## Latest meaningful changes
 
+- 2026-08-05: Prepaid Billing Cycle displays now show the current first-of-month cycle with Paid/Unpaid status and the next first-of-month cycle; service-expiration wording was removed from these displays. Postpaid and the isolated Temp module remain unchanged.
+- 2026-08-05: Replaced prepaid per-payment renewal debits with one first-of-month monthly cycle, added catch-up/idempotent scheduler generation, excluded legacy renewal debits from effective calculations, consolidated same-cycle payments, and carried excess forward as advance without changing postpaid month-end billing.
 - 2026-07-29: Phase 12 revalidated Billing through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all thirteen Billing root shims and moved shared scripts plus Admin/Customer Management consumers to canonical Billing imports.
 - 2026-07-29: Physically migrated thirteen backend implementations and 34 browser files into the Billing module, added root compatibility shims and module-loader/static wiring, preserved repository-root storage/config paths, and added Phase 5 compatibility and HTTP coverage.

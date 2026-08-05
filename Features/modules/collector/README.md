@@ -7,7 +7,7 @@ Owns field collection operations: collector-area assignment, collector authentic
 - Backend descriptor: `backend/index.js`
 - Canonical backend implementations: `backend/collector-next-due.js`, `backend/collector-payments.js`, `backend/collector-reschedules.js`, `backend/collectors.js`, and `backend/routes/collectors.js`
 - Canonical pages and browser assets: `web/`
-- Admin pages: collector assignments/approvals and collection history
+- Admin pages: collector assignments/approvals, collector schedule management, and collection history
 - Main APIs: `/api/collectors`, `/api/collector/payments` (including `/reschedules`), plus collector session endpoints under `/api/auth`
 
 ## Boundaries
@@ -15,6 +15,7 @@ Owns field collection operations: collector-area assignment, collector authentic
 - Billing owns canonical payment entries, numbering, balances, and account records.
 - Customer Management owns customer/account identity and service area.
 - Admin owns accounts, roles, authentication, and sessions.
+- Admin-created collector schedules must target an active Collector account already assigned to the selected customer's area; collectors receive schedule lifecycle changes through Android Sync.
 - Finance may reconcile collection/remittance results but does not own capture workflows.
 
 The former root and `routes/` backend shims were retired in Phase 11; canonical imports now point here while existing page, asset, and API URLs remain unchanged. New Collector code belongs in this folder. Update `Module_context.md` with every lasting change.

@@ -68,6 +68,7 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 
 ## Latest meaningful changes
 
+- 2026-08-06: Prepaid synthetic breakdowns now retain an earlier stored billing-cycle month when the first payment is recorded later, preventing prior unpaid cycles from disappearing and being misclassified as advance. Postpaid and Temp calculations are unchanged.
 - 2026-08-05: Prepaid Billing Cycle displays now show the current first-of-month cycle with Paid/Unpaid status and the next first-of-month cycle; service-expiration wording was removed from these displays. Postpaid and the isolated Temp module remain unchanged.
 - 2026-08-05: Replaced prepaid per-payment renewal debits with one first-of-month monthly cycle, added catch-up/idempotent scheduler generation, excluded legacy renewal debits from effective calculations, consolidated same-cycle payments, and carried excess forward as advance without changing postpaid month-end billing.
 - 2026-07-29: Phase 12 revalidated Billing through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.

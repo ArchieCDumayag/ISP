@@ -1,6 +1,6 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-07-31
+Last reviewed: 2026-08-06
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -46,6 +46,7 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/a
 - Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
 - Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- The Customers table loads Billing payment records before rendering prepaid cycle state, displaying the same current first-of-month Paid/Unpaid status and next first-of-month cycle used by Payments; postpaid display behavior is unchanged.
 - The shared `/api/import/customers-full` route delegates JSON-mode restoration to this module for plans, customers, payment history, tickets, jobs, SMS messages, SMS automation runs, and PON state/connections. Records are upserted by stable IDs, unrelated data and other-branch customers are preserved, PON topology is restored before its connections, and empty-sheet `note: No records` placeholders are ignored.
 - `POST /api/customers/import-clients` now returns `warningRecords` with the skipped row, editable source record, affected fields, and issue details. `POST /api/customers/import-client-corrections` validates and retries at most 100 corrected rows in the current Admin branch, using the same create/update and plan-resolution path as the original import.
 - Network owns MikroTik, PPPoE, PON, GenieACS, and coverage-map consumers.
@@ -70,6 +71,7 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/a
 
 ## Latest meaningful changes
 
+- 2026-08-06: Aligned the Customers table prepaid Billing Cycle with Payments by showing the current first-of-month cycle and status plus the next first-of-month cycle, backed by the current payment-record ending balance. Postpaid and Temp remain unchanged.
 - 2026-07-31: Added structured CLIENTS LIST warning records, an editable Customers-page warning modal, and a branch-scoped correction endpoint that retries only skipped rows after account or plan fixes.
 - 2026-07-29: Completed the dashboard JSON backup round-trip: export now reads all branch ticket, job, SMS message/run, and PON stores, while import restores all canonical record sheets and preserves derived customer views through regeneration.
 - 2026-07-29: Fixed five false warnings produced when empty ticket/job/SMS/automation/PON export sheets contributed `note: No records` placeholder rows; import parsing now removes only those placeholders before validation.

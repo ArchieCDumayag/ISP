@@ -6938,6 +6938,38 @@
                 return '';
             }
 
+            function resolvePrepaidCycleDisplay(customer = {}) {
+                const paymentRecord = getPaymentRecord(customer.accountNumber);
+                const balanceCandidates = [
+                    paymentRecord?.paymentBreakdownEndingBalance,
+                    paymentRecord?.endingBalance,
+                    paymentRecord?.balance,
+                    customer?.paymentBreakdownEndingBalance,
+                    customer?.endingBalance,
+                    customer?.balance
+                ];
+                let endingBalance = null;
+                for (const candidate of balanceCandidates) {
+                    if (candidate === null || candidate === undefined || candidate === '') continue;
+                    const parsed = Number(candidate);
+                    if (!Number.isFinite(parsed)) continue;
+                    endingBalance = parsed;
+                    break;
+                }
+
+                const today = new Date();
+                const currentCycleDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                const nextCycleDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+                const status = endingBalance === null
+                    ? 'Not generated'
+                    : (endingBalance <= 0 ? 'Paid' : 'Unpaid');
+
+                return {
+                    display: `Current: ${formatViewDate(currentCycleDate)} · ${status}`,
+                    meta: `Next: ${formatViewDate(nextCycleDate)}`
+                };
+            }
+
             function toComparableCustomerTimestamp(customer) {
                 const parseTimestamp = (value) => {
                     const raw = String(value || '').trim();
@@ -7072,13 +7104,9 @@
                     const planCategory = resolveCustomerPlanCategory(customer);
 
                     if (planCategory === 'prepaid') {
-                        billingCycleDisplay = 'Monthly prepaid';
-                        const prepaidDue = customer.dueDate || customer.billDate;
-                        if (prepaidDue) {
-                            billingCycleMeta = `Due: ${formatViewDate(prepaidDue, 'Not set')}`;
-                        } else {
-                            billingCycleMeta = 'No due date set';
-                        }
+                        const prepaidCycle = resolvePrepaidCycleDisplay(customer);
+                        billingCycleDisplay = prepaidCycle.display;
+                        billingCycleMeta = prepaidCycle.meta;
                     } else if (billDate && !isNaN(billDate)) {
                         const getOrdinalSuffix = (d) => {
                             if (d > 3 && d < 21) return 'th';
@@ -7246,13 +7274,13 @@
                         pageSizeSelect.value = customersPagination.pageSize;
                     }
                     void loadNapCatalog({ quiet: true, force: true });
-                    // Preload payment records in the background so the table can render first.
-                    if (!paymentRecordsLoaded) {
-                        void loadPaymentRecords();
-                    }
+                    // Load current Billing records alongside customers so prepaid
+                    // cycle status matches the Payments page on the first render.
+                    const paymentRecordsPromise = loadPaymentRecords();
                     const response = await fetch('/api/customers');
                     if (!response.ok) throw new Error('Failed to fetch from server');
                     const data = await response.json();
+                    await paymentRecordsPromise;
                     allCustomers = data.customers || []; // The API returns { customers: [...] }
                     referralOptionCustomers = allCustomers.slice();
                     populateReferralCustomerOptions(referralCustomerSelect?.value || '', String(acctInput?.value || form?.dataset.editingId || '').trim());

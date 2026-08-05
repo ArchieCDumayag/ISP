@@ -1010,8 +1010,13 @@
         const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
         const firstEntryDate = getMinDate(entryDates);
         const lastEntryDate = getMaxDate(entryDates);
-        let startSeed = firstEntryDate
-            || safeDate(record.billDate)
+        const storedBillDate = safeDate(record.billDate);
+        const prepaidStartDate = resolvePlanType(record) === 'prepaid'
+            ? getMinDate([firstEntryDate, storedBillDate].filter(Boolean))
+            : null;
+        let startSeed = prepaidStartDate
+            || firstEntryDate
+            || storedBillDate
             || safeDate(record.dueDate)
             || safeDate(record.activationDate)
             || new Date();

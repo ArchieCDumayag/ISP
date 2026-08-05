@@ -112,6 +112,36 @@ const monthlyCharge = (accountNumber, month, amount, recordedAt) => ({
 
 {
   const record = {
+    accountNumber: 'PREPAID-FIRST-PAYMENT',
+    planCategory: 'prepaid',
+    billingCycle: 'Every first of the month',
+    planAmount: 1000,
+    billDate: '2026-07-01',
+    dueDate: '2026-08-01',
+    activationDate: '2024-12-02',
+    disconnection: {
+      status: 'disconnected',
+      disconnectedAt: '2026-08-31',
+      billingPolicy: 'stop'
+    },
+    history: [
+      payment('first-payment', 2000, '2026-08-06T12:00:00+08:00')
+    ]
+  };
+  const result = calculatePaymentBreakdownEndingBalance(record);
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.rows[0].billDate.toISOString().slice(0, 10), '2026-07-01');
+  assert.equal(result.rows[0].balanceAfterPayment, 1000);
+  assert.equal(result.rows[1].billDate.toISOString().slice(0, 10), '2026-08-01');
+  assert.equal(result.rows[1].due, 2000);
+  assert.equal(result.rows[1].amountPaid, 2000);
+  assert.equal(result.rows[1].advance, 0);
+  assert.equal(result.rows[1].balanceAfterPayment, 0);
+  assert.equal(result.endingBalance, 0);
+}
+
+{
+  const record = {
     accountNumber: 'POSTPAID-1',
     planCategory: 'postpaid',
     billingCycle: 'Every last day of the month',

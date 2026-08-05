@@ -2260,8 +2260,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
         const firstEntryDate = getMinBreakdownDate(entryDates);
         const lastEntryDate = getMaxBreakdownDate(entryDates);
-        let startSeed = firstEntryDate
-            || safeBreakdownDate(customer.billDate)
+        const storedBillDate = safeBreakdownDate(customer.billDate);
+        const prepaidStartDate = resolveBreakdownPlanTypeForPayments(customer) === 'prepaid'
+            ? getMinBreakdownDate([firstEntryDate, storedBillDate].filter(Boolean))
+            : null;
+        let startSeed = prepaidStartDate
+            || firstEntryDate
+            || storedBillDate
             || safeBreakdownDate(customer.dueDate)
             || safeBreakdownDate(customer.activationDate)
             || new Date();

@@ -47,7 +47,9 @@ const customersRouter = customersModule.router || customersModule;
 const customersPublicRouter = customersModule.publicRouter || require('express').Router();
 const getCustomerFromSession = customersModule.getCustomerFromSession;
 const {
+    deduplicateCustomerFullTables,
     filterCustomerFullImportRows,
+    getCustomerFullPaymentSecondaryAliases,
     importCustomerFullJsonData
 } = customerManagementBackend.load('customerFullJsonImport');
 const paymentRecordsRouter = billingBackend.load('paymentRecords');
@@ -66,6 +68,7 @@ const accountsRouter = adminBackend.load('accounts');
 const infoRouter = adminBackend.load('infoApi');
 const collectorPaymentsRouter = collectorBackend.load('collectorPayments');
 const businessProfileRouter = adminBackend.load('businessProfile');
+const factoryResetRouter = adminBackend.load('factoryReset');
 const appDownloadsRouter = adminBackend.load('appDownloads');
 const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
 const integrationSettingsRouter = adminBackend.load('integrationSettings');
@@ -85,6 +88,7 @@ const customerAppModule = customerAppBackend.load('customerAppApi');
 const customerAppRouter = customerAppModule.router || require('express').Router();
 const customerAppPublicRouter = customerAppModule.publicRouter || require('express').Router();
 const messengerBotRouter = customerAppBackend.load('messengerBot');
+const messengerRemindersRouter = customerAppBackend.load('messengerReminders');
 const ticketsModule = technicianBackend.load('tickets');
 const ticketsRouter = ticketsModule.router || ticketsModule;
 const ticketsPublicRouter = ticketsModule.publicRouter || require('express').Router();
@@ -144,6 +148,14 @@ const parseFirstIp = (value = '') => String(value || '').split(',')[0].trim().to
 const isLoopbackIp = (value = '') => LOOPBACK_IPS.has(parseFirstIp(value));
 const isAdminUser = (user) => Boolean(user) && accountHasRole(user, 'Admin');
 const isStructureOwnerUser = (user) => isAdminUser(user) && String(user.id || '').trim() === STRUCTURE_OWNER_ID;
+const requireMessengerReminderAccess = async (req, res, next) => {
+    const sessionUser = await getUserFromSession(req);
+    if (sessionUser && accountHasRole(sessionUser, 'Collector')) {
+        req.user = sessionUser;
+        return next();
+    }
+    return requireCollectorOrAdminAuth(req, res, next);
+};
 const IP_BROWSER_PROXY_PREFIX = '/api/ip-browser/proxy';
 const IP_BROWSER_ABSOLUTE_PATH_PREFIXES = [
     '/boaform',
@@ -2511,6 +2523,11 @@ const publicApplicationLimiter = createRateLimiter({
     max: 12,
     message: 'Too many application attempts. Please try again later.'
 });
+const factoryResetLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: 'Too many factory reset attempts. Please wait before trying again.'
+});
 app.use('/api/auth/login', adminLoginLimiter);
 app.use('/api/auth/collector-login', adminLoginLimiter);
 app.use('/api/auth/technician-login', adminLoginLimiter);
@@ -2711,6 +2728,7 @@ const PROTECTED_PAGES = new Set([
     'customer-app.html',
     'customer-app-chats.html',
     'customer-app-popup-reminder.html',
+    'messenger-reminders.html',
     'customer-portal.html',
     'accounts.html',
     'temp.html',
@@ -2753,6 +2771,7 @@ const FEATURE_PAGE_MAP = Object.freeze({
     'payroll.html': 'payroll',
     'pppoe.html': 'mikrotikPppoe',
     'customer-app-popup-reminder.html': 'customerAppPopupReminder',
+    'messenger-reminders.html': 'customerAppPopupReminder',
     'accounts.html': 'accounts',
     'sms.html': 'sms'
 });
@@ -2828,6 +2847,10 @@ app.use(async (req, res, next) => {
     const user = await getUserFromSession(req);
     const isAdmin = isAdminUser(user);
     if (isAdmin) {
+        return next();
+    }
+
+    if (pageToCheck === 'messenger-reminders.html' && user && accountHasRole(user, 'Collector')) {
         return next();
     }
 
@@ -3301,6 +3324,13 @@ app.get('/customer-app-popup-reminder', async (req, res) => {
         return res.redirect('/login.html');
     }
     res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'customer-app-popup-reminder.html'));
+});
+app.get('/messenger-reminders', async (req, res) => {
+    const user = await getUserFromSession(req);
+    if (!user || (!isAdminUser(user) && !accountHasRole(user, 'Collector'))) {
+        return res.redirect('/login.html');
+    }
+    return res.sendFile(path.join(CUSTOMER_APP_WEB_ROOT, 'messenger-reminders.html'));
 });
 
 app.get('/collectors', async (req, res) => {
@@ -5905,6 +5935,7 @@ app.use('/api/customer-drafts', requireAuth, requireFeature('customerDrafts'), c
 app.use('/api/collector/payments', requireCollectorOrAdminAuth, requireFeature('collectors'), collectorPaymentsRouter);
 app.use('/api/customer-app', requireFeature('customerAppPopupReminder'), customerAppPublicRouter);
 app.use('/api/customer-app', requireAuth, requireFeature('customerAppPopupReminder'), customerAppRouter);
+app.use('/api/messenger-reminders', requireMessengerReminderAccess, requireFeature('customerAppPopupReminder'), messengerRemindersRouter);
 
 app.get('/api/sidebar/work-counts', requireAuth, async (req, res) => {
     try {
@@ -6511,6 +6542,13 @@ app.use('/api/expenses', requireAuth, requireFeature('expenses'), expensesRouter
 app.use('/api/payroll', requireAuth, requireFeature('payroll'), payrollRouter);
 app.use('/api/info', infoRouter);
 app.use('/api/accounts', requireAuth, requireFeature('accounts'), accountsRouter);
+app.use(
+    '/api/admin-data-reset',
+    requireAuth,
+    requireFeature('accounts'),
+    (req, res, next) => (req.method === 'POST' ? factoryResetLimiter(req, res, next) : next()),
+    factoryResetRouter
+);
 app.use('/api/collectors', requireAuth, requireFeature('collectors'), collectorsRouter);
 app.use('/api/business-profile', businessProfileRouter);
 app.use('/api/app-downloads', appDownloadsRouter);
@@ -6687,6 +6725,35 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
             ponNapConnections = Array.isArray(ponRows) ? ponRows : [];
         }
 
+        const exportIntegrity = deduplicateCustomerFullTables({
+            customers,
+            plans: planRows,
+            payment_entries: paymentEntries,
+            tickets,
+            jobs,
+            sms_messages: smsMessages,
+            sms_automation_runs: smsAutomationRuns,
+            pon_nap_connections: ponNapConnections,
+            pon_state: ponStateRows
+        });
+        if (exportIntegrity.conflictCount) {
+            return res.status(409).json({
+                ok: false,
+                error: 'Export stopped because conflicting stable record identities were found. Resolve the listed records before exporting.',
+                conflicts: exportIntegrity.conflicts,
+                conflictCount: exportIntegrity.conflictCount
+            });
+        }
+        customers = exportIntegrity.tables.customers;
+        planRows = exportIntegrity.tables.plans;
+        paymentEntries = exportIntegrity.tables.payment_entries;
+        tickets = exportIntegrity.tables.tickets;
+        jobs = exportIntegrity.tables.jobs;
+        smsMessages = exportIntegrity.tables.sms_messages;
+        smsAutomationRuns = exportIntegrity.tables.sms_automation_runs;
+        ponNapConnections = exportIntegrity.tables.pon_nap_connections;
+        ponStateRows = exportIntegrity.tables.pon_state;
+
         const paymentsByAccount = groupRowsByKey(paymentEntries, 'account_number');
         const ticketsByAccount = groupRowsByKey(tickets, 'account_number');
         const jobsByAccount = groupRowsByKey(jobs, 'account_number');
@@ -6807,6 +6874,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         };
 
         appendSheet('metadata', [{
+            backup_schema_version: 2,
             exported_at: exportedAt,
             branch_id: branch?.id || branchId,
             branch_name: branch?.name || '',
@@ -6824,7 +6892,9 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
             sms_messages: smsMessages.length,
             sms_automation_runs: smsAutomationRuns.length,
             pon_nap_connections: ponNapConnections.length,
-            pon_state_rows: ponStateRows.length
+            pon_state_rows: ponStateRows.length,
+            duplicate_rows_removed: exportIntegrity.duplicateCount,
+            import_identity_policy: 'upsert stable IDs; skip exact duplicates; reject conflicting identities'
         }]);
         appendSheet('customer_names', customerNames);
         appendSheet('customer_balances', customerBalances);
@@ -6902,7 +6972,17 @@ app.post(
             });
         }
 
-        const tables = parsedImport?.tables || {};
+        const rawTables = parsedImport?.tables || {};
+        const importIntegrity = deduplicateCustomerFullTables(rawTables);
+        if (importIntegrity.conflictCount) {
+            return res.status(409).json({
+                ok: false,
+                error: 'Import stopped because the file contains conflicting records with the same stable identity. No records were changed.',
+                conflicts: importIntegrity.conflicts,
+                conflictCount: importIntegrity.conflictCount
+            });
+        }
+        const tables = importIntegrity.tables;
         const importPlans = ensureArrayOfObjects(tables.plans);
         const importCustomers = ensureArrayOfObjects(tables.customers);
         const importPayments = ensureArrayOfObjects(tables.payment_entries);
@@ -6911,6 +6991,7 @@ app.post(
         const importSmsMessages = ensureArrayOfObjects(tables.sms_messages);
         const importSmsAutomationRuns = ensureArrayOfObjects(tables.sms_automation_runs);
         const importPonConnections = ensureArrayOfObjects(tables.pon_nap_connections);
+        const importPonState = ensureArrayOfObjects(tables.pon_state);
 
         if (
             !importCustomers.length &&
@@ -6919,7 +7000,8 @@ app.post(
             !importJobs.length &&
             !importSmsMessages.length &&
             !importSmsAutomationRuns.length &&
-            !importPonConnections.length
+            !importPonConnections.length &&
+            !importPonState.length
         ) {
             return res.status(400).json({
                 ok: false,
@@ -6937,6 +7019,7 @@ app.post(
             sms_automation_runs: 0,
             pon_nap_connections: 0
         };
+        const duplicatesSkipped = { ...importIntegrity.duplicatesSkipped };
         const warnings = [];
         const pushWarning = (message) => {
             if (!message) return;
@@ -6947,16 +7030,29 @@ app.post(
         if (isJsonStorageMode()) {
             try {
                 const jsonResult = await importCustomerFullJsonData({ branchId, tables });
+                Object.entries(jsonResult.duplicatesSkipped || {}).forEach(([tableName, count]) => {
+                    duplicatesSkipped[tableName] = Number(duplicatesSkipped[tableName] || 0) + Number(count || 0);
+                });
                 return res.json({
                     ok: true,
                     message: 'Import completed successfully.',
                     source: parsedImport.source,
                     imported: jsonResult.imported,
+                    duplicatesSkipped,
+                    duplicateCount: Object.values(duplicatesSkipped).reduce((total, count) => total + Number(count || 0), 0),
                     warnings: jsonResult.warnings,
                     warningCount: jsonResult.warningCount
                 });
             } catch (error) {
                 console.error('Failed to import full customer data into JSON storage:', error);
+                if (error?.code === 'CUSTOMER_FULL_IMPORT_CONFLICT') {
+                    return res.status(409).json({
+                        ok: false,
+                        error: `${error.message} No records were changed.`,
+                        conflicts: error.conflicts || [],
+                        conflictCount: Array.isArray(error.conflicts) ? error.conflicts.length : 0
+                    });
+                }
                 return res.status(500).json({ ok: false, error: 'Failed to import full customer data.' });
             }
         }
@@ -7140,12 +7236,42 @@ app.post(
                 (rows || []).forEach((row) => importedAccounts.add(String(row.account_number || '').trim()));
             }
 
+            const [existingPaymentIdentityRows] = await connection.query(
+                `SELECT id, fingerprint, xendit_id
+                 FROM payment_entries
+                 WHERE branch_id = ?
+                   AND (
+                       (fingerprint IS NOT NULL AND fingerprint <> '')
+                       OR (xendit_id IS NOT NULL AND xendit_id <> '')
+                   )`,
+                [branchId]
+            );
+            const existingPaymentAliases = new Map();
+            (existingPaymentIdentityRows || []).forEach((entry) => {
+                const existingId = toNonEmptyString(entry?.id);
+                getCustomerFullPaymentSecondaryAliases(entry).forEach(({ alias, type }) => {
+                    if (!existingPaymentAliases.has(alias)) {
+                        existingPaymentAliases.set(alias, { id: existingId, type });
+                    }
+                });
+            });
+
             for (const row of importPayments) {
                 const paymentId = toNonEmptyString(pickRowValue(row, ['id']));
                 const accountNumber = toNonEmptyString(pickRowValue(row, ['account_number', 'accountNumber']));
                 if (!paymentId || !accountNumber) continue;
                 if (!importedAccounts.has(accountNumber)) {
                     pushWarning(`Skipped payment ${paymentId}: customer ${accountNumber} not found in branch ${branchId}.`);
+                    continue;
+                }
+                const duplicateIdentity = getCustomerFullPaymentSecondaryAliases(row)
+                    .map(({ alias, type }) => ({ existing: existingPaymentAliases.get(alias), type }))
+                    .find(({ existing }) => existing && existing.id !== paymentId);
+                if (duplicateIdentity) {
+                    duplicatesSkipped.payment_entries += 1;
+                    pushWarning(
+                        `Skipped duplicate payment ${paymentId}: ${duplicateIdentity.type} already belongs to another payment.`
+                    );
                     continue;
                 }
 
@@ -7200,6 +7326,9 @@ app.post(
                         toNullableString(pickRowValue(row, ['xendit_id', 'xenditId']))
                     ]
                 );
+                getCustomerFullPaymentSecondaryAliases(row).forEach(({ alias, type }) => {
+                    existingPaymentAliases.set(alias, { id: paymentId, type });
+                });
                 imported.payment_entries += 1;
             }
 
@@ -7528,6 +7657,8 @@ app.post(
                 message: 'Import completed successfully.',
                 source: parsedImport.source,
                 imported,
+                duplicatesSkipped,
+                duplicateCount: Object.values(duplicatesSkipped).reduce((total, count) => total + Number(count || 0), 0),
                 warnings,
                 warningCount: warnings.length
             });

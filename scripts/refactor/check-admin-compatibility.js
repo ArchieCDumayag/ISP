@@ -21,6 +21,7 @@ const backendPairs = [
   ['app-downloads.js', 'app-downloads'],
   ['auth.js', 'auth'],
   ['business-profile.js', 'business-profile'],
+  ['factory-reset.js', 'factory-reset'],
   ['info-api.js', 'info-api'],
   ['integration-settings.js', 'integration-settings'],
   ['setup-installer.js', 'setup-installer']
@@ -118,9 +119,11 @@ const webFiles = [
   'accounts.html',
   'accounts.js',
   'css/accounts.css',
+  'css/factory-reset.css',
   'css/login.css',
   'flavors.html',
   'install-guide.html',
+  'js/factory-reset.js',
   'js/install-guide.js',
   'login.html',
   'setup.html',
@@ -146,6 +149,79 @@ assert(accountsJs.includes('profiles: ipBrowserProfiles.map((profile) => ({'));
 assert(accountsJs.includes("button.dataset.ipBrowserProfileAction === 'remove'"));
 console.log('PASS IP Browser profile editor structure');
 
+const factoryReset = require(path.join(
+  projectRoot,
+  'Features/modules/admin/backend/factory-reset'
+));
+assert.strictEqual(factoryReset.CONFIRMATION_PHRASE, 'CLEAR ALL DATA');
+assert.strictEqual(factoryReset.shouldResetStoreKey('customers'), true);
+assert.strictEqual(factoryReset.shouldResetStoreKey('finance_expenses_branch_1'), true);
+assert.strictEqual(factoryReset.shouldResetStoreKey('integrations'), false);
+assert(accountsHtml.includes('id="settings-tab-data-reset"'));
+assert(accountsHtml.includes('id="factory-reset-password"'));
+assert(accountsHtml.includes('id="factory-reset-confirmation"'));
+assert(accountsHtml.includes('id="factory-reset-acknowledge"'));
+assert(accountsHtml.includes('id="factory-reset-submit"'));
+assert(accountsHtml.includes('js/factory-reset.js?v=1.0'));
+
+const memoryStores = {
+  accounts: [
+    { id: '1', username: 'owner', role: 'Admin', password: 'hashed-owner' },
+    { id: '2', username: 'collector', role: 'Collector', password: 'hashed-collector' }
+  ],
+  customers: [{ accountNumber: '1001' }, { accountNumber: '1002' }],
+  payments: { branch1: [{ id: 'p1' }, { id: 'p2' }] },
+  plans: [{ id: 'plan-1' }],
+  messenger_reminders: {
+    version: 1,
+    branches: { 1: { preferences: { 1001: {} }, reminders: { r1: {}, r2: {} } } }
+  },
+  finance_expenses_branch_1: [{ id: 'expense-1' }],
+  sessions: {
+    sessions: {
+      adminSession: { userId: '1', createdAt: Date.now() },
+      collectorSession: { userId: '2', createdAt: Date.now() }
+    }
+  },
+  integrations: { xendit: { enabled: true } }
+};
+const factoryResetService = factoryReset.createFactoryResetService({
+  readJson: async (key, fallback) => Object.prototype.hasOwnProperty.call(memoryStores, key)
+    ? JSON.parse(JSON.stringify(memoryStores[key]))
+    : fallback,
+  writeJson: async (key, value) => {
+    memoryStores[key] = JSON.parse(JSON.stringify(value));
+  },
+  loadAccounts: async () => JSON.parse(JSON.stringify(memoryStores.accounts)),
+  saveAccounts: async (accounts) => {
+    memoryStores.accounts = JSON.parse(JSON.stringify(accounts));
+    return accounts;
+  },
+  isRelationalReady: async () => false,
+  getStorageDriver: () => 'json',
+  listJsonStoreKeys: async () => Object.keys(memoryStores),
+  previewFiles: async () => [{ key: 'files:test', label: 'Test files', count: 3, bytes: 30 }],
+  clearFiles: async () => ({ cleared: [{ label: 'Test files', count: 3 }], warnings: [] })
+});
+
+async function verifyFactoryResetContract() {
+  const preview = await factoryResetService.preview();
+  assert.strictEqual(preview.storageDriver, 'json');
+  assert.strictEqual(preview.fileCount, 3);
+  assert(preview.recordCount >= 10, 'Factory reset preview must count operational records and non-Admin users');
+  const result = await factoryResetService.reset({ id: '1', username: 'owner', role: 'Admin' });
+  assert.strictEqual(memoryStores.accounts.length, 1, 'Factory reset must remove non-Admin accounts');
+  assert.strictEqual(memoryStores.accounts[0].role, 'Admin', 'Factory reset must preserve Admin access');
+  assert.deepStrictEqual(memoryStores.customers, [], 'Factory reset must clear customers');
+  assert.deepStrictEqual(memoryStores.payments, {}, 'Factory reset must clear payments');
+  assert.deepStrictEqual(memoryStores.finance_expenses_branch_1, [], 'Factory reset must clear dynamic Finance stores');
+  assert.deepStrictEqual(memoryStores.integrations, { xendit: { enabled: true } }, 'Factory reset must preserve integrations');
+  assert.deepStrictEqual(Object.keys(memoryStores.sessions.sessions), ['adminSession'], 'Factory reset must retain only Admin sessions');
+  assert.strictEqual(result.filesCleared, 3);
+  assert(memoryStores.factory_reset_audit?.lastReset?.resetAt, 'Factory reset must persist a non-secret audit marker');
+  console.log('PASS Admin factory reset safeguards and JSON reset contract');
+}
+
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(serverSource.includes('const MODULE_RUNTIMES = loadModuleRuntimes({'));
 assert(serverSource.includes("requireModuleRuntime('admin')"));
@@ -158,6 +234,8 @@ assert(!serverSource.includes("path.join(__dirname, 'public', 'flavors.html')"))
 assert(serverSource.includes('const { loadIntegrationSettings, resolveIpBrowserProfile } = integrationSettingsRouter;'));
 assert(serverSource.includes('loadIpBrowserAutoLoginSettings(req, targetUrl)'));
 assert(serverSource.includes('normalizeIpBrowserAutoLoginSettings(settings, targetUrl)'));
+assert(serverSource.includes("adminBackend.load('factoryReset')"));
+assert(serverSource.includes("req.method === 'POST' ? factoryResetLimiter(req, res, next) : next()"));
 console.log('PASS Admin server loader and web routing');
 
 const installerSource = fs.readFileSync(
@@ -169,4 +247,9 @@ assert(!installerSource.includes("  'setup-installer.js',"));
 assert(installerSource.includes("'Features/modules/admin/backend/setup-installer.js'"));
 assert(installerSource.includes("'Features/modules/admin/web/update-download.html'"));
 console.log('PASS Admin installer root and package paths');
-console.log('ADMIN COMPATIBILITY PASSED');
+verifyFactoryResetContract()
+  .then(() => console.log('ADMIN COMPATIBILITY PASSED'))
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

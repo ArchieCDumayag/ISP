@@ -5,10 +5,10 @@ Owns customer-facing login/portal/app experiences, popup and push notifications,
 ## Current runtime entry points
 
 - Backend descriptor: `backend/index.js`
-- Backend implementations: customer app/token/inbox/upstream, Firebase push, Messenger bot, and SMS delivery/scheduler/schema/router files under `backend/`
-- Customer and communication pages: `web/customer-login.html`, `web/customer-portal.html`, `web/customer-app.html`, `web/customer-app-popup-reminder.html`, and `web/sms.html`
+- Backend implementations: customer app/token/inbox/upstream, Firebase push, Messenger bot, semi-automated Messenger reminders, and SMS delivery/scheduler/schema/router files under `backend/`
+- Customer and communication pages: `web/customer-login.html`, `web/customer-portal.html`, `web/customer-app.html`, `web/customer-app-popup-reminder.html`, `web/messenger-reminders.html`, and `web/sms.html`
 - Public pages: `web/privacy-terms.html`, `web/terms-of-use.html`, and `web/company-info.html`
-- Main APIs: `/api/customer-app`, customer-authenticated `/api/customers/*` routes, `/api/sms`, and `/webhooks/messenger`
+- Main APIs: `/api/customer-app`, `/api/messenger-reminders`, customer-authenticated `/api/customers/*` routes, `/api/sms`, and `/webhooks/messenger`
 
 `server.js` loads the backend descriptor and module web root through the manifest-driven runtime registry. The former ten root backend shims were retired in Phase 11, and all browser URLs remain unchanged.
 

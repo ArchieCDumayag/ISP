@@ -1,0 +1,217 @@
+.factory-reset-panel {
+    --reset-danger: var(--tblr-danger, #d63939);
+    --reset-border: var(--tblr-border-color, #e5e7eb);
+    --reset-surface: var(--tblr-bg-surface, #fff);
+    --reset-muted: var(--tblr-secondary-color, #6b7280);
+}
+
+.factory-reset-heading-icon {
+    color: var(--reset-danger);
+    background: color-mix(in srgb, var(--reset-danger) 12%, transparent);
+}
+
+.factory-reset-warning {
+    display: flex;
+    gap: 1rem;
+    margin: 0 0 1.25rem;
+}
+
+.factory-reset-warning__icon {
+    flex: 0 0 auto;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+.factory-reset-warning h3,
+.factory-reset-warning p {
+    margin: 0;
+}
+
+.factory-reset-warning h3 {
+    margin-bottom: .35rem;
+    font-size: 1rem;
+}
+
+.factory-reset-warning p + p {
+    margin-top: .35rem;
+}
+
+.factory-reset-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .8rem;
+    margin-bottom: 1rem;
+}
+
+.factory-reset-stat,
+.factory-reset-scope-card,
+.factory-reset-form {
+    border: 1px solid var(--reset-border);
+    border-radius: var(--tblr-border-radius-lg, 8px);
+    background: var(--reset-surface);
+}
+
+.factory-reset-stat {
+    padding: 1rem;
+}
+
+.factory-reset-stat span {
+    display: block;
+    margin-bottom: .3rem;
+    color: var(--reset-muted);
+    font-size: .78rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+
+.factory-reset-stat strong {
+    display: block;
+    font-size: 1.45rem;
+    line-height: 1.2;
+}
+
+.factory-reset-scope-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.factory-reset-scope-card {
+    padding: 1rem;
+}
+
+.factory-reset-scope-card h3 {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin: 0 0 .75rem;
+    font-size: .95rem;
+}
+
+.factory-reset-scope-card > ul {
+    display: grid;
+    gap: .45rem;
+    max-height: 18rem;
+    margin: 0;
+    padding: 0;
+    overflow: auto;
+    list-style: none;
+}
+
+.factory-reset-scope-card li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .45rem .55rem;
+    border-radius: var(--tblr-border-radius, 6px);
+    background: color-mix(in srgb, var(--reset-border) 38%, transparent);
+}
+
+.factory-reset-scope-card li strong {
+    flex: 0 0 auto;
+}
+
+.factory-reset-scope-card--preserved h3 {
+    color: var(--tblr-success, #2fb344);
+}
+
+.factory-reset-scope-card--preserved li::before {
+    margin-right: .45rem;
+    color: var(--tblr-success, #2fb344);
+    font-family: tabler-icons;
+    content: "\ea5e";
+}
+
+.factory-reset-scope-card--preserved li {
+    justify-content: flex-start;
+}
+
+.factory-reset-form {
+    padding: 1.1rem;
+    border-color: color-mix(in srgb, var(--reset-danger) 42%, var(--reset-border));
+}
+
+.factory-reset-form__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.factory-reset-form__header h3,
+.factory-reset-form__header p {
+    margin: 0;
+}
+
+.factory-reset-form__header h3 {
+    margin-bottom: .2rem;
+    font-size: 1rem;
+}
+
+.factory-reset-form__header p,
+.factory-reset-mobile-note {
+    color: var(--reset-muted);
+}
+
+.factory-reset-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.factory-reset-acknowledgement {
+    margin-top: 1rem;
+    padding: .8rem;
+    border: 1px solid var(--reset-border);
+    border-radius: var(--tblr-border-radius, 6px);
+}
+
+.factory-reset-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+.factory-reset-result {
+    margin-top: 1rem;
+    padding: .75rem .9rem;
+    border-radius: var(--tblr-border-radius, 6px);
+}
+
+.factory-reset-result--error {
+    color: var(--tblr-danger-text-emphasis, #842029);
+    background: var(--tblr-danger-bg-subtle, #f8d7da);
+}
+
+.factory-reset-result--success {
+    color: var(--tblr-success-text-emphasis, #0f5132);
+    background: var(--tblr-success-bg-subtle, #d1e7dd);
+}
+
+.factory-reset-mobile-note {
+    display: flex;
+    gap: .45rem;
+    margin: 1rem 0 0;
+    font-size: .85rem;
+}
+
+@media (max-width: 800px) {
+    .factory-reset-summary,
+    .factory-reset-scope-grid,
+    .factory-reset-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .factory-reset-form__header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .factory-reset-actions .btn {
+        width: 100%;
+    }
+}

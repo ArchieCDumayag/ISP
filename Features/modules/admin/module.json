@@ -17,6 +17,7 @@
     "/api/integrations",
     "/api/info",
     "/api/app-downloads",
+    "/api/admin-data-reset",
     "/api/structure",
     "/api/system-update"
   ],

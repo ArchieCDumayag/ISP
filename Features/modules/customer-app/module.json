@@ -13,6 +13,7 @@
     "/api/customer-app",
     "/api/customers/login",
     "/api/customers/me",
+    "/api/messenger-reminders",
     "/api/sms",
     "/webhooks/messenger"
   ],
@@ -21,6 +22,7 @@
     "Features/modules/customer-app/web/customer-portal.html",
     "Features/modules/customer-app/web/customer-app.html",
     "Features/modules/customer-app/web/customer-app-popup-reminder.html",
+    "Features/modules/customer-app/web/messenger-reminders.html",
     "Features/modules/customer-app/web/sms.html",
     "Features/modules/customer-app/web/privacy-terms.html",
     "Features/modules/customer-app/web/terms-of-use.html",

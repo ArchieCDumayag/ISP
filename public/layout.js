@@ -1633,6 +1633,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const imported = payload?.imported || {};
+                const duplicateCount = Number(payload?.duplicateCount || 0);
                 const summary = [
                     `Customers: ${Number(imported.customers || 0)}`,
                     `Plans: ${Number(imported.plans || 0)}`,
@@ -1641,7 +1642,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     `Jobs: ${Number(imported.jobs || 0)}`,
                     `SMS: ${Number(imported.sms_messages || 0)}`,
                     `SMS runs: ${Number(imported.sms_automation_runs || 0)}`,
-                    `PON: ${Number(imported.pon_nap_connections || 0)}`
+                    `PON: ${Number(imported.pon_nap_connections || 0)}`,
+                    `Duplicates skipped: ${duplicateCount}`
                 ].join(' | ');
 
                 addActivityLog({ message: 'Imported customer export file', meta: summary });
@@ -1696,7 +1698,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (importInProgress) return;
             const confirmed = window.appConfirm
                 ? await window.appConfirm(
-                    'Import will restore customers, plans, payments, tickets, jobs, SMS history/runs, and PON connections from a full backup. Continue?',
+                    'Import will safely upsert customers, plans, payments, tickets, jobs, SMS history/runs, and PON connections. Exact duplicates are skipped and conflicting identities stop the import. Continue?',
                     { title: 'Import Customer Data', okText: 'Import', cancelText: 'Cancel' }
                 )
                 : window.confirm('Import customer data from file?');

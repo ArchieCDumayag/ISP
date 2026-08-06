@@ -50,7 +50,7 @@ Canonical shared runtime structure:
 
 Canonical Admin runtime structure:
 
-- `Features/modules/admin/backend`: authentication, accounts, activity, profile, integrations, information, downloads, and setup/update implementation
+- `Features/modules/admin/backend`: authentication, accounts, activity, profile, integrations, information, downloads, protected project-data reset, and setup/update implementation
 - `Features/modules/admin/web`: Admin-owned pages and assets mounted at unchanged root URLs
 - Former Admin root backend aliases: retired in Phase 11
 
@@ -93,10 +93,11 @@ Canonical Finance runtime structure:
 
 Canonical Customer App runtime structure:
 
-- `Features/modules/customer-app/backend`: customer app, FCM/inbox, Firebase, Messenger, SMS, scheduler, schema, and customer-upstream implementation
-- `Features/modules/customer-app/web`: customer login/portal/app, SMS, public legal/company pages, and assets mounted at unchanged root URLs
+- `Features/modules/customer-app/backend`: customer app, FCM/inbox, Firebase, Messenger webhook, semi-automated Messenger billing reminders, SMS, scheduler, schema, and customer-upstream implementation
+- `Features/modules/customer-app/web`: customer login/portal/app, Messenger reminder queue, SMS, public legal/company pages, and assets mounted at root URLs
 - Former Customer App root backend aliases: retired in Phase 11
 - Customer Management consumes canonical Customer App FCM/inbox helpers directly; shared customer/modem/payment composition remains in `server.js`
+- `/api/messenger-reminders` and `/messenger-reminders.html` provide a branch-scoped, semi-automated payment reminder queue derived from Billing's backend payment records. Admins see their branch; collectors see assigned areas only. Reminder identities are deterministic per account/cycle/stage or payment, consent defaults off, queue regeneration is idempotent, and staff must review/open Messenger and explicitly mark each message sent. The feature never automatically delivers billing reminders through Meta.
 
 Canonical Temp auxiliary runtime structure:
 
@@ -114,7 +115,7 @@ Canonical Temp auxiliary runtime structure:
 | Collector | `Features/modules/collector` | Collector assignments, collection entry, receipts, approvals, remittances |
 | Technician | `Features/modules/technician` | Tickets, jobs, assignments, installation and provisioning workflows |
 | Finance | `Features/modules/finance` | Expenses and payroll |
-| Customer App | `Features/modules/customer-app` | Customer portal/app, notifications, Firebase, Messenger, SMS |
+| Customer App | `Features/modules/customer-app` | Customer portal/app, notifications, Firebase, Messenger webhook/reminder queue, SMS |
 | Admin | `Features/modules/admin` | Authentication, accounts, business profile, integrations, activity, updates/downloads |
 | Temp Workspace | `Features/modules/temp` | Hidden secondary-location customer and billing ledger with isolated data, API, and backup files |
 
@@ -130,7 +131,7 @@ Shared code includes `server.js`, database/storage helpers, environment loading,
 - JSON runtime data: `data/*.json`
 - Temp secondary-location records use the exclusive `temp_workspace_isolated_v1` store key (`data/temp_workspace_isolated_v1.json` in JSON mode or a distinct `app_store` row in MySQL mode) and never share the canonical customer/payment stores.
 - Optional relational mode: `STORAGE_DRIVER=mysql`
-- Dashboard `/api/export/customers-full` produces metadata, customer-name/balance/list/full-data views, canonical customers, plans, payment entries, all branch tickets/jobs, SMS messages, SMS automation runs, flattened PON/NAP connections, and chunked branch PON state. `/api/import/customers-full` restores the canonical sheets (derived customer views are regenerated), upserting all JSON-backed records without requesting MySQL. MySQL mode retains its relational transaction and returns a configuration-focused `503` when unavailable. Empty-sheet `note: No records` placeholders are ignored.
+- Dashboard `/api/export/customers-full` produces a schema-versioned backup with metadata, customer-name/balance/list/full-data views, canonical customers, plans, payment entries, all branch tickets/jobs, SMS messages, SMS automation runs, flattened PON/NAP connections, and chunked branch PON state. Export removes exact duplicate canonical rows and stops if one stable identity contains conflicting data. `/api/import/customers-full` restores the canonical sheets (derived customer views are regenerated), upserts stable IDs, skips exact duplicates, rejects conflicting identities before any write, and prevents payments with a new ID from reusing an existing fingerprint or Xendit ID. JSON mode preserves unrelated data without requesting MySQL; MySQL mode retains its relational transaction and returns a configuration-focused `503` when unavailable. Import responses report per-table and total duplicate counts. Empty-sheet `note: No records` placeholders are ignored.
 - Sensitive integration configuration depends on `CONFIG_MASTER_KEY`.
 - IP Browser auto-login supports protected per-router profiles stored inside each branch's integration settings. Profiles select credentials from the assigned-IP target using exact host/port, exact host, IPv4 CIDR, or wildcard rules in specificity order; unmatched targets continue using the legacy default IP Browser credentials. The same resolver is used by proxied browser pages, direct WiFi changes, and connected-device scans.
 - Production requires a strong `SESSION_TOKEN_SECRET`.
@@ -171,6 +172,7 @@ The local development login page is `http://localhost:3100/login.html` when the 
 - `/api/payment-records` is the canonical cross-page billing read model. Each record includes a versioned backend-only `billingSummary`; Payments, Customers, Payment History, and Payment Breakdown require this response and do not fall back to browser billing calculations. `/api/payment-records/reconciliation/report` recalculates branch records and reports duplicate cycles, missing calculated charges, invalid advances/carry-over, missing current cycles, and ending-balance mismatches.
 - Any change to shared navigation, route mounts, common middleware, auth/session contracts, storage contracts, or cross-module response shapes is integration work.
 - `/temp.html` and `/api/temp` are protected for Admin sessions and deliberately have no sidebar/dashboard link. They form a standalone secondary-location workspace and never read, write, embed, or call the canonical Customer Management/Billing stores, pages, or APIs.
+- `/api/admin-data-reset` and the Data Reset section in `/accounts.html` provide the global destructive reset workflow. Preview is read-only; execution requires an authenticated Admin's current password, the exact `CLEAR ALL DATA` phrase, irreversible acknowledgement, and final browser confirmation. It clears operational records in all modules and branches, including Temp, generated backups/cache, and payment proofs, while preserving Admin access, branches, business/system configuration, integrations, app downloads, MySQL configuration, and source code. Tests use injected in-memory stores and never execute the live reset.
 
 ## Known risks
 
@@ -205,4 +207,5 @@ Use one shared working tree and the coordination script. Agents lock exact files
 
 ## Latest integration changes
 
+- 2026-08-06: Added the global Admin factory-reset workflow in Admin Settings. It uses read-only preview, current-password and typed-phrase authorization, JSON rollback or a MySQL transaction, preserves Admin/configuration state, clears operational module/Temp records plus generated record files, and is covered without executing the live reset.
 - 2026-08-06: Completed the backend-only Billing read cutover. Version 2 of `/api/payment-records` supplies rows, current/next cycles, status, due date, balance, advance, and reconciliation results; the four Billing/Customer pages show an unavailable state instead of recalculating in the browser. Postpaid generation remains month-end only, and the isolated Temp module is unchanged.

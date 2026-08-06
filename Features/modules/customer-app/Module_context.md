@@ -1,6 +1,6 @@
 # Customer App Module Context
 
-Last reviewed: 2026-07-29
+Last reviewed: 2026-08-06
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -11,6 +11,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - Configure, schedule, run, and test push notification/reminder behavior.
 - Send SMS, retain history, manage templates/schedules/automations, and dispatch through configured providers.
 - Handle Messenger verification/messages and provide a local customer upstream stub in development.
+- Prepare a consent-gated Messenger billing reminder queue for manual review and sending by admins or assigned collectors.
 - Present customer-facing privacy, terms, and company information.
 
 ## Backend and APIs
@@ -22,6 +23,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - `backend/firebase-push.js`: Firebase Admin integration with credential paths anchored to the repository root.
 - `backend/sms.js`, `backend/sms-delivery.js`, `backend/sms-scheduler.js`, and `backend/sms-schema.js`: `/api/sms`, provider dispatch, schedules, automations, and relational schema.
 - `backend/messenger-bot.js`: verification and delivery under `/webhooks/messenger`.
+- `backend/messenger-reminders.js`: `/api/messenger-reminders` queue generation from Billing's canonical payment records, branch/collector-area authorization, deterministic duplicate-resistant reminder keys, Messenger preferences/consent, manual open/copy/send auditing, skip/reopen history, and payment confirmations. It never bulk-sends through the Meta API.
 - `backend/customer-upstream.js`: development stub, normally port `4101` in this checkout; production remains opt-in through `ENABLE_CUSTOMER_UPSTREAM_STUB=true`.
 - The former ten repository-root backend shims were retired in Phase 11.
 
@@ -29,11 +31,11 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Frontend entry points
 
-- Canonical browser implementations live under `web/`: eight HTML entry points, five CSS files, and five JavaScript files.
-- Existing customer URLs remain `/customer-login.html`, `/customer-portal.html`, `/customer-app.html`, and `/customer-app-popup-reminder.html` with their existing customer/admin guards and redirects.
+- Canonical browser implementations live under `web/`; `messenger-reminders.html` with its owned CSS/JavaScript provides the reviewed queue, filters, consent editor, message preview, Meta Inbox link, and audit actions.
+- Existing customer URLs remain `/customer-login.html`, `/customer-portal.html`, `/customer-app.html`, and `/customer-app-popup-reminder.html` with their existing guards and redirects. `/messenger-reminders.html` and `/messenger-reminders` allow Admin or Collector staff; collectors see only customers in their assigned areas.
 - SMS remains protected at `/sms.html`; company information, privacy, and terms pages remain public at their existing root and friendly URLs.
 - Existing CSS/JavaScript URLs, including root `/sms.js`, remain unchanged through module static composition.
-- All 18 moved browser files are byte-identical to their pre-migration versions.
+- Existing migrated browser files retain their original contracts; the Messenger reminder page is an additive module-owned entry point.
 
 ## Data and dependencies
 
@@ -42,13 +44,14 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - Billing provides balances, payment confirmations, receipts, statements, and quick-payment contracts through unchanged APIs and shared composition.
 - Network provides modem/GenieACS and WiFi operations through Customer Management and shared handlers.
 - Admin provides integration settings, business profile, staff authorization, SMS/email provider configuration, and protected secrets.
-- JSON keys include `customer_app_settings`, `customer_fcm_tokens`, and `customer_notification_inbox`; dashboard backup/restore also preserves archived `sms_messages` and `sms_automation_runs` arrays in JSON mode. Interactive SMS tools still require MySQL and their existing relational schema.
+- JSON/app-store keys include `customer_app_settings`, `customer_fcm_tokens`, `customer_notification_inbox`, and branch-scoped `messenger_reminders`. The Messenger store retains preferences, affirmative-consent audit fields, deterministic reminder identities, status, and manual action history without storing Meta credentials. Dashboard backup/restore also preserves archived `sms_messages` and `sms_automation_runs` arrays in JSON mode. Interactive SMS tools still require MySQL and their existing relational schema.
 - Push, SMS, email, and Messenger credentials must never be recorded in this context.
 
 ## Known risks and follow-up
 
 - Customer authentication and staff authentication must remain isolated.
 - Notification delivery is externally stateful; retry/idempotency and audit behavior need tests.
+- Messenger reminder consent is explicit and defaults off. Opening a link or recording a sent action must never be treated as authorization for automatic delivery; Meta policy review is required before any future Send API expansion.
 - Shared customer/modem/payment handlers in `server.js` require Integration Codex coordination.
 - The local upstream stub must not collide with production or be unintentionally enabled in production.
 - Repository-root backend aliases must not be recreated.
@@ -56,7 +59,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Validation
 
-- `npm run refactor:customer-app` verifies the descriptor, retirement of ten root entries, 18 web files, server wiring, canonical cross-module dependencies, repository-root Firebase paths, routers, and pure FCM/inbox/SMS contracts.
+- `npm run refactor:customer-app` verifies the descriptor, retired root entries, module web files, server wiring, canonical cross-module dependencies, repository-root Firebase paths, routers, pure FCM/inbox/SMS contracts, and Messenger reminder date/identity/link behavior.
 - `npm run refactor:phase10` runs inventory, every module compatibility suite, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged public/legal/customer/SMS pages and assets, customer/admin guards, upstream isolation, and unauthenticated Customer App/SMS denials on ports `3190`/`4190`.
@@ -64,6 +67,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Latest meaningful changes
 
+- 2026-08-06: Added the semi-automated Messenger Reminder Queue for admins and assigned collectors, with backend-derived billing stages, current-month payment confirmations, deterministic duplicate-resistant keys, Messenger link/consent management, manual review/copy/open workflow, sent/skip/reopen audit history, and no automatic Meta delivery.
 - 2026-07-29: Dashboard full backup/restore now round-trips SMS message history and automation-run records through archive JSON keys when JSON storage is selected; provider delivery and interactive SMS behavior remain MySQL-only.
 - 2026-07-29: Phase 12 revalidated Customer App through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all ten Customer App root shims; shared composition and security checks now load its manifest runtime directly.

@@ -7,6 +7,7 @@ const entries = Object.freeze({
   appDownloads: './app-downloads',
   auth: './auth',
   businessProfile: './business-profile',
+  factoryReset: './factory-reset',
   infoApi: './info-api',
   integrationSettings: './integration-settings',
   setupInstaller: './setup-installer'

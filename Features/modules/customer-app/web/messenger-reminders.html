@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Messenger Reminders - THRE3J Internet</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+    <link rel="stylesheet" href="css/messenger-reminders.css?v=1.0">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="page messenger-reminders-page">
+                <section class="page-header messenger-page-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Customer communication</p>
+                        <h1>Messenger Reminder Queue</h1>
+                        <p class="subtitle">Prepare billing reminders, review each message, and send it manually through Meta Business Suite.</p>
+                    </div>
+                    <div class="header-actions messenger-header-actions">
+                        <a class="ghost-btn" id="businessInboxBtn" href="https://business.facebook.com/latest/inbox/all" target="_blank" rel="noopener noreferrer">
+                            <i class="ti ti-brand-meta" aria-hidden="true"></i> Meta Business Inbox
+                        </a>
+                        <button class="primary-btn" type="button" id="generateQueueBtn">
+                            <i class="ti ti-refresh" aria-hidden="true"></i> Prepare Queue
+                        </button>
+                    </div>
+                </section>
+
+                <section class="messenger-policy-alert" aria-label="Messenger sending policy">
+                    <i class="ti ti-shield-check" aria-hidden="true"></i>
+                    <div>
+                        <strong>Manual review mode</strong>
+                        <p>The billing system prepares and audits reminders. It does not bulk-send through Messenger. Consent and a valid conversation link are required before a reminder can be marked as sent.</p>
+                    </div>
+                    <span class="badge bg-blue-lt" id="metaModeBadge">Checking setup</span>
+                </section>
+
+                <section class="messenger-metrics" aria-label="Reminder summary">
+                    <article class="messenger-metric-card">
+                        <span class="metric-icon bg-blue-lt"><i class="ti ti-list-check" aria-hidden="true"></i></span>
+                        <div><span>Pending</span><strong id="pendingMetric">0</strong></div>
+                    </article>
+                    <article class="messenger-metric-card">
+                        <span class="metric-icon bg-green-lt"><i class="ti ti-send" aria-hidden="true"></i></span>
+                        <div><span>Ready to send</span><strong id="readyMetric">0</strong></div>
+                    </article>
+                    <article class="messenger-metric-card">
+                        <span class="metric-icon bg-yellow-lt"><i class="ti ti-user-cog" aria-hidden="true"></i></span>
+                        <div><span>Needs setup</span><strong id="setupMetric">0</strong></div>
+                    </article>
+                    <article class="messenger-metric-card">
+                        <span class="metric-icon bg-purple-lt"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
+                        <div><span>Sent</span><strong id="sentMetric">0</strong></div>
+                    </article>
+                </section>
+
+                <section class="section-frame messenger-queue-shell">
+                    <div class="messenger-toolbar">
+                        <div class="messenger-view-switch" role="group" aria-label="Queue view">
+                            <button class="messenger-view-btn active" type="button" data-view="active" aria-pressed="true">
+                                <i class="ti ti-inbox" aria-hidden="true"></i> Active queue
+                            </button>
+                            <button class="messenger-view-btn" type="button" data-view="history" aria-pressed="false">
+                                <i class="ti ti-history" aria-hidden="true"></i> History
+                            </button>
+                        </div>
+                        <div class="messenger-filters">
+                            <label class="messenger-search">
+                                <i class="ti ti-search" aria-hidden="true"></i>
+                                <input type="search" id="queueSearch" placeholder="Search customer, account, or area" autocomplete="off">
+                            </label>
+                            <select id="stageFilter" aria-label="Filter by reminder stage">
+                                <option value="">All stages</option>
+                                <option value="advance">Advance reminder</option>
+                                <option value="due">Payment due</option>
+                                <option value="overdue">Overdue follow-up</option>
+                                <option value="final">Final reminder</option>
+                                <option value="payment_confirmation">Payment confirmation</option>
+                            </select>
+                            <select id="setupFilter" aria-label="Filter by Messenger setup">
+                                <option value="">All setup states</option>
+                                <option value="ready">Ready to send</option>
+                                <option value="setup">Needs setup</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="messenger-queue-meta">
+                        <p id="queueSummary">Preparing reminder queue…</p>
+                        <p id="lastGeneratedText">Not generated yet</p>
+                    </div>
+
+                    <div class="messenger-table-wrap">
+                        <table class="messenger-table">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Billing</th>
+                                    <th>Reminder</th>
+                                    <th>Messenger &amp; consent</th>
+                                    <th>Last sent</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reminderRows"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="messenger-empty" id="queueEmpty" hidden>
+                        <span><i class="ti ti-brand-messenger" aria-hidden="true"></i></span>
+                        <h2>No reminders in this view</h2>
+                        <p>The queue is generated from the backend billing status and the configured reminder schedule.</p>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div class="messenger-modal" id="setupModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="setupModalTitle">
+        <div class="messenger-modal-card messenger-modal-card--compact">
+            <div class="messenger-modal-head">
+                <div>
+                    <p class="eyebrow">Customer Messenger settings</p>
+                    <h2 id="setupModalTitle">Configure Messenger</h2>
+                    <p id="setupCustomerLabel"></p>
+                </div>
+                <button class="ghost-icon" type="button" data-close-modal="setupModal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <form id="setupForm">
+                <input type="hidden" id="setupAccountNumber">
+                <label class="form-label" for="messengerLinkInput">Messenger username or conversation link</label>
+                <input class="form-control" id="messengerLinkInput" type="text" maxlength="500" placeholder="customer.username or https://m.me/customer.username">
+                <p class="form-hint">A Facebook username is converted to an m.me link. You may also paste the exact Messenger or Business Suite conversation URL.</p>
+                <label class="messenger-consent-check">
+                    <input type="checkbox" id="consentAllowedInput">
+                    <span>
+                        <strong>Customer allows Messenger payment reminders</strong>
+                        <small>Enable only after the customer has agreed to receive billing reminders.</small>
+                    </span>
+                </label>
+                <div class="messenger-modal-actions">
+                    <button class="ghost-btn" type="button" data-close-modal="setupModal">Cancel</button>
+                    <button class="primary-btn" type="submit" id="saveSetupBtn"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save settings</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="messenger-modal" id="messageModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="messageModalTitle">
+        <div class="messenger-modal-card">
+            <div class="messenger-modal-head">
+                <div>
+                    <p class="eyebrow" id="messageStageLabel">Reminder preview</p>
+                    <h2 id="messageModalTitle">Review Messenger Message</h2>
+                    <p id="messageCustomerLabel"></p>
+                </div>
+                <button class="ghost-icon" type="button" data-close-modal="messageModal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="message-preview-status" id="messageSetupStatus"></div>
+            <label class="form-label" for="messagePreviewText">Message</label>
+            <textarea class="form-control messenger-message-preview" id="messagePreviewText" rows="16" readonly></textarea>
+            <div class="messenger-modal-actions messenger-message-actions">
+                <button class="ghost-btn" type="button" id="copyMessageBtn"><i class="ti ti-copy" aria-hidden="true"></i> Copy message</button>
+                <button class="ghost-btn" type="button" id="openMessengerBtn"><i class="ti ti-brand-messenger" aria-hidden="true"></i> Open Messenger</button>
+                <button class="primary-btn" type="button" id="markSentBtn"><i class="ti ti-check" aria-hidden="true"></i> Mark as sent</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.9"></script>
+    <script src="js/messenger-reminders.js?v=1.0"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=2.2"></script>
+</body>
+</html>

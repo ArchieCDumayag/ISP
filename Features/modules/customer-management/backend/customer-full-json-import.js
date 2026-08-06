@@ -22,6 +22,201 @@ const IMPORTED_TEMPLATE = Object.freeze({
     pon_nap_connections: 0
 });
 
+const CUSTOMER_FULL_TABLE_NAMES = Object.freeze([
+    'plans',
+    'customers',
+    'payment_entries',
+    'tickets',
+    'jobs',
+    'sms_messages',
+    'sms_automation_runs',
+    'pon_nap_connections',
+    'pon_state'
+]);
+
+const DUPLICATES_TEMPLATE = Object.freeze(Object.fromEntries(
+    CUSTOMER_FULL_TABLE_NAMES.map((tableName) => [tableName, 0])
+));
+
+const identityText = (value) => String(value == null ? '' : value).trim();
+const identityKey = (value) => identityText(value).toLowerCase();
+const identityNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? String(parsed) : identityKey(value);
+};
+
+const canonicalKey = (value) => String(value || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+
+const canonicalizeImportValue = (value, omittedKeys = new Set()) => {
+    if (value instanceof Date) {
+        return Number.isFinite(value.getTime()) ? value.toISOString() : String(value);
+    }
+    if (Array.isArray(value)) {
+        return value.map((entry) => canonicalizeImportValue(entry, omittedKeys));
+    }
+    if (value && typeof value === 'object') {
+        const normalized = {};
+        Object.keys(value).sort().forEach((key) => {
+            const normalizedKey = canonicalKey(key);
+            if (!normalizedKey || omittedKeys.has(normalizedKey) || value[key] === undefined) return;
+            normalized[normalizedKey] = canonicalizeImportValue(value[key], omittedKeys);
+        });
+        return normalized;
+    }
+    return typeof value === 'string' ? value.trim() : value;
+};
+
+const stableImportSignature = (row, omittedKeys = []) => JSON.stringify(
+    canonicalizeImportValue(row, new Set(omittedKeys.map(canonicalKey)))
+);
+
+const primaryIdentityForImportRow = (tableName, row = {}) => {
+    const identities = {
+        plans: ['plan_id', 'planId', 'id'],
+        customers: ['account_number', 'accountNumber'],
+        payment_entries: ['id'],
+        tickets: ['id'],
+        jobs: ['id'],
+        sms_messages: ['id'],
+        sms_automation_runs: ['id'],
+        pon_nap_connections: ['id'],
+        pon_state: ['chunk_index', 'chunkIndex']
+    };
+    const keys = identities[tableName] || [];
+    const raw = keys.map((key) => row?.[key]).find((value) => identityText(value));
+    if (!identityText(raw)) return null;
+    return {
+        alias: `primary:${identityKey(raw)}`,
+        type: canonicalKey(keys[0] || 'id') || 'id'
+    };
+};
+
+const getCustomerFullPaymentSecondaryAliases = (row = {}) => {
+    const aliases = [];
+    const fingerprint = identityKey(row?.fingerprint);
+    const xenditId = identityKey(row?.xendit_id ?? row?.xenditId);
+    if (fingerprint) aliases.push({ alias: `fingerprint:${fingerprint}`, type: 'fingerprint' });
+    if (xenditId) aliases.push({ alias: `xendit_id:${xenditId}`, type: 'xendit_id' });
+    return aliases;
+};
+
+const secondaryIdentitiesForImportRow = (tableName, row = {}) => {
+    if (tableName === 'payment_entries') {
+        return getCustomerFullPaymentSecondaryAliases(row);
+    }
+    if (tableName === 'pon_nap_connections') {
+        const nap = identityKey(
+            row?.nap_id
+            ?? row?.napId
+            ?? row?.nap_client_uid
+            ?? row?.napClientUid
+            ?? row?.nap_code
+            ?? row?.napCode
+        );
+        const port = identityNumber(row?.port);
+        return nap && port ? [{ alias: `nap_port:${nap}:${port}`, type: 'nap_port' }] : [];
+    }
+    return [];
+};
+
+const deduplicateCustomerFullTables = (tables = {}) => {
+    const normalizedTables = {};
+    const duplicatesSkipped = { ...DUPLICATES_TEMPLATE };
+    const conflicts = [];
+
+    CUSTOMER_FULL_TABLE_NAMES.forEach((tableName) => {
+        const sourceRows = filterCustomerFullImportRows(
+            tableName === 'payment_entries'
+                ? (tables.payment_entries || tables.payments)
+                : tables[tableName]
+        );
+        const rows = [];
+        const primaryRows = new Map();
+        const secondaryRows = new Map();
+        const anonymousRows = new Map();
+
+        sourceRows.forEach((row, index) => {
+            const rowNumber = index + 2;
+            const fullSignature = stableImportSignature(row);
+            const primary = primaryIdentityForImportRow(tableName, row);
+
+            if (!primary) {
+                if (anonymousRows.has(fullSignature)) {
+                    duplicatesSkipped[tableName] += 1;
+                    return;
+                }
+                anonymousRows.set(fullSignature, rowNumber);
+                rows.push(row);
+                return;
+            }
+
+            const existingPrimary = primaryRows.get(primary.alias);
+            if (existingPrimary) {
+                if (existingPrimary.fullSignature === fullSignature) {
+                    duplicatesSkipped[tableName] += 1;
+                } else if (conflicts.length < 200) {
+                    conflicts.push({
+                        table: tableName,
+                        identityType: primary.type,
+                        firstRow: existingPrimary.rowNumber,
+                        conflictingRow: rowNumber
+                    });
+                }
+                return;
+            }
+
+            const secondarySignature = stableImportSignature(row, ['id', 'payment_id']);
+            const secondaryIdentities = secondaryIdentitiesForImportRow(tableName, row);
+            const matchingSecondary = secondaryIdentities
+                .map((identity) => ({ identity, existing: secondaryRows.get(identity.alias) }))
+                .find((match) => match.existing);
+            if (matchingSecondary) {
+                if (matchingSecondary.existing.signature === secondarySignature) {
+                    duplicatesSkipped[tableName] += 1;
+                } else if (conflicts.length < 200) {
+                    conflicts.push({
+                        table: tableName,
+                        identityType: matchingSecondary.identity.type,
+                        firstRow: matchingSecondary.existing.rowNumber,
+                        conflictingRow: rowNumber
+                    });
+                }
+                return;
+            }
+
+            rows.push(row);
+            primaryRows.set(primary.alias, { fullSignature, rowNumber });
+            secondaryIdentities.forEach((identity) => {
+                secondaryRows.set(identity.alias, { signature: secondarySignature, rowNumber });
+            });
+        });
+
+        normalizedTables[tableName] = rows;
+    });
+
+    return {
+        tables: normalizedTables,
+        duplicatesSkipped,
+        duplicateCount: Object.values(duplicatesSkipped).reduce((total, count) => total + Number(count || 0), 0),
+        conflicts,
+        conflictCount: conflicts.length
+    };
+};
+
+const createCustomerFullImportConflictError = (conflicts = []) => {
+    const error = new Error(
+        `Import stopped: ${conflicts.length} conflicting record${conflicts.length === 1 ? '' : 's'} share a stable identity.`
+    );
+    error.code = 'CUSTOMER_FULL_IMPORT_CONFLICT';
+    error.status = 409;
+    error.conflicts = conflicts;
+    return error;
+};
+
 const isNoRecordsPlaceholder = (entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
     const populatedFields = Object.entries(entry).filter(([, value]) => String(value == null ? '' : value).trim());
@@ -443,8 +638,14 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
         throw new Error('A valid branch ID is required for JSON customer import.');
     }
 
+    const importIntegrity = deduplicateCustomerFullTables(tables);
+    if (importIntegrity.conflictCount) {
+        throw createCustomerFullImportConflictError(importIntegrity.conflicts);
+    }
+    const importTables = importIntegrity.tables;
     const nowIso = normalizeNow(now);
     const imported = { ...IMPORTED_TEMPLATE };
+    const duplicatesSkipped = { ...importIntegrity.duplicatesSkipped };
     const warnings = [];
     const pushWarning = (message) => {
         if (message && warnings.length < 200) warnings.push(String(message));
@@ -453,7 +654,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     const sourcePlans = Array.isArray(stores.plans) ? stores.plans : [];
     const plans = sourcePlans.map((plan) => ({ ...plan }));
     const planIndex = new Map(plans.map((plan, index) => [String(plan?.id || plan?.planId || plan?.plan_id || '').trim(), index]));
-    asRows(tables.plans).forEach((row, index) => {
+    asRows(importTables.plans).forEach((row, index) => {
         const normalized = normalizePlan(row, nowIso);
         if (!normalized) {
             pushWarning(`Skipped plan row ${index + 2}: plan ID is missing.`);
@@ -472,7 +673,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     const sourceCustomers = Array.isArray(stores.customers) ? stores.customers : [];
     const customers = sourceCustomers.map((customer) => ({ ...customer }));
     const customerIndex = new Map(customers.map((customer, index) => [customerAccountNumber(customer), index]));
-    asRows(tables.customers).forEach((row, index) => {
+    asRows(importTables.customers).forEach((row, index) => {
         const normalized = normalizeCustomer(row, scopedBranchId, nowIso);
         if (!normalized) {
             pushWarning(`Skipped customer row ${index + 2}: account number is missing.`);
@@ -507,8 +708,22 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             history: asRows(accountData?.history).map((entry) => ({ ...entry }))
         }
     ]));
+    const existingPaymentAliases = new Map();
+    Object.entries(payments).forEach(([accountNumber, accountData]) => {
+        asRows(accountData?.history).forEach((entry) => {
+            const normalized = normalizePayment({ ...entry, accountNumber }, scopedBranchId);
+            if (!normalized) return;
+            const existingId = normalized.entry.id;
+            getCustomerFullPaymentSecondaryAliases(normalized.entry).forEach(({ alias, type }) => {
+                if (!existingPaymentAliases.has(alias)) {
+                    existingPaymentAliases.set(alias, { id: existingId, type });
+                }
+            });
+        });
+    });
+
     const importedPaymentById = new Map();
-    asRows(tables.payment_entries || tables.payments).forEach((row, index) => {
+    asRows(importTables.payment_entries).forEach((row, index) => {
         const normalized = normalizePayment(row, scopedBranchId);
         if (!normalized) {
             pushWarning(`Skipped payment row ${index + 2}: payment ID or account number is missing.`);
@@ -518,7 +733,20 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             pushWarning(`Skipped payment ${normalized.entry.id}: customer ${normalized.accountNumber} not found in branch ${scopedBranchId}.`);
             return;
         }
+        const duplicateIdentity = getCustomerFullPaymentSecondaryAliases(normalized.entry)
+            .map(({ alias, type }) => ({ existing: existingPaymentAliases.get(alias), type }))
+            .find(({ existing }) => existing && existing.id !== normalized.entry.id);
+        if (duplicateIdentity) {
+            duplicatesSkipped.payment_entries += 1;
+            pushWarning(
+                `Skipped duplicate payment ${normalized.entry.id}: ${duplicateIdentity.type} already belongs to another payment.`
+            );
+            return;
+        }
         importedPaymentById.set(normalized.entry.id, normalized);
+        getCustomerFullPaymentSecondaryAliases(normalized.entry).forEach(({ alias, type }) => {
+            existingPaymentAliases.set(alias, { id: normalized.entry.id, type });
+        });
         imported.payment_entries += 1;
     });
 
@@ -547,7 +775,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     }
 
     const tickets = asRows(stores.tickets).map((ticket) => ({ ...ticket }));
-    asRows(tables.tickets).forEach((row, index) => {
+    asRows(importTables.tickets).forEach((row, index) => {
         const normalized = normalizeTicket(row, scopedBranchId, nowIso);
         if (!normalized) {
             pushWarning(`Skipped ticket row ${index + 2}: ticket ID is missing or invalid.`);
@@ -559,7 +787,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
 
     const ticketIds = new Set(tickets.map((ticket) => String(ticket?.id || '').trim()).filter(Boolean));
     const jobs = asRows(stores.jobs).map((job) => ({ ...job }));
-    asRows(tables.jobs).forEach((row, index) => {
+    asRows(importTables.jobs).forEach((row, index) => {
         const normalized = normalizeJob(row, scopedBranchId, nowIso, ticketIds);
         if (!normalized) {
             pushWarning(`Skipped job row ${index + 2}: job ID is missing or invalid.`);
@@ -570,7 +798,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     });
 
     const smsMessages = asRows(stores.sms_messages).map((message) => ({ ...message }));
-    asRows(tables.sms_messages).forEach((row, index) => {
+    asRows(importTables.sms_messages).forEach((row, index) => {
         const normalized = normalizeSmsMessage(row, scopedBranchId, nowIso);
         if (!normalized) {
             pushWarning(`Skipped SMS message row ${index + 2}: message ID is missing or invalid.`);
@@ -581,7 +809,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     });
 
     const smsAutomationRuns = asRows(stores.sms_automation_runs).map((run) => ({ ...run }));
-    asRows(tables.sms_automation_runs).forEach((row, index) => {
+    asRows(importTables.sms_automation_runs).forEach((row, index) => {
         const normalized = normalizeSmsAutomationRun(row, scopedBranchId, nowIso);
         if (!normalized) {
             pushWarning(`Skipped SMS automation row ${index + 2}: run ID is missing or invalid.`);
@@ -595,7 +823,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     const ponState = cloneJsonValue(sourcePonState, {});
     ponState.branches = isPlainObject(ponState.branches) ? ponState.branches : {};
     const branchKey = String(scopedBranchId);
-    const exportedPonState = parsePonStateRow(tables);
+    const exportedPonState = parsePonStateRow(importTables);
     const storedScopedPonState = isPlainObject(ponState.branches[branchKey])
         ? ponState.branches[branchKey]
         : (isPlainObject(ponState.default) ? ponState.default : {});
@@ -604,7 +832,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     scopedPonState.naps = Array.isArray(scopedPonState.naps) ? scopedPonState.naps : [];
     const ponNapLookup = buildPonNapLookup(scopedPonState.naps);
 
-    asRows(tables.pon_nap_connections).forEach((row, index) => {
+    asRows(importTables.pon_nap_connections).forEach((row, index) => {
         const nap = findPonNapForRow(ponNapLookup, row);
         const rowLabel = textValue(row, ['id']) || String(index + 2);
         if (!nap) {
@@ -667,6 +895,8 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             'pon-state': ponState
         },
         imported,
+        duplicatesSkipped,
+        duplicateCount: Object.values(duplicatesSkipped).reduce((total, count) => total + Number(count || 0), 0),
         warnings,
         warningCount: warnings.length,
         touchedKeys: [
@@ -747,6 +977,9 @@ const importCustomerFullJsonData = async ({
 
 module.exports = {
     buildCustomerFullJsonImport,
+    createCustomerFullImportConflictError,
+    deduplicateCustomerFullTables,
     filterCustomerFullImportRows,
+    getCustomerFullPaymentSecondaryAliases,
     importCustomerFullJsonData
 };

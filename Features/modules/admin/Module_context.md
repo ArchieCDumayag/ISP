@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-07-30
+Last reviewed: 2026-08-06
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -8,6 +8,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Authenticate staff, collectors, and technicians; create/verify sessions and enforce roles.
 - Manage protected admin accounts and primary/backup admin safeguards.
 - Maintain business profile, protected integration settings, activity logs, and app downloads.
+- Provide an Admin-only, password-confirmed project factory reset for operational records across all modules and branches.
 - Expose the information API plus owner-only setup, schema, flavor, and update tools.
 
 ## Canonical runtime layout
@@ -17,6 +18,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - `backend/accounts.js` and `backend/accounts-store.js`: `/api/accounts` and protected accounts.
 - `backend/activity-log.js` and `backend/activity-log-visibility.js`: audit persistence and visibility.
 - `backend/business-profile.js`: `/api/business-profile`.
+- `backend/factory-reset.js`: `/api/admin-data-reset` preview and reset operations. Reset requires the current Admin password, the exact `CLEAR ALL DATA` phrase, an irreversible-action acknowledgement, and a final browser confirmation.
 - `backend/integration-settings.js`: `/api/integrations` and protected settings.
 - `backend/info-api.js`: `/api/info` aggregation.
 - `backend/app-downloads.js` and `backend/app-downloads-store.js`: `/api/app-downloads`.
@@ -30,6 +32,7 @@ The former eleven root backend shims were retired in Phase 11. Existing browser 
 
 - `/login.html` → `web/login.html`
 - `/accounts.html` → `web/accounts.html`
+- The `Data Reset` section inside `/accounts.html` displays current record/file counts, deletion and preservation scope, an Android offline-data warning, and the guarded reset form.
 - `/flavors.html` → `web/flavors.html`
 - `/setup.html` → `web/setup.html`
 - `/install-guide.html` → `web/install-guide.html`
@@ -50,6 +53,8 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - Sensitive integration data requires `CONFIG_MASTER_KEY`; production sessions require `SESSION_TOKEN_SECRET`.
 - IP Browser integration settings support up to 100 enabled/disabled router profiles. Each profile stores a label, ordered exact IP/IP:port, IPv4 CIDR, or wildcard match rules, protected username/password data, optional page selectors, and submit delay. Exact host/port matches outrank host matches, which outrank CIDR and wildcard rules; profile order breaks ties.
 - IP Browser profile credentials and usernames are redacted from `/api/integrations` responses and represented only by presence flags. Blank username/password values sent while editing an existing profile preserve the stored secrets. The legacy top-level IP Browser credentials remain the fallback when no profile matches.
+- Factory reset deletes customers, plans, billing/payment history, collector/technician accounts and assignments, schedules/reminders, tickets/jobs, PON/coverage state, Finance, SMS records/templates/automations, Temp workspace records, activity history, generated backups/cache, legacy record uploads, and payment proof files. It preserves Admin accounts/sessions, branches, business profile, account-number and Customer App/collector settings, integrations, app downloads, MySQL configuration, and source code. A non-secret last-reset audit marker is retained.
+- JSON reset rewrites known business stores to empty canonical shapes with rollback on store-write failure. MySQL reset deletes business tables and business `app_store` keys in a transaction, retaining only Admin users/sessions and configuration tables/keys. Generated-file cleanup runs after the record transaction and reports any file warnings.
 
 ## Verification contract
 
@@ -57,6 +62,8 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - `npm run refactor:phase3` runs structural, core, Admin, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public Admin files, protected-page redirects, owner-page denial, and unauthenticated API denial.
+- Admin compatibility tests exercise the JSON factory-reset service in memory, including Admin/session/configuration preservation, dynamic Finance-store clearing, audit creation, and UI/API wiring. Smoke coverage requires authentication for reset preview and confirms the new CSS/JavaScript assets are served.
+- The 2026-08-06 factory-reset change passed syntax checks, read-only live preview, `npm run refactor:admin`, isolated HTTP smoke tests, and the complete `npm test` Phase 12 suite. Local port 3000 serves the new assets and returns `401` for unauthenticated reset preview. In-app visual testing was unavailable because no browser session was connected.
 - The 2026-07-30 IP Browser profile change passed JavaScript syntax checks, HTML structure parsing, `npm run refactor:admin`, and the complete `npm test` Phase 12 suite. Interactive browser-control verification was unavailable in that session.
 
 ## Known risks and follow-up
@@ -68,10 +75,12 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - `auth.js` still contains Collector/Technician login contracts; coordinate those module migrations.
 - Admin CSS is shared by Network pages; preserve its unchanged public URL.
 - System update/setup behavior can affect deployment and schema state; never run production mutations without explicit approval.
+- Factory reset is global, permanent, and intentionally does not create a backup. Android offline records exist outside the server and can upload again after Sync unless cleared on those devices.
 - Add a fuller automated role matrix, session invalidation, protected-account, and authenticated owner-route suite.
 
 ## Latest meaningful changes
 
+- 2026-08-06: Added the Admin Settings Data Reset section and `/api/admin-data-reset`, with live deletion preview, current-password verification, exact confirmation phrase, irreversible acknowledgement, final UI confirmation, concurrency/rate limiting, JSON rollback, transactional MySQL deletion, retained Admin/configuration access, generated-file cleanup, and a non-secret audit marker. Validation never invokes the live reset.
 - 2026-07-30: Added protected multi-router IP Browser profiles with exact IP/port, CIDR, and wildcard matching; Accounts now manages per-profile credentials/selectors/delay while keeping the former global login as the unmatched-device fallback.
 - 2026-07-29: Phase 12 revalidated Admin through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all eleven Admin root shims, switched cross-module imports to canonical Billing paths, and changed structure-package requirements to the canonical Admin installer only.

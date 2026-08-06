@@ -1,11 +1,12 @@
 # Admin
 
-Owns staff authentication and sessions, accounts/roles, business profile, integration configuration, activity logs, app downloads, information API, owner-only setup/update tools, and deployment/flavor administration UI.
+Owns staff authentication and sessions, accounts/roles, business profile, integration configuration, activity logs, app downloads, the protected project-data reset, information API, owner-only setup/update tools, and deployment/flavor administration UI.
 
 ## Runtime
 
 - `module.json` declares `backend/index.js` and `web/` as the live runtime entries.
 - `backend/index.js` lazily loads the Admin routers and services used by `server.js`.
+- `backend/factory-reset.js` serves the protected `/api/admin-data-reset` preview and execution workflow used by the Data Reset section in `web/accounts.html`.
 - `web/` is mounted at the application root after authorization guards, so existing URLs such as `/login.html` and `/accounts.html` remain unchanged.
 - Backend imports use this canonical folder; the former root backend shims were retired in Phase 11.
 - Shared browser assets continue to come from the repository `public/` directory.
@@ -14,6 +15,7 @@ Owns staff authentication and sessions, accounts/roles, business profile, integr
 
 - Admin owns identity, authorization, protected configuration, and governance—not each business module's CRUD.
 - Shared `server.js`, canonical `core/`, package files, shell navigation, and deployment runtime remain Integration Codex ownership.
+- Factory reset is the deliberate cross-module exception: it clears operational records in every module and branch while preserving Admin access, business/system configuration, integrations, app downloads, and source code.
 - Other modules depend on Admin contracts for roles, sessions, business identity, and integrations.
 - Lock `Features/modules/admin` plus every affected shared integration file before changing them.
 

@@ -5,6 +5,7 @@ const entries = Object.freeze({
   customerUpstream: './customer-upstream',
   firebasePush: './firebase-push',
   messengerBot: './messenger-bot',
+  messengerReminders: './messenger-reminders',
   smsDelivery: './sms-delivery',
   smsScheduler: './sms-scheduler',
   smsSchema: './sms-schema',

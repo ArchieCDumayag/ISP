@@ -121,6 +121,9 @@ assert(serverSource.includes("readJson('sms_messages', [])"));
 assert(serverSource.includes("readJson('sms_automation_runs', [])"));
 assert(serverSource.includes("readJson('pon-state', {})"));
 assert(serverSource.includes("appendSheet('pon_state', ponStateRows)"));
+assert(serverSource.includes('const exportIntegrity = deduplicateCustomerFullTables({'));
+assert(serverSource.includes('backup_schema_version: 2'));
+assert(serverSource.includes('duplicatesSkipped.payment_entries += 1'));
 assert(serverSource.includes('CUSTOMER_MANAGEMENT_WEB_ROOT'));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'customer-draft-queue.html')"));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'customer-archive.html')"));
@@ -128,6 +131,7 @@ console.log('PASS Customer Management server loader and web routing');
 
 const {
   buildCustomerFullJsonImport,
+  deduplicateCustomerFullTables,
   filterCustomerFullImportRows
 } = backend.load('customerFullJsonImport');
 assert.deepStrictEqual(
@@ -139,6 +143,48 @@ assert.deepStrictEqual(
   ]),
   [{ note: 'No records', id: 5 }, { id: 7 }]
 );
+const deduplicatedImport = deduplicateCustomerFullTables({
+  customers: [
+    { account_number: '100000001', name: 'Same Customer' },
+    { account_number: '100000001', name: 'Same Customer' }
+  ],
+  payment_entries: [
+    {
+      id: 'payment-a',
+      account_number: '100000001',
+      amount: 1000,
+      kind: 'payment',
+      fingerprint: '100000001|REFERENCE-1|payment|1000.00'
+    },
+    {
+      id: 'payment-b',
+      account_number: '100000001',
+      amount: 1000,
+      kind: 'payment',
+      fingerprint: '100000001|REFERENCE-1|payment|1000.00'
+    }
+  ]
+});
+assert.strictEqual(deduplicatedImport.tables.customers.length, 1);
+assert.strictEqual(deduplicatedImport.tables.payment_entries.length, 1);
+assert.strictEqual(deduplicatedImport.duplicatesSkipped.customers, 1);
+assert.strictEqual(deduplicatedImport.duplicatesSkipped.payment_entries, 1);
+assert.strictEqual(deduplicatedImport.conflictCount, 0);
+
+const conflictingImport = deduplicateCustomerFullTables({
+  customers: [
+    { account_number: '100000001', name: 'First Customer' },
+    { account_number: '100000001', name: 'Conflicting Customer' }
+  ]
+});
+assert.strictEqual(conflictingImport.conflictCount, 1);
+assert.deepStrictEqual(conflictingImport.conflicts[0], {
+  table: 'customers',
+  identityType: 'account_number',
+  firstRow: 2,
+  conflictingRow: 3
+});
+console.log('PASS full customer import duplicate and conflict detection');
 const ponStateFixtureJson = JSON.stringify({
   olts: [{ id: 'olt-1', name: 'OLT 1', ponPorts: 1 }],
   naps: [{ id: 'nap-1', code: 'NAP-1', connections: [] }]
@@ -265,6 +311,62 @@ assert.strictEqual(
 );
 assert(jsonImportResult.warnings.some((message) => message.includes('account number is missing')));
 assert(jsonImportResult.warnings.some((message) => message.includes('999999999')));
+
+const repeatedJsonImportResult = buildCustomerFullJsonImport({
+  branchId: 1,
+  now: new Date('2026-07-30T00:00:00.000Z'),
+  stores: jsonImportResult.stores,
+  tables: {
+    customers: [{ account_number: '100000001', name: 'Updated Name', plan_id: 'plan-100' }],
+    payment_entries: [{
+      id: 'payment-replaced',
+      account_number: '100000001',
+      amount: 75,
+      kind: 'payment',
+      recorded_at: '2026-07-29T08:00:00.000Z'
+    }]
+  }
+});
+assert.strictEqual(
+  repeatedJsonImportResult.stores.customers.filter((customer) => customer.accountNumber === '100000001').length,
+  1
+);
+assert.strictEqual(
+  repeatedJsonImportResult.stores.payments['100000001'].history.filter((entry) => entry.id === 'payment-replaced').length,
+  1
+);
+
+const existingPaymentDuplicateResult = buildCustomerFullJsonImport({
+  branchId: 1,
+  stores: {
+    customers: [{ accountNumber: '100000001', branchId: 1, name: 'Customer' }],
+    plans: [],
+    payments: {
+      100000001: {
+        history: [{
+          id: 'existing-payment',
+          accountNumber: '100000001',
+          amount: 1000,
+          kind: 'payment',
+          fingerprint: '100000001|REFERENCE-2|payment|1000.00'
+        }]
+      }
+    }
+  },
+  tables: {
+    payment_entries: [{
+      id: 'duplicate-payment-with-new-id',
+      account_number: '100000001',
+      amount: 1000,
+      kind: 'payment',
+      fingerprint: '100000001|REFERENCE-2|payment|1000.00'
+    }]
+  }
+});
+assert.strictEqual(existingPaymentDuplicateResult.imported.payment_entries, 0);
+assert.strictEqual(existingPaymentDuplicateResult.duplicatesSkipped.payment_entries, 1);
+assert.strictEqual(existingPaymentDuplicateResult.stores.payments['100000001'].history.length, 1);
+assert(existingPaymentDuplicateResult.warnings.some((message) => message.includes('duplicate payment')));
 console.log('PASS JSON full customer import merge and storage dispatch');
 
 const customerSource = fs.readFileSync(
@@ -292,6 +394,7 @@ assert(webAppSource.includes('../../Features/modules/customer-management/web/css
 const layoutSource = fs.readFileSync(path.join(projectRoot, 'public/layout.js'), 'utf8');
 assert(layoutSource.includes('SMS runs: ${Number(imported.sms_automation_runs || 0)}'));
 assert(layoutSource.includes('PON: ${Number(imported.pon_nap_connections || 0)}'));
+assert(layoutSource.includes('Duplicates skipped: ${duplicateCount}'));
 assert(layoutSource.includes('Full backup downloaded: customers, balances, plans, payments, tickets, jobs, SMS, and PON.'));
 console.log('PASS web-app canonical Customer stylesheet reference');
 console.log('CUSTOMER MANAGEMENT COMPATIBILITY PASSED');

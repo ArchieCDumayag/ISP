@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/accounts.css?v=4.9">
+    <link rel="stylesheet" href="css/factory-reset.css?v=1.0">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
 </head>
 
@@ -40,6 +41,12 @@
                             <button class="nav-link" id="settings-tab-system-update" type="button" role="tab" aria-controls="system-update" aria-selected="false" data-settings-tab-target="system-update">
                                 <i class="ti ti-refresh" aria-hidden="true"></i>
                                 <span>System Update</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-data-reset" type="button" role="tab" aria-controls="data-reset" aria-selected="false" data-settings-tab-target="data-reset">
+                                <i class="ti ti-database-off" aria-hidden="true"></i>
+                                <span>Data Reset</span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
@@ -193,6 +200,102 @@
                                     </div>
                                 </div>
                             </div>
+                        </section>
+
+                        <section id="data-reset" class="settings-panel factory-reset-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-data-reset" tabindex="0">
+                            <header class="panel-header">
+                                <div class="integration-heading">
+                                    <span class="integration-heading-logo factory-reset-heading-icon" aria-hidden="true">
+                                        <i class="integration-heading-logo__icon ti ti-database-off"></i>
+                                    </span>
+                                    <div>
+                                        <h2>Clear All Project Data</h2>
+                                        <p>Permanently remove operational records from every module and branch.</p>
+                                    </div>
+                                </div>
+                                <div class="panel-actions">
+                                    <button class="ghost-btn" type="button" id="factory-reset-refresh">
+                                        <i class="ti ti-refresh" aria-hidden="true"></i> Refresh Counts
+                                    </button>
+                                </div>
+                            </header>
+
+                            <div class="alert alert-danger factory-reset-warning" role="alert">
+                                <div class="factory-reset-warning__icon" aria-hidden="true"><i class="ti ti-alert-triangle"></i></div>
+                                <div>
+                                    <h3>This action cannot be undone</h3>
+                                    <p>Customers, plans, payments, billing history, collectors, schedules, reminders, tickets, jobs, network records, finance records, Temp workspace records, stored backups, and payment proofs will be deleted.</p>
+                                    <p>No automatic backup is created. Export anything you need before continuing.</p>
+                                </div>
+                            </div>
+
+                            <div class="factory-reset-summary" aria-live="polite">
+                                <article class="factory-reset-stat">
+                                    <span>Record entries found</span>
+                                    <strong id="factory-reset-record-count">—</strong>
+                                </article>
+                                <article class="factory-reset-stat">
+                                    <span>Stored files found</span>
+                                    <strong id="factory-reset-file-count">—</strong>
+                                </article>
+                                <article class="factory-reset-stat">
+                                    <span>Storage driver</span>
+                                    <strong id="factory-reset-storage-driver">—</strong>
+                                </article>
+                            </div>
+
+                            <div class="factory-reset-scope-grid">
+                                <article class="factory-reset-scope-card">
+                                    <h3><i class="ti ti-trash" aria-hidden="true"></i> Data to delete</h3>
+                                    <ul id="factory-reset-category-list">
+                                        <li class="factory-reset-loading">Loading record counts…</li>
+                                    </ul>
+                                </article>
+                                <article class="factory-reset-scope-card factory-reset-scope-card--preserved">
+                                    <h3><i class="ti ti-shield-check" aria-hidden="true"></i> Data to preserve</h3>
+                                    <ul id="factory-reset-preserved-list">
+                                        <li>Admin accounts and active Admin sessions</li>
+                                        <li>Business profile and system configuration</li>
+                                        <li>Integration credentials and source code</li>
+                                    </ul>
+                                </article>
+                            </div>
+
+                            <form id="factory-reset-form" class="factory-reset-form" autocomplete="off">
+                                <div class="factory-reset-form__header">
+                                    <div>
+                                        <h3>Final authorization</h3>
+                                        <p>All three requirements must be completed before the reset button is enabled.</p>
+                                    </div>
+                                    <span class="badge bg-red-lt text-red">Admin only</span>
+                                </div>
+
+                                <div class="factory-reset-fields">
+                                    <label class="form-field" for="factory-reset-password">
+                                        <span class="form-label">Current Admin password</span>
+                                        <input class="form-control" id="factory-reset-password" type="password" autocomplete="current-password" required>
+                                    </label>
+                                    <label class="form-field" for="factory-reset-confirmation">
+                                        <span class="form-label">Type <strong>CLEAR ALL DATA</strong></span>
+                                        <input class="form-control" id="factory-reset-confirmation" type="text" spellcheck="false" autocomplete="off" placeholder="CLEAR ALL DATA" required>
+                                    </label>
+                                </div>
+
+                                <label class="form-check factory-reset-acknowledgement">
+                                    <input class="form-check-input" id="factory-reset-acknowledge" type="checkbox">
+                                    <span class="form-check-label">I understand that the deleted records and backup files cannot be recovered from this system.</span>
+                                </label>
+
+                                <div id="factory-reset-result" class="factory-reset-result" role="status" hidden></div>
+
+                                <div class="factory-reset-actions">
+                                    <button class="btn btn-danger" id="factory-reset-submit" type="submit" disabled>
+                                        <i class="ti ti-trash-x" aria-hidden="true"></i> Clear All Project Data
+                                    </button>
+                                </div>
+                            </form>
+
+                            <p class="factory-reset-mobile-note"><i class="ti ti-device-mobile" aria-hidden="true"></i> Offline records cached on Android devices are outside the server and may upload again after Sync unless those local app records are cleared.</p>
                         </section>
 
                         <section id="xendit" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-xendit" tabindex="0">
@@ -953,10 +1056,10 @@
 
     <script src="layout.js?v=3.9"></script>
     <script src="accounts.js?v=4.0"></script>
+    <script src="js/factory-reset.js?v=1.0"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 
 </html>
-
 

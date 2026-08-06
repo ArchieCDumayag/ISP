@@ -19,7 +19,8 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - The former thirteen repository-root backend shims were retired in Phase 11; consumers use canonical Billing paths or the module descriptor.
 - `/api/plans`: plan CRUD through `backend/plans.js`.
 - `/api/payments`: payment listing, entry, import/export, delete, and payment-link flows through `backend/payments.js`.
-- `/api/payment-records`: account payment history and adjustments.
+- `/api/payment-records`: account payment history and adjustments. Every record includes version 2 of the canonical backend-only `billingSummary` read model (`available`, `rows`, `context`, `currentCycle`, `nextCycleDate`, `billingStatus`, `dueDate`, `endingBalance`, `balance`, `advance`, and `reconciliation`). `nextCycleDate` is the next first day for prepaid and next month-end for postpaid.
+- `/api/payment-records/reconciliation/report`: Admin branch-wide recalculation report for duplicate cycles, missing calculated charges, invalid advances/carry-over, missing current cycles, and ending-balance mismatches.
 - Payment confirmation routers are mounted at shared confirmation queue paths.
 - `/api/disconnections`: queue and service-policy decisions.
 - `/api/billing/run-once`: shared guarded billing trigger in `server.js`.
@@ -40,6 +41,7 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 
 - JSON is the default storage mode; optional relational paths use shared DB helpers.
 - Prepaid accounts receive one idempotent monthly recurring charge on the first day of each Manila billing month; overdue prepaid cycles catch up in one scheduler run. Postpaid month-end scheduling is unchanged.
+- A new postpaid customer's first mid-month activation period is calculated immediately as one prorated backend cycle. A payment recorded before the following postpaid month-end settles that activation cycle first; only an amount above the prorated charge becomes advance. Established postpaid recurring charges remain pending/view-only until the last day of the month.
 - Multiple payments are credits against the existing monthly cycle. Excess credit becomes advance for the next cycle; deprecated per-payment `Prepaid renewal charge` debits remain in raw audit history but are excluded from effective balances and breakdown rows.
 - Payment confirmation proof paths remain rooted at shared `public/uploads` through `core/runtime/paths`.
 - Payment backups remain rooted at `data/payment-backups`, and Cloudflared configuration remains rooted at `.cloudflared/config.yml`.
@@ -48,6 +50,8 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 - Collector submits payments, approvals, and remittances against Billing records.
 - Customer App submits payment confirmations and displays customer balances/statements.
 - Business profile and integration settings are Admin-owned shared inputs.
+- Payments, Payment History, Payment Breakdown, and the Customer Management customer list require `/api/payment-records` as their shared billing read source. Missing/invalid summaries display a Billing unavailable state; browser billing fallbacks are not executed.
+- Manual Billing payments already pass through `/api/payments/:accountNumber`, which validates duplicate references/fingerprints and uses a database transaction in relational mode. Collector capture remains a separate Collector-owned write contract and is not changed by this read-model cutover.
 
 ## Known risks and follow-up
 
@@ -62,12 +66,15 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 
 - `npm run refactor:billing` verifies the descriptor, retirement of thirteen root entries, 34 web files, server wiring, repository-root data paths, and representative normalization/profile/balance behavior.
 - `node Features/modules/billing/tests/prepaid-billing-cycle.test.js` covers first-of-month prepaid dates, same-month payment consolidation, legacy debit exclusion, advance carry-over, and unchanged postpaid month-end rows.
+- `node Features/modules/billing/tests/canonical-billing-summary.test.js` verifies version 2 of the backend summary, same-month payment consolidation, unchanged pre-month-end recurring postpaid representation, postpaid activation-proration settlement, reconciliation detection, and backend-only consumption by all four pages.
 - `npm run refactor:phase5` runs inventory, Core, Admin, Customer Management, Billing, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Billing asset/page URLs, feature/auth boundaries, the public plan API, and unauthenticated API denial on ports `3190`/`4190`.
 
 ## Latest meaningful changes
 
+- 2026-08-06: Preserved a postpaid customer's stored first billing cycle when the first payment arrives later, represented a mid-month activation as one prorated backend cycle, and applied payments to that charge before classifying any excess as advance. Normal recurring postpaid generation remains month-end only; Temp is unchanged.
+- 2026-08-06: Cut Payments, Payment History, Payment Breakdown, and Customers over to required backend-only `billingSummary` version 2 results. The backend now owns status/due-date calculations and returns per-account reconciliation plus an Admin branch report; postpaid remains month-end only and Temp remains unchanged.
 - 2026-08-06: Prepaid synthetic breakdowns now retain an earlier stored billing-cycle month when the first payment is recorded later, preventing prior unpaid cycles from disappearing and being misclassified as advance. Postpaid and Temp calculations are unchanged.
 - 2026-08-05: Prepaid Billing Cycle displays now show the current first-of-month cycle with Paid/Unpaid status and the next first-of-month cycle; service-expiration wording was removed from these displays. Postpaid and the isolated Temp module remain unchanged.
 - 2026-08-05: Replaced prepaid per-payment renewal debits with one first-of-month monthly cycle, added catch-up/idempotent scheduler generation, excluded legacy renewal debits from effective calculations, consolidated same-cycle payments, and carried excess forward as advance without changing postpaid month-end billing.

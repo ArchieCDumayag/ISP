@@ -163,6 +163,54 @@ const monthlyCharge = (accountNumber, month, amount, recordedAt) => ({
 }
 
 {
+  const record = {
+    accountNumber: 'POSTPAID-ACTIVATION-CURRENT',
+    planCategory: 'postpaid',
+    billingCycle: 'Every last day of the month',
+    planAmount: 800,
+    activationDate: '2026-08-03',
+    billDate: '2026-08-31',
+    dueDate: '2026-08-31',
+    history: [
+      payment('postpaid-current-proration-payment', 748, '2026-08-05T08:00:00+08:00')
+    ]
+  };
+  const result = calculatePaymentBreakdownEndingBalance(record);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].sourceType, 'activation-proration');
+  assert.equal(result.rows[0].isProrated, true);
+  assert.equal(result.rows[0].planAmount, 748);
+  assert.equal(result.rows[0].amountPaid, 748);
+  assert.equal(result.rows[0].paymentStatus, 'paid');
+  assert.equal(result.endingBalance, 0);
+}
+
+{
+  const record = {
+    accountNumber: 'POSTPAID-ACTIVATION-LATE-PAYMENT',
+    planCategory: 'postpaid',
+    billingCycle: 'Every last day of the month',
+    planAmount: 800,
+    activationDate: '2026-07-30',
+    billDate: '2026-07-31',
+    dueDate: '2026-07-31',
+    history: [
+      payment('postpaid-late-proration-payment', 52, '2026-08-06T08:00:00+08:00')
+    ]
+  };
+  const result = calculatePaymentBreakdownEndingBalance(record);
+  assert.equal(result.rows.length, 2);
+  assert.equal(result.rows[0].billDate.toISOString().slice(0, 10), '2026-07-31');
+  assert.equal(result.rows[0].sourceType, 'activation-proration');
+  assert.equal(result.rows[0].planAmount, 52);
+  assert.equal(result.rows[0].amountPaid, 52);
+  assert.equal(result.rows[0].balanceAfterPayment, 0);
+  assert.equal(result.rows[1].sourceType, 'pending-postpaid');
+  assert.equal(result.rows[1].planAmount, 0);
+  assert.equal(result.endingBalance, 0);
+}
+
+{
   const explicitCycle = resolvePrepaidScheduledBillDate({
     billDate: '2026-07-18',
     activationDate: '2026-06-12'
@@ -184,7 +232,7 @@ const monthlyCharge = (accountNumber, month, amount, recordedAt) => ({
   const paymentsPageSource = fs.readFileSync(path.join(__dirname, '..', 'web', 'payments.js'), 'utf8');
   const breakdownPageSource = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'payment-breakdown.js'), 'utf8');
   assert.equal(paymentsPageSource.includes('billingCycleDisplay = `Current:'), true);
-  assert.equal(paymentsPageSource.includes('billingCycleMeta = `Next:'), true);
+  assert.equal(paymentsPageSource.includes('billingCycleMeta = customer.billingSummary.nextCycleDate'), true);
   assert.equal(paymentsPageSource.includes('billingCycleMeta = `Paid through:'), false);
   assert.equal(breakdownPageSource.includes("setSubscriberText(subscriberInfo.billingCycleLabel, 'Current Cycle')"), true);
   assert.equal(breakdownPageSource.includes("setSubscriberText(subscriberInfo.dueDateLabel, 'Next Cycle')"), true);

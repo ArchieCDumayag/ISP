@@ -6747,11 +6747,13 @@
                                 paymentRecordsById.set(targetId, paymentRecord);
                             }
                         }
-                        const currentBalance = Number(
-                            paymentRecord?.paymentBreakdownEndingBalance
-                            ?? paymentRecord?.endingBalance
-                            ?? paymentRecord?.balance
-                        ) || 0;
+                        const billingSummary = paymentRecord?.billingSummary;
+                        if (Number(billingSummary?.version) < 2 || billingSummary?.available !== true) {
+                            showToast('Cannot reactivate this customer because the canonical backend billing result is unavailable.', 'error');
+                            setCustomerSubmitState(false);
+                            return;
+                        }
+                        const currentBalance = Number(billingSummary.endingBalance) || 0;
                         if (currentBalance > effectiveCreditLimit) {
                             const requiredIncrease = currentBalance - effectiveCreditLimit;
                             const overrideDecision = await openCreditOverridePrompt({
@@ -6938,35 +6940,35 @@
                 return '';
             }
 
-            function resolvePrepaidCycleDisplay(customer = {}) {
+            function resolveCanonicalCycleDisplay(customer = {}, expectedPlanType = '') {
                 const paymentRecord = getPaymentRecord(customer.accountNumber);
-                const balanceCandidates = [
-                    paymentRecord?.paymentBreakdownEndingBalance,
-                    paymentRecord?.endingBalance,
-                    paymentRecord?.balance,
-                    customer?.paymentBreakdownEndingBalance,
-                    customer?.endingBalance,
-                    customer?.balance
-                ];
-                let endingBalance = null;
-                for (const candidate of balanceCandidates) {
-                    if (candidate === null || candidate === undefined || candidate === '') continue;
-                    const parsed = Number(candidate);
-                    if (!Number.isFinite(parsed)) continue;
-                    endingBalance = parsed;
-                    break;
+                const billingSummary = paymentRecord?.billingSummary;
+                const canonicalCycle = billingSummary?.currentCycle;
+                if (
+                    Number(billingSummary?.version) >= 2
+                    && billingSummary?.available === true
+                    && billingSummary?.planType === expectedPlanType
+                    && canonicalCycle?.billDate
+                ) {
+                    const rawStatus = String(canonicalCycle.paymentStatus || '').trim().toLowerCase();
+                    const status = rawStatus === 'paid'
+                        ? 'Paid'
+                        : (rawStatus === 'not-generated' ? 'Not generated' : 'Unpaid');
+                    return {
+                        display: `Current: ${formatViewDate(canonicalCycle.billDate)} | ${status}`,
+                        meta: billingSummary.nextCycleDate
+                            ? `Next: ${formatViewDate(billingSummary.nextCycleDate)}`
+                            : ''
+                    };
                 }
+                return null;
+            }
 
-                const today = new Date();
-                const currentCycleDate = new Date(today.getFullYear(), today.getMonth(), 1);
-                const nextCycleDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-                const status = endingBalance === null
-                    ? 'Not generated'
-                    : (endingBalance <= 0 ? 'Paid' : 'Unpaid');
-
-                return {
-                    display: `Current: ${formatViewDate(currentCycleDate)} · ${status}`,
-                    meta: `Next: ${formatViewDate(nextCycleDate)}`
+            function resolvePrepaidCycleDisplay(customer = {}) {
+                const canonicalDisplay = resolveCanonicalCycleDisplay(customer, 'prepaid');
+                return canonicalDisplay || {
+                    display: 'Billing unavailable',
+                    meta: 'Canonical backend result required'
                 };
             }
 
@@ -7098,7 +7100,6 @@
                             ? 'Active'
                             : (normalizedStatus === 'disabled' ? 'Disabled' : 'Inactive');
 
-                    const billDate = parseDateInput(customer.billDate);
                     let billingCycleDisplay = 'Not set';
                     let billingCycleMeta = 'No cycle recorded';
                     const planCategory = resolveCustomerPlanCategory(customer);
@@ -7107,24 +7108,15 @@
                         const prepaidCycle = resolvePrepaidCycleDisplay(customer);
                         billingCycleDisplay = prepaidCycle.display;
                         billingCycleMeta = prepaidCycle.meta;
-                    } else if (billDate && !isNaN(billDate)) {
-                        const getOrdinalSuffix = (d) => {
-                            if (d > 3 && d < 21) return 'th';
-                            switch (d % 10) {
-                                case 1: return "st"; case 2: return "nd"; case 3: return "rd"; default: return "th";
-                            }
-                        };
-                        const dueStatus = getDueStatus(customer?.dueDate);
-                        const balanceNumber = Number(customer?.balance);
-                        const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < 0;
-                        const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > 0;
-                        if (usesMonthEndBillingCycle(customer, billDate)) {
-                            billingCycleDisplay = 'Every last of the month';
+                    } else {
+                        const canonicalPostpaidCycle = resolveCanonicalCycleDisplay(customer, 'postpaid');
+                        if (canonicalPostpaidCycle) {
+                            billingCycleDisplay = canonicalPostpaidCycle.display;
+                            billingCycleMeta = canonicalPostpaidCycle.meta;
                         } else {
-                            const day = billDate.getDate();
-                            billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
+                            billingCycleDisplay = 'Billing unavailable';
+                            billingCycleMeta = 'Canonical backend result required';
                         }
-                        billingCycleMeta = `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;
                     }
 
                     const customerDataString = JSON.stringify({

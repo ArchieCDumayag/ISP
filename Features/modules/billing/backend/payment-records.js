@@ -259,17 +259,275 @@ const assertAdminUser = (req) => {
     return user;
 };
 
-const resolveBreakdownEndingBalance = (record = {}, fallbackBalance = 0) => {
+const BILLING_SUMMARY_VERSION = 2;
+const BILLING_EPSILON = 0.005;
+const BILLING_TIME_ZONE = 'Asia/Manila';
+const billingDateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BILLING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+});
+const toBillingDateKey = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const parts = billingDateKeyFormatter.formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value || '';
+    const month = parts.find((part) => part.type === 'month')?.value || '';
+    const day = parts.find((part) => part.type === 'day')?.value || '';
+    return year && month && day ? `${year}-${month}-${day}` : '';
+};
+const serializeBillingValue = (value) => {
+    if (value instanceof Date) return toBillingDateKey(value);
+    if (value instanceof Set) return Array.from(value).map(serializeBillingValue);
+    if (Array.isArray(value)) return value.map(serializeBillingValue);
+    if (value && typeof value === 'object') {
+        return Object.entries(value).reduce((result, [key, entry]) => {
+            result[key] = serializeBillingValue(entry);
+            return result;
+        }, {});
+    }
+    return value;
+};
+const parseBillingDateKey = (value) => {
+    const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    if (Number.isNaN(date.getTime())) return null;
+    return { year, month, day, date };
+};
+const addBillingDays = (dateKey, days = 0) => {
+    const parsed = parseBillingDateKey(dateKey);
+    if (!parsed) return '';
+    parsed.date.setUTCDate(parsed.date.getUTCDate() + (Number(days) || 0));
+    return [
+        parsed.date.getUTCFullYear(),
+        String(parsed.date.getUTCMonth() + 1).padStart(2, '0'),
+        String(parsed.date.getUTCDate()).padStart(2, '0')
+    ].join('-');
+};
+const getBillingDateDifference = (left, right) => {
+    const leftDate = parseBillingDateKey(toBillingDateKey(left));
+    const rightDate = parseBillingDateKey(toBillingDateKey(right));
+    if (!leftDate || !rightDate) return null;
+    return Math.round((rightDate.date.getTime() - leftDate.date.getTime()) / 86400000);
+};
+const resolveRecordDueOffset = (record = {}) => {
+    const direct = Number(record.dueOffset ?? record.due_offset);
+    if (Number.isFinite(direct) && direct >= 0) return Math.floor(direct);
+    const difference = getBillingDateDifference(record.billDate, record.dueDate);
+    return Number.isFinite(difference) && difference >= 0 ? difference : 0;
+};
+const resolveCanonicalRowDueDate = (row = {}, record = {}, planType = 'postpaid') => {
+    const billDate = toBillingDateKey(row.billDate);
+    if (!billDate) return '';
+    if (planType === 'prepaid') return billDate;
+    return addBillingDays(billDate, resolveRecordDueOffset(record)) || billDate;
+};
+const serializeBillingRow = (row = {}, record = {}) => {
+    const billDate = toBillingDateKey(row.billDate);
+    const planType = String(row.planType || record.planCategory || 'postpaid').trim().toLowerCase() === 'prepaid'
+        ? 'prepaid'
+        : 'postpaid';
+    return {
+        ...serializeBillingValue(row),
+        billDate,
+        dueDate: resolveCanonicalRowDueDate(row, record, planType),
+        billingMonthKey: row.billingMonthKey || billDate.slice(0, 7),
+        planType,
+        planTypeLabel: planType === 'prepaid' ? 'Prepaid' : 'Postpaid',
+        planLabel: String(record.planName || record.plan || 'Monthly plan').trim() || 'Monthly plan',
+        paymentDetails: (Array.isArray(row.paymentDetails) ? row.paymentDetails : []).map((detail) => ({
+            ...serializeBillingValue(detail),
+            date: detail?.date || ''
+        }))
+    };
+};
+const getNextPrepaidCycleDate = (today = new Date()) => {
+    const currentDateKey = toBillingDateKey(today);
+    const [year, month] = currentDateKey.split('-').map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    return `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`;
+};
+const getNextPostpaidCycleDate = (today = new Date()) => {
+    const currentDateKey = toBillingDateKey(today);
+    const [year, month] = currentDateKey.split('-').map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const monthEndDay = new Date(Date.UTC(nextYear, nextMonth, 0)).getUTCDate();
+    return `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-${String(monthEndDay).padStart(2, '0')}`;
+};
+const getNextCycleDate = (planType, today = new Date()) => (
+    planType === 'prepaid'
+        ? getNextPrepaidCycleDate(today)
+        : getNextPostpaidCycleDate(today)
+);
+const buildBillingReconciliation = ({ record = {}, rows = [], endingBalance = 0, currentCycle = null } = {}) => {
+    const issues = [];
+    const missingChargeMonths = [];
+    const addIssue = (code, severity, message, details = {}) => {
+        issues.push({ code, severity, message, ...details });
+    };
+    const cycleCounts = rows.reduce((counts, row) => {
+        const monthKey = String(row?.billingMonthKey || '').trim();
+        if (monthKey) counts.set(monthKey, (counts.get(monthKey) || 0) + 1);
+        return counts;
+    }, new Map());
+    cycleCounts.forEach((count, monthKey) => {
+        if (count > 1) {
+            addIssue('duplicate-cycle', 'error', `Billing month ${monthKey} has ${count} cycle rows.`, { monthKey, count });
+        }
+    });
+
+    rows.forEach((row) => {
+        const monthKey = String(row?.billingMonthKey || '').trim();
+        const planAmount = Number(row?.planAmount) || 0;
+        const balanceAfterPayment = Number(row?.balanceAfterPayment) || 0;
+        const nextPreviousBalance = Number(row?.nextPreviousBalance) || 0;
+        const nextAdvance = Number(row?.nextAdvance) || 0;
+        const isGeneratedCycle = !row?.openingPreviousBalance
+            && !row?.openingAdvance
+            && row?.sourceType !== 'pending-postpaid'
+            && row?.sourceType !== 'disconnection';
+        if (isGeneratedCycle && planAmount <= BILLING_EPSILON) {
+            missingChargeMonths.push(monthKey || 'unknown');
+        }
+        if ((Number(row?.advance) || 0) < -BILLING_EPSILON || nextAdvance < -BILLING_EPSILON) {
+            addIssue('invalid-advance', 'error', `Billing month ${monthKey || 'unknown'} contains a negative advance.`, { monthKey });
+        }
+        if (balanceAfterPayment > BILLING_EPSILON && Math.abs(nextPreviousBalance - balanceAfterPayment) > BILLING_EPSILON) {
+            addIssue('balance-carry-mismatch', 'error', `Billing month ${monthKey || 'unknown'} does not carry its balance forward correctly.`, { monthKey });
+        }
+        if (balanceAfterPayment < -BILLING_EPSILON && Math.abs(nextAdvance - Math.abs(balanceAfterPayment)) > BILLING_EPSILON) {
+            addIssue('advance-carry-mismatch', 'error', `Billing month ${monthKey || 'unknown'} does not carry its advance forward correctly.`, { monthKey });
+        }
+    });
+    if (missingChargeMonths.length) {
+        addIssue(
+            'missing-charge',
+            'warning',
+            `${missingChargeMonths.length} billing cycle${missingChargeMonths.length === 1 ? '' : 's'} are missing a calculated monthly charge.`,
+            { monthKeys: missingChargeMonths }
+        );
+    }
+
+    const billingStopped = String(record?.disconnection?.billingPolicy || '').trim().toLowerCase() === 'stop';
+    if (!currentCycle && !billingStopped) {
+        addIssue('missing-current-cycle', 'error', 'The current billing cycle is missing.');
+    }
+    const lastRowBalance = rows.length ? Number(rows[rows.length - 1]?.balanceAfterPayment) || 0 : 0;
+    if (Math.abs(lastRowBalance - (Number(endingBalance) || 0)) > BILLING_EPSILON) {
+        addIssue('ending-balance-mismatch', 'error', 'The ending balance does not match the final billing row.', {
+            endingBalance: Number(endingBalance) || 0,
+            lastRowBalance
+        });
+    }
+
+    const errorCount = issues.filter((issue) => issue.severity === 'error').length;
+    const warningCount = issues.filter((issue) => issue.severity === 'warning').length;
+    return {
+        status: errorCount ? 'error' : (warningCount ? 'warning' : 'clean'),
+        issueCount: issues.length,
+        errorCount,
+        warningCount,
+        issues
+    };
+};
+const resolveCanonicalBillingStatus = ({ rows = [], endingBalance = 0, currentCycle = null } = {}) => {
+    const balance = Number(endingBalance) || 0;
+    if (balance < -BILLING_EPSILON) return { status: 'advance', dueDate: currentCycle?.dueDate || null };
+    if (balance <= BILLING_EPSILON) return { status: 'paid', dueDate: currentCycle?.dueDate || null };
+    const outstandingRow = rows.find((row) => (
+        row?.paymentStatus === 'unpaid'
+        && (Number(row?.balanceAfterPayment) || 0) > BILLING_EPSILON
+    ));
+    const dueDate = outstandingRow?.dueDate || currentCycle?.dueDate || null;
+    const todayKey = toBillingDateKey(new Date());
+    return {
+        status: dueDate && dueDate < todayKey ? 'overdue' : 'due',
+        dueDate
+    };
+};
+const buildFallbackBillingSummary = (record = {}, fallbackBalance = 0) => {
+    const endingBalance = Number.isFinite(Number(fallbackBalance)) ? Number(fallbackBalance) : 0;
+    const planType = String(record.planCategory || 'postpaid').trim().toLowerCase() === 'prepaid'
+        ? 'prepaid'
+        : 'postpaid';
+    return {
+        version: BILLING_SUMMARY_VERSION,
+        source: 'payment-breakdown-backend',
+        available: false,
+        planType,
+        endingBalance,
+        balance: Math.max(0, endingBalance),
+        advance: Math.max(0, -endingBalance),
+        currentCycle: null,
+        nextCycleDate: getNextCycleDate(planType),
+        rows: [],
+        context: {},
+        billingStatus: 'unavailable',
+        dueDate: null,
+        reconciliation: {
+            status: 'error',
+            issueCount: 1,
+            errorCount: 1,
+            warningCount: 0,
+            issues: [{
+                code: 'calculation-unavailable',
+                severity: 'error',
+                message: 'The backend billing calculation is unavailable.'
+            }]
+        }
+    };
+};
+const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
     try {
         const breakdown = calculatePaymentBreakdownEndingBalance(record);
         const endingBalance = Number(breakdown?.endingBalance);
-        return Number.isFinite(endingBalance) ? endingBalance : Number(fallbackBalance) || 0;
+        const safeEndingBalance = Number.isFinite(endingBalance) ? endingBalance : Number(fallbackBalance) || 0;
+        const rows = (Array.isArray(breakdown?.rows) ? breakdown.rows : [])
+            .map((row) => serializeBillingRow(row, record));
+        const currentMonthKey = toBillingDateKey(new Date()).slice(0, 7);
+        const currentRows = rows.filter((row) => row.billingMonthKey === currentMonthKey);
+        const planType = String(record.planCategory || 'postpaid').trim().toLowerCase() === 'prepaid'
+            ? 'prepaid'
+            : 'postpaid';
+        const currentCycle = currentRows.length ? currentRows[currentRows.length - 1] : null;
+        const billingState = resolveCanonicalBillingStatus({ rows, endingBalance: safeEndingBalance, currentCycle });
+        const reconciliation = buildBillingReconciliation({
+            record,
+            rows,
+            endingBalance: safeEndingBalance,
+            currentCycle
+        });
+        return {
+            version: BILLING_SUMMARY_VERSION,
+            source: 'payment-breakdown-backend',
+            available: true,
+            planType,
+            endingBalance: safeEndingBalance,
+            balance: Math.max(0, safeEndingBalance),
+            advance: Math.max(0, -safeEndingBalance),
+            currentCycle,
+            nextCycleDate: getNextCycleDate(planType),
+            rows,
+            context: serializeBillingValue(breakdown?.context || {}),
+            billingStatus: billingState.status,
+            dueDate: billingState.dueDate,
+            reconciliation
+        };
     } catch (error) {
         console.warn(
-            `Unable to calculate payment breakdown ending balance for ${record?.accountNumber || 'unknown account'}:`,
+            `Unable to calculate canonical billing summary for ${record?.accountNumber || 'unknown account'}:`,
             error?.message || error
         );
-        return Number(fallbackBalance) || 0;
+        return buildFallbackBillingSummary(record, fallbackBalance);
     }
 };
 
@@ -298,10 +556,12 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
         ...summary,
         history: paymentHistory
     };
-    const endingBalance = resolveBreakdownEndingBalance(recordBase, summary.balance);
+    const billingSummary = buildCanonicalBillingSummary(recordBase, summary.balance);
+    const endingBalance = billingSummary.endingBalance;
 
     return {
         ...recordBase,
+        billingSummary,
         paymentBreakdownEndingBalance: endingBalance,
         endingBalance
     };
@@ -326,6 +586,30 @@ async function buildPaymentRecordForAccount(accountNumber, branchId = null) {
         : null;
     if (!customer) return null;
     return buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount);
+}
+
+async function buildPaymentRecordsForBranch(branchId = null) {
+    const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
+        readCustomers(branchId),
+        readPayments(branchId),
+        readPlans(branchId),
+        readPaymentBreakdownAdjustments(),
+        readBranchDisconnections(branchId)
+    ]);
+    const referralDiscountsByAccount = buildReferralDiscountMap(
+        buildReferralLedger({ customers, payments, now: new Date() })
+    );
+    return customers
+        .map((customer) => buildPaymentRecord(
+            customer,
+            payments,
+            plans,
+            adjustments,
+            branchId,
+            disconnections,
+            referralDiscountsByAccount
+        ))
+        .filter(Boolean);
 }
 
 // Logic to calculate payment summary for a customer
@@ -404,24 +688,38 @@ function calculatePaymentSummary(history = [], creditLimit, planAmount) {
 router.get('/', async (req, res, next) => {
     try {
         const branchId = req.user?.branchId || null;
-        const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
-            readCustomers(branchId),
-            readPayments(branchId),
-            readPlans(branchId),
-            readPaymentBreakdownAdjustments(),
-            readBranchDisconnections(branchId)
-        ]);
-        const referralDiscountsByAccount = buildReferralDiscountMap(
-            buildReferralLedger({ customers, payments, now: new Date() })
-        );
-
-        const paymentRecords = customers
-            .map((customer) => buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount))
-            .filter(Boolean);
+        const paymentRecords = await buildPaymentRecordsForBranch(branchId);
 
         res.json({ records: paymentRecords });
     } catch (error) {
         next(createError(500, 'Failed to generate payment records.'));
+    }
+});
+
+// GET /api/payment-records/reconciliation/report - Recalculate and report billing integrity issues
+router.get('/reconciliation/report', async (req, res, next) => {
+    try {
+        const user = assertAdminUser(req);
+        const records = await buildPaymentRecordsForBranch(user.branchId || null);
+        const accounts = records
+            .map((record) => ({
+                accountNumber: record.accountNumber,
+                customerName: [record.firstName, record.lastName].filter(Boolean).join(' ').trim() || record.name || '',
+                planType: record.billingSummary?.planType || record.planCategory || 'postpaid',
+                status: record.billingSummary?.reconciliation?.status || 'error',
+                issues: record.billingSummary?.reconciliation?.issues || []
+            }))
+            .filter((record) => record.issues.length > 0);
+        res.json({
+            checkedAt: new Date().toISOString(),
+            accountCount: records.length,
+            affectedAccountCount: accounts.length,
+            errorAccountCount: accounts.filter((record) => record.status === 'error').length,
+            warningAccountCount: accounts.filter((record) => record.status === 'warning').length,
+            accounts
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to reconcile payment records.'));
     }
 });
 
@@ -503,10 +801,12 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
         };
         adjustments[branchKey] = branchBucket;
         await writePaymentBreakdownAdjustments(adjustments);
+        const record = await buildPaymentRecordForAccount(accountNumber, branchId);
 
         res.json({
             ok: true,
-            adjustment: sanitizePaymentBreakdownAdjustment(branchBucket[accountNumber])
+            adjustment: sanitizePaymentBreakdownAdjustment(branchBucket[accountNumber]),
+            record
         });
     } catch (error) {
         next(error?.status ? error : createError(500, 'Failed to save payment breakdown adjustment.'));
@@ -515,3 +815,6 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
 
 module.exports = router;
 module.exports.buildPaymentRecordForAccount = buildPaymentRecordForAccount;
+module.exports.buildPaymentRecordsForBranch = buildPaymentRecordsForBranch;
+module.exports.buildPaymentRecord = buildPaymentRecord;
+module.exports.buildCanonicalBillingSummary = buildCanonicalBillingSummary;

@@ -2261,6 +2261,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if ((Number(context.automaticReferralApplied) || 0) > EPSILON) {
             summaryParts.push(`${formatCurrency(context.automaticReferralApplied)} automatic referral discount applied.`);
         }
+        const reconciliation = state.record?.billingSummary?.reconciliation;
+        if (Number(reconciliation?.issueCount) > 0) {
+            summaryParts.push(
+                `Reconciliation: ${formatCount(reconciliation.issueCount)} issue${Number(reconciliation.issueCount) === 1 ? '' : 's'} detected.`
+            );
+        } else if (reconciliation?.status === 'clean') {
+            summaryParts.push('Reconciliation: clean.');
+        }
         if (summaryEl) summaryEl.textContent = summaryParts.join(' ');
     };
 
@@ -2409,17 +2417,103 @@ document.addEventListener('DOMContentLoaded', () => {
         return adjustment;
     };
 
+    const readCanonicalBreakdown = (record = {}) => {
+        const summary = record?.billingSummary;
+        if (!summary || Number(summary.version) < 2 || summary.available !== true || !Array.isArray(summary.rows)) return null;
+        const rawContext = summary.context && typeof summary.context === 'object' ? summary.context : {};
+        const context = {
+            ...rawContext,
+            usedReferralDiscountIds: new Set(Array.isArray(rawContext.usedReferralDiscountIds)
+                ? rawContext.usedReferralDiscountIds
+                : [])
+        };
+        const rows = summary.rows.map((rawRow) => {
+            const billDate = safeDate(rawRow?.billDate);
+            const planType = rawRow?.planType === 'prepaid' ? 'prepaid' : 'postpaid';
+            const paymentDetails = (Array.isArray(rawRow?.paymentDetails) ? rawRow.paymentDetails : []).map((detail) => ({
+                ...detail,
+                dateLabel: formatDate(safeDate(detail?.date), '-')
+            }));
+            const disconnection = getRowDisconnectionState(record, billDate);
+            const sourceType = rawRow?.sourceType || 'monthly';
+            const planAmount = Number(rawRow?.planAmount) || 0;
+            const planLabel = rawRow?.planLabel || resolvePlanLabel(record);
+            const billLabel = rawRow?.billLabel
+                || (rawRow?.openingPreviousBalance
+                    ? 'Previous Balance'
+                    : (rawRow?.openingAdvance ? 'Opening Advance' : formatMonth(billDate, 'Bill')));
+            return {
+                ...rawRow,
+                billDate,
+                periodStart: safeDate(rawRow?.periodStart),
+                periodEnd: safeDate(rawRow?.periodEnd),
+                billingMonthKey: rawRow?.billingMonthKey || getBillingMonthKey(billDate),
+                billLabel,
+                billMeta: rawRow?.billMeta || [
+                    planLabel,
+                    formatCurrency(planAmount),
+                    sourceType === 'posted' ? 'posted bill' : 'canonical billing record'
+                ].filter(Boolean).join(' Â· '),
+                planType,
+                planTypeLabel: rawRow?.planTypeLabel || toTitleCase(planType),
+                planLabel,
+                planAmount,
+                billingCycle: rawRow?.billingCycle || resolveBillingCycleLabel(record, billDate),
+                paymentDetails,
+                paymentMode: rawRow?.paymentMode || '-',
+                paymentDateLabel: rawRow?.paymentDateLabel || '-',
+                paymentStatusLabel: rawRow?.paymentStatusLabel || rawRow?.paymentStatus || 'unpaid',
+                isDisconnected: Boolean(disconnection),
+                disconnectedAt: disconnection?.disconnectedAt || null,
+                disconnectionBillingPolicy: disconnection?.billingPolicy || '',
+                disconnectionBillingPolicyLabel: disconnection?.billingPolicyLabel || '',
+                sourceType,
+                isAdjustmentEditable: Boolean(rawRow?.isFirstRow),
+                isReferralAdjustmentEditable: Boolean(
+                    !rawRow?.isFirstRow
+                    && !disconnection
+                    && sourceType !== 'disconnection'
+                    && isPreviousBillingMonth(billDate)
+                )
+            };
+        });
+        return { rows, context };
+    };
+
     const applyLoadedBreakdown = (record, customers, plans = state.plans) => {
-        const { rows, context } = buildBreakdownRows(record, customers);
         state.record = record;
         state.customers = customers;
         state.plans = Array.isArray(plans) ? plans : [];
+        const canonicalBreakdown = readCanonicalBreakdown(record);
+        if (!canonicalBreakdown) {
+            state.rows = [];
+            state.context = {};
+            renderHeader(record, {});
+            renderSubscriberInfo(record, []);
+            renderEmpty('Backend billing results are unavailable. Refresh the page or contact the administrator.');
+            if (summaryEl) summaryEl.textContent = 'This page requires the canonical backend billing summary.';
+            return false;
+        }
+        const { rows, context } = canonicalBreakdown;
         state.rows = rows;
         state.context = context;
         renderHeader(record, context);
         renderSubscriberInfo(record, rows);
         renderRows(rows);
         renderMetrics(rows, context);
+        return true;
+    };
+
+    const requireCanonicalRecord = (record) => {
+        if (!readCanonicalBreakdown(record)) {
+            throw new Error('The server did not return a valid canonical billing result. Reload the page and try again.');
+        }
+        return record;
+    };
+
+    const fetchCanonicalRecord = async () => {
+        const payload = await fetchJSON(`/api/payment-records/${encodeURIComponent(accountNumber)}`);
+        return requireCanonicalRecord(payload?.record);
     };
 
     async function saveFirstBillAdjustment() {
@@ -2435,10 +2529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const payload = await saveBreakdownAdjustmentPatch({ firstBill: adjustment });
 
-            const nextRecord = {
-                ...(state.record || {}),
-                paymentBreakdownAdjustment: payload?.adjustment || { firstBill: adjustment }
-            };
+            const nextRecord = requireCanonicalRecord(payload?.record);
             state.adjustmentToolbarOpen = false;
             applyLoadedBreakdown(nextRecord, state.customers);
             showToast('First bill adjustment saved.', 'success');
@@ -2485,10 +2576,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderReferralToolbar(state.rows);
         try {
             const payload = await saveBreakdownAdjustmentPatch({ monthlyReferrals });
-            const nextRecord = {
-                ...(state.record || {}),
-                paymentBreakdownAdjustment: payload?.adjustment || { ...currentAdjustment, monthlyReferrals }
-            };
+            const nextRecord = requireCanonicalRecord(payload?.record);
             state.referralToolbarOpen = false;
             state.selectedReferralMonthKey = '';
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
@@ -2536,10 +2624,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPlanToolbar();
         try {
             const payload = await saveBreakdownAdjustmentPatch({ planChanges });
-            const nextRecord = {
-                ...(state.record || {}),
-                paymentBreakdownAdjustment: payload?.adjustment || { ...currentAdjustment, planChanges }
-            };
+            const nextRecord = requireCanonicalRecord(payload?.record);
             state.planToolbarOpen = false;
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
             showToast(`Plan change saved from ${formatMonthKeyLabel(effectiveMonth)}.`, 'success');
@@ -2586,18 +2671,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     notes: 'Stopped billing from payment breakdown.'
                 })
             });
-            const nextRecord = {
-                ...(state.record || {}),
-                status: payload?.customerStatus || state.record?.status,
-                customerStatus: payload?.customerStatus || state.record?.customerStatus,
-                subscriberStatus: payload?.customerStatus || state.record?.subscriberStatus,
-                disconnection: payload?.decision || {
-                    ...(state.record?.disconnection || {}),
-                    status: 'disconnected',
-                    billingPolicy: 'stop',
-                    disconnectedAt: new Date().toISOString()
-                }
-            };
+            const nextRecord = await fetchCanonicalRecord();
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
             showToast(payload?.warning || 'Disconnection saved. Billing will stop next month.', payload?.warning ? 'warning' : 'success');
         } catch (error) {
@@ -2639,13 +2713,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     notes: 'Reconnected from payment breakdown.'
                 })
             });
-            const nextRecord = {
-                ...(state.record || {}),
-                status: payload?.customerStatus || 'active',
-                customerStatus: payload?.customerStatus || 'active',
-                subscriberStatus: payload?.customerStatus || 'active',
-                disconnection: payload?.decision || null
-            };
+            const nextRecord = await fetchCanonicalRecord();
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
             showToast(payload?.warning || 'Subscriber reconnected. Billing will continue.', payload?.warning ? 'warning' : 'success');
         } catch (error) {

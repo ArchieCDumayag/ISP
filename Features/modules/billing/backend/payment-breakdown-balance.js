@@ -680,6 +680,23 @@ const shouldAttachCreditToBillMonth = (entry = {}, billDate = null, record = {})
   return resolvePlanType(record) === 'postpaid';
 };
 
+const shouldAttachCreditToActivationProration = ({
+  entry = {},
+  billDate = null,
+  nextBillDate = null,
+  record = {},
+  proration = null
+} = {}) => Boolean(
+  resolvePlanType(record) === 'postpaid'
+  && proration?.isProrated
+  && isPaymentCredit(entry)
+  && entry.dateObj
+  && billDate
+  && nextBillDate
+  && compareBillingDateOnly(entry.dateObj, billDate) > 0
+  && isBeforeBillingDate(entry.dateObj, nextBillDate)
+);
+
 const isPendingPostpaidSyntheticBill = (record = {}, billDate = null, todayBillingDate = getTodayBillingDate()) => {
   if (resolvePlanType(record) !== 'postpaid' || !billDate || !todayBillingDate) return false;
   if (!isSameBillingMonth(billDate, todayBillingDate)) return false;
@@ -961,6 +978,9 @@ const createBreakdownRow = ({
   credits,
   runningBalance,
   context,
+  sourceType = 'monthly',
+  proration = null,
+  planOverride = null,
   previousBalanceOverride = null,
   advanceOverride = null,
   openingPreviousBalance = false,
@@ -1025,6 +1045,9 @@ const createBreakdownRow = ({
   return {
     row: {
       billDate,
+      billingMonthKey: getBillingMonthKey(billDate),
+      planAmount: roundMoney(planAmount),
+      planType: normalizePlanTypeValue(planOverride?.planCategory) || resolvePlanType(record),
       previousBalance,
       advance,
       referral,
@@ -1037,9 +1060,17 @@ const createBreakdownRow = ({
       paymentDetails,
       paymentStatus,
       balanceAfterPayment,
+      sourceType,
       isFirstRow,
+      isProrated: Boolean(proration?.isProrated),
+      periodStart: proration?.periodStart || null,
+      periodEnd: proration?.periodEnd || null,
+      planOverride: planOverride || null,
       openingPreviousBalance,
-      openingAdvance
+      openingAdvance,
+      nextPreviousBalance: nextCarryOver.previousBalance,
+      nextAdvance: nextCarryOver.advance,
+      nextCarryOverType: nextCarryOver.type
     },
     nextBalance: nextCarryOver.signedBalance
   };
@@ -1120,6 +1151,7 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
       credits: cycleCredits,
       runningBalance,
       context,
+      sourceType: openingPreviousBalance ? 'opening' : 'posted',
       previousBalanceOverride: openingPreviousBalance ? debit.amount : null,
       openingPreviousBalance,
       isFirstRow: index === 0
@@ -1146,6 +1178,7 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
       credits: pendingCredits,
       runningBalance,
       context,
+      sourceType: 'pending-postpaid',
       isFirstRow: rows.length === 0,
       paymentStatusOverride: 'not-generated'
     });
@@ -1179,6 +1212,7 @@ const buildRowsFromOpeningAdvanceOnly = (record, entries, context) => {
     credits: [],
     runningBalance: 0,
     context,
+    sourceType: 'opening',
     advanceOverride: totalAdvance,
     openingAdvance: true,
     isFirstRow: true
@@ -1192,10 +1226,8 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
   const firstEntryDate = getMinDate(entryDates);
   const lastEntryDate = getMaxDate(entryDates);
   const storedBillDate = safeDate(record.billDate);
-  const prepaidStartDate = resolvePlanType(record) === 'prepaid'
-    ? getMinDate([firstEntryDate, storedBillDate].filter(Boolean))
-    : null;
-  let startSeed = prepaidStartDate
+  const storedCycleStartDate = getMinDate([firstEntryDate, storedBillDate].filter(Boolean));
+  let startSeed = storedCycleStartDate
     || firstEntryDate
     || storedBillDate
     || safeDate(record.dueDate)
@@ -1260,6 +1292,9 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
     const nextParts = getNextMonthParts(currentYear, currentMonth);
     const nextBillDate = buildMonthlyDate(nextParts.year, nextParts.month, billingDay);
     const cycleCredits = [];
+    const planChange = resolvePlanChangeForMonth(context, billDate);
+    const effectivePlanAmount = planChange ? planChange.planAmount : planAmount;
+    const proration = resolveFirstMonthProration(record, billDate, effectivePlanAmount);
 
     while (
       cursor < entries.length
@@ -1267,6 +1302,13 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
         !entries[cursor].dateObj
         || (
           shouldAttachCreditToBillMonth(entries[cursor], billDate, record)
+            || shouldAttachCreditToActivationProration({
+              entry: entries[cursor],
+              billDate,
+              nextBillDate,
+              record,
+              proration
+            })
             || (
               !shouldAttachCreditToBillMonth(entries[cursor], nextBillDate, record)
               && isBeforeBillingDate(entries[cursor].dateObj, nextBillDate)
@@ -1283,19 +1325,22 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
       cursor += 1;
     }
 
-    const planChange = resolvePlanChangeForMonth(context, billDate);
-    const effectivePlanAmount = planChange ? planChange.planAmount : planAmount;
-    const proration = resolveFirstMonthProration(record, billDate, effectivePlanAmount);
     const pendingPostpaidBill = isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate);
+    const activationProration = Boolean(proration.isProrated);
     const result = createBreakdownRow({
       record,
       billDate,
-      planAmount: pendingPostpaidBill ? 0 : proration.amount,
+      planAmount: pendingPostpaidBill && !activationProration ? 0 : proration.amount,
       credits: cycleCredits,
       runningBalance,
       context,
+      sourceType: activationProration
+        ? 'activation-proration'
+        : (pendingPostpaidBill ? 'pending-postpaid' : 'monthly'),
+      proration: activationProration ? proration : null,
+      planOverride: planChange,
       isFirstRow: rows.length === 0,
-      paymentStatusOverride: pendingPostpaidBill ? 'not-generated' : ''
+      paymentStatusOverride: pendingPostpaidBill && !activationProration ? 'not-generated' : ''
     });
     rows.push(result.row);
     runningBalance = result.nextBalance;

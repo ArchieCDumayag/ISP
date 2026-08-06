@@ -1198,14 +1198,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadHistory() {
         try {
-            const [customerPayload, paymentPayload] = await Promise.all([
-                fetchJSON('/api/customers'),
-                fetchJSON('/api/payments?effective=1')
-            ]);
+            const paymentRecordPayload = await fetchJSON('/api/payment-records');
+            const paymentRecords = Array.isArray(paymentRecordPayload?.records) ? paymentRecordPayload.records : [];
+            const paymentPayload = paymentRecords.reduce((recordsByAccount, record) => {
+                const accountNumber = String(record?.accountNumber || '').trim();
+                if (!accountNumber) return recordsByAccount;
+                recordsByAccount[accountNumber] = {
+                    history: Array.isArray(record?.history) ? record.history : [],
+                    billingSummary: record?.billingSummary || null
+                };
+                return recordsByAccount;
+            }, {});
 
-            state.customers = Array.isArray(customerPayload?.customers) ? customerPayload.customers : [];
+            state.customers = paymentRecords;
             renderUnmatchedCustomerList();
-            state.allRows = buildRows(state.customers, paymentPayload || {});
+            state.allRows = buildRows(state.customers, paymentPayload);
             populateAreaFilter(state.allRows);
             populateRecordedByFilter(state.allRows);
             applyFilters({ resetPage: true });

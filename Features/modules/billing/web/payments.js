@@ -2377,36 +2377,41 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return rows;
     };
+    const readCanonicalBreakdownForPayments = (customer = {}) => {
+        const summary = customer?.billingSummary;
+        if (!summary || Number(summary.version) < 2 || summary.available !== true || !Array.isArray(summary.rows)) return null;
+        const rawContext = summary.context && typeof summary.context === 'object' ? summary.context : {};
+        return {
+            rows: summary.rows.map((row) => ({
+                ...row,
+                billDate: safeBreakdownDate(row?.billDate),
+                periodStart: safeBreakdownDate(row?.periodStart),
+                periodEnd: safeBreakdownDate(row?.periodEnd),
+                planType: row?.planType === 'prepaid' ? 'prepaid' : 'postpaid',
+                paymentDetails: Array.isArray(row?.paymentDetails) ? row.paymentDetails : []
+            })),
+            context: {
+                ...rawContext,
+                usedReferralDiscountIds: new Set(Array.isArray(rawContext.usedReferralDiscountIds)
+                    ? rawContext.usedReferralDiscountIds
+                    : [])
+            }
+        };
+    };
     const buildBreakdownRowsForPayments = (customer = {}, customers = []) => {
-        const normalizedEntries = (Array.isArray(customer.history) ? customer.history : [])
-            .filter(isEffectivePaymentStatusForPayments)
-            .map(normalizeBreakdownEntryForPayments)
-            .filter(Boolean)
-            .sort(compareBreakdownEntriesForPayments)
-            .map((entry, sortOrder) => ({ ...entry, sortOrder }));
-        const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrdersForPayments(customer, normalizedEntries);
-        const entries = normalizedEntries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
-        const context = createBreakdownReferralContextForPayments(customer, entries, customers);
-        let rows = [];
-        if (entries.some((entry) => entry.direction === 'debit')) {
-            rows = buildBreakdownRowsFromPostedDebitsForPayments(customer, entries, context);
-        }
-        if (!rows.length) {
-            rows = buildBreakdownRowsFromOpeningAdvanceOnlyForPayments(customer, entries, context);
-        }
-        if (!rows.length) {
-            rows = buildBreakdownRowsFromMonthlyPlanForPayments(customer, entries, context);
-        }
-
-        return { rows, context };
+        const canonicalBreakdown = readCanonicalBreakdownForPayments(customer);
+        return canonicalBreakdown || { rows: [], context: { billingUnavailable: true } };
     };
     const getCurrentMonthBreakdownRowForPayments = (customer = {}, cycleDate = new Date()) => {
-        const customerPool = Array.isArray(allCustomers) && allCustomers.length
-            ? allCustomers
-            : (Array.isArray(window.allCustomers) ? window.allCustomers : []);
-        const { rows } = buildBreakdownRowsForPayments(customer, customerPool);
-        const currentRows = rows.filter((row) => isSameMonth(row.billDate, cycleDate));
-        return currentRows.length ? currentRows[currentRows.length - 1] : null;
+        const currentCycle = customer?.billingSummary?.currentCycle;
+        if (!currentCycle) return null;
+        return {
+            ...currentCycle,
+            billDate: safeBreakdownDate(currentCycle.billDate),
+            dueDate: safeBreakdownDate(currentCycle.dueDate),
+            periodStart: safeBreakdownDate(currentCycle.periodStart),
+            periodEnd: safeBreakdownDate(currentCycle.periodEnd)
+        };
     };
     const getPaymentBreakdownEndingRowForPayments = (customer = {}) => {
         const customerPool = Array.isArray(allCustomers) && allCustomers.length
@@ -2435,76 +2440,72 @@ document.addEventListener('DOMContentLoaded', function () {
         if (customer && typeof customer === 'object' && currentBillStateCache.has(customer)) {
             return currentBillStateCache.get(customer);
         }
-        const planCategory = resolvePlanCategory(customer);
-        const planAmount = getPlanAmountForCustomer(customer);
-        const ledgerBalance = getLedgerBalance(customer);
-        const cycleDate = new Date();
-        const existingCustomerStart = isExistingCustomerOpeningCycle(customer, cycleDate);
-        const hasPostedCurrentBill = hasCurrentMonthBillCharge(customer, planCategory, cycleDate);
-        const firstBilling = resolveFirstBillingAmount(customer, planAmount, cycleDate);
-        const currentBreakdownRow = getPaymentBreakdownEndingRowForPayments(customer)
-            || getCurrentMonthBreakdownRowForPayments(customer, cycleDate);
-
-        if (currentBreakdownRow) {
-            const currentMonthDue = roundMoney(currentBreakdownRow.due);
-            const balanceAfterPayment = roundMoney(currentBreakdownRow.balanceAfterPayment);
-            const currentDueDate = resolveDueDateForBreakdownRow(customer, currentBreakdownRow);
-            const billClass = balanceAfterPayment > EPSILON
-                ? 'has-balance'
-                : (balanceAfterPayment < -EPSILON ? 'advance-balance' : 'zero-balance');
-            const state = {
-                amount: balanceAfterPayment,
-                payableAmount: Math.max(0, balanceAfterPayment),
-                displayAmount: Math.abs(balanceAfterPayment),
-                billClass,
-                planCategory: currentBreakdownRow.planType || planCategory,
-                planAmount,
-                currentBillAmount: balanceAfterPayment,
-                currentMonthDue,
-                currentDueDate,
-                balanceAfterPayment,
-                existingCustomerStart,
-                hasPostedCurrentBill: currentBreakdownRow.sourceType === 'posted' || currentBreakdownRow.sourceType === 'opening',
-                hasCurrentBreakdownRow: true,
-                paymentStatus: currentBreakdownRow.paymentStatus,
-                isProrated: Boolean(currentBreakdownRow.isProrated),
-                periodStart: currentBreakdownRow.periodStart || firstBilling.periodStart,
-                periodEnd: currentBreakdownRow.periodEnd || firstBilling.periodEnd,
-                skipInitialCharge: firstBilling.skipInitialCharge,
-                currentBreakdownRow
+        const summary = customer?.billingSummary;
+        const canonicalBreakdown = readCanonicalBreakdownForPayments(customer);
+        if (!summary || Number(summary.version) < 2 || summary.available !== true || !canonicalBreakdown) {
+            const unavailableState = {
+                amount: Number.NaN,
+                payableAmount: 0,
+                displayAmount: Number.NaN,
+                billClass: 'billing-unavailable',
+                planCategory: summary?.planType || resolvePlanCategory(customer),
+                planAmount: 0,
+                currentBillAmount: Number.NaN,
+                currentMonthDue: Number.NaN,
+                currentDueDate: null,
+                balanceAfterPayment: Number.NaN,
+                existingCustomerStart: false,
+                hasPostedCurrentBill: false,
+                hasCurrentBreakdownRow: false,
+                paymentStatus: 'unavailable',
+                billingStatus: 'unavailable',
+                billingUnavailable: true,
+                isProrated: false,
+                periodStart: null,
+                periodEnd: null,
+                skipInitialCharge: false,
+                currentBreakdownRow: null
             };
-            if (customer && typeof customer === 'object') currentBillStateCache.set(customer, state);
-            return state;
+            if (customer && typeof customer === 'object') currentBillStateCache.set(customer, unavailableState);
+            return unavailableState;
         }
 
-        const currentBillAmount = firstBilling.amount;
-        const amount = roundMoney(ledgerBalance);
-        const displayAmount = 0;
-        const billClass = amount > EPSILON
+        const rows = canonicalBreakdown.rows;
+        const currentMonthKey = String(summary.currentCycle?.billingMonthKey || '').trim();
+        const currentBreakdownRow = rows.find((row) => row?.billingMonthKey === currentMonthKey)
+            || rows[rows.length - 1]
+            || null;
+        const endingBalance = Number(summary.endingBalance);
+        const safeEndingBalance = Number.isFinite(endingBalance) ? roundMoney(endingBalance) : 0;
+        const currentDueDate = parseDateOnly(summary.dueDate || currentBreakdownRow?.dueDate);
+        const billClass = safeEndingBalance > EPSILON
             ? 'has-balance'
-            : (amount < -EPSILON ? 'advance-balance' : 'zero-balance');
-
-        const fallbackState = {
-            amount,
-            payableAmount: Math.max(0, amount),
-            displayAmount,
+            : (safeEndingBalance < -EPSILON ? 'advance-balance' : 'zero-balance');
+        const state = {
+            amount: safeEndingBalance,
+            payableAmount: Math.max(0, safeEndingBalance),
+            displayAmount: Math.abs(safeEndingBalance),
             billClass,
-            planCategory,
-            planAmount,
-            currentBillAmount,
-            currentMonthDue: 0,
-            currentDueDate: parseDateOnly(customer?.dueDate || customer?.due_date),
-            existingCustomerStart,
-            hasPostedCurrentBill,
-            hasCurrentBreakdownRow: false,
-            paymentStatus: amount <= EPSILON ? 'paid' : 'unpaid',
-            isProrated: firstBilling.isProrated,
-            periodStart: firstBilling.periodStart,
-            periodEnd: firstBilling.periodEnd,
-            skipInitialCharge: firstBilling.skipInitialCharge
+            planCategory: summary.planType,
+            planAmount: Number(currentBreakdownRow?.planAmount) || 0,
+            currentBillAmount: safeEndingBalance,
+            currentMonthDue: Number(currentBreakdownRow?.due) || 0,
+            currentDueDate,
+            balanceAfterPayment: safeEndingBalance,
+            existingCustomerStart: Boolean(currentBreakdownRow?.openingPreviousBalance || currentBreakdownRow?.openingAdvance),
+            hasPostedCurrentBill: currentBreakdownRow?.sourceType === 'posted' || currentBreakdownRow?.sourceType === 'opening',
+            hasCurrentBreakdownRow: Boolean(currentBreakdownRow),
+            paymentStatus: currentBreakdownRow?.paymentStatus || summary.billingStatus,
+            billingStatus: summary.billingStatus,
+            billingUnavailable: false,
+            isProrated: Boolean(currentBreakdownRow?.isProrated),
+            periodStart: currentBreakdownRow?.periodStart || null,
+            periodEnd: currentBreakdownRow?.periodEnd || null,
+            skipInitialCharge: false,
+            currentBreakdownRow
         };
-        if (customer && typeof customer === 'object') currentBillStateCache.set(customer, fallbackState);
-        return fallbackState;
+        if (customer && typeof customer === 'object') currentBillStateCache.set(customer, state);
+        return state;
     };
     const getCustomerCycleDay = (customer = {}) => {
         if (usesMonthEndBillingCycle(customer)) return 31;
@@ -2527,24 +2528,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const targetDate = parseDateOnly(targetDateKey);
         if (!targetDate) return true;
         const currentBillState = resolveCurrentBillState(customer);
+        if (currentBillState.billingUnavailable) return false;
         const balance = currentBillState.amount;
         if (!Number.isFinite(balance) || balance <= 0) return false;
-        if (currentBillState.currentDueDate) {
-            return formatDateISO(currentBillState.currentDueDate) === targetDateKey;
-        }
-
-        const planCategory = resolvePlanCategory(customer);
-        if (planCategory === 'prepaid') {
-            const prepaidDue = parseDateOnly(customer?.prepaidExpirationAt || customer?.dueDate);
-            return Boolean(prepaidDue && formatDateISO(prepaidDue) === targetDateKey);
-        }
-
-        if (hasMonthlyChargeOnDate(customer, targetDateKey)) {
-            return hasOutstandingMonthlyChargeOnDate(customer, targetDateKey);
-        }
-        if (hasAnyMonthlyChargeEntry(customer)) return false;
-
-        return matchesCustomerCycleDate(customer, targetDate);
+        return Boolean(
+            currentBillState.currentDueDate
+            && formatDateISO(currentBillState.currentDueDate) === targetDateKey
+        );
     };
 
     function ensureTransactionAmountFieldVisible() {
@@ -2559,7 +2549,9 @@ document.addEventListener('DOMContentLoaded', function () {
         ensureTransactionAmountFieldVisible();
         if (!paymentAmountInput) return;
         const currentBillState = customer ? resolveCurrentBillState(customer) : null;
-        const currentBillAmount = currentBillState ? currentBillState.payableAmount : 0;
+        const currentBillAmount = currentBillState && !currentBillState.billingUnavailable
+            ? currentBillState.payableAmount
+            : 0;
         paymentAmountInput.value = customer && currentBillAmount > 0
             ? currentBillAmount.toFixed(2)
             : '';
@@ -3650,8 +3642,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!outstandingReceivablesEl || !paymentsCollectedEl || !accountsPastDueEl) return;
 
         const totalReceivables = customers.reduce((sum, customer) => {
-            const currentBillAmount = resolveCurrentBillState(customer).amount;
-            return sum + Math.max(0, currentBillAmount);
+            const currentBillState = resolveCurrentBillState(customer);
+            return currentBillState.billingUnavailable
+                ? sum
+                : sum + Math.max(0, currentBillState.amount);
         }, 0);
 
         const totalCollected = customers.reduce((sum, c) => sum + (c.totalCredits || 0), 0);
@@ -3786,17 +3780,13 @@ document.addEventListener('DOMContentLoaded', function () {
         paid: { class: 'success', text: 'Paid' },
         due: { class: 'warning', text: 'Due' },
         overdue: { class: 'inactive', text: 'Overdue' },
-        advance: { class: 'advance', text: 'Advance' }
+        advance: { class: 'advance', text: 'Advance' },
+        unavailable: { class: 'neutral', text: 'Unavailable' }
     };
 
     const deriveStatus = (customer) => {
-        const currentBillState = resolveCurrentBillState(customer);
-        const balance = currentBillState.amount;
-        if (balance < -EPSILON) return 'advance';
-        if (balance <= EPSILON) return 'paid';
-        const dueStatus = getDueStatus(currentBillState.currentBreakdownRow?.billDate || customer?.dueDate);
-        if (dueStatus.state === 'overdue') return 'overdue';
-        return 'due';
+        const status = String(customer?.billingSummary?.billingStatus || 'unavailable').trim().toLowerCase();
+        return statusMap[status] ? status : 'unavailable';
     };
 
     function resolvePlanCategory(customer) {
@@ -3849,46 +3839,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 subscriberStatusLabel = 'Inactive';
             }
 
-            const billDate = parseDateOnly(customer.billDate);
             let billingCycleDisplay = 'Not set';
             let billingCycleMeta = 'No cycle recorded';
             const planCategory = resolvePlanCategory(customer);
             const currentBillState = resolveCurrentBillState(customer);
-            const currentCycleDueDate = currentBillState.currentDueDate || customer?.dueDate;
-            const dueStatus = getDueStatus(currentCycleDueDate);
-            const balanceNumber = currentBillState.amount;
-            const hasAdvance = Number.isFinite(balanceNumber) && balanceNumber < -EPSILON;
-            const isOverdue = dueStatus.state === 'overdue' && !hasAdvance && Number.isFinite(balanceNumber) && balanceNumber > EPSILON;
+            const canonicalCycle = customer?.billingSummary?.currentCycle;
 
-            if (planCategory === 'prepaid') {
-                const cycleToday = new Date();
-                const currentCycleRow = getCurrentMonthBreakdownRowForPayments(customer, cycleToday);
-                const currentCycleDate = currentCycleRow?.billDate
-                    || new Date(cycleToday.getFullYear(), cycleToday.getMonth(), 1);
-                const nextCycleDate = new Date(
-                    currentCycleDate.getFullYear(),
-                    currentCycleDate.getMonth() + 1,
-                    1
-                );
-                const cycleStatus = currentCycleRow?.paymentStatus === 'paid'
+            if (!currentBillState.billingUnavailable && canonicalCycle?.billDate) {
+                const cycleStatus = canonicalCycle.paymentStatus === 'paid'
                     ? 'Paid'
-                    : (currentCycleRow?.paymentStatus === 'unpaid' ? 'Unpaid' : 'Not generated');
-                billingCycleDisplay = `Current: ${formatDate(formatDateISO(currentCycleDate))} · ${cycleStatus}`;
-                billingCycleMeta = `Next: ${formatDate(formatDateISO(nextCycleDate))}`;
-            } else if (billDate && !isNaN(billDate)) {
-                const getOrdinalSuffix = (d) => {
-                    if (d > 3 && d < 21) return 'th';
-                    switch (d % 10) { case 1: return "st"; case 2: return "nd"; case 3: return "rd"; default: return "th"; }
-                };
-                if (usesMonthEndBillingCycle(customer, billDate)) {
-                    billingCycleDisplay = 'Every last of the month';
-                } else {
-                    const day = billDate.getDate();
-                    billingCycleDisplay = `Every ${day}${getOrdinalSuffix(day)} of the month`;
-                }
-                billingCycleMeta = currentBillState.currentDueDate
-                    ? `Current due: ${formatDate(currentBillState.currentDueDate)}`
-                    : `Next due: ${getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })}`;
+                    : (canonicalCycle.paymentStatus === 'unpaid' ? 'Unpaid' : 'Not generated');
+                billingCycleDisplay = `Current: ${formatDate(canonicalCycle.billDate)} | ${cycleStatus}`;
+                billingCycleMeta = customer.billingSummary.nextCycleDate
+                    ? `Next: ${formatDate(customer.billingSummary.nextCycleDate)}`
+                    : 'Next cycle unavailable';
+            } else {
+                billingCycleDisplay = 'Billing unavailable';
+                billingCycleMeta = 'Canonical backend result required';
             }
 
             // Use Math.abs for last payment amount and add class for color coding
@@ -3904,20 +3871,24 @@ document.addEventListener('DOMContentLoaded', function () {
             const balanceClass = currentBillState.billClass;
 
             // Use Math.abs to prevent negative sign, color coding will indicate the status
-            const balanceAmount = formatCurrency(currentBillState.displayAmount);
+            const balanceAmount = currentBillState.billingUnavailable
+                ? 'Unavailable'
+                : formatCurrency(currentBillState.displayAmount);
             const dueForDisplay = currentBillState.currentDueDate
                 ? formatDate(currentBillState.currentDueDate)
-                : (planCategory === 'postpaid'
-                    ? getDisplayDueDateForPostpaid(customer, { treatAsOverdue: isOverdue })
-                    : formatDate(customer.dueDate));
-            const prepaidBillMeta = !currentBillState.hasCurrentBreakdownRow
+                : '-';
+            const prepaidBillMeta = currentBillState.billingUnavailable
+                ? 'Backend result required'
+                : !currentBillState.hasCurrentBreakdownRow
                 ? 'No current bill'
                 : currentBillState.amount < -EPSILON
                 ? 'Advance'
                 : (currentBillState.amount <= EPSILON
                     ? 'Paid'
                     : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.hasPostedCurrentBill ? 'Balance' : (currentBillState.isProrated ? 'Prorated bill' : 'Current bill'))));
-            const postpaidBillMeta = !currentBillState.hasCurrentBreakdownRow
+            const postpaidBillMeta = currentBillState.billingUnavailable
+                ? 'Backend result required'
+                : !currentBillState.hasCurrentBreakdownRow
                 ? 'No current bill'
                 : currentBillState.amount < -EPSILON
                 ? (currentBillState.existingCustomerStart ? 'Opening advance' : 'Advance after current bill')

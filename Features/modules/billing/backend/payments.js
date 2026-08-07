@@ -17,6 +17,18 @@ const { getEffectivePaymentEntries, normalizePaymentEntry } = require('./payment
 const { auditMikrotikPppoeCommand } = require('../../network/backend/mikrotik-audit-log');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const { DATA_DIR, PROJECT_ROOT } = require('../../../../core/runtime/paths');
+const {
+    BILLING_POLICY_CONTINUE,
+    STATUS_KEPT_ACTIVE,
+    getAccountDisconnection,
+    readBranchDisconnections,
+    upsertBranchDisconnection
+} = require('./disconnection-store');
+const {
+    activatePendingReconnectionSettlement,
+    getManilaDateKey,
+    getPendingReconnectionSettlement
+} = require('./reconnection-settlement');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -86,6 +98,12 @@ const isPositiveCreditEntry = (entry = {}) => {
     const kind = String(entry?.kind || '').trim().toLowerCase();
     const direction = String(entry?.direction || '').trim().toLowerCase();
     return direction === 'credit' || ['payment', 'rebate', 'discount'].includes(kind);
+};
+
+const isCollectedPaymentEntry = (entry = {}) => {
+    if (!isPositiveCreditEntry(entry)) return false;
+    const kind = String(entry?.kind || entry?.type || '').trim().toLowerCase();
+    return kind === 'payment' || !kind;
 };
 
 const getRawBody = (req) => {
@@ -2190,6 +2208,17 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
     if (!normalizedEntryIds.length) {
         throw createError(400, 'Select at least one transaction to delete.');
     }
+    const disconnections = await readBranchDisconnections(branchId);
+    const reconnectionDecision = getAccountDisconnection(disconnections, normalizedAccountNumber);
+    const protectedActivationPaymentIds = new Set(
+        (Array.isArray(reconnectionDecision?.reconnectionHistory) ? reconnectionDecision.reconnectionHistory : [])
+            .flatMap((settlement) => Array.isArray(settlement?.activationPayments) ? settlement.activationPayments : [])
+            .map((entry) => String(entry?.entryId || '').trim())
+            .filter(Boolean)
+    );
+    if (normalizedEntryIds.some((entryId) => protectedActivationPaymentIds.has(entryId))) {
+        throw createError(409, 'A payment used to activate a reconnection cannot be deleted because it is part of the audited service decision.');
+    }
 
     let deletedEntries = [];
 
@@ -2390,7 +2419,7 @@ const enablePppoeForCustomer = async (customer, branchId = null) => {
     }
 };
 
-const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache = null) => {
+const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache = null, paymentEntry = null) => {
     const payments = paymentsCache || await readPayments(branchId);
     const balance = computeBalance(payments?.[accountNumber]?.history);
     const customers = await readCustomers(branchId);
@@ -2398,6 +2427,95 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
     if (idx < 0) return;
     const current = customers[idx];
     const currentStatus = resolveCustomerStatusState(current);
+    const disconnections = await readBranchDisconnections(branchId);
+    const currentDecision = getAccountDisconnection(disconnections, accountNumber);
+    const pendingReconnection = getPendingReconnectionSettlement(currentDecision);
+    if (pendingReconnection && isCollectedPaymentEntry(paymentEntry || {})) {
+        const paymentId = String(paymentEntry?.id || paymentEntry?.fingerprint || paymentEntry?.reference || '').trim();
+        const existingPayments = Array.isArray(pendingReconnection.activationPayments)
+            ? pendingReconnection.activationPayments
+            : [];
+        const alreadyCounted = paymentId && existingPayments.some((entry) => String(entry?.entryId || '') === paymentId);
+        const activationPayments = alreadyCounted
+            ? existingPayments
+            : [
+                ...existingPayments,
+                {
+                    entryId: paymentId || `activation-payment-${Date.now()}`,
+                    amount: Math.max(0, Number(paymentEntry.amount) || 0),
+                    recordedAt: paymentEntry.recordedAt || paymentEntry.date || new Date().toISOString()
+                }
+            ];
+        const paidTowardActivation = activationPayments.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+        const activationReached = paidTowardActivation + 0.005 >= Number(pendingReconnection.requiredPaymentAmount || 0);
+        const activatedAt = activationReached ? new Date().toISOString() : '';
+        const activationActor = activationReached
+            ? {
+                id: paymentEntry?.recordedBy?.id || null,
+                username: paymentEntry?.recordedBy?.username || 'payment',
+                name: paymentEntry?.recordedBy?.name || paymentEntry?.payer || 'Payment'
+            }
+            : null;
+        const activatedSettlement = activationReached
+            ? activatePendingReconnectionSettlement(pendingReconnection, {
+                effectiveDate: getManilaDateKey(),
+                dueOffset: deriveOffset(current),
+                activationPayments,
+                activatedBy: activationActor,
+                now: new Date(activatedAt)
+            })
+            : null;
+        if (activationReached && !activatedSettlement) {
+            throw createError(500, 'Unable to finalize the pending reconnection billing settlement.');
+        }
+        const updatedHistory = (Array.isArray(currentDecision?.reconnectionHistory) ? currentDecision.reconnectionHistory : [])
+            .map((settlement) => (
+                settlement?.reconnectionId === pendingReconnection.reconnectionId
+                    ? (activatedSettlement || {
+                        ...settlement,
+                        activationPayments,
+                        paidTowardActivation,
+                        status: 'pending-payment',
+                        activatedAt: '',
+                        activatedBy: null
+                    })
+                    : settlement
+            ));
+        if (!activationReached) {
+            await upsertBranchDisconnection(branchId, accountNumber, {
+                reconnectionHistory: updatedHistory,
+                decidedAt: new Date().toISOString()
+            });
+            return;
+        }
+
+        const nextCustomer = {
+            ...current,
+            billDate: activatedSettlement.nextRegularCycleDate,
+            dueDate: activatedSettlement.nextDueDate || activatedSettlement.nextRegularCycleDate,
+            status: STATUS_ACTIVE,
+            statusMode: STATUS_MODE_AUTO
+        };
+        customers[idx] = nextCustomer;
+        if (await isRelationalReady()) {
+            await writeCustomers([nextCustomer], current.branchId || branchId);
+        } else {
+            await writeCustomers(customers, branchId);
+        }
+        await enablePppoeForCustomer(nextCustomer, current.branchId || branchId);
+        await upsertBranchDisconnection(branchId, accountNumber, {
+            status: STATUS_KEPT_ACTIVE,
+            billingPolicy: BILLING_POLICY_CONTINUE,
+            hitCreditLimitAt: null,
+            disconnectedAt: null,
+            reconnectedAt: activatedAt,
+            decidedAt: activatedAt,
+            notes: pendingReconnection.reason,
+            reconnectionHistory: updatedHistory,
+            decidedBy: activationActor
+        });
+        return;
+    }
     if (currentStatus.status === STATUS_DISABLED) {
         // Disabled is admin lock: never auto-reactivate from payments.
         return;
@@ -3141,7 +3259,7 @@ router.post('/:accountNumber', async (req, res, next) => {
             await writePayments(payments);
         }
         if (isPositiveCreditEntry(newEntry)) {
-            await applyReenableOnPaid(accountNumber, branchId, payments);
+            await applyReenableOnPaid(accountNumber, branchId, payments, newEntry);
         }
         await maybeExtendPrepaidExpiryOnPayment(accountNumber, newEntry, branchId);
         triggerBranchServiceRefresh(branchId, 'payments-manual');
@@ -3654,7 +3772,7 @@ const handleXenditWebhook = async (req, res, next) => {
             await writePayments(payments);
         }
         if (isPositiveCreditEntry(entry)) {
-            await applyReenableOnPaid(accountNumber, branchId, relational ? null : await readPayments());
+            await applyReenableOnPaid(accountNumber, branchId, relational ? null : await readPayments(), entry);
         }
         await maybeExtendPrepaidExpiryOnPayment(accountNumber, entry, branchId);
         triggerBranchServiceRefresh(branchId, 'payments-webhook');

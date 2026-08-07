@@ -1,4 +1,8 @@
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const {
+  buildReconnectionSummary,
+  sanitizeReconnectionHistory
+} = require('./reconnection-settlement');
 
 const STORE_KEY = 'disconnection_decisions';
 const STATUS_PENDING = 'pending';
@@ -34,6 +38,7 @@ const sanitizeDecisionRecord = (record = {}) => {
   if (!accountNumber) return null;
   const status = normalizeDisconnectionStatus(record.status);
   const billingPolicy = normalizeBillingPolicy(record.billingPolicy);
+  const reconnectionHistory = sanitizeReconnectionHistory(record.reconnectionHistory);
   return {
     accountNumber,
     status,
@@ -41,12 +46,15 @@ const sanitizeDecisionRecord = (record = {}) => {
     hitCreditLimitAt: record.hitCreditLimitAt || null,
     decidedAt: record.decidedAt || null,
     disconnectedAt: record.disconnectedAt || null,
+    reconnectedAt: record.reconnectedAt || null,
     updatedAt: record.updatedAt || record.decidedAt || record.disconnectedAt || null,
     notes: String(record.notes || '').trim(),
     balanceSnapshot: Number.isFinite(Number(record.balanceSnapshot)) ? Number(record.balanceSnapshot) : null,
     creditLimitSnapshot: Number.isFinite(Number(record.creditLimitSnapshot)) ? Number(record.creditLimitSnapshot) : null,
     overAmountSnapshot: Number.isFinite(Number(record.overAmountSnapshot)) ? Number(record.overAmountSnapshot) : null,
     pppoeWarning: String(record.pppoeWarning || '').trim(),
+    reconnectionHistory,
+    reconnection: buildReconnectionSummary({ reconnectionHistory }),
     decidedBy: record.decidedBy && typeof record.decidedBy === 'object'
       ? {
           id: record.decidedBy.id || null,

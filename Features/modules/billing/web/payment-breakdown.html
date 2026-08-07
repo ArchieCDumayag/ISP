@@ -464,9 +464,87 @@
         </div>
     </div>
 
+    <div class="modal modal-blur fade tabler-form-modal payment-breakdown-form-modal" id="breakdownReconnectModal" tabindex="-1" aria-labelledby="breakdownReconnectModalTitle" aria-hidden="true" data-tabler-modal>
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="breakdownReconnectModalTitle">Reconnect Subscriber</h2>
+                        <p class="modal-subtitle">Settle the previous balance and restart billing without recreating stopped months.</p>
+                    </div>
+                    <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="breakdownReconnectClose" data-bs-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                </div>
+                <form class="tabler-modal-form" id="breakdownReconnectForm">
+                    <div class="modal-body">
+                        <div class="alert alert-info mb-3" id="breakdownReconnectSummary" role="status"></div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="breakdownReconnectEffectiveDate">Reconnection Date</label>
+                                <input type="date" class="form-control" id="breakdownReconnectEffectiveDate" required>
+                                <small class="form-hint">Must be today because service changes immediately or after payment.</small>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="breakdownReconnectBalanceTreatment">Previous Balance</label>
+                                <select class="form-select" id="breakdownReconnectBalanceTreatment">
+                                    <option value="keep">Keep for collection</option>
+                                    <option value="write-off">Write off with audit record</option>
+                                    <option value="installment">Convert to installments</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4" id="breakdownReconnectInstallmentField" hidden>
+                                <label class="form-label" for="breakdownReconnectInstallmentMonths">Installment Months</label>
+                                <input type="number" class="form-control" id="breakdownReconnectInstallmentMonths" min="2" max="24" step="1" value="3">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="breakdownReconnectChargePolicy">New Billing Start</label>
+                                <select class="form-select" id="breakdownReconnectChargePolicy">
+                                    <option value="prorated">Create a prorated reconnection charge now</option>
+                                    <option value="next-cycle">Start on the next regular billing cycle</option>
+                                </select>
+                                <small class="form-hint" id="breakdownReconnectChargeHint">Postpaid and prepaid proration covers today through month-end.</small>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label" for="breakdownReconnectActivationPolicy">Service Activation</label>
+                                <select class="form-select" id="breakdownReconnectActivationPolicy">
+                                    <option value="immediate">Activate service immediately</option>
+                                    <option value="after-payment">Activate automatically after required payment</option>
+                                </select>
+                            </div>
+                            <div class="col-12" id="breakdownReconnectRequiredPaymentField" hidden>
+                                <label class="form-label" for="breakdownReconnectRequiredPayment">Required New Payments Before Activation</label>
+                                <input type="number" class="form-control" id="breakdownReconnectRequiredPayment" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00">
+                                <small class="form-hint">Only new payments recorded after this request count toward activation.</small>
+                            </div>
+                            <div class="col-12">
+                                <div class="alert alert-secondary mb-0" id="breakdownReconnectPreview" role="note"></div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="breakdownReconnectReason">Required Reason</label>
+                                <textarea class="form-control" id="breakdownReconnectReason" rows="2" maxlength="500" placeholder="Example: Customer requested service restoration"></textarea>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-check mb-0 breakdown-plan-confirmation" for="breakdownReconnectConfirmed">
+                                    <input class="form-check-input" type="checkbox" id="breakdownReconnectConfirmed">
+                                    <span class="form-check-label">I confirm the previous-balance treatment, billing start, activation rule, and that stopped months will not be back-billed.</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" id="breakdownReconnectCancel" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success" id="breakdownReconnectSave">
+                            <i class="ti ti-plug-connected" aria-hidden="true"></i>
+                            Save reconnection
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="layout.js?v=3.9"></script>
     <script src="js/payment-breakdown-table.js?v=1.0"></script>
-    <script src="js/payment-breakdown.js?v=5.0"></script>
+    <script src="js/payment-breakdown.js?v=5.1"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

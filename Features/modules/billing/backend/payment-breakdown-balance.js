@@ -6,6 +6,10 @@ const {
   getComplimentaryPeriodForMonth,
   sanitizeComplimentaryPeriods
 } = require('./complimentary-account');
+const {
+  isBillingDateSuppressedByReconnection,
+  sanitizeReconnectionHistory
+} = require('./reconnection-settlement');
 
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONTH_KEY_RE = /^(\d{4})-(\d{2})$/;
@@ -744,6 +748,7 @@ const shouldAttachCreditToActivationProration = ({
 
 const isPendingPostpaidSyntheticBill = (record = {}, billDate = null, todayBillingDate = getTodayBillingDate()) => {
   if (resolvePlanType(record) !== 'postpaid' || !billDate || !todayBillingDate) return false;
+  if (getDisconnectionState(record)?.billingPolicy === 'stop') return false;
   if (!isSameBillingMonth(billDate, todayBillingDate)) return false;
   const releaseDate = getMonthEndDate(billDate) || billDate;
   return compareBillingDateOnly(todayBillingDate, releaseDate) < 0;
@@ -884,6 +889,7 @@ const createReferralContext = (record, entries, customers) => {
       total + (Number(item.discountAmount) || (planAmount / 2))
     ), 0));
 
+  const reconnectionSettlements = sanitizeReconnectionHistory(record?.disconnection?.reconnectionHistory);
   return {
     planAmount,
     referredCustomers: referralDiscounts,
@@ -903,7 +909,10 @@ const createReferralContext = (record, entries, customers) => {
         period.periodId,
         Number(period.writeOffAmount) || 0
       ])
-    )
+    ),
+    reconnectionSettlements,
+    appliedReconnectionBalanceTreatments: new Set(),
+    appliedReconnectionInstallments: new Set()
   };
 };
 
@@ -1095,6 +1104,101 @@ const takeComplimentaryWriteOff = (context = {}, billDate = null, outstandingAmo
   return { amount, details };
 };
 
+const getReconnectionSettlementsForMonth = (context = {}, billDate = null) => {
+  const monthKey = getBillingMonthKey(billDate);
+  if (!monthKey) return [];
+  return (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : [])
+    .filter((settlement) => (
+      settlement?.status === 'active'
+      && String(settlement?.effectiveDate || '').slice(0, 7) === monthKey
+    ))
+    .sort((left, right) => String(left.effectiveDate).localeCompare(String(right.effectiveDate)));
+};
+
+const takeReconnectionEffects = ({
+  context = {},
+  billDate = null,
+  settlement = null,
+  installmentGenerated = true
+} = {}) => {
+  const monthKey = getBillingMonthKey(billDate);
+  const balanceApplied = context.appliedReconnectionBalanceTreatments instanceof Set
+    ? context.appliedReconnectionBalanceTreatments
+    : new Set();
+  const installmentsApplied = context.appliedReconnectionInstallments instanceof Set
+    ? context.appliedReconnectionInstallments
+    : new Set();
+  context.appliedReconnectionBalanceTreatments = balanceApplied;
+  context.appliedReconnectionInstallments = installmentsApplied;
+  let writeOffAmount = 0;
+  let deferredBalanceAmount = 0;
+  let previousBalanceSnapshot = 0;
+  let installmentAmount = 0;
+  let installmentNumber = 0;
+  let installmentMonths = 0;
+
+  if (settlement?.reconnectionId && !balanceApplied.has(settlement.reconnectionId)) {
+    previousBalanceSnapshot = roundMoney(Math.max(0, Number(settlement.previousBalanceSnapshot) || 0));
+    if (settlement.balanceTreatment === 'write-off') {
+      writeOffAmount = roundMoney(Math.max(0, Number(settlement.writeOffAmount) || previousBalanceSnapshot));
+    } else if (settlement.balanceTreatment === 'installment') {
+      deferredBalanceAmount = roundMoney(Math.max(0, Number(settlement.deferredBalanceAmount) || previousBalanceSnapshot));
+    }
+    balanceApplied.add(settlement.reconnectionId);
+  }
+
+  (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : []).forEach((entry) => {
+    if (entry?.status !== 'active') return;
+    if (!installmentGenerated) return;
+    if (
+      settlement?.reconnectionId === entry.reconnectionId
+      && entry.chargePolicy === 'next-cycle'
+    ) return;
+    const effectiveDate = safeDate(entry.effectiveDate);
+    if (effectiveDate && billDate && compareBillingDateOnly(billDate, effectiveDate) < 0) return;
+    const installment = (Array.isArray(entry.installmentSchedule) ? entry.installmentSchedule : [])
+      .find((item) => item?.monthKey === monthKey);
+    if (!installment) return;
+    const installmentKey = `${entry.reconnectionId}|${installment.monthKey}`;
+    if (installmentsApplied.has(installmentKey)) return;
+    installmentAmount = roundMoney(installmentAmount + (Number(installment.amount) || 0));
+    installmentNumber = Number(installment.number) || installmentNumber;
+    installmentMonths = Number(entry.installmentMonths) || installmentMonths;
+    installmentsApplied.add(installmentKey);
+  });
+
+  return {
+    previousBalanceSnapshot,
+    writeOffAmount,
+    deferredBalanceAmount,
+    installmentAmount,
+    installmentNumber,
+    installmentMonths
+  };
+};
+
+const buildSyntheticReconnectionEntries = (context = {}) => (
+  (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : [])
+    .filter((settlement) => settlement?.status === 'active')
+    .map((settlement, index) => {
+      const dateObj = safeDate(settlement.effectiveDate);
+      if (!dateObj) return null;
+      return {
+        raw: { reconnectionSettlement: settlement },
+        index: 1000000 + index,
+        id: settlement.reconnectionId,
+        amount: roundMoney(Math.max(0, Number(settlement.prorationAmount) || 0)),
+        direction: 'debit',
+        kind: 'reconnection',
+        dateObj,
+        time: dateObj.getTime(),
+        isSyntheticReconnection: true,
+        reconnectionSettlement: settlement
+      };
+    })
+    .filter(Boolean)
+);
+
 const createBreakdownRow = ({
   record,
   billDate,
@@ -1104,6 +1208,7 @@ const createBreakdownRow = ({
   context,
   sourceType = 'monthly',
   proration = null,
+  reconnectionSettlement = null,
   planOverride = null,
   previousBalanceOverride = null,
   advanceOverride = null,
@@ -1132,6 +1237,20 @@ const createBreakdownRow = ({
   let advance = hasAdvanceOverride
     ? roundMoney(Math.max(0, Number(effectiveAdvanceOverride) || 0))
     : carryOver.advance;
+  const reconnectionEffects = takeReconnectionEffects({
+    context,
+    billDate,
+    settlement: reconnectionSettlement,
+    installmentGenerated: paymentStatusOverride !== 'not-generated'
+  });
+  const reconnectionCarryOver = splitBalanceCarryOver(
+    previousBalance
+      - advance
+      - reconnectionEffects.writeOffAmount
+      - reconnectionEffects.deferredBalanceAmount
+  );
+  previousBalance = reconnectionCarryOver.previousBalance;
+  advance = reconnectionCarryOver.advance;
   const planChangeAdjustment = paymentStatusOverride === 'not-generated'
     ? 0
     : resolvePlanChangeCarryAdjustment(context, billDate);
@@ -1143,7 +1262,13 @@ const createBreakdownRow = ({
   const referralCredits = (Array.isArray(credits) ? credits : []).filter(isReferralCredit);
   const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
   const explicitReferral = sumEntries(referralCredits);
-  const dueBeforeAutoReferral = roundMoney(planAmount - advance + previousBalance - explicitReferral);
+  const dueBeforeAutoReferral = roundMoney(
+    planAmount
+      + reconnectionEffects.installmentAmount
+      - advance
+      + previousBalance
+      - explicitReferral
+  );
   const hasReferralOverride = Boolean(referralAdjustment && hasAmountOverride(referralAdjustment.referral));
   const referralOverride = hasReferralOverride
     ? roundMoney(Math.max(0, Number(referralAdjustment.referral) || 0))
@@ -1165,7 +1290,13 @@ const createBreakdownRow = ({
   const hasDueOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.due));
   const rawDueBeforeWriteOff = hasDueOverride
     ? roundMoney(Math.max(0, Number(firstBillAdjustment.due) || 0))
-    : roundMoney(planAmount - advance + previousBalance - referral);
+    : roundMoney(
+      planAmount
+        + reconnectionEffects.installmentAmount
+        - advance
+        + previousBalance
+        - referral
+    );
   const complimentaryWriteOff = takeComplimentaryWriteOff(context, billDate, rawDueBeforeWriteOff);
   const rawDue = roundMoney(rawDueBeforeWriteOff - complimentaryWriteOff.amount);
   const due = roundMoney(Math.max(0, rawDue));
@@ -1187,6 +1318,18 @@ const createBreakdownRow = ({
       referralDetails,
       complimentaryWriteOff: complimentaryWriteOff.amount,
       complimentaryWriteOffDetails: complimentaryWriteOff.details,
+      reconnectionId: reconnectionSettlement?.reconnectionId || null,
+      reconnectionPreviousBalance: reconnectionEffects.previousBalanceSnapshot,
+      reconnectionBalanceTreatment: reconnectionSettlement?.balanceTreatment || '',
+      reconnectionWriteOff: reconnectionEffects.writeOffAmount,
+      reconnectionDeferredBalance: reconnectionEffects.deferredBalanceAmount,
+      reconnectionInstallment: reconnectionEffects.installmentAmount,
+      reconnectionInstallmentNumber: reconnectionEffects.installmentNumber,
+      reconnectionInstallmentMonths: reconnectionEffects.installmentMonths,
+      reconnectionStatus: reconnectionSettlement?.status || '',
+      activationPolicy: reconnectionSettlement?.activationPolicy || '',
+      requiredActivationPayment: Number(reconnectionSettlement?.requiredPaymentAmount) || 0,
+      paidTowardActivation: Number(reconnectionSettlement?.paidTowardActivation) || 0,
       due,
       isReferralOverride: hasReferralOverride,
       isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
@@ -1231,6 +1374,8 @@ const resolveBillingDay = (record = {}, fallbackDate = null) => {
 const resolvePendingPostpaidBillDate = (record = {}, todayBillingDate = getTodayBillingDate(), fallbackDate = null) => {
   const todayParts = getZonedDateParts(todayBillingDate);
   if (!todayParts) return null;
+  const storedBillDate = safeDate(record.billDate);
+  if (storedBillDate && isBeforeBillingMonth(todayBillingDate, storedBillDate)) return null;
   const billingDay = resolveBillingDay(record, fallbackDate || todayBillingDate);
   const billDate = buildMonthlyDate(todayParts.year, todayParts.month, billingDay);
   return isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate) ? billDate : null;
@@ -1239,7 +1384,12 @@ const resolvePendingPostpaidBillDate = (record = {}, todayBillingDate = getToday
 const buildRowsFromPostedDebits = (record, entries, context) => {
   const rows = [];
   const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, entries);
-  const effectiveEntries = entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder));
+  const effectiveEntries = [
+    ...entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder)),
+    ...buildSyntheticReconnectionEntries(context)
+  ]
+    .sort(compareEntries)
+    .map((entry, sortOrder) => ({ ...entry, sortOrder }));
   const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
   if (!debitEntries.length) return rows;
   const assignedCreditOrders = new Set();
@@ -1278,9 +1428,12 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
         );
     });
     cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
-    const openingPreviousBalance = isOpeningPreviousBalanceEntry(debit);
+    const reconnectionSettlement = debit.isSyntheticReconnection ? debit.reconnectionSettlement : null;
+    const openingPreviousBalance = !reconnectionSettlement && isOpeningPreviousBalanceEntry(debit);
     const planChange = resolvePlanChangeForMonth(context, debit.dateObj);
-    const planAmount = openingPreviousBalance
+    const planAmount = reconnectionSettlement
+      ? roundMoney(Math.max(0, Number(reconnectionSettlement.prorationAmount) || 0))
+      : openingPreviousBalance
       ? 0
       : (
         planChange && !planChange.historicalBaseline && !planChange.protectedPaidCycle
@@ -1294,7 +1447,17 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
       credits: cycleCredits,
       runningBalance,
       context,
-      sourceType: openingPreviousBalance ? 'opening' : 'posted',
+      sourceType: reconnectionSettlement
+        ? (planAmount > EPSILON ? 'reconnection-proration' : 'reconnection-opening')
+        : (openingPreviousBalance ? 'opening' : 'posted'),
+      proration: reconnectionSettlement && planAmount > EPSILON
+        ? {
+            isProrated: true,
+            periodStart: safeDate(reconnectionSettlement.prorationPeriodStart),
+            periodEnd: safeDate(reconnectionSettlement.prorationPeriodEnd)
+          }
+        : null,
+      reconnectionSettlement,
       planOverride: planChange,
       previousBalanceOverride: openingPreviousBalance ? debit.amount : null,
       openingPreviousBalance,
@@ -1306,7 +1469,11 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
 
   if (
     pendingPostpaidBillDate
-    && !rows.some((row) => row?.billDate && isSameBillingMonth(row.billDate, pendingPostpaidBillDate))
+    && !rows.some((row) => (
+      row?.billDate
+      && isSameBillingMonth(row.billDate, pendingPostpaidBillDate)
+      && !String(row?.sourceType || '').startsWith('reconnection-')
+    ))
   ) {
     const pendingCredits = effectiveEntries.filter((entry) => (
       entry.direction === 'credit'
@@ -1364,6 +1531,39 @@ const buildRowsFromOpeningAdvanceOnly = (record, entries, context) => {
   return [result.row];
 };
 
+const createReconnectionMarkerRow = ({
+  record,
+  settlement,
+  credits = [],
+  runningBalance = 0,
+  context,
+  planOverride = null,
+  isFirstRow = false
+} = {}) => {
+  const billDate = safeDate(settlement?.effectiveDate);
+  const planAmount = roundMoney(Math.max(0, Number(settlement?.prorationAmount) || 0));
+  if (!billDate) return null;
+  return createBreakdownRow({
+    record,
+    billDate,
+    planAmount,
+    credits,
+    runningBalance,
+    context,
+    sourceType: planAmount > EPSILON ? 'reconnection-proration' : 'reconnection-opening',
+    proration: planAmount > EPSILON
+      ? {
+          isProrated: true,
+          periodStart: safeDate(settlement.prorationPeriodStart),
+          periodEnd: safeDate(settlement.prorationPeriodEnd)
+        }
+      : null,
+    reconnectionSettlement: settlement,
+    planOverride,
+    isFirstRow
+  });
+};
+
 const buildRowsFromMonthlyPlan = (record, entries, context) => {
   const planAmount = context.planAmount;
   const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
@@ -1403,6 +1603,15 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
       : null;
     if (disconnectionBillDate && disconnectionBillDate < lastBillDate) {
       lastBillDate = disconnectionBillDate;
+    }
+    const latestSettlement = (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : []).slice(-1)[0] || null;
+    const settlementDate = safeDate(latestSettlement?.effectiveDate);
+    const settlementParts = getZonedDateParts(settlementDate);
+    const settlementBillDate = settlementParts
+      ? buildMonthlyDate(settlementParts.year, settlementParts.month, billingDay)
+      : null;
+    if (settlementBillDate && settlementBillDate > lastBillDate) {
+      lastBillDate = settlementBillDate;
     }
   }
   const todayBillingDate = getTodayBillingDate();
@@ -1469,30 +1678,63 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
       cursor += 1;
     }
 
+    const settlementMarkers = getReconnectionSettlementsForMonth(context, billDate);
+    const billDateKey = getEntryDateKey({ dateObj: billDate });
+    const billingSuppressed = (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : [])
+      .some((settlement) => isBillingDateSuppressedByReconnection(settlement, billDateKey));
+    const markersBeforeBill = settlementMarkers.filter((settlement) => settlement.effectiveDate <= billDateKey);
+    const markersAfterBill = settlementMarkers.filter((settlement) => settlement.effectiveDate > billDateKey);
+    let cycleCreditsAvailable = cycleCredits;
+    const appendMarker = (settlement) => {
+      const markerResult = createReconnectionMarkerRow({
+        record,
+        settlement,
+        credits: cycleCreditsAvailable,
+        runningBalance,
+        context,
+        planOverride: planChange,
+        isFirstRow: rows.length === 0
+      });
+      if (!markerResult) return;
+      rows.push(markerResult.row);
+      runningBalance = markerResult.nextBalance;
+      cycleCreditsAvailable = [];
+    };
+
+    markersBeforeBill.forEach(appendMarker);
+
     const pendingPostpaidBill = isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate);
     const activationProration = Boolean(proration.isProrated);
     const complimentaryPeriod = getComplimentaryPeriodForMonth(context.complimentaryPeriods, getBillingMonthKey(billDate));
-    const result = createBreakdownRow({
-      record,
-      billDate,
-      planAmount: complimentaryPeriod ? 0 : (pendingPostpaidBill && !activationProration ? 0 : proration.amount),
-      credits: cycleCredits,
-      runningBalance,
-      context,
-      sourceType: complimentaryPeriod
-        ? 'complimentary'
-        : (activationProration
-        ? 'activation-proration'
-        : (pendingPostpaidBill ? 'pending-postpaid' : 'monthly')),
-      proration: activationProration && !complimentaryPeriod ? proration : null,
-      planOverride: planChange,
-      isFirstRow: rows.length === 0,
-      paymentStatusOverride: complimentaryPeriod
-        ? 'complimentary'
-        : (pendingPostpaidBill && !activationProration ? 'not-generated' : '')
+    if (!billingSuppressed) {
+      const result = createBreakdownRow({
+        record,
+        billDate,
+        planAmount: complimentaryPeriod ? 0 : (pendingPostpaidBill && !activationProration ? 0 : proration.amount),
+        credits: cycleCreditsAvailable,
+        runningBalance,
+        context,
+        sourceType: complimentaryPeriod
+          ? 'complimentary'
+          : (activationProration
+          ? 'activation-proration'
+          : (pendingPostpaidBill ? 'pending-postpaid' : 'monthly')),
+        proration: activationProration && !complimentaryPeriod ? proration : null,
+        planOverride: planChange,
+        isFirstRow: rows.length === 0,
+        paymentStatusOverride: complimentaryPeriod
+          ? 'complimentary'
+          : (pendingPostpaidBill && !activationProration ? 'not-generated' : '')
+      });
+      rows.push(result.row);
+      runningBalance = result.nextBalance;
+      cycleCreditsAvailable = [];
+    }
+
+    markersAfterBill.forEach(appendMarker);
+    cycleCreditsAvailable.forEach((entry) => {
+      runningBalance = applyEntryToBalance(runningBalance, entry);
     });
-    rows.push(result.row);
-    runningBalance = result.nextBalance;
 
     currentYear = nextParts.year;
     currentMonth = nextParts.month;

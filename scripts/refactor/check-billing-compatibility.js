@@ -119,6 +119,11 @@ assert(breakdownHtmlSource.includes('id="breakdownComplimentaryModal"'));
 assert(breakdownHtmlSource.includes('id="breakdownComplimentaryEffectiveMonth"'));
 assert(breakdownHtmlSource.includes('id="breakdownComplimentaryBalanceTreatment"'));
 assert(breakdownHtmlSource.includes('id="breakdownComplimentaryConfirmed"'));
+assert(breakdownHtmlSource.includes('id="breakdownReconnectModal"'));
+assert(breakdownHtmlSource.includes('id="breakdownReconnectBalanceTreatment"'));
+assert(breakdownHtmlSource.includes('id="breakdownReconnectChargePolicy"'));
+assert(breakdownHtmlSource.includes('id="breakdownReconnectActivationPolicy"'));
+assert(breakdownHtmlSource.includes('id="breakdownReconnectConfirmed"'));
 assert(!breakdownHtmlSource.includes('id="breakdownAdjustmentReferral"'));
 assert(paymentsBrowserSource.includes('openPaymentBreakdownModal(accountNumber, breakdownLink)'));
 assert(paymentsBrowserSource.includes('openPaymentModalForAccount(targetAccount, { lockCustomer: true })'));
@@ -143,6 +148,9 @@ assert(breakdownBrowserSource.includes('const renderReferralQueue ='));
 assert(breakdownBrowserSource.includes('Next available generated unpaid month'));
 assert(breakdownBrowserSource.includes("complimentaryAccount: action === 'disable'"));
 assert(breakdownBrowserSource.includes('Save complimentary policy'));
+assert(breakdownBrowserSource.includes('async function saveReconnectSettlement()'));
+assert(breakdownBrowserSource.includes('requiredPaymentAmount'));
+assert(breakdownBrowserSource.includes('Stopped months will not be back-billed'));
 assert(!breakdownHtmlSource.includes('id="breakdownReferralSave"'));
 assert(!breakdownBrowserSource.includes('saveBreakdownAdjustmentPatch({ monthlyReferrals })'));
 assert(!breakdownBrowserSource.includes('saveBreakdownAdjustmentPatch({ planChanges })'));
@@ -248,6 +256,11 @@ assert(paymentRecordsSource.includes('Approved referrals are applied automatical
 assert(paymentRecordsSource.includes('Complimentary periods must be submitted through the audited complimentaryAccount request.'));
 assert(billingSchedulerSource.includes('isComplimentaryMonth(complimentaryPeriods, billMonth)'));
 assert(disconnectionsSource.includes('complimentaryAccount.active'));
+assert(disconnectionsSource.includes('buildReconnectionSettlement'));
+assert(disconnectionsSource.includes('getPendingReconnectionSettlement'));
+assert(paymentRecordsSource.includes('buildReconnectionSummary'));
+assert(paymentsSource.includes('activatePendingReconnectionSettlement'));
+assert(paymentsSource.includes('A payment used to activate a reconnection cannot be deleted'));
 assert(customersSource.includes('planChangeEffectiveAt = null'));
 assert(customersSource.includes('hasFutureEffectivePlanChange'));
 execFileSync(process.execPath, [
@@ -258,6 +271,9 @@ execFileSync(process.execPath, [
 ], { stdio: 'inherit' });
 execFileSync(process.execPath, [
   path.join(projectRoot, 'Features/modules/billing/tests/complimentary-account.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/reconnection-settlement.test.js')
 ], { stdio: 'inherit' });
 console.log('PASS Billing normalization, plan-profile, and balance helper behavior');
 console.log('BILLING COMPATIBILITY PASSED');

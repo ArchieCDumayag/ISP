@@ -17,6 +17,7 @@ const {
     getCurrentMonthKey: getCurrentComplimentaryMonthKey,
     sanitizeComplimentaryPeriods
 } = require('./complimentary-account');
+const { buildReconnectionSummary } = require('./reconnection-settlement');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -527,6 +528,7 @@ const serializeBillingRow = (row = {}, record = {}) => {
         ? 'prepaid'
         : 'postpaid';
     const complimentaryRow = String(row?.sourceType || '').trim().toLowerCase() === 'complimentary';
+    const reconnectionRow = String(row?.sourceType || '').trim().toLowerCase().startsWith('reconnection-');
     const complimentaryWriteOff = Number(row?.complimentaryWriteOff) || 0;
     return {
         ...serializeBillingValue(row),
@@ -541,12 +543,39 @@ const serializeBillingRow = (row = {}, record = {}) => {
             || record.plan
             || 'Monthly plan'
         ).trim() || 'Monthly plan',
-        billLabel: complimentaryRow ? 'Complimentary account' : row?.billLabel,
+        billLabel: complimentaryRow
+            ? 'Complimentary account'
+            : (reconnectionRow
+                ? (Number(row?.planAmount) > BILLING_EPSILON ? 'Reconnection prorated charge' : 'Reconnection opening balance')
+                : row?.billLabel),
         billMeta: complimentaryRow
             ? (complimentaryWriteOff > BILLING_EPSILON
                 ? `No recurring charge; ${complimentaryWriteOff.toFixed(2)} existing balance written off`
                 : 'No recurring charge for this complimentary month')
-            : row?.billMeta,
+            : (reconnectionRow
+                ? [
+                    Number(row?.reconnectionPreviousBalance) > BILLING_EPSILON
+                        ? `Previous disconnected balance ${Number(row.reconnectionPreviousBalance).toFixed(2)}`
+                        : 'No previous disconnected balance',
+                    Number(row?.reconnectionWriteOff) > BILLING_EPSILON
+                        ? `${Number(row.reconnectionWriteOff).toFixed(2)} written off`
+                        : '',
+                    Number(row?.reconnectionDeferredBalance) > BILLING_EPSILON
+                        ? `${Number(row.reconnectionDeferredBalance).toFixed(2)} moved to ${Number(row.reconnectionInstallmentMonths) || 0} installments`
+                        : '',
+                    Number(row?.reconnectionInstallment) > BILLING_EPSILON
+                        ? `Installment ${Number(row.reconnectionInstallmentNumber) || 1}/${Number(row.reconnectionInstallmentMonths) || 1}: ${Number(row.reconnectionInstallment).toFixed(2)}`
+                        : '',
+                    row?.activationPolicy === 'after-payment'
+                        ? `Service activates after ${Number(row.requiredActivationPayment || 0).toFixed(2)} in new payments`
+                        : 'Service activation: immediate'
+                ].filter(Boolean).join('; ')
+                : [
+                    row?.billMeta,
+                    Number(row?.reconnectionInstallment) > BILLING_EPSILON
+                        ? `Previous-balance installment ${Number(row.reconnectionInstallmentNumber) || 1}/${Number(row.reconnectionInstallmentMonths) || 1}: ${Number(row.reconnectionInstallment).toFixed(2)}`
+                        : ''
+                ].filter(Boolean).join('; ')),
         paymentStatusLabel: complimentaryRow ? 'Complimentary' : row?.paymentStatusLabel,
         paymentDetails: (Array.isArray(row.paymentDetails) ? row.paymentDetails : []).map((detail) => ({
             ...serializeBillingValue(detail),
@@ -603,7 +632,8 @@ const buildBillingReconciliation = ({ record = {}, rows = [], endingBalance = 0,
             && !row?.openingAdvance
             && row?.sourceType !== 'pending-postpaid'
             && row?.sourceType !== 'disconnection'
-            && row?.sourceType !== 'complimentary';
+            && row?.sourceType !== 'complimentary'
+            && row?.sourceType !== 'reconnection-opening';
         if (isGeneratedCycle && planAmount <= BILLING_EPSILON) {
             missingChargeMonths.push(monthKey || 'unknown');
         }
@@ -676,6 +706,7 @@ const buildFallbackBillingSummary = (record = {}, fallbackBalance = 0) => {
         record?.paymentBreakdownAdjustment?.complimentaryPeriods || [],
         { planType }
     );
+    const reconnection = buildReconnectionSummary(record?.disconnection || {});
     return {
         version: BILLING_SUMMARY_VERSION,
         source: 'payment-breakdown-backend',
@@ -693,6 +724,7 @@ const buildFallbackBillingSummary = (record = {}, fallbackBalance = 0) => {
         billingStatus: 'unavailable',
         dueDate: null,
         complimentaryAccount,
+        reconnection,
         reconciliation: {
             status: 'error',
             issueCount: 1,
@@ -723,6 +755,7 @@ const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
             record?.paymentBreakdownAdjustment?.complimentaryPeriods || [],
             { planType }
         );
+        const reconnection = buildReconnectionSummary(record?.disconnection || {});
         const billingState = complimentaryAccount.active
             ? { status: 'complimentary', dueDate: null }
             : resolveCanonicalBillingStatus({ rows, endingBalance: safeEndingBalance, currentCycle });
@@ -749,6 +782,7 @@ const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
             billingStatus: billingState.status,
             dueDate: billingState.dueDate,
             complimentaryAccount,
+            reconnection,
             reconciliation
         };
     } catch (error) {
@@ -826,6 +860,7 @@ const buildPaymentRecord = (
     const endingBalance = billingSummary.endingBalance;
     const complimentaryAccount = billingSummary.complimentaryAccount
         || buildComplimentaryAccountSummary(paymentBreakdownAdjustment?.complimentaryPeriods || [], { planType: planCategory });
+    const reconnection = billingSummary.reconnection || buildReconnectionSummary(recordBase.disconnection || {});
     const planHistory = buildPlanHistory(
         recordBase,
         paymentBreakdownAdjustment?.planChanges || []
@@ -835,6 +870,7 @@ const buildPaymentRecord = (
         ...recordBase,
         billingSummary,
         complimentaryAccount,
+        reconnection,
         planHistory,
         paymentBreakdownEndingBalance: endingBalance,
         endingBalance
@@ -848,7 +884,7 @@ const buildAutomaticReferralTarget = (record = {}) => {
     const billingRows = rows.filter((row) => {
         const sourceType = String(row?.sourceType || '').toLowerCase();
         if (!row?.billingMonthKey || !accountNumber) return false;
-        if (['opening', 'disconnection'].includes(sourceType)) return false;
+        if (['opening', 'disconnection'].includes(sourceType) || sourceType.startsWith('reconnection-')) return false;
         return true;
     });
     if (!billingRows.length) return null;

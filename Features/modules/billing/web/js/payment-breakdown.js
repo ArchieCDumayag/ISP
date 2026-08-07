@@ -80,6 +80,26 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const disconnectBtn = document.getElementById('breakdownDisconnectBtn');
     const reconnectBtn = document.getElementById('breakdownReconnectBtn');
+    const reconnectForm = {
+        modal: document.getElementById('breakdownReconnectModal'),
+        form: document.getElementById('breakdownReconnectForm'),
+        close: document.getElementById('breakdownReconnectClose'),
+        cancel: document.getElementById('breakdownReconnectCancel'),
+        summary: document.getElementById('breakdownReconnectSummary'),
+        effectiveDate: document.getElementById('breakdownReconnectEffectiveDate'),
+        balanceTreatment: document.getElementById('breakdownReconnectBalanceTreatment'),
+        installmentField: document.getElementById('breakdownReconnectInstallmentField'),
+        installmentMonths: document.getElementById('breakdownReconnectInstallmentMonths'),
+        chargePolicy: document.getElementById('breakdownReconnectChargePolicy'),
+        chargeHint: document.getElementById('breakdownReconnectChargeHint'),
+        activationPolicy: document.getElementById('breakdownReconnectActivationPolicy'),
+        requiredPaymentField: document.getElementById('breakdownReconnectRequiredPaymentField'),
+        requiredPayment: document.getElementById('breakdownReconnectRequiredPayment'),
+        preview: document.getElementById('breakdownReconnectPreview'),
+        reason: document.getElementById('breakdownReconnectReason'),
+        confirmed: document.getElementById('breakdownReconnectConfirmed'),
+        save: document.getElementById('breakdownReconnectSave')
+    };
     const subscriberInfo = {
         card: document.getElementById('subscriberInfoCard'),
         avatar: document.getElementById('subscriberInfoAvatar'),
@@ -116,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         savingComplimentaryAccount: false,
         disconnecting: false,
         reconnecting: false,
+        reconnectModalOpen: false,
         adjustmentToolbarOpen: false,
         referralToolbarOpen: false,
         planToolbarOpen: false,
@@ -2265,6 +2286,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderDisconnectButton = (record = state.record) => {
         const account = String(record?.accountNumber || accountNumber || '').trim();
         const disconnection = getDisconnectionState(record);
+        const pendingReconnection = record?.reconnection?.pendingPayment === true
+            ? record.reconnection
+            : null;
         const complimentaryActive = record?.complimentaryAccount?.active === true
             || record?.billingSummary?.complimentaryAccount?.active === true;
         if (disconnectBtn) {
@@ -2284,10 +2308,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (reconnectBtn) {
             reconnectBtn.hidden = !account || !disconnection;
-            reconnectBtn.disabled = state.disconnecting || state.reconnecting;
+            reconnectBtn.disabled = state.disconnecting || state.reconnecting || Boolean(pendingReconnection);
             reconnectBtn.innerHTML = state.reconnecting
                 ? '<i class="ti ti-loader-2" aria-hidden="true"></i> Working...'
-                : '<i class="ti ti-plug-connected" aria-hidden="true"></i> Reconnect';
+                : (pendingReconnection
+                    ? `<i class="ti ti-clock-dollar" aria-hidden="true"></i> Awaiting ${formatCurrency(pendingReconnection.remainingActivationPayment)}`
+                    : '<i class="ti ti-plug-connected" aria-hidden="true"></i> Reconnect');
         }
     };
 
@@ -2543,6 +2569,130 @@ document.addEventListener('DOMContentLoaded', () => {
     const getCurrentBillingMonthKey = () => {
         const parts = getZonedDateParts(new Date()) || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}`;
+    };
+    const getCurrentBillingDateKey = () => {
+        const parts = getZonedDateParts(new Date()) || {
+            year: new Date().getFullYear(),
+            month: new Date().getMonth() + 1,
+            day: new Date().getDate()
+        };
+        return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+    };
+    const calculateReconnectionProration = (dateKey, planAmount) => {
+        const match = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return 0;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        const activeDays = Math.max(0, daysInMonth - day + 1);
+        return roundMoney(Math.round(((Number(planAmount) || 0) / daysInMonth) * activeDays));
+    };
+    const getReconnectionNextCycleDate = (dateKey, planType, chargePolicy) => {
+        const match = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return '';
+        const year = Number(match[1]);
+        const monthIndex = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        const prepaid = normalizePlanTypeValue(planType) === 'prepaid';
+        const prorated = chargePolicy === 'prorated';
+        if (prepaid) {
+            if (!prorated && day === 1) return dateKey;
+            const next = new Date(Date.UTC(year, monthIndex + 1, 1, 12));
+            return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-01`;
+        }
+        const cycleMonthIndex = prorated ? monthIndex + 1 : monthIndex;
+        const end = new Date(Date.UTC(year, cycleMonthIndex + 1, 0, 12));
+        return `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`;
+    };
+    const hasGeneratedReconnectionMonth = () => {
+        const monthKey = getCurrentBillingMonthKey();
+        return (Array.isArray(state.rows) ? state.rows : []).some((row) => {
+            const sourceType = String(row?.sourceType || '').toLowerCase();
+            if (row?.billingMonthKey !== monthKey) return false;
+            if (['opening', 'disconnection', 'pending-postpaid', 'complimentary', 'reconnection-opening'].includes(sourceType)) return false;
+            return Number(row?.planAmount) > EPSILON;
+        });
+    };
+    const renderReconnectForm = ({ resetRequiredPayment = false } = {}) => {
+        if (!reconnectForm.form) return;
+        const today = getCurrentBillingDateKey();
+        const balance = Math.max(0, Number(state.record?.billingSummary?.endingBalance ?? state.record?.endingBalance) || 0);
+        const planAmount = Math.max(0, Number(state.record?.planAmount) || 0);
+        const planType = normalizePlanTypeValue(state.record?.planCategory || state.record?.planType) || 'postpaid';
+        const balanceTreatment = reconnectForm.balanceTreatment?.value || 'keep';
+        const installmentMonths = Math.max(2, Math.min(24, Math.trunc(Number(reconnectForm.installmentMonths?.value) || 3)));
+        const currentCycleExists = hasGeneratedReconnectionMonth();
+        const proratedOption = Array.from(reconnectForm.chargePolicy?.options || []).find((option) => option.value === 'prorated');
+        if (proratedOption) proratedOption.disabled = currentCycleExists;
+        if (currentCycleExists && reconnectForm.chargePolicy?.value === 'prorated') {
+            reconnectForm.chargePolicy.value = 'next-cycle';
+        }
+        const chargePolicy = reconnectForm.chargePolicy?.value === 'prorated' ? 'prorated' : 'next-cycle';
+        const activationPolicy = reconnectForm.activationPolicy?.value === 'after-payment' ? 'after-payment' : 'immediate';
+        const proration = chargePolicy === 'prorated' ? calculateReconnectionProration(today, planAmount) : 0;
+        const firstInstallment = balanceTreatment === 'installment'
+            ? roundMoney(Math.ceil((balance * 100) / installmentMonths) / 100)
+            : 0;
+        const suggestedRequiredPayment = roundMoney(
+            proration
+                + (balanceTreatment === 'keep' ? balance : 0)
+                + (balanceTreatment === 'installment' ? firstInstallment : 0)
+        );
+        const nextCycleDate = getReconnectionNextCycleDate(today, planType, chargePolicy);
+
+        if (reconnectForm.effectiveDate) {
+            reconnectForm.effectiveDate.value = today;
+            reconnectForm.effectiveDate.min = today;
+            reconnectForm.effectiveDate.max = today;
+            reconnectForm.effectiveDate.disabled = state.reconnecting;
+        }
+        if (reconnectForm.installmentField) reconnectForm.installmentField.hidden = balanceTreatment !== 'installment';
+        if (reconnectForm.requiredPaymentField) reconnectForm.requiredPaymentField.hidden = activationPolicy !== 'after-payment';
+        if (reconnectForm.requiredPayment && activationPolicy === 'after-payment' && (resetRequiredPayment || !Number(reconnectForm.requiredPayment.value))) {
+            reconnectForm.requiredPayment.value = suggestedRequiredPayment > EPSILON ? suggestedRequiredPayment.toFixed(2) : '';
+        }
+        if (reconnectForm.summary) {
+            reconnectForm.summary.textContent = `Previous disconnected balance: ${formatCurrency(balance)}. Existing bills and payments remain unchanged.`;
+        }
+        if (reconnectForm.chargeHint) {
+            reconnectForm.chargeHint.textContent = currentCycleExists
+                ? 'A bill already exists this month, so another prorated charge is blocked.'
+                : `${planType === 'prepaid' ? 'Prepaid' : 'Postpaid'} proration covers today through month-end.`;
+        }
+        if (reconnectForm.preview) {
+            const balanceText = balanceTreatment === 'write-off'
+                ? `${formatCurrency(balance)} will be written off.`
+                : (balanceTreatment === 'installment'
+                    ? `${formatCurrency(balance)} will be deferred into ${installmentMonths} installments; first installment is ${formatCurrency(firstInstallment)}.`
+                    : `${formatCurrency(balance)} remains collectible as the previous balance.`);
+            const chargeText = chargePolicy === 'prorated'
+                ? `A separate ${formatCurrency(proration)} reconnection proration will cover today through month-end.`
+                : 'No immediate recurring charge will be created.';
+            const activationText = activationPolicy === 'after-payment'
+                ? `Service waits for the required new-payment amount entered below.`
+                : 'Service activates immediately.';
+            reconnectForm.preview.textContent = `${balanceText} ${chargeText} Next regular bill: ${formatRecordDate(nextCycleDate)}. ${activationText} Stopped months will not be back-billed.`;
+        }
+        [
+            reconnectForm.balanceTreatment,
+            reconnectForm.installmentMonths,
+            reconnectForm.chargePolicy,
+            reconnectForm.activationPolicy,
+            reconnectForm.requiredPayment,
+            reconnectForm.reason,
+            reconnectForm.confirmed
+        ].forEach((control) => {
+            if (control) control.disabled = state.reconnecting;
+        });
+        if (reconnectForm.save) {
+            reconnectForm.save.disabled = state.reconnecting;
+            reconnectForm.save.innerHTML = state.reconnecting
+                ? '<i class="ti ti-loader-2" aria-hidden="true"></i> Saving...'
+                : '<i class="ti ti-plug-connected" aria-hidden="true"></i> Save reconnection';
+        }
+        if (reconnectForm.close) reconnectForm.close.disabled = state.reconnecting;
+        if (reconnectForm.cancel) reconnectForm.cancel.disabled = state.reconnecting;
     };
     const renderComplimentaryHistory = () => {
         if (!complimentaryToolbar.history) return;
@@ -3096,13 +3246,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const customerName = getCustomerName(state.record, account);
+        if (disconnection.billingPolicy === 'stop') {
+            state.reconnectModalOpen = true;
+            if (reconnectForm.balanceTreatment) reconnectForm.balanceTreatment.value = 'keep';
+            if (reconnectForm.installmentMonths) reconnectForm.installmentMonths.value = '3';
+            if (reconnectForm.chargePolicy) reconnectForm.chargePolicy.value = hasGeneratedReconnectionMonth() ? 'next-cycle' : 'prorated';
+            if (reconnectForm.activationPolicy) reconnectForm.activationPolicy.value = 'immediate';
+            if (reconnectForm.requiredPayment) reconnectForm.requiredPayment.value = '';
+            if (reconnectForm.reason) reconnectForm.reason.value = '';
+            if (reconnectForm.confirmed) reconnectForm.confirmed.checked = false;
+            renderReconnectForm({ resetRequiredPayment: true });
+            showBillingModal(reconnectForm.modal);
+            window.setTimeout(() => reconnectForm.balanceTreatment?.focus(), 0);
+            return;
+        }
+
         const confirmed = typeof window.appConfirm === 'function'
-            ? await window.appConfirm(`Reconnect ${customerName} and resume billing?`, {
+            ? await window.appConfirm(`Reconnect ${customerName}? Billing already continued during disconnection, so no new settlement charge will be created.`, {
                 title: 'Reconnect Subscriber',
                 okText: 'Reconnect',
                 cancelText: 'Cancel'
             })
-            : window.confirm(`Reconnect ${customerName} and resume billing?`);
+            : window.confirm(`Reconnect ${customerName}?`);
         if (!confirmed) return;
 
         state.reconnecting = true;
@@ -3113,16 +3278,104 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    notes: 'Reconnected from payment breakdown.'
+                    reason: 'Reconnected after billing continued during disconnection.'
                 })
             });
             const nextRecord = await fetchCanonicalRecord();
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
-            showToast(payload?.warning || 'Subscriber reconnected. Billing will continue.', payload?.warning ? 'warning' : 'success');
+            showToast(payload?.warning || 'Subscriber reconnected. Existing billing cycles were preserved.', payload?.warning ? 'warning' : 'success');
         } catch (error) {
             showToast(error?.message || 'Failed to reconnect subscriber.', 'error');
         } finally {
             state.reconnecting = false;
+            renderDisconnectButton(state.record);
+            renderPlanToolbar();
+        }
+    }
+
+    async function saveReconnectSettlement() {
+        if (state.reconnecting) return;
+        const account = String(state.record?.accountNumber || accountNumber || '').trim();
+        const disconnection = getDisconnectionState(state.record);
+        if (!account || !disconnection || disconnection.billingPolicy !== 'stop') {
+            showToast('A stopped-billing disconnection is required for this settlement.', 'error');
+            return;
+        }
+        const effectiveDate = String(reconnectForm.effectiveDate?.value || '').trim();
+        const today = getCurrentBillingDateKey();
+        if (effectiveDate !== today) {
+            showToast(`Choose today's reconnection date: ${formatRecordDate(today)}.`, 'error');
+            reconnectForm.effectiveDate?.focus();
+            return;
+        }
+        const balanceTreatment = reconnectForm.balanceTreatment?.value || 'keep';
+        const installmentMonths = Math.trunc(Number(reconnectForm.installmentMonths?.value) || 0);
+        if (balanceTreatment === 'installment' && (installmentMonths < 2 || installmentMonths > 24)) {
+            showToast('Choose between 2 and 24 installment months.', 'error');
+            reconnectForm.installmentMonths?.focus();
+            return;
+        }
+        const chargePolicy = reconnectForm.chargePolicy?.value === 'prorated' ? 'prorated' : 'next-cycle';
+        if (chargePolicy === 'prorated' && hasGeneratedReconnectionMonth()) {
+            showToast('A bill already exists this month. Choose the next regular billing cycle.', 'error');
+            reconnectForm.chargePolicy?.focus();
+            return;
+        }
+        const activationPolicy = reconnectForm.activationPolicy?.value === 'after-payment' ? 'after-payment' : 'immediate';
+        const requiredPaymentAmount = activationPolicy === 'after-payment'
+            ? roundMoney(Number(reconnectForm.requiredPayment?.value) || 0)
+            : 0;
+        if (activationPolicy === 'after-payment' && requiredPaymentAmount <= EPSILON) {
+            showToast('Enter the new-payment amount required before service activation.', 'error');
+            reconnectForm.requiredPayment?.focus();
+            return;
+        }
+        const reason = String(reconnectForm.reason?.value || '').trim();
+        if (reason.length < 3) {
+            showToast('Enter a reason for the reconnection audit trail.', 'error');
+            reconnectForm.reason?.focus();
+            return;
+        }
+        if (!reconnectForm.confirmed?.checked) {
+            showToast('Confirm the reconnection settlement before saving.', 'error');
+            reconnectForm.confirmed?.focus();
+            return;
+        }
+
+        state.reconnecting = true;
+        renderReconnectForm();
+        renderDisconnectButton(state.record);
+        renderPlanToolbar();
+        try {
+            const payload = await fetchJSON(`/api/disconnections/${encodeURIComponent(account)}/reconnect`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    effectiveDate,
+                    balanceTreatment,
+                    installmentMonths: balanceTreatment === 'installment' ? installmentMonths : 0,
+                    chargePolicy,
+                    activationPolicy,
+                    requiredPaymentAmount,
+                    reason,
+                    confirmed: true
+                })
+            });
+            const nextRecord = await fetchCanonicalRecord();
+            state.reconnectModalOpen = false;
+            hideBillingModal(reconnectForm.modal);
+            applyLoadedBreakdown(nextRecord, state.customers, state.plans);
+            showToast(
+                payload?.warning || payload?.message || (activationPolicy === 'after-payment'
+                    ? 'Reconnection saved and is waiting for the required payment.'
+                    : 'Subscriber reconnected with the audited settlement.'),
+                payload?.warning ? 'warning' : 'success'
+            );
+        } catch (error) {
+            showToast(error?.message || 'Failed to save the reconnection settlement.', 'error');
+        } finally {
+            state.reconnecting = false;
+            renderReconnectForm();
             renderDisconnectButton(state.record);
             renderPlanToolbar();
         }
@@ -3314,6 +3567,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     reconnectBtn?.addEventListener('click', () => {
         void reconnectFromBreakdown();
+    });
+
+    reconnectForm.form?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void saveReconnectSettlement();
+    });
+    reconnectForm.balanceTreatment?.addEventListener('change', () => renderReconnectForm({ resetRequiredPayment: true }));
+    reconnectForm.installmentMonths?.addEventListener('input', () => renderReconnectForm({ resetRequiredPayment: true }));
+    reconnectForm.chargePolicy?.addEventListener('change', () => renderReconnectForm({ resetRequiredPayment: true }));
+    reconnectForm.activationPolicy?.addEventListener('change', () => renderReconnectForm({ resetRequiredPayment: true }));
+    const closeReconnectModal = () => {
+        if (state.reconnecting) return;
+        state.reconnectModalOpen = false;
+        hideBillingModal(reconnectForm.modal);
+    };
+    reconnectForm.close?.addEventListener('click', closeReconnectModal);
+    reconnectForm.cancel?.addEventListener('click', closeReconnectModal);
+    reconnectForm.modal?.addEventListener('hidden.bs.modal', () => {
+        state.reconnectModalOpen = false;
     });
 
     loadBreakdown();

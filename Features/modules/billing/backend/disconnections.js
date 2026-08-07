@@ -11,6 +11,12 @@ const {
   buildComplimentaryAccountSummary,
   sanitizeComplimentaryPeriods
 } = require('./complimentary-account');
+const {
+  buildReconnectionSettlement,
+  getManilaDateKey,
+  getPendingReconnectionSettlement,
+  normalizeDateKey
+} = require('./reconnection-settlement');
 const { buildReferralLedger, buildReferralDiscountMap } = require('../../customer-management/backend/referral-engine');
 const { readReferralRegistry } = require('../../customer-management/backend/referral-store');
 const {
@@ -92,6 +98,27 @@ const normalizeAdjustmentMonthKey = (value) => {
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return '';
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
 };
+const deriveDueOffset = (customer = {}) => {
+  const explicit = Number(customer?.dueOffset);
+  if (Number.isFinite(explicit) && explicit >= 0) return Math.floor(explicit);
+  const billDate = normalizeDateKey(customer?.billDate);
+  const dueDate = normalizeDateKey(customer?.dueDate);
+  if (!billDate || !dueDate) return 0;
+  const bill = new Date(`${billDate}T12:00:00Z`);
+  const due = new Date(`${dueDate}T12:00:00Z`);
+  const days = Math.round((due.getTime() - bill.getTime()) / 86400000);
+  return Number.isFinite(days) && days >= 0 ? days : 0;
+};
+const hasGeneratedCycleForMonth = (rows = [], monthKey = '') => (
+  (Array.isArray(rows) ? rows : []).some((row) => {
+    if (String(row?.billingMonthKey || '') !== monthKey) return false;
+    const sourceType = String(row?.sourceType || '').trim().toLowerCase();
+    if (['opening', 'disconnection', 'pending-postpaid', 'complimentary', 'reconnection-opening'].includes(sourceType)) {
+      return false;
+    }
+    return Number(row?.planAmount) > 0.005;
+  })
+);
 const resolveRawFirstBillAdjustment = (adjustment = {}) => {
   if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) return {};
   if (adjustment.firstBill && typeof adjustment.firstBill === 'object') return adjustment.firstBill;
@@ -311,6 +338,7 @@ const computeEndingBalance = ({
   customers = [],
   adjustments = {},
   referralDiscountsByAccount = {},
+  disconnections = {},
   branchId = null
 } = {}) => {
   const accountNumber = normalizeAccountNumber(customer.accountNumber);
@@ -322,6 +350,7 @@ const computeEndingBalance = ({
     referralDiscounts: Array.isArray(referralDiscountsByAccount?.[accountNumber])
       ? referralDiscountsByAccount[accountNumber]
       : (Array.isArray(customer.referralDiscounts) ? customer.referralDiscounts : []),
+    disconnection: getAccountDisconnection(disconnections, accountNumber),
     paymentBreakdownAdjustment: adjustment
   };
   const breakdown = calculatePaymentBreakdownEndingBalance(record, customers);
@@ -330,12 +359,14 @@ const computeEndingBalance = ({
     return {
       balance: roundMoney(endingBalance),
       rows: Array.isArray(breakdown?.rows) ? breakdown.rows.length : 0,
+      billingRows: Array.isArray(breakdown?.rows) ? breakdown.rows : [],
       source: 'payment-breakdown-ending-balance'
     };
   }
   return {
     balance: computeBalance(history),
     rows: 0,
+    billingRows: [],
     source: 'payment-history-summary'
   };
 };
@@ -347,6 +378,7 @@ const buildSnapshot = (customer = {}, payments = {}, context = {}) => {
     customers: context.customers,
     adjustments: context.adjustments,
     referralDiscountsByAccount: context.referralDiscountsByAccount,
+    disconnections: context.disconnections,
     branchId: context.branchId
   });
   const balance = ending.balance;
@@ -370,6 +402,7 @@ const buildSnapshot = (customer = {}, payments = {}, context = {}) => {
     overAmount: complimentaryAccount.active ? 0 : roundMoney(Math.max(0, balance - creditLimit)),
     complimentaryAccount,
     balanceRows: ending.rows,
+    billingRows: ending.billingRows,
     balanceSource: ending.source
   };
 };
@@ -405,6 +438,8 @@ const buildQueueItem = ({ customer, plans, payments, decision, snapshot, context
     hitCreditLimitAt: decision?.hitCreditLimitAt || null,
     decidedAt: decision?.decidedAt || null,
     disconnectedAt: decision?.disconnectedAt || null,
+    reconnectedAt: decision?.reconnectedAt || null,
+    reconnection: decision?.reconnection || null,
     updatedAt: decision?.updatedAt || null,
     notes: decision?.notes || '',
     pppoeWarning: decision?.pppoeWarning || ''
@@ -708,7 +743,7 @@ router.get('/', async (req, res, next) => {
     const referralDiscountsByAccount = buildReferralDiscountMap(
       buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
     );
-    const snapshotContext = { customers, plans, adjustments, branchId, referralDiscountsByAccount };
+    const snapshotContext = { customers, plans, adjustments, disconnections: decisions, branchId, referralDiscountsByAccount };
 
     const items = [];
     for (const customer of Array.isArray(customers) ? customers : []) {
@@ -814,6 +849,7 @@ router.post('/:accountNumber/disconnect', async (req, res, next) => {
       billingPolicy,
       hitCreditLimitAt: snapshot.overLimit ? now : null,
       disconnectedAt: now,
+      reconnectedAt: null,
       decidedAt: now,
       notes: sanitizeText(req.body?.notes),
       balanceSnapshot: snapshot.balance,
@@ -841,29 +877,169 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
-    const customers = await readCustomers(branchId);
+    const [customers, payments, plans, decisions, adjustments, referralRegistry] = await Promise.all([
+      readCustomers(branchId),
+      readPayments(branchId),
+      readPlans(branchId),
+      readBranchDisconnections(branchId),
+      readPaymentBreakdownAdjustments(),
+      readReferralRegistry(branchId)
+    ]);
     const customer = findCustomerOrThrow(customers, accountNumber);
-    const pppoeResult = await enableCustomerPppoe(customer, branchId);
-    const nextCustomer = await saveCustomerStatus(customer, branchId, STATUS_ACTIVE);
+    const currentDecision = getAccountDisconnection(decisions, accountNumber);
+    if (!currentDecision || currentDecision.status !== STATUS_DISCONNECTED) {
+      throw createError(409, 'Subscriber is not currently disconnected.');
+    }
+    if (getPendingReconnectionSettlement(currentDecision)) {
+      throw createError(409, 'This subscriber already has a reconnection waiting for its required payment.');
+    }
+
+    // Accounts whose billing continued have no stopped months to settle. Preserve
+    // the existing cycle and use the legacy immediate service reconnection path.
+    if (currentDecision.billingPolicy === BILLING_POLICY_CONTINUE) {
+      const pppoeResult = await enableCustomerPppoe(customer, branchId);
+      const nextCustomer = await saveCustomerStatus(customer, branchId, STATUS_ACTIVE);
+      const now = new Date().toISOString();
+      const decision = await upsertBranchDisconnection(branchId, accountNumber, {
+        status: STATUS_KEPT_ACTIVE,
+        billingPolicy: BILLING_POLICY_CONTINUE,
+        hitCreditLimitAt: null,
+        disconnectedAt: null,
+        reconnectedAt: now,
+        decidedAt: now,
+        notes: sanitizeText(req.body?.reason || req.body?.notes),
+        pppoeWarning: sanitizeText(pppoeResult.warning),
+        decidedBy: actorFromUser(user)
+      });
+      triggerBranchServiceRefresh(branchId, 'admin-reconnection');
+      return res.json({
+        ok: true,
+        decision,
+        customerStatus: nextCustomer.status,
+        pppoe: pppoeResult,
+        warning: pppoeResult.warning || undefined
+      });
+    }
+
+    if (req.body?.confirmed !== true) {
+      throw createError(400, 'Confirm the reconnection billing settlement before saving.');
+    }
+    const reason = sanitizeText(req.body?.reason || req.body?.notes).slice(0, 500);
+    if (reason.length < 3) {
+      throw createError(400, 'Enter a reason for the reconnection audit trail.');
+    }
+    const effectiveDate = normalizeDateKey(req.body?.effectiveDate);
+    const today = getManilaDateKey();
+    if (!effectiveDate || effectiveDate !== today) {
+      throw createError(400, `The reconnection date must be today (${today}) because service state changes immediately or after payment.`);
+    }
+    const balanceTreatment = ['keep', 'write-off', 'installment'].includes(String(req.body?.balanceTreatment || '').trim().toLowerCase())
+      ? String(req.body.balanceTreatment).trim().toLowerCase()
+      : 'keep';
+    const chargePolicy = String(req.body?.chargePolicy || '').trim().toLowerCase() === 'prorated'
+      ? 'prorated'
+      : 'next-cycle';
+    const activationPolicy = String(req.body?.activationPolicy || '').trim().toLowerCase() === 'after-payment'
+      ? 'after-payment'
+      : 'immediate';
+    const installmentMonths = Math.trunc(Number(req.body?.installmentMonths) || 0);
+    if (balanceTreatment === 'installment' && (installmentMonths < 2 || installmentMonths > 24)) {
+      throw createError(400, 'Choose between 2 and 24 months for the previous-balance installment.');
+    }
+
+    const referralDiscountsByAccount = buildReferralDiscountMap(
+      buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
+    );
+    const snapshot = buildSnapshot(customer, payments, {
+      customers,
+      plans,
+      decisions,
+      disconnections: decisions,
+      adjustments,
+      branchId,
+      referralDiscountsByAccount
+    });
+    if (balanceTreatment === 'installment' && snapshot.balance <= 0.005) {
+      throw createError(409, 'There is no previous balance to convert into installments.');
+    }
+    if (chargePolicy === 'prorated' && hasGeneratedCycleForMonth(snapshot.billingRows, effectiveDate.slice(0, 7))) {
+      throw createError(409, 'A regular bill already exists for this month. Choose Start on next regular cycle to avoid a duplicate reconnection charge.');
+    }
+    const planCategory = resolvePlanCategory(customer, plans);
+    const planAmount = Number(customer.planAmount) || 0;
+    if (planAmount <= 0) {
+      throw createError(409, 'The subscriber must have a valid plan amount before reconnection.');
+    }
+    const requiredPaymentAmount = normalizeAdjustmentAmount(req.body?.requiredPaymentAmount);
+    if (activationPolicy === 'after-payment' && requiredPaymentAmount <= 0) {
+      throw createError(400, 'Enter the payment amount required before service activation.');
+    }
+    const actor = actorFromUser(user);
+    const settlement = buildReconnectionSettlement({
+      accountNumber,
+      disconnectedAt: currentDecision.disconnectedAt || currentDecision.decidedAt,
+      effectiveDate,
+      planType: planCategory,
+      planId: customer.planId,
+      planName: customer.planName,
+      planAmount,
+      previousBalance: snapshot.balance,
+      balanceTreatment,
+      installmentMonths,
+      chargePolicy,
+      activationPolicy,
+      requiredPaymentAmount,
+      dueOffset: deriveDueOffset(customer),
+      reason,
+      changedBy: actor,
+      now: new Date()
+    });
+    if (!settlement) throw createError(500, 'Unable to build the reconnection billing settlement.');
+
+    const updatedCustomer = {
+      ...customer,
+      billDate: settlement.nextRegularCycleDate,
+      dueDate: settlement.nextDueDate || settlement.nextRegularCycleDate
+    };
+    const activateImmediately = settlement.activationPolicy === 'immediate';
+    const pppoeResult = activateImmediately
+      ? await enableCustomerPppoe(updatedCustomer, branchId)
+      : { enabled: false, warning: '' };
+    const nextCustomer = await saveCustomerStatus(
+      updatedCustomer,
+      branchId,
+      activateImmediately ? STATUS_ACTIVE : STATUS_DISABLED
+    );
     const now = new Date().toISOString();
+    const reconnectionHistory = [
+      ...(Array.isArray(currentDecision.reconnectionHistory) ? currentDecision.reconnectionHistory : []),
+      settlement
+    ];
     const decision = await upsertBranchDisconnection(branchId, accountNumber, {
-      status: STATUS_KEPT_ACTIVE,
-      billingPolicy: BILLING_POLICY_CONTINUE,
-      hitCreditLimitAt: null,
-      disconnectedAt: null,
+      status: activateImmediately ? STATUS_KEPT_ACTIVE : STATUS_DISCONNECTED,
+      billingPolicy: activateImmediately ? BILLING_POLICY_CONTINUE : BILLING_POLICY_STOP,
+      hitCreditLimitAt: activateImmediately ? null : currentDecision.hitCreditLimitAt,
+      disconnectedAt: activateImmediately ? null : currentDecision.disconnectedAt,
+      reconnectedAt: activateImmediately ? now : null,
       decidedAt: now,
-      notes: sanitizeText(req.body?.notes),
+      notes: reason,
+      balanceSnapshot: snapshot.balance,
+      reconnectionHistory,
       pppoeWarning: sanitizeText(pppoeResult.warning),
-      decidedBy: actorFromUser(user)
+      decidedBy: actor
     });
 
-    triggerBranchServiceRefresh(branchId, 'admin-reconnection');
+    triggerBranchServiceRefresh(branchId, activateImmediately ? 'admin-reconnection' : 'admin-reconnection-pending-payment');
     res.json({
       ok: true,
       decision,
+      settlement,
       customerStatus: nextCustomer.status,
       pppoe: pppoeResult,
-      warning: pppoeResult.warning || undefined
+      warning: pppoeResult.warning || undefined,
+      message: activateImmediately
+        ? 'Subscriber reconnected with an audited billing settlement.'
+        : `Reconnection saved. Service will activate after ${requiredPaymentAmount.toFixed(2)} in new payments.`
     });
   } catch (error) {
     next(error?.status ? error : createError(500, 'Failed to reconnect customer.'));

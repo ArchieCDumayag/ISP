@@ -4980,7 +4980,16 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
     return persistedCustomer;
 };
 
-const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, refreshSource = 'customers-update', allowPastBillingDates = false } = {}) => {
+const updateCustomerRecord = async (
+    accountNumber,
+    payload = {},
+    {
+        branchId,
+        refreshSource = 'customers-update',
+        allowPastBillingDates = false,
+        planChangeEffectiveAt = null
+    } = {}
+) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
         throw createError(400, 'Branch assignment missing for this admin account.');
@@ -5142,6 +5151,7 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
     }
 
     const now = new Date();
+    const explicitPlanChangeEffectiveAt = parseDateTimeValue(planChangeEffectiveAt);
     const prepaidRenewalDate = parseDateOnly(payload?.prepaidRenewalDate ?? payload?.renewalDate);
     const currentPrepaidCycleBoundary = incomingCategory === 'prepaid'
         ? resolveCurrentPrepaidCycleBoundary(existing)
@@ -5152,8 +5162,12 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
         && currentPrepaidCycleBoundary
         && currentPrepaidCycleBoundary.getTime() > prepaidRenewalDate.getTime()
     );
+    const hasFutureEffectivePlanChange = Boolean(
+        explicitPlanChangeEffectiveAt
+        && explicitPlanChangeEffectiveAt.getTime() > now.getTime()
+    );
     const shouldQueuePrepaidPlanChange = Boolean(
-        hasEarlyPrepaidRenewal
+        (hasEarlyPrepaidRenewal || hasFutureEffectivePlanChange)
         && String(existing?.planName || '').trim()
         && normalizePlanName(nextPlanName) !== normalizePlanName(existing?.planName)
     );
@@ -5174,7 +5188,9 @@ const updateCustomerRecord = async (accountNumber, payload = {}, { branchId, ref
             planBilling,
             planCategory: incomingCategory,
             pppoeProfile: nextPlanProfile,
-            applyAt: currentPrepaidCycleBoundary
+            applyAt: hasFutureEffectivePlanChange
+                ? explicitPlanChangeEffectiveAt
+                : currentPrepaidCycleBoundary
         })
         : (
             incomingCategory !== 'prepaid' || prepaidRenewalDate || hasIncomingPlanSelection

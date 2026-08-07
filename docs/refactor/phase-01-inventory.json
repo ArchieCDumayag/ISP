@@ -3,12 +3,12 @@
   "project": "ISP Billing System",
   "architectureState": "manifest-driven modular monolith",
   "counts": {
-    "files": 378,
-    "javascriptFiles": 187,
+    "files": 383,
+    "javascriptFiles": 192,
     "htmlFiles": 51,
     "cssFiles": 49,
     "modules": 9,
-    "localRequireEdges": 358,
+    "localRequireEdges": 366,
     "localHtmlAssetReferences": 449
   },
   "modules": [
@@ -119,7 +119,9 @@
         "Features/modules/billing/backend/plans.js",
         "Features/modules/billing/module.json",
         "Features/modules/billing/tests/canonical-billing-summary.test.js",
+        "Features/modules/billing/tests/effective-plan-change.test.js",
         "Features/modules/billing/tests/prepaid-billing-cycle.test.js",
+        "Features/modules/billing/tests/referral-application.test.js",
         "Features/modules/billing/web/account-statement.html",
         "Features/modules/billing/web/billing-statement.html",
         "Features/modules/billing/web/css/billing-statement.css",
@@ -295,9 +297,12 @@
         "Features/modules/customer-management/backend/index.js",
         "Features/modules/customer-management/backend/philippines-addresses.js",
         "Features/modules/customer-management/backend/referral-engine.js",
+        "Features/modules/customer-management/backend/referral-store.js",
         "Features/modules/customer-management/backend/referrals.js",
         "Features/modules/customer-management/module.json",
         "Features/modules/customer-management/tests/customer-billing-cycle-display.test.js",
+        "Features/modules/customer-management/tests/referral-queue.test.js",
+        "Features/modules/customer-management/tests/referral-workflow.test.js",
         "Features/modules/customer-management/web/apply-now.html",
         "Features/modules/customer-management/web/coverage.css",
         "Features/modules/customer-management/web/coverage.html",
@@ -984,6 +989,11 @@
     },
     {
       "from": "Features/modules/billing/backend/disconnections.js",
+      "request": "../../customer-management/backend/referral-store",
+      "resolved": "Features/modules/customer-management/backend/referral-store.js"
+    },
+    {
+      "from": "Features/modules/billing/backend/disconnections.js",
       "request": "../../network/backend/mikrotik-audit-log",
       "resolved": "Features/modules/network/backend/mikrotik-audit-log.js"
     },
@@ -1071,6 +1081,11 @@
       "from": "Features/modules/billing/backend/payment-records.js",
       "request": "../../customer-management/backend/referral-engine",
       "resolved": "Features/modules/customer-management/backend/referral-engine.js"
+    },
+    {
+      "from": "Features/modules/billing/backend/payment-records.js",
+      "request": "../../customer-management/backend/referrals",
+      "resolved": "Features/modules/customer-management/backend/referrals.js"
     },
     {
       "from": "Features/modules/billing/backend/payment-records.js",
@@ -1188,6 +1203,11 @@
       "resolved": "Features/modules/billing/backend/payment-records.js"
     },
     {
+      "from": "Features/modules/billing/tests/effective-plan-change.test.js",
+      "request": "../backend/payment-records",
+      "resolved": "Features/modules/billing/backend/payment-records.js"
+    },
+    {
       "from": "Features/modules/billing/tests/prepaid-billing-cycle.test.js",
       "request": "../backend/billing-scheduler",
       "resolved": "Features/modules/billing/backend/billing-scheduler.js"
@@ -1201,6 +1221,16 @@
       "from": "Features/modules/billing/tests/prepaid-billing-cycle.test.js",
       "request": "../backend/payment-entry-normalizer",
       "resolved": "Features/modules/billing/backend/payment-entry-normalizer.js"
+    },
+    {
+      "from": "Features/modules/billing/tests/referral-application.test.js",
+      "request": "../backend/payment-breakdown-balance",
+      "resolved": "Features/modules/billing/backend/payment-breakdown-balance.js"
+    },
+    {
+      "from": "Features/modules/billing/tests/referral-application.test.js",
+      "request": "../backend/payment-records",
+      "resolved": "Features/modules/billing/backend/payment-records.js"
     },
     {
       "from": "Features/modules/collector/backend/collector-payments.js",
@@ -1683,6 +1713,11 @@
       "resolved": "Features/modules/billing/backend/payment-entry-normalizer.js"
     },
     {
+      "from": "Features/modules/customer-management/backend/referral-store.js",
+      "request": "../../../../core/data/data-store",
+      "resolved": "core/data/data-store.js"
+    },
+    {
       "from": "Features/modules/customer-management/backend/referrals.js",
       "request": "../../../../core/security/role-utils",
       "resolved": "core/security/role-utils.js"
@@ -1700,6 +1735,16 @@
     {
       "from": "Features/modules/customer-management/backend/referrals.js",
       "request": "./referral-engine",
+      "resolved": "Features/modules/customer-management/backend/referral-engine.js"
+    },
+    {
+      "from": "Features/modules/customer-management/backend/referrals.js",
+      "request": "./referral-store",
+      "resolved": "Features/modules/customer-management/backend/referral-store.js"
+    },
+    {
+      "from": "Features/modules/customer-management/tests/referral-workflow.test.js",
+      "request": "../backend/referral-engine",
       "resolved": "Features/modules/customer-management/backend/referral-engine.js"
     },
     {
@@ -2671,7 +2716,7 @@
     },
     {
       "from": "Features/modules/billing/web/payment-breakdown.html",
-      "reference": "css/payment-breakdown.css?v=2.3",
+      "reference": "css/payment-breakdown.css?v=2.5",
       "resolved": "Features/modules/billing/web/css/payment-breakdown.css"
     },
     {
@@ -2686,7 +2731,7 @@
     },
     {
       "from": "Features/modules/billing/web/payment-breakdown.html",
-      "reference": "js/payment-breakdown.js?v=4.4",
+      "reference": "js/payment-breakdown.js?v=4.9",
       "resolved": "Features/modules/billing/web/js/payment-breakdown.js"
     },
     {
@@ -3826,7 +3871,7 @@
     },
     {
       "from": "Features/modules/customer-management/web/referrals.html",
-      "reference": "css/referrals.css?v=1.0",
+      "reference": "css/referrals.css?v=2.1",
       "resolved": "Features/modules/customer-management/web/css/referrals.css"
     },
     {
@@ -3836,7 +3881,7 @@
     },
     {
       "from": "Features/modules/customer-management/web/referrals.html",
-      "reference": "js/referrals.js?v=1.0",
+      "reference": "js/referrals.js?v=2.3",
       "resolved": "Features/modules/customer-management/web/js/referrals.js"
     },
     {

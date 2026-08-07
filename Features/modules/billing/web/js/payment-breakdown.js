@@ -20,13 +20,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const addPaymentBtn = document.getElementById('breakdownAddPaymentBtn');
     const breakdownTableRenderer = window.PaymentBreakdownTable || null;
     const adjustmentToolbar = {
+        modal: document.getElementById('breakdownAdjustmentModal'),
         form: document.getElementById('breakdownAdjustmentToolbar'),
         toggle: document.getElementById('breakdownAdjustmentToggle'),
+        close: document.getElementById('breakdownAdjustmentClose'),
+        cancel: document.getElementById('breakdownAdjustmentCancel'),
         month: document.getElementById('breakdownAdjustmentMonth'),
         previousBalance: document.getElementById('breakdownAdjustmentPreviousBalance'),
         advance: document.getElementById('breakdownAdjustmentAdvance'),
-        referral: document.getElementById('breakdownAdjustmentReferral'),
-        referralName: document.getElementById('breakdownAdjustmentReferralName'),
         due: document.getElementById('breakdownAdjustmentDue'),
         save: document.getElementById('breakdownAdjustmentSave')
     };
@@ -35,14 +36,26 @@ document.addEventListener('DOMContentLoaded', () => {
         month: document.getElementById('breakdownReferralMonth'),
         subscriber: document.getElementById('breakdownReferralSubscriber'),
         amount: document.getElementById('breakdownReferralAmount'),
-        save: document.getElementById('breakdownReferralSave'),
+        reason: document.getElementById('breakdownReferralReason'),
+        reverse: document.getElementById('breakdownReferralReverse'),
         cancel: document.getElementById('breakdownReferralCancel')
     };
+    const referralQueue = {
+        card: document.getElementById('breakdownReferralQueue'),
+        count: document.getElementById('breakdownReferralQueueCount'),
+        summary: document.getElementById('breakdownReferralQueueSummary'),
+        list: document.getElementById('breakdownReferralQueueList')
+    };
     const planToolbar = {
+        modal: document.getElementById('breakdownPlanModal'),
         form: document.getElementById('breakdownPlanToolbar'),
         toggle: document.getElementById('breakdownPlanToggle'),
+        close: document.getElementById('breakdownPlanClose'),
         effectiveMonth: document.getElementById('breakdownPlanEffectiveMonth'),
         plan: document.getElementById('breakdownPlanSelect'),
+        reason: document.getElementById('breakdownPlanReason'),
+        confirmed: document.getElementById('breakdownPlanConfirmed'),
+        history: document.getElementById('breakdownPlanHistory'),
         save: document.getElementById('breakdownPlanSave'),
         cancel: document.getElementById('breakdownPlanCancel')
     };
@@ -102,6 +115,14 @@ document.addEventListener('DOMContentLoaded', () => {
         month: 'short',
         day: 'numeric',
         year: 'numeric'
+    });
+    const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
+        timeZone: appTimeZone,
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
     });
     const monthFormatter = new Intl.DateTimeFormat(locale, {
         timeZone: appTimeZone,
@@ -274,14 +295,44 @@ document.addEventListener('DOMContentLoaded', () => {
             const planAmount = toEditableAmount(value.planAmount ?? value.amount ?? value.price);
             if (!effectiveMonth || planAmount <= 0) return;
             const planCategory = toAdjustmentDisplayText(value.planCategory || value.category || value.planType).toLowerCase();
+            const previousPlanValue = value.previousPlan && typeof value.previousPlan === 'object'
+                ? value.previousPlan
+                : null;
             const entry = {
                 effectiveMonth,
+                billingEffectiveMonth: normalizeAdjustmentMonthKey(value.billingEffectiveMonth) || effectiveMonth,
+                changeId: toAdjustmentDisplayText(value.changeId),
                 planId: toAdjustmentDisplayText(value.planId || value.id),
                 planName: toAdjustmentDisplayText(value.planName || value.name || value.label) || 'Adjusted plan',
-                planAmount
+                planAmount,
+                retroactiveAdjustment: roundMoney(Number(value.retroactiveAdjustment) || 0),
+                protectedPaidMonths: Array.from(new Set(
+                    (Array.isArray(value.protectedPaidMonths) ? value.protectedPaidMonths : [])
+                        .map(normalizeAdjustmentMonthKey)
+                        .filter(Boolean)
+                )),
+                reason: String(value.reason || '').trim(),
+                createdAt: String(value.createdAt || '').trim(),
+                updatedAt: String(value.updatedAt || '').trim(),
+                status: String(value.status || '').trim(),
+                changedBy: value.changedBy && typeof value.changedBy === 'object' ? value.changedBy : null
             };
             if (planCategory === 'prepaid' || planCategory === 'postpaid') {
                 entry.planCategory = planCategory;
+            }
+            if (previousPlanValue) {
+                entry.previousPlan = {
+                    planId: toAdjustmentDisplayText(previousPlanValue.planId || previousPlanValue.id),
+                    planName: toAdjustmentDisplayText(
+                        previousPlanValue.planName || previousPlanValue.name || previousPlanValue.label
+                    ) || 'Previous plan',
+                    planAmount: toEditableAmount(
+                        previousPlanValue.planAmount ?? previousPlanValue.amount ?? previousPlanValue.price
+                    ),
+                    planCategory: normalizePlanTypeValue(
+                        previousPlanValue.planCategory || previousPlanValue.category || previousPlanValue.planType
+                    )
+                };
             }
             byMonth.set(effectiveMonth, entry);
         });
@@ -1273,11 +1324,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const successAt = safeDate(
             item.successAt
             || item.success_at
+            || item.appliedAt
             || item.paidAt
             || item.paymentDate
             || item.date
         );
-        if (!successAt) return null;
         const id = String(
             item.id
             || item.referralId
@@ -1287,11 +1338,17 @@ document.addEventListener('DOMContentLoaded', () => {
             || item.referredName
             || `referral-${index}`
         ).trim();
+        const applicationId = String(item.applicationId || item.application_id || '').trim();
         return {
             id: id || `referral-${index}`,
+            referralId: String(item.referralId || item.referral_id || id || '').trim(),
+            applicationId,
+            usageId: applicationId || id || `referral-${index}`,
+            appliedMonth: normalizeAdjustmentMonthKey(item.appliedMonth || item.billingMonth || item.monthKey),
             referredAccountNumber: String(item.referredAccountNumber || item.referred_account_number || '').trim(),
             referredName: String(item.referredName || item.referred_name || item.name || 'Referral').trim(),
             eligibleMonth: String(item.eligibleMonth || item.eligible_month || '').trim(),
+            discountAmount: toEditableAmount(item.discountAmount ?? item.amount),
             successAt
         };
     };
@@ -1302,8 +1359,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(normalizeReferralDiscountItem)
             .filter(Boolean)
             .filter((item) => {
-                if (seen.has(item.id)) return false;
-                seen.add(item.id);
+                if (seen.has(item.usageId)) return false;
+                seen.add(item.usageId);
                 return true;
             })
             .sort((left, right) => {
@@ -1315,10 +1372,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const takeAutomaticReferral = (context, dueBeforeReferral, billDate, planAmount) => {
         const discounts = Array.isArray(context?.referralDiscounts) ? context.referralDiscounts : [];
-        const unitAmount = roundMoney((Number(planAmount) || 0) / 2);
         const monthlyPlanCap = Math.max(0, Number(planAmount) || 0);
         let remaining = roundMoney(Math.min(Math.max(0, Number(dueBeforeReferral) || 0), monthlyPlanCap));
-        if (!discounts.length || unitAmount <= EPSILON || remaining <= EPSILON || !billDate) {
+        if (!discounts.length || remaining <= EPSILON || !billDate) {
             return { amount: 0, items: [] };
         }
 
@@ -1330,12 +1386,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         discounts.forEach((item) => {
             if (usedThisBill >= 2 || remaining <= EPSILON) return;
-            if (!item?.id || usedIds.has(item.id)) return;
-            if (!item.successAt || compareBillingDateOnly(item.successAt, billDate) > 0) return;
+            if (!item?.usageId || usedIds.has(item.usageId)) return;
+            if (!item.appliedMonth || item.appliedMonth !== getBillingMonthKey(billDate)) return;
 
-            const applied = roundMoney(Math.min(unitAmount, remaining));
+            const automaticAmount = Number(item.discountAmount) || roundMoney((Number(planAmount) || 0) / 2);
+            const applied = roundMoney(Math.min(automaticAmount, remaining));
             if (applied <= EPSILON) return;
-            usedIds.add(item.id);
+            usedIds.add(item.usageId);
             usedThisBill += 1;
             amount = roundMoney(amount + applied);
             remaining = roundMoney(remaining - applied);
@@ -1343,6 +1400,9 @@ document.addEventListener('DOMContentLoaded', () => {
             context.automaticReferralRemaining = roundMoney(Math.max(0, (Number(context.automaticReferralRemaining) || 0) - applied));
             items.push({
                 id: item.id,
+                referralId: item.referralId,
+                applicationId: item.applicationId,
+                appliedMonth: item.appliedMonth,
                 referredAccountNumber: item.referredAccountNumber,
                 referredName: item.referredName,
                 eligibleMonth: item.eligibleMonth,
@@ -1509,7 +1569,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 isFirstRow,
                 isProrated: Boolean(proration?.isProrated),
                 isAdjustmentEditable: isFirstRow,
-                isReferralAdjustmentEditable: Boolean(!isFirstRow && !disconnection && sourceType !== 'disconnection' && isPreviousBillingMonth(billDate)),
+                isReferralAdjustmentEditable: Boolean(
+                    !disconnection
+                    && !['disconnection', 'opening'].includes(sourceType)
+                    && referralDetails.some((detail) => detail?.applicationId)
+                ),
                 planOverride: planOverride || null,
                 nextPreviousBalance: nextCarryOver.previousBalance,
                 nextAdvance: nextCarryOver.advance,
@@ -1911,6 +1975,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (summaryEl) summaryEl.textContent = message;
         renderAdjustmentToolbar([]);
         renderReferralToolbar([]);
+        renderReferralQueue(null);
         renderPlanToolbar();
         renderDisconnectButton(null);
     };
@@ -1942,12 +2007,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const firstRow = (Array.isArray(rows) ? rows : []).find((row) => row?.isAdjustmentEditable) || null;
         if (!adjustmentToolbar.form) return;
         if (!firstRow) {
-            adjustmentToolbar.form.hidden = true;
             if (adjustmentToolbar.toggle) {
                 adjustmentToolbar.toggle.hidden = true;
                 adjustmentToolbar.toggle.setAttribute('aria-expanded', 'false');
             }
             state.adjustmentToolbarOpen = false;
+            hideBillingModal(adjustmentToolbar.modal);
             return;
         }
 
@@ -1955,11 +2020,8 @@ document.addEventListener('DOMContentLoaded', () => {
             adjustmentToolbar.toggle.hidden = false;
             adjustmentToolbar.toggle.disabled = state.savingAdjustment;
             adjustmentToolbar.toggle.setAttribute('aria-expanded', state.adjustmentToolbarOpen ? 'true' : 'false');
-            adjustmentToolbar.toggle.innerHTML = state.adjustmentToolbarOpen
-                ? '<i class="ti ti-x" aria-hidden="true"></i> Hide adjustment'
-                : '<i class="ti ti-adjustments" aria-hidden="true"></i> Edit first bill';
+            adjustmentToolbar.toggle.innerHTML = '<i class="ti ti-adjustments" aria-hidden="true"></i> Edit first bill';
         }
-        adjustmentToolbar.form.hidden = !state.adjustmentToolbarOpen;
         if (adjustmentToolbar.month) {
             adjustmentToolbar.month.textContent = `${firstRow.billLabel || 'First bill'} only`;
         }
@@ -1995,6 +2057,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 adjustmentToolbar.save.removeAttribute('aria-busy');
             }
         }
+        if (adjustmentToolbar.close) adjustmentToolbar.close.disabled = state.savingAdjustment;
+        if (adjustmentToolbar.cancel) adjustmentToolbar.cancel.disabled = state.savingAdjustment;
     };
 
     const getSelectedReferralRow = (rows = state.rows) => {
@@ -2004,6 +2068,32 @@ document.addEventListener('DOMContentLoaded', () => {
             row?.billingMonthKey === monthKey
             && row.isReferralAdjustmentEditable
         )) || null;
+    };
+
+    const renderReferralSelection = (row = getSelectedReferralRow()) => {
+        const referralId = String(referralToolbar.subscriber?.value || '').trim();
+        const option = findReferralOption(referralId, row);
+        const activeApplication = option && row
+            ? getActiveReferralApplication(option, row.billingMonthKey)
+            : null;
+        if (referralToolbar.amount) {
+            referralToolbar.amount.value = formatEditableAmount(
+                activeApplication?.amount ?? option?.discountAmount ?? 0
+            );
+            referralToolbar.amount.readOnly = true;
+            referralToolbar.amount.disabled = !option;
+        }
+        if (referralToolbar.reason) {
+            referralToolbar.reason.disabled = state.savingReferralAdjustment || !option;
+        }
+        if (referralToolbar.reverse) {
+            referralToolbar.reverse.hidden = !activeApplication;
+            referralToolbar.reverse.disabled = state.savingReferralAdjustment || !activeApplication;
+            referralToolbar.reverse.textContent = state.savingReferralAdjustment ? 'Reversing...' : 'Reverse application';
+        }
+        if (referralToolbar.cancel) {
+            referralToolbar.cancel.disabled = state.savingReferralAdjustment;
+        }
     };
 
     const renderReferralToolbar = (rows = state.rows) => {
@@ -2016,33 +2106,71 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const adjustment = getPaymentBreakdownAdjustment(state.record).monthlyReferrals[row.billingMonthKey] || null;
-        const detail = Array.isArray(row.referralDetails) ? row.referralDetails[0] : null;
-        const selectedAccount = String(adjustment?.referralAccountNumber || detail?.referredAccountNumber || '').trim();
-        const amount = hasAmountOverride(adjustment?.referral)
-            ? adjustment.referral
-            : (row.referral > EPSILON ? row.referral : roundMoney((Number(row.planAmount) || Number(state.context?.planAmount) || 0) / 2));
+        const appliedDetail = (Array.isArray(row.referralDetails) ? row.referralDetails : [])
+            .find((detail) => detail?.referralId && detail?.applicationId) || null;
+        const currentSelection = String(referralToolbar.subscriber?.value || '').trim();
+        const selectedReferralId = currentSelection || String(appliedDetail?.referralId || '').trim();
 
         referralToolbar.form.hidden = false;
         referralToolbar.form.dataset.monthKey = row.billingMonthKey;
         if (referralToolbar.month) {
-            referralToolbar.month.textContent = `${formatMonthKeyLabel(row.billingMonthKey)} referral adjustment`;
+            referralToolbar.month.textContent = `${formatMonthKeyLabel(row.billingMonthKey)} billing cycle`;
         }
-        populateReferralSubscriberOptions(selectedAccount);
-        if (referralToolbar.amount) {
-            referralToolbar.amount.value = formatEditableAmount(amount);
-            referralToolbar.amount.disabled = state.savingReferralAdjustment;
+        populateReferralSubscriberOptions(selectedReferralId, row);
+        renderReferralSelection(row);
+    };
+
+    const renderPlanHistory = () => {
+        if (!planToolbar.history) return;
+        const history = Array.isArray(state.record?.planHistory)
+            ? state.record.planHistory
+            : getPaymentBreakdownAdjustment(state.record).planChanges.slice().reverse();
+        if (!history.length) {
+            planToolbar.history.innerHTML = [
+                '<p class="breakdown-plan-history__title">Plan history</p>',
+                '<p class="breakdown-plan-history__empty">No plan changes recorded yet.</p>'
+            ].join('');
+            return;
         }
-        if (referralToolbar.subscriber) {
-            referralToolbar.subscriber.disabled = state.savingReferralAdjustment;
-        }
-        if (referralToolbar.save) {
-            referralToolbar.save.disabled = state.savingReferralAdjustment;
-            referralToolbar.save.textContent = state.savingReferralAdjustment ? 'Saving...' : 'Save referral';
-        }
-        if (referralToolbar.cancel) {
-            referralToolbar.cancel.disabled = state.savingReferralAdjustment;
-        }
+        const statusClasses = {
+            active: 'bg-success-lt text-success',
+            scheduled: 'bg-primary-lt text-primary',
+            'pending-sync': 'bg-warning-lt text-warning',
+            history: 'bg-secondary-lt text-secondary'
+        };
+        const items = history.map((rawChange) => {
+            const change = normalizePlanChangeAdjustments([rawChange])[0] || {};
+            change.status = String(rawChange?.status || change.status || 'history').trim().toLowerCase();
+            const previousName = change.previousPlan?.planName || 'Previous plan';
+            const previousPlanLabel = change.previousPlan?.planAmount > 0
+                ? `${previousName} ${formatCurrency(change.previousPlan.planAmount)}`
+                : previousName;
+            const statusLabel = change.status === 'pending-sync'
+                ? 'Pending sync'
+                : toTitleCase(change.status || 'history');
+            const adjustment = Number(change.retroactiveAdjustment) || 0;
+            const adjustmentLabel = adjustment > EPSILON
+                ? `Debit ${formatCurrency(adjustment)}`
+                : (adjustment < -EPSILON ? `Credit ${formatCurrency(Math.abs(adjustment))}` : 'No paid-bill adjustment');
+            const billingMonthNote = change.billingEffectiveMonth && change.billingEffectiveMonth !== change.effectiveMonth
+                ? ` Billing updates from ${formatMonthKeyLabel(change.billingEffectiveMonth)}.`
+                : '';
+            const changedBy = String(rawChange?.changedBy?.name || rawChange?.changedBy?.username || '').trim() || 'Admin';
+            const changedAt = safeDate(rawChange?.updatedAt || rawChange?.createdAt);
+            const auditLabel = changedAt ? dateTimeFormatter.format(changedAt) : 'Time unavailable';
+            return `
+                <div class="breakdown-plan-history__item">
+                    <strong>${escapeHtml(formatMonthKeyLabel(change.effectiveMonth))}</strong>
+                    <span>${escapeHtml(`${previousPlanLabel} → ${change.planName || 'Plan'} ${formatCurrency(change.planAmount)}`)}</span>
+                    <span class="badge ${escapeHtml(statusClasses[change.status] || statusClasses.history)}">${escapeHtml(statusLabel)}</span>
+                    <span class="breakdown-plan-history__meta">${escapeHtml(`${adjustmentLabel}.${billingMonthNote} ${change.reason || 'No reason recorded.'} — ${changedBy}, ${auditLabel}`)}</span>
+                </div>
+            `;
+        }).join('');
+        planToolbar.history.innerHTML = `
+            <p class="breakdown-plan-history__title">Plan history</p>
+            <div class="breakdown-plan-history__list">${items}</div>
+        `;
     };
 
     const renderPlanToolbar = () => {
@@ -2050,15 +2178,20 @@ document.addEventListener('DOMContentLoaded', () => {
             planToolbar.toggle.hidden = !accountNumber;
             planToolbar.toggle.disabled = state.savingPlanChange || state.disconnecting || state.reconnecting || !state.plans.length;
             planToolbar.toggle.setAttribute('aria-expanded', state.planToolbarOpen ? 'true' : 'false');
-            planToolbar.toggle.innerHTML = state.planToolbarOpen
-                ? '<i class="ti ti-x" aria-hidden="true"></i> Hide plan'
-                : '<i class="ti ti-arrows-exchange" aria-hidden="true"></i> Change plan';
+            planToolbar.toggle.innerHTML = '<i class="ti ti-arrows-exchange" aria-hidden="true"></i> Change plan';
         }
         if (!planToolbar.form) return;
-        planToolbar.form.hidden = !state.planToolbarOpen;
         const nextMonthKey = getNextBillingMonthKey();
+        const earliestRowMonth = (Array.isArray(state.rows) ? state.rows : [])
+            .map((row) => normalizeAdjustmentMonthKey(row?.billingMonthKey || row?.billDate))
+            .filter(Boolean)
+            .sort()[0] || '';
+        const activationMonth = normalizeAdjustmentMonthKey(
+            state.record?.activationDate || state.record?.activation_date
+        );
+        const earliestAllowedMonth = activationMonth || earliestRowMonth;
         if (planToolbar.effectiveMonth) {
-            planToolbar.effectiveMonth.min = nextMonthKey;
+            planToolbar.effectiveMonth.min = earliestAllowedMonth;
             if (!normalizeAdjustmentMonthKey(planToolbar.effectiveMonth.value)) {
                 planToolbar.effectiveMonth.value = nextMonthKey;
             }
@@ -2069,6 +2202,12 @@ document.addEventListener('DOMContentLoaded', () => {
             populatePlanOptions(selected);
             planToolbar.plan.disabled = state.savingPlanChange || !state.plans.length;
         }
+        if (planToolbar.reason) {
+            planToolbar.reason.disabled = state.savingPlanChange;
+        }
+        if (planToolbar.confirmed) {
+            planToolbar.confirmed.disabled = state.savingPlanChange;
+        }
         if (planToolbar.save) {
             planToolbar.save.disabled = state.savingPlanChange || !state.plans.length;
             planToolbar.save.textContent = state.savingPlanChange ? 'Saving...' : 'Save plan change';
@@ -2076,6 +2215,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (planToolbar.cancel) {
             planToolbar.cancel.disabled = state.savingPlanChange;
         }
+        if (planToolbar.close) planToolbar.close.disabled = state.savingPlanChange;
+        renderPlanHistory();
     };
 
     const renderDisconnectButton = (record = state.record) => {
@@ -2179,43 +2320,169 @@ document.addEventListener('DOMContentLoaded', () => {
         return payload;
     }
 
+    const getTablerModalClass = () => (
+        window.bootstrap?.Modal
+        || window.tabler?.bootstrap?.Modal
+        || window.tabler?.Modal
+        || null
+    );
+    const fallbackShowBillingModal = (modal) => {
+        if (!modal) return;
+        modal.classList.add('show');
+        modal.style.display = 'flex';
+        modal.removeAttribute('aria-hidden');
+        modal.setAttribute('aria-modal', 'true');
+        document.body.classList.add('modal-open');
+        if (!document.querySelector('.payment-breakdown-modal-backdrop')) {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show payment-breakdown-modal-backdrop';
+            document.body.appendChild(backdrop);
+        }
+    };
+    const fallbackHideBillingModal = (modal) => {
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.removeAttribute('aria-modal');
+        document.querySelectorAll('.payment-breakdown-modal-backdrop').forEach((backdrop) => backdrop.remove());
+        if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-open');
+    };
+    const showBillingModal = (modal) => {
+        if (!modal) return;
+        const Modal = getTablerModalClass();
+        if (Modal?.getOrCreateInstance) {
+            Modal.getOrCreateInstance(modal, { backdrop: 'static', keyboard: false }).show();
+            return;
+        }
+        if (Modal) {
+            new Modal(modal, { backdrop: 'static', keyboard: false }).show();
+            return;
+        }
+        fallbackShowBillingModal(modal);
+    };
+    const hideBillingModal = (modal) => {
+        if (!modal) return;
+        const Modal = getTablerModalClass();
+        const instance = Modal?.getInstance?.(modal);
+        if (instance) {
+            instance.hide();
+            return;
+        }
+        fallbackHideBillingModal(modal);
+    };
+
     const saveBreakdownAdjustmentPatch = (body = {}) => fetchJSON(`/api/payment-records/${encodeURIComponent(accountNumber)}/breakdown-adjustment`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
 
-    const getCustomerAccountNumber = (customer = {}) => String(customer?.accountNumber || customer?.account_number || '').trim();
-    const getCustomerOptionLabel = (customer = {}) => {
-        const account = getCustomerAccountNumber(customer);
-        const name = getCustomerName(customer, account);
-        return [name, account ? `Account ${account}` : ''].filter(Boolean).join(' - ');
-    };
-    const getReferralSubscribers = () => {
-        const currentAccount = String(state.record?.accountNumber || accountNumber || '').trim();
-        return (Array.isArray(state.customers) ? state.customers : [])
-            .filter((customer) => {
-                const account = getCustomerAccountNumber(customer);
-                return account && account !== currentAccount;
+    const getReferralApplications = (option = {}) => (
+        Array.isArray(option?.applications) ? option.applications : []
+    );
+    const getActiveReferralApplication = (option = {}, monthKey = '') => (
+        getReferralApplications(option).find((application) => (
+            String(application?.status || '').toLowerCase() === 'applied'
+            && normalizeAdjustmentMonthKey(application?.billingMonth) === monthKey
+        )) || null
+    );
+    const getAnyActiveReferralApplication = (option = {}) => (
+        getReferralApplications(option).find((application) => (
+            String(application?.status || '').toLowerCase() === 'applied'
+        )) || null
+    );
+    const getQueuedReferralOptions = (record = state.record) => (
+        (Array.isArray(record?.referralOptions) ? record.referralOptions : [])
+            .filter((option) => (
+                ['eligible', 'reversed'].includes(String(option?.status || '').toLowerCase())
+                && !getAnyActiveReferralApplication(option)
+            ))
+            .sort((left, right) => {
+                const approvalCompare = String(left?.approvedAt || left?.successAt || '')
+                    .localeCompare(String(right?.approvedAt || right?.successAt || ''));
+                return approvalCompare || String(left?.referredName || '').localeCompare(String(right?.referredName || ''));
             })
-            .sort((left, right) => getCustomerOptionLabel(left).localeCompare(getCustomerOptionLabel(right)));
+    );
+    const renderReferralQueue = (record = state.record) => {
+        if (!referralQueue.card || !referralQueue.list) return;
+        const options = getQueuedReferralOptions(record);
+        if (referralQueue.count) {
+            referralQueue.count.textContent = `${formatCount(options.length)} waiting`;
+        }
+        if (referralQueue.summary) {
+            referralQueue.summary.textContent = options.length
+                ? `${formatCount(options.length)} approved referral${options.length === 1 ? '' : 's'} waiting for automatic billing application.`
+                : 'No approved referrals are waiting. Applied discounts appear in the monthly rows below.';
+        }
+        if (!options.length) {
+            referralQueue.list.innerHTML = '<p class="breakdown-referral-queue__empty">The queue is empty for this subscriber.</p>';
+            return;
+        }
+        referralQueue.list.innerHTML = options.map((option) => {
+            const referredName = String(option?.referredName || 'Unnamed subscriber').trim();
+            const referredAccount = String(option?.referredAccountNumber || '').trim();
+            const applyFromMonth = normalizeAdjustmentMonthKey(option?.applyFromMonth);
+            const isRequeued = String(option?.status || '').toLowerCase() === 'reversed';
+            const schedule = applyFromMonth
+                ? `Eligible from ${formatMonthKeyLabel(applyFromMonth)}`
+                : 'Next available generated unpaid month';
+            const approvedAt = option?.approvedAt || option?.successAt;
+            return `
+                <article class="breakdown-referral-queue__item">
+                    <div class="breakdown-referral-queue__person">
+                        <strong>${escapeHtml(referredName)}</strong>
+                        <small>${escapeHtml(referredAccount ? `Account ${referredAccount}` : 'No account number')}</small>
+                    </div>
+                    <strong class="breakdown-referral-queue__amount">${escapeHtml(formatCurrency(option?.discountAmount))}</strong>
+                    <span class="badge ${isRequeued ? 'bg-orange-lt' : 'bg-azure-lt'}">${isRequeued ? 'Requeued' : 'Approved'}</span>
+                    <div class="breakdown-referral-queue__schedule">
+                        <strong>${escapeHtml(schedule)}</strong>
+                        <small>${approvedAt ? `Approved ${escapeHtml(formatDate(safeDate(approvedAt), '-'))}` : 'Waiting in approval order'}</small>
+                    </div>
+                </article>
+            `;
+        }).join('');
     };
-    const populateReferralSubscriberOptions = (selectedAccount = '') => {
-        if (!referralToolbar.subscriber) return;
-        const selected = String(selectedAccount || '').trim();
-        const options = [
-            '<option value="">No manual referral</option>',
-            ...getReferralSubscribers().map((customer) => {
-                const account = getCustomerAccountNumber(customer);
-                return `<option value="${escapeHtml(account)}"${account === selected ? ' selected' : ''}>${escapeHtml(getCustomerOptionLabel(customer))}</option>`;
+    const getReferralOptionsForRow = (row = null) => {
+        if (!row?.billingMonthKey) return [];
+        return (Array.isArray(state.record?.referralOptions) ? state.record.referralOptions : [])
+            .filter((option) => {
+                const activeForMonth = getActiveReferralApplication(option, row.billingMonthKey);
+                return Boolean(activeForMonth);
             })
-        ];
-        referralToolbar.subscriber.innerHTML = options.join('');
+            .sort((left, right) => String(left?.referredName || '').localeCompare(String(right?.referredName || '')));
     };
-    const findReferralSubscriber = (account = '') => {
-        const key = String(account || '').trim();
+    const getReferralOptionLabel = (option = {}, monthKey = '') => {
+        const name = String(option?.referredName || 'Unnamed subscriber').trim();
+        const account = String(option?.referredAccountNumber || '').trim();
+        const amount = Number(option?.discountAmount) || 0;
+        const applied = getActiveReferralApplication(option, monthKey);
+        return [
+            name,
+            account ? `Account ${account}` : '',
+            formatCurrency(amount),
+            applied ? 'Applied' : 'Queued'
+        ].filter(Boolean).join(' - ');
+    };
+    const findReferralOption = (referralId = '', row = getSelectedReferralRow()) => {
+        const key = String(referralId || '').trim();
         if (!key) return null;
-        return getReferralSubscribers().find((customer) => getCustomerAccountNumber(customer) === key) || null;
+        return getReferralOptionsForRow(row).find((option) => String(option?.referralId || '').trim() === key) || null;
+    };
+    const populateReferralSubscriberOptions = (selectedReferralId = '', row = getSelectedReferralRow()) => {
+        if (!referralToolbar.subscriber) return;
+        const selected = String(selectedReferralId || '').trim();
+        const referralOptions = getReferralOptionsForRow(row);
+        const placeholder = referralOptions.length ? 'Choose an applied referral' : 'No applied referrals for this bill';
+        referralToolbar.subscriber.innerHTML = [
+            `<option value="">${escapeHtml(placeholder)}</option>`,
+            ...referralOptions.map((option) => {
+                const referralId = String(option?.referralId || '').trim();
+                return `<option value="${escapeHtml(referralId)}"${referralId === selected ? ' selected' : ''}>${escapeHtml(getReferralOptionLabel(option, row?.billingMonthKey))}</option>`;
+            })
+        ].join('');
+        referralToolbar.subscriber.disabled = state.savingReferralAdjustment || !referralOptions.length;
     };
     const formatMonthKeyLabel = (monthKey = '') => {
         const normalized = normalizeAdjustmentMonthKey(monthKey);
@@ -2256,13 +2523,36 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const populatePlanOptions = (selectedValue = '') => {
         if (!planToolbar.plan) return;
-        if (!state.plans.length) {
+        const currentCategory = normalizePlanTypeValue(state.record?.planCategory || state.record?.planType);
+        const availablePlans = state.plans.filter((plan) => (
+            !currentCategory || plan.planCategory === currentCategory
+        ));
+        if (!availablePlans.length) {
             planToolbar.plan.innerHTML = '<option value="">No plans available</option>';
             return;
         }
-        planToolbar.plan.innerHTML = state.plans.map((plan) => (
+        planToolbar.plan.innerHTML = availablePlans.map((plan) => (
             `<option value="${escapeHtml(plan.optionValue)}"${plan.optionValue === String(selectedValue) ? ' selected' : ''}>${escapeHtml(`${toTitleCase(plan.planCategory)} - ${plan.planName} - ${formatCurrency(plan.planAmount)}`)}</option>`
         )).join('');
+    };
+    const loadPlanChangeEditorMonth = () => {
+        const monthKey = normalizeAdjustmentMonthKey(planToolbar.effectiveMonth?.value);
+        const existingChange = getPaymentBreakdownAdjustment(state.record).planChanges.find((change) => (
+            change.effectiveMonth === monthKey
+        )) || null;
+        const selectedPlan = existingChange
+            ? state.plans.find((plan) => (
+                (existingChange.planId && plan.planId === existingChange.planId)
+                || normalizeIdentity(plan.planName) === normalizeIdentity(existingChange.planName)
+            ))
+            : null;
+        populatePlanOptions(selectedPlan?.optionValue || planToolbar.plan?.value || '');
+        if (planToolbar.reason) {
+            planToolbar.reason.value = existingChange?.reason || '';
+        }
+        if (planToolbar.confirmed) {
+            planToolbar.confirmed.checked = false;
+        }
     };
 
     const readFirstBillAdjustmentInputs = () => {
@@ -2276,14 +2566,7 @@ document.addEventListener('DOMContentLoaded', () => {
             || state.record?.firstBillAdjustment
             || null
         );
-        const hasSavedReferralOverride = hasAmountOverride(savedFirstBill?.referral);
         const hasSavedDueOverride = hasAmountOverride(savedFirstBill?.due);
-        const referralChanged = isAdjustmentInputDirty(adjustmentToolbar.referral)
-            || isAdjustmentInputDirty(adjustmentToolbar.referralName);
-        if (hasSavedReferralOverride || referralChanged) {
-            adjustment.referral = toEditableAmount(adjustmentToolbar.referral?.value);
-            adjustment.referralName = toAdjustmentDisplayText(adjustmentToolbar.referralName?.value);
-        }
         if (hasSavedDueOverride || isAdjustmentInputDirty(adjustmentToolbar.due)) {
             adjustment.due = toEditableAmount(adjustmentToolbar.due?.value);
         }
@@ -2343,10 +2626,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 sourceType,
                 isAdjustmentEditable: Boolean(rawRow?.isFirstRow),
                 isReferralAdjustmentEditable: Boolean(
-                    !rawRow?.isFirstRow
-                    && !disconnection
-                    && sourceType !== 'disconnection'
-                    && isPreviousBillingMonth(billDate)
+                    !disconnection
+                    && !['disconnection', 'opening'].includes(sourceType)
+                    && (Array.isArray(rawRow?.referralDetails) ? rawRow.referralDetails : [])
+                        .some((detail) => detail?.applicationId)
                 )
             };
         });
@@ -2373,6 +2656,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHeader(record, context);
         renderSubscriberInfo(record, rows);
         renderRows(rows);
+        renderReferralQueue(record);
         renderMetrics(rows, context);
         return true;
     };
@@ -2404,6 +2688,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const nextRecord = requireCanonicalRecord(payload?.record);
             state.adjustmentToolbarOpen = false;
+            hideBillingModal(adjustmentToolbar.modal);
             applyLoadedBreakdown(nextRecord, state.customers);
             showToast('First bill adjustment saved.', 'success');
         } catch (error) {
@@ -2416,47 +2701,58 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function saveReferralAdjustment() {
+    async function saveReferralApplication(action = 'apply') {
         if (state.savingReferralAdjustment) return;
         const monthKey = normalizeAdjustmentMonthKey(referralToolbar.form?.dataset.monthKey || state.selectedReferralMonthKey);
         if (!accountNumber || !monthKey) {
-            showToast('Choose a previous month row first.', 'error');
+            showToast('Choose a billing row first.', 'error');
             return;
         }
-
-        const amount = toEditableAmount(referralToolbar.amount?.value);
-        const selectedAccount = String(referralToolbar.subscriber?.value || '').trim();
-        const selectedSubscriber = findReferralSubscriber(selectedAccount);
-        if (amount > EPSILON && !selectedSubscriber) {
-            showToast('Choose the referred subscriber for this adjustment.', 'error');
+        const row = getSelectedReferralRow();
+        const referralId = String(referralToolbar.subscriber?.value || '').trim();
+        const option = findReferralOption(referralId, row);
+        if (!option) {
+            showToast('Choose an eligible referral.', 'error');
             return;
         }
-
-        const currentAdjustment = getPaymentBreakdownAdjustment(state.record);
-        const monthlyReferrals = { ...(currentAdjustment.monthlyReferrals || {}) };
-        if (!selectedSubscriber && amount <= EPSILON) {
-            delete monthlyReferrals[monthKey];
-        } else {
-            monthlyReferrals[monthKey] = {
-                monthKey,
-                referral: amount,
-                referralName: selectedSubscriber ? getCustomerName(selectedSubscriber, selectedAccount) : 'Manual referral',
-                referralAccountNumber: selectedAccount
-            };
+        const safeAction = action === 'reverse' ? 'reverse' : 'apply';
+        const activeApplication = getActiveReferralApplication(option, monthKey);
+        if (safeAction === 'apply' && activeApplication) {
+            showToast('This referral is already applied to the selected billing cycle.', 'error');
+            return;
+        }
+        if (safeAction === 'reverse' && !activeApplication) {
+            showToast('No applied referral was found for the selected billing cycle.', 'error');
+            return;
+        }
+        const reason = String(referralToolbar.reason?.value || '').trim();
+        if (reason.length < 3) {
+            showToast('Enter a reason for the referral billing action.', 'error');
+            referralToolbar.reason?.focus();
+            return;
         }
 
         state.savingReferralAdjustment = true;
-        renderReferralToolbar(state.rows);
+        renderReferralSelection(row);
         try {
-            const payload = await saveBreakdownAdjustmentPatch({ monthlyReferrals });
+            const payload = await saveBreakdownAdjustmentPatch({
+                referralApplication: {
+                    action: safeAction,
+                    referralId,
+                    billingMonth: monthKey
+                },
+                reason
+            });
             const nextRecord = requireCanonicalRecord(payload?.record);
             state.referralToolbarOpen = false;
             state.selectedReferralMonthKey = '';
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
-            showToast('Referral adjustment saved.', 'success');
+            showToast(
+                safeAction === 'reverse' ? 'Referral application reversed.' : 'Referral discount applied.',
+                'success'
+            );
         } catch (error) {
-            showToast(error?.message || 'Failed to save referral adjustment.', 'error');
-            renderReferralToolbar(state.rows);
+            showToast(error?.message || `Failed to ${safeAction} referral discount.`, 'error');
         } finally {
             state.savingReferralAdjustment = false;
             renderReferralToolbar(state.rows);
@@ -2471,9 +2767,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const effectiveMonth = normalizeAdjustmentMonthKey(planToolbar.effectiveMonth?.value);
-        const nextMonthKey = getNextBillingMonthKey();
-        if (!effectiveMonth || effectiveMonth < nextMonthKey) {
-            showToast('Choose next month or a later month for the plan change.', 'error');
+        const earliestAllowedMonth = normalizeAdjustmentMonthKey(planToolbar.effectiveMonth?.min);
+        if (!effectiveMonth || (earliestAllowedMonth && effectiveMonth < earliestAllowedMonth)) {
+            showToast(`Choose ${formatMonthKeyLabel(earliestAllowedMonth)} or a later month.`, 'error');
             return;
         }
         const selectedPlan = state.plans.find((plan) => plan.optionValue === String(planToolbar.plan?.value || ''));
@@ -2481,26 +2777,41 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Choose a new plan.', 'error');
             return;
         }
-
-        const currentAdjustment = getPaymentBreakdownAdjustment(state.record);
-        const planChanges = (Array.isArray(currentAdjustment.planChanges) ? currentAdjustment.planChanges : [])
-            .filter((change) => change?.effectiveMonth !== effectiveMonth);
-        planChanges.push({
-            effectiveMonth,
-            planId: selectedPlan.planId,
-            planName: selectedPlan.planName,
-            planAmount: selectedPlan.planAmount,
-            planCategory: selectedPlan.planCategory
-        });
+        const reason = String(planToolbar.reason?.value || '').trim();
+        if (reason.length < 3) {
+            showToast('Enter a reason for the plan change.', 'error');
+            planToolbar.reason?.focus();
+            return;
+        }
+        if (!planToolbar.confirmed?.checked) {
+            showToast('Confirm the paid-bill protection before saving.', 'error');
+            planToolbar.confirmed?.focus();
+            return;
+        }
 
         state.savingPlanChange = true;
         renderPlanToolbar();
         try {
-            const payload = await saveBreakdownAdjustmentPatch({ planChanges });
+            const payload = await saveBreakdownAdjustmentPatch({
+                planChange: {
+                    effectiveMonth,
+                    planId: selectedPlan.planId,
+                    planName: selectedPlan.planName
+                },
+                reason,
+                confirmed: true
+            });
             const nextRecord = requireCanonicalRecord(payload?.record);
             state.planToolbarOpen = false;
+            hideBillingModal(planToolbar.modal);
+            if (planToolbar.reason) planToolbar.reason.value = '';
+            if (planToolbar.confirmed) planToolbar.confirmed.checked = false;
             applyLoadedBreakdown(nextRecord, state.customers, state.plans);
-            showToast(`Plan change saved from ${formatMonthKeyLabel(effectiveMonth)}.`, 'success');
+            const warning = String(payload?.subscriberSync?.warning || '').trim();
+            showToast(
+                warning || `Plan change saved from ${formatMonthKeyLabel(effectiveMonth)} and synchronized to the subscriber record.`,
+                warning ? 'warning' : 'success'
+            );
         } catch (error) {
             showToast(error?.message || 'Failed to save plan change.', 'error');
             renderPlanToolbar();
@@ -2626,18 +2937,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     adjustmentToolbar.toggle?.addEventListener('click', () => {
         if (state.savingAdjustment) return;
-        state.adjustmentToolbarOpen = !state.adjustmentToolbarOpen;
+        state.adjustmentToolbarOpen = true;
         renderAdjustmentToolbar(state.rows);
-        if (state.adjustmentToolbarOpen) {
-            adjustmentToolbar.previousBalance?.focus();
-        }
+        showBillingModal(adjustmentToolbar.modal);
+        window.setTimeout(() => adjustmentToolbar.previousBalance?.focus(), 0);
     });
 
-    [
-        adjustmentToolbar.referral,
-        adjustmentToolbar.referralName,
-        adjustmentToolbar.due
-    ].forEach((input) => {
+    const closeAdjustmentModal = () => {
+        if (state.savingAdjustment) return;
+        state.adjustmentToolbarOpen = false;
+        renderAdjustmentToolbar(state.rows);
+        hideBillingModal(adjustmentToolbar.modal);
+    };
+    adjustmentToolbar.close?.addEventListener('click', closeAdjustmentModal);
+    adjustmentToolbar.cancel?.addEventListener('click', closeAdjustmentModal);
+    adjustmentToolbar.modal?.addEventListener('hidden.bs.modal', () => {
+        state.adjustmentToolbarOpen = false;
+        renderAdjustmentToolbar(state.rows);
+    });
+
+    [adjustmentToolbar.due].forEach((input) => {
         input?.addEventListener('input', () => {
             input.dataset.dirty = 'true';
         });
@@ -2657,18 +2976,27 @@ document.addEventListener('DOMContentLoaded', () => {
             && entry.isReferralAdjustmentEditable
         ));
         if (!row) {
-            showToast('Referral can only be adjusted on previous month rows.', 'error');
+            showToast('Referral discounts can only be managed on generated billing rows.', 'error');
             return;
         }
         state.selectedReferralMonthKey = monthKey;
         state.referralToolbarOpen = true;
+        if (referralToolbar.subscriber) referralToolbar.subscriber.value = '';
+        if (referralToolbar.reason) referralToolbar.reason.value = '';
         renderReferralToolbar(state.rows);
         referralToolbar.subscriber?.focus();
     });
 
     referralToolbar.form?.addEventListener('submit', (event) => {
         event.preventDefault();
-        void saveReferralAdjustment();
+    });
+
+    referralToolbar.subscriber?.addEventListener('change', () => {
+        renderReferralSelection(getSelectedReferralRow());
+    });
+
+    referralToolbar.reverse?.addEventListener('click', () => {
+        void saveReferralApplication('reverse');
     });
 
     referralToolbar.cancel?.addEventListener('click', () => {
@@ -2680,14 +3008,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     planToolbar.toggle?.addEventListener('click', () => {
         if (state.savingPlanChange || state.disconnecting) return;
-        state.planToolbarOpen = !state.planToolbarOpen;
-        if (state.planToolbarOpen && planToolbar.effectiveMonth) {
+        state.planToolbarOpen = true;
+        if (planToolbar.effectiveMonth) {
             planToolbar.effectiveMonth.value = normalizeAdjustmentMonthKey(planToolbar.effectiveMonth.value) || getNextBillingMonthKey();
+            loadPlanChangeEditorMonth();
         }
         renderPlanToolbar();
-        if (state.planToolbarOpen) {
-            planToolbar.effectiveMonth?.focus();
-        }
+        showBillingModal(planToolbar.modal);
+        window.setTimeout(() => planToolbar.effectiveMonth?.focus(), 0);
     });
 
     planToolbar.form?.addEventListener('submit', (event) => {
@@ -2695,8 +3023,21 @@ document.addEventListener('DOMContentLoaded', () => {
         void savePlanChange();
     });
 
-    planToolbar.cancel?.addEventListener('click', () => {
+    planToolbar.effectiveMonth?.addEventListener('change', () => {
         if (state.savingPlanChange) return;
+        loadPlanChangeEditorMonth();
+        renderPlanToolbar();
+    });
+
+    const closePlanModal = () => {
+        if (state.savingPlanChange) return;
+        state.planToolbarOpen = false;
+        renderPlanToolbar();
+        hideBillingModal(planToolbar.modal);
+    };
+    planToolbar.close?.addEventListener('click', closePlanModal);
+    planToolbar.cancel?.addEventListener('click', closePlanModal);
+    planToolbar.modal?.addEventListener('hidden.bs.modal', () => {
         state.planToolbarOpen = false;
         renderPlanToolbar();
     });

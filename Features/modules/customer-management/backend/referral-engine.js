@@ -301,7 +301,115 @@ const evaluateReferralSuccess = (customer = {}, paymentsForAccount = [], now = n
   };
 };
 
-const buildReferralLedger = ({ customers = [], payments = {}, agents = [], now = new Date() } = {}) => {
+const resolveRegistryReferralSource = (record = {}, indexes = {}) => {
+  if (record.sourceType === 'customer') {
+    const accountNumber = normalizeAccountNumber(record.referrerAccountNumber);
+    const customer = indexes.customersByAccount?.get(accountNumber) || null;
+    return {
+      type: 'customer',
+      id: accountNumber,
+      accountNumber,
+      name: getCustomerName(customer || {}, record.referrerName || accountNumber),
+      customer
+    };
+  }
+  if (record.sourceType === 'agent') {
+    const agentId = normalizeText(record.referrerId);
+    const agent = indexes.agentsById?.get(agentId) || null;
+    return {
+      type: 'agent',
+      id: agentId,
+      accountNumber: '',
+      name: normalizeText(agent?.name || agent?.username || record.referrerName || agentId),
+      agent
+    };
+  }
+  return {
+    type: 'external',
+    id: '',
+    accountNumber: '',
+    name: normalizeText(record.referrerName) || 'External referral'
+  };
+};
+
+const buildReferralLedgerItem = ({ customer, source, registryRecord = null, payments = {}, now = new Date() } = {}) => {
+  const accountNumber = normalizeAccountNumber(customer?.accountNumber);
+  if (!accountNumber || !source) return null;
+  const history = payments?.[accountNumber]?.history || [];
+  const eligibility = evaluateReferralSuccess(customer, history, now);
+  const referrerPlanAmount = Number(source.customer?.planAmount) || 0;
+  const proposedDiscountAmount = source.type === 'customer' ? roundMoney(referrerPlanAmount / 2) : 0;
+  const lockedDiscountAmount = Number(registryRecord?.approvedDiscountAmount) || 0;
+  const discountAmount = lockedDiscountAmount > 0 ? roundMoney(lockedDiscountAmount) : proposedDiscountAmount;
+  const approvalStatus = normalizeKey(registryRecord?.approvalStatus) || 'pending';
+  const applications = (Array.isArray(registryRecord?.applications) ? registryRecord.applications : [])
+    .map((application) => ({ ...application }))
+    .sort((left, right) => normalizeText(left.appliedAt).localeCompare(normalizeText(right.appliedAt)));
+  const activeApplications = applications.filter((application) => normalizeKey(application.status) === 'applied');
+  const latestApplication = applications.length ? applications[applications.length - 1] : null;
+  let status = 'pending';
+  let statusLabel = approvalStatus === 'approved' ? eligibility.statusLabel : 'Pending approval';
+  if (approvalStatus === 'cancelled') {
+    status = 'cancelled';
+    statusLabel = 'Cancelled';
+  } else if (activeApplications.length) {
+    status = 'applied';
+    statusLabel = 'Applied';
+  } else if (latestApplication && normalizeKey(latestApplication.status) === 'reversed') {
+    status = 'reversed';
+    statusLabel = 'Reversed';
+  } else if (
+    approvalStatus === 'approved'
+    && source.type === 'customer'
+    && Boolean(source.accountNumber)
+  ) {
+    status = 'eligible';
+    statusLabel = 'Approved · Queued';
+  } else if (approvalStatus === 'approved') {
+    status = 'approved';
+    statusLabel = 'Approved';
+  }
+
+  return {
+    id: registryRecord?.id || `${source.type}:${source.id || source.name}:${accountNumber}`,
+    origin: registryRecord ? 'registry' : 'customer-record',
+    sourceType: source.type,
+    referrerAccountNumber: source.accountNumber || '',
+    referrerId: source.id || '',
+    referrerName: source.name || 'Unknown referrer',
+    referredAccountNumber: accountNumber,
+    referredName: getCustomerName(customer),
+    referredPlanName: normalizeText(customer.planName),
+    referredPlanAmount: Number(customer.planAmount) || 0,
+    referredActivationDate: formatDateOnly(parseDateValue(customer.activationDate || customer.activation_date)),
+    eligibleMonth: eligibility.eligibleMonth,
+    firstBillAt: eligibility.firstBillAt,
+    successAt: eligibility.successAt,
+    eligibilityStatus: eligibility.status,
+    eligibilityStatusLabel: eligibility.statusLabel,
+    paymentAmount: eligibility.paymentAmount || 0,
+    approvalStatus,
+    approvalReason: normalizeText(registryRecord?.approvalReason),
+    approvedDiscountAmount: lockedDiscountAmount,
+    approvedAt: normalizeText(registryRecord?.approvedAt),
+    approvedBy: registryRecord?.approvedBy || null,
+    applyFromMonth: normalizeText(registryRecord?.applyFromMonth),
+    status,
+    statusLabel,
+    discountEligible: status === 'eligible',
+    discountApplied: status === 'applied',
+    discountAmount,
+    applications,
+    activeApplications,
+    audit: Array.isArray(registryRecord?.audit) ? registryRecord.audit : [],
+    createdAt: registryRecord?.createdAt || '',
+    createdBy: registryRecord?.createdBy || null,
+    updatedAt: registryRecord?.updatedAt || '',
+    updatedBy: registryRecord?.updatedBy || null
+  };
+};
+
+const buildReferralLedger = ({ customers = [], payments = {}, agents = [], registry = [], now = new Date() } = {}) => {
   const customerList = Array.isArray(customers) ? customers : [];
   const customerIndex = buildCustomerIdentityIndex(customerList);
   const agentIndex = buildAgentIndex(agents);
@@ -313,43 +421,33 @@ const buildReferralLedger = ({ customers = [], payments = {}, agents = [], now =
   };
 
   const items = [];
+  const registeredAccounts = new Set();
+  (Array.isArray(registry) ? registry : []).forEach((record) => {
+    const accountNumber = normalizeAccountNumber(record?.referredAccountNumber);
+    const customer = customerIndex.byAccount.get(accountNumber) || null;
+    if (!accountNumber || !customer) return;
+    const source = resolveRegistryReferralSource(record, indexes);
+    if (!source || (source.type === 'customer' && source.accountNumber === accountNumber)) return;
+    const item = buildReferralLedgerItem({ customer, source, registryRecord: record, payments, now });
+    if (!item) return;
+    registeredAccounts.add(accountNumber);
+    items.push(item);
+  });
+
   for (const customer of customerList) {
     const accountNumber = normalizeAccountNumber(customer?.accountNumber);
-    if (!accountNumber) continue;
+    if (!accountNumber || registeredAccounts.has(accountNumber)) continue;
     const source = resolveReferralSource(customer, indexes);
     if (!source) continue;
-    const history = payments?.[accountNumber]?.history || [];
-    const eligibility = evaluateReferralSuccess(customer, history, now);
-    const referrerPlanAmount = Number(source.customer?.planAmount) || 0;
-    const discountAmount = source.type === 'customer' ? roundMoney(referrerPlanAmount / 2) : 0;
-    const discountEligible = source.type === 'customer' && eligibility.status === 'successful' && Boolean(source.accountNumber);
-    items.push({
-      id: `${source.type}:${source.id || source.name}:${accountNumber}`,
-      sourceType: source.type,
-      referrerAccountNumber: source.accountNumber || '',
-      referrerId: source.id || '',
-      referrerName: source.name || 'Unknown referrer',
-      referredAccountNumber: accountNumber,
-      referredName: getCustomerName(customer),
-      referredPlanName: normalizeText(customer.planName),
-      referredPlanAmount: Number(customer.planAmount) || 0,
-      referredActivationDate: formatDateOnly(parseDateValue(customer.activationDate || customer.activation_date)),
-      eligibleMonth: eligibility.eligibleMonth,
-      firstBillAt: eligibility.firstBillAt,
-      successAt: eligibility.successAt,
-      status: eligibility.status,
-      statusLabel: eligibility.statusLabel,
-      paymentAmount: eligibility.paymentAmount || 0,
-      discountEligible,
-      discountAmount
-    });
+    const item = buildReferralLedgerItem({ customer, source, payments, now });
+    if (item) items.push(item);
   }
 
   return items.sort((left, right) => {
     const leftTime = parseDateValue(left.successAt || left.firstBillAt || left.referredActivationDate)?.getTime() || 0;
     const rightTime = parseDateValue(right.successAt || right.firstBillAt || right.referredActivationDate)?.getTime() || 0;
     if (left.status !== right.status) {
-      const rank = { successful: 0, 'waiting-payment': 1, pending: 2 };
+      const rank = { eligible: 0, applied: 1, pending: 2, reversed: 3, approved: 4, cancelled: 5 };
       return (rank[left.status] ?? 3) - (rank[right.status] ?? 3);
     }
     if (rightTime !== leftTime) return rightTime - leftTime;
@@ -360,16 +458,24 @@ const buildReferralLedger = ({ customers = [], payments = {}, agents = [], now =
 const buildReferralDiscountMap = (ledger = []) => {
   const map = {};
   (Array.isArray(ledger) ? ledger : []).forEach((item) => {
-    if (!item?.discountEligible || !item.referrerAccountNumber || !item.successAt) return;
+    if (!item?.referrerAccountNumber) return;
     const key = normalizeAccountNumber(item.referrerAccountNumber);
-    map[key] = map[key] || [];
-    map[key].push({
-      id: item.id,
-      referredAccountNumber: item.referredAccountNumber,
-      referredName: item.referredName,
-      successAt: item.successAt,
-      eligibleMonth: item.eligibleMonth,
-      discountAmount: item.discountAmount
+    (Array.isArray(item.activeApplications) ? item.activeApplications : []).forEach((application) => {
+      map[key] = map[key] || [];
+      map[key].push({
+        id: item.id,
+        referralId: item.id,
+        applicationId: application.id,
+        appliedMonth: application.billingMonth,
+        referredAccountNumber: item.referredAccountNumber,
+        referredName: item.referredName,
+        successAt: item.approvedAt || item.createdAt || item.successAt || application.appliedAt,
+        eligibleMonth: item.eligibleMonth,
+        discountAmount: Number(application.amount) || item.discountAmount,
+        applyReason: application.applyReason || '',
+        appliedAt: application.appliedAt || '',
+        appliedBy: application.appliedBy || null
+      });
     });
   });
   Object.keys(map).forEach((key) => {
@@ -382,21 +488,61 @@ const buildReferralDiscountMap = (ledger = []) => {
   return map;
 };
 
+const buildReferralOptionMap = (ledger = []) => {
+  const map = {};
+  (Array.isArray(ledger) ? ledger : []).forEach((item) => {
+    if (item?.sourceType !== 'customer' || !item.referrerAccountNumber) return;
+    if (!['eligible', 'applied', 'reversed'].includes(item.status)) return;
+    const key = normalizeAccountNumber(item.referrerAccountNumber);
+    map[key] = map[key] || [];
+    map[key].push({
+      referralId: item.id,
+      referredAccountNumber: item.referredAccountNumber,
+      referredName: item.referredName,
+      successAt: item.approvedAt || item.createdAt || item.successAt,
+      approvedAt: item.approvedAt || '',
+      applyFromMonth: item.applyFromMonth || '',
+      eligibleMonth: item.eligibleMonth,
+      discountAmount: item.discountAmount,
+      status: item.status,
+      applications: item.applications || []
+    });
+  });
+  Object.keys(map).forEach((key) => {
+    map[key].sort((left, right) => (
+      normalizeText(left.referredName).localeCompare(normalizeText(right.referredName))
+    ));
+  });
+  return map;
+};
+
 const summarizeReferralLedger = (items = []) => (
   (Array.isArray(items) ? items : []).reduce((acc, item) => {
     acc.total += 1;
     if (item.sourceType === 'customer') acc.customerSources += 1;
     if (item.sourceType === 'agent') acc.agentSources += 1;
-    if (item.status === 'successful') acc.successful += 1;
-    if (item.status === 'waiting-payment') acc.waitingPayment += 1;
+    if (item.eligibilityStatus === 'successful') acc.successful += 1;
+    if (item.eligibilityStatus === 'waiting-payment') acc.waitingPayment += 1;
     if (item.status === 'pending') acc.pending += 1;
-    if (item.discountEligible) acc.discountValue = roundMoney(acc.discountValue + (Number(item.discountAmount) || 0));
+    if (item.status === 'eligible') acc.eligible += 1;
+    if (item.status === 'eligible' || item.status === 'reversed') acc.queued += 1;
+    if (item.status === 'applied') acc.applied += 1;
+    if (item.status === 'cancelled') acc.cancelled += 1;
+    if (item.status === 'reversed') acc.reversed += 1;
+    (Array.isArray(item.activeApplications) ? item.activeApplications : []).forEach((application) => {
+      acc.discountValue = roundMoney(acc.discountValue + (Number(application.amount) || 0));
+    });
     return acc;
   }, {
     total: 0,
     successful: 0,
     waitingPayment: 0,
     pending: 0,
+    eligible: 0,
+    queued: 0,
+    applied: 0,
+    cancelled: 0,
+    reversed: 0,
     customerSources: 0,
     agentSources: 0,
     discountValue: 0
@@ -406,6 +552,7 @@ const summarizeReferralLedger = (items = []) => (
 module.exports = {
   buildReferralLedger,
   buildReferralDiscountMap,
+  buildReferralOptionMap,
   evaluateReferralSuccess,
   getCustomerName,
   summarizeReferralLedger

@@ -49,6 +49,10 @@ const toEditableAmount = (value) => {
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return roundMoney(parsed);
 };
+const toSignedAdjustmentAmount = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? roundMoney(parsed) : 0;
+};
 const hasAmountOverride = (value) => {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string' && !value.trim()) return false;
@@ -151,14 +155,45 @@ const normalizePlanChangeAdjustments = (input = []) => {
     const planAmount = toEditableAmount(value.planAmount ?? value.amount ?? value.price);
     if (!effectiveMonth || planAmount <= 0) return;
     const planCategory = toAdjustmentDisplayText(value.planCategory || value.category || value.planType).toLowerCase();
+    const billingEffectiveMonth = normalizeAdjustmentMonthKey(value.billingEffectiveMonth) || effectiveMonth;
+    const previousPlanValue = value.previousPlan && typeof value.previousPlan === 'object'
+      ? value.previousPlan
+      : null;
     const entry = {
       effectiveMonth,
+      billingEffectiveMonth,
       planId: toAdjustmentDisplayText(value.planId || value.id),
       planName: toAdjustmentDisplayText(value.planName || value.name || value.label) || 'Adjusted plan',
-      planAmount
+      planAmount,
+      retroactiveAdjustment: toSignedAdjustmentAmount(value.retroactiveAdjustment),
+      protectedPaidMonths: Array.from(new Set(
+        (Array.isArray(value.protectedPaidMonths) ? value.protectedPaidMonths : [])
+          .map(normalizeAdjustmentMonthKey)
+          .filter(Boolean)
+      ))
     };
     if (planCategory === 'prepaid' || planCategory === 'postpaid') {
       entry.planCategory = planCategory;
+    }
+    if (previousPlanValue) {
+      const previousPlanAmount = toEditableAmount(
+        previousPlanValue.planAmount ?? previousPlanValue.amount ?? previousPlanValue.price
+      );
+      const previousPlanCategory = toAdjustmentDisplayText(
+        previousPlanValue.planCategory || previousPlanValue.category || previousPlanValue.planType
+      ).toLowerCase();
+      if (previousPlanAmount > 0) {
+        entry.previousPlan = {
+          planId: toAdjustmentDisplayText(previousPlanValue.planId || previousPlanValue.id),
+          planName: toAdjustmentDisplayText(
+            previousPlanValue.planName || previousPlanValue.name || previousPlanValue.label
+          ) || 'Previous plan',
+          planAmount: previousPlanAmount
+        };
+        if (previousPlanCategory === 'prepaid' || previousPlanCategory === 'postpaid') {
+          entry.previousPlan.planCategory = previousPlanCategory;
+        }
+      }
     }
     byMonth.set(effectiveMonth, entry);
   });
@@ -835,7 +870,9 @@ const createReferralContext = (record, entries, customers) => {
     : getAutomaticReferralDiscounts(record);
   const automaticReferralTotal = explicitReferralTotal > EPSILON
     ? 0
-    : roundMoney(referralDiscounts.length * (planAmount / 2));
+    : roundMoney(referralDiscounts.reduce((total, item) => (
+      total + (Number(item.discountAmount) || (planAmount / 2))
+    ), 0));
 
   return {
     planAmount,
@@ -865,23 +902,53 @@ const resolvePlanChangeForMonth = (context = {}, billDate = null) => {
   const monthKey = getBillingMonthKey(billDate);
   if (!monthKey) return null;
   const changes = Array.isArray(context?.planChanges) ? context.planChanges : [];
-  let selected = null;
+  const firstPreviousPlan = changes.find((change) => change?.previousPlan)?.previousPlan || null;
+  let selected = firstPreviousPlan
+    ? { ...firstPreviousPlan, historicalBaseline: true }
+    : null;
   changes.forEach((change) => {
-    if (!change?.effectiveMonth || change.effectiveMonth > monthKey) return;
+    if (
+      change?.effectiveMonth
+      && change.effectiveMonth <= monthKey
+      && Array.isArray(change.protectedPaidMonths)
+      && change.protectedPaidMonths.includes(monthKey)
+      && change.previousPlan
+    ) {
+      selected = { ...change.previousPlan, protectedPaidCycle: true };
+      return;
+    }
+    const appliesFrom = change?.billingEffectiveMonth || change?.effectiveMonth;
+    if (!appliesFrom || appliesFrom > monthKey) return;
     selected = change;
   });
   return selected;
+};
+
+const resolvePlanChangeCarryAdjustment = (context = {}, billDate = null) => {
+  const monthKey = getBillingMonthKey(billDate);
+  if (!monthKey) return 0;
+  const appliedMonths = context.appliedPlanChangeAdjustmentMonths || new Set();
+  context.appliedPlanChangeAdjustmentMonths = appliedMonths;
+  if (appliedMonths.has(monthKey)) return 0;
+  const changes = Array.isArray(context?.planChanges) ? context.planChanges : [];
+  const adjustment = roundMoney(changes.reduce((total, change) => {
+    const appliesFrom = change?.billingEffectiveMonth || change?.effectiveMonth;
+    if (appliesFrom !== monthKey) return total;
+    return total + toSignedAdjustmentAmount(change?.retroactiveAdjustment);
+  }, 0));
+  if (Math.abs(adjustment) > EPSILON) appliedMonths.add(monthKey);
+  return adjustment;
 };
 
 const normalizeReferralDiscountItem = (item = {}, index = 0) => {
   const successAt = safeDate(
     item.successAt
     || item.success_at
+    || item.appliedAt
     || item.paidAt
     || item.paymentDate
     || item.date
   );
-  if (!successAt) return null;
   const id = String(
     item.id
     || item.referralId
@@ -891,11 +958,17 @@ const normalizeReferralDiscountItem = (item = {}, index = 0) => {
     || item.referredName
     || `referral-${index}`
   ).trim();
+  const applicationId = String(item.applicationId || item.application_id || '').trim();
   return {
     id: id || `referral-${index}`,
+    referralId: String(item.referralId || item.referral_id || id || '').trim(),
+    applicationId,
+    usageId: applicationId || id || `referral-${index}`,
+    appliedMonth: normalizeAdjustmentMonthKey(item.appliedMonth || item.billingMonth || item.monthKey),
     referredAccountNumber: String(item.referredAccountNumber || item.referred_account_number || '').trim(),
     referredName: String(item.referredName || item.referred_name || item.name || 'Referral').trim(),
     eligibleMonth: String(item.eligibleMonth || item.eligible_month || '').trim(),
+    discountAmount: toEditableAmount(item.discountAmount ?? item.amount),
     successAt
   };
 };
@@ -906,8 +979,8 @@ const getAutomaticReferralDiscounts = (record = {}) => {
     .map(normalizeReferralDiscountItem)
     .filter(Boolean)
     .filter((item) => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
+      if (seen.has(item.usageId)) return false;
+      seen.add(item.usageId);
       return true;
     })
     .sort((left, right) => {
@@ -919,10 +992,9 @@ const getAutomaticReferralDiscounts = (record = {}) => {
 
 const takeAutomaticReferral = (context, dueBeforeReferral, billDate, planAmount) => {
   const discounts = Array.isArray(context?.referralDiscounts) ? context.referralDiscounts : [];
-  const unitAmount = roundMoney((Number(planAmount) || 0) / 2);
   const monthlyPlanCap = Math.max(0, Number(planAmount) || 0);
   let remaining = roundMoney(Math.min(Math.max(0, Number(dueBeforeReferral) || 0), monthlyPlanCap));
-  if (!discounts.length || unitAmount <= EPSILON || remaining <= EPSILON || !billDate) {
+  if (!discounts.length || remaining <= EPSILON || !billDate) {
     return { amount: 0, items: [] };
   }
 
@@ -934,12 +1006,13 @@ const takeAutomaticReferral = (context, dueBeforeReferral, billDate, planAmount)
 
   discounts.forEach((item) => {
     if (usedThisBill >= 2 || remaining <= EPSILON) return;
-    if (!item?.id || usedIds.has(item.id)) return;
-    if (!item.successAt || compareBillingDateOnly(item.successAt, billDate) > 0) return;
+    if (!item?.usageId || usedIds.has(item.usageId)) return;
+    if (!item.appliedMonth || item.appliedMonth !== getBillingMonthKey(billDate)) return;
 
-    const applied = roundMoney(Math.min(unitAmount, remaining));
+    const automaticAmount = Number(item.discountAmount) || roundMoney((Number(planAmount) || 0) / 2);
+    const applied = roundMoney(Math.min(automaticAmount, remaining));
     if (applied <= EPSILON) return;
-    usedIds.add(item.id);
+    usedIds.add(item.usageId);
     usedThisBill += 1;
     amount = roundMoney(amount + applied);
     remaining = roundMoney(remaining - applied);
@@ -947,6 +1020,9 @@ const takeAutomaticReferral = (context, dueBeforeReferral, billDate, planAmount)
     context.automaticReferralRemaining = roundMoney(Math.max(0, (Number(context.automaticReferralRemaining) || 0) - applied));
     items.push({
       id: item.id,
+      referralId: item.referralId,
+      applicationId: item.applicationId,
+      appliedMonth: item.appliedMonth,
       referredAccountNumber: item.referredAccountNumber,
       referredName: item.referredName,
       eligibleMonth: item.eligibleMonth,
@@ -1002,12 +1078,20 @@ const createBreakdownRow = ({
   const hasPreviousBalanceOverride = hasAmountOverride(effectivePreviousBalanceOverride);
   const hasAdvanceOverride = hasAmountOverride(effectiveAdvanceOverride);
   const carryOver = splitBalanceCarryOver(runningBalance);
-  const previousBalance = hasPreviousBalanceOverride
+  let previousBalance = hasPreviousBalanceOverride
     ? roundMoney(Math.max(0, Number(effectivePreviousBalanceOverride) || 0))
     : carryOver.previousBalance;
-  const advance = hasAdvanceOverride
+  let advance = hasAdvanceOverride
     ? roundMoney(Math.max(0, Number(effectiveAdvanceOverride) || 0))
     : carryOver.advance;
+  const planChangeAdjustment = paymentStatusOverride === 'not-generated'
+    ? 0
+    : resolvePlanChangeCarryAdjustment(context, billDate);
+  if (Math.abs(planChangeAdjustment) > EPSILON) {
+    const adjustedCarryOver = splitBalanceCarryOver(previousBalance - advance + planChangeAdjustment);
+    previousBalance = adjustedCarryOver.previousBalance;
+    advance = adjustedCarryOver.advance;
+  }
   const referralCredits = (Array.isArray(credits) ? credits : []).filter(isReferralCredit);
   const paymentCredits = (Array.isArray(credits) ? credits : []).filter((entry) => !isReferralCredit(entry));
   const explicitReferral = sumEntries(referralCredits);
@@ -1066,6 +1150,7 @@ const createBreakdownRow = ({
       periodStart: proration?.periodStart || null,
       periodEnd: proration?.periodEnd || null,
       planOverride: planOverride || null,
+      planChangeAdjustment,
       openingPreviousBalance,
       openingAdvance,
       nextPreviousBalance: nextCarryOver.previousBalance,
@@ -1143,7 +1228,14 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
     });
     cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
     const openingPreviousBalance = isOpeningPreviousBalanceEntry(debit);
-    const planAmount = openingPreviousBalance ? 0 : resolvePlanAmount(record, debit.amount || context.planAmount);
+    const planChange = resolvePlanChangeForMonth(context, debit.dateObj);
+    const planAmount = openingPreviousBalance
+      ? 0
+      : (
+        planChange && !planChange.historicalBaseline && !planChange.protectedPaidCycle
+          ? planChange.planAmount
+          : resolvePlanAmount(record, debit.amount || context.planAmount)
+      );
     const result = createBreakdownRow({
       record,
       billDate: debit.dateObj,
@@ -1152,6 +1244,7 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
       runningBalance,
       context,
       sourceType: openingPreviousBalance ? 'opening' : 'posted',
+      planOverride: planChange,
       previousBalanceOverride: openingPreviousBalance ? debit.amount : null,
       openingPreviousBalance,
       isFirstRow: index === 0

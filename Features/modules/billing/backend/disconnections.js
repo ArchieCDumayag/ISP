@@ -8,6 +8,7 @@ const { connectMikrotikClient } = require('../../network/backend/mikrotik-client
 const { auditMikrotikPppoeCommand } = require('../../network/backend/mikrotik-audit-log');
 const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
 const { buildReferralLedger, buildReferralDiscountMap } = require('../../customer-management/backend/referral-engine');
+const { readReferralRegistry } = require('../../customer-management/backend/referral-store');
 const {
   dedupePppoeAccounts,
   normalizePppoeRouterId,
@@ -67,6 +68,10 @@ const normalizeAdjustmentAmount = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return roundMoney(parsed);
+};
+const normalizeSignedAdjustmentAmount = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? roundMoney(parsed) : 0;
 };
 const hasAdjustmentAmount = (value) => {
   if (value === null || value === undefined) return false;
@@ -149,14 +154,39 @@ const sanitizePlanChangeAdjustments = (input = []) => {
     const planAmount = normalizeAdjustmentAmount(value.planAmount ?? value.amount ?? value.price);
     if (!effectiveMonth || planAmount <= 0) return;
     const planCategory = sanitizeText(value.planCategory || value.category || value.planType).toLowerCase();
+    const previousPlanValue = value.previousPlan && typeof value.previousPlan === 'object'
+      ? value.previousPlan
+      : null;
     const entry = {
       effectiveMonth,
+      billingEffectiveMonth: normalizeAdjustmentMonthKey(value.billingEffectiveMonth) || effectiveMonth,
       planId: sanitizeText(value.planId || value.id).slice(0, 160),
       planName: sanitizeText(value.planName || value.name || value.label).slice(0, 160) || 'Adjusted plan',
-      planAmount
+      planAmount,
+      retroactiveAdjustment: normalizeSignedAdjustmentAmount(value.retroactiveAdjustment)
     };
     if (planCategory === 'prepaid' || planCategory === 'postpaid') {
       entry.planCategory = planCategory;
+    }
+    if (previousPlanValue) {
+      const previousPlanAmount = normalizeAdjustmentAmount(
+        previousPlanValue.planAmount ?? previousPlanValue.amount ?? previousPlanValue.price
+      );
+      const previousPlanCategory = sanitizeText(
+        previousPlanValue.planCategory || previousPlanValue.category || previousPlanValue.planType
+      ).toLowerCase();
+      if (previousPlanAmount > 0) {
+        entry.previousPlan = {
+          planId: sanitizeText(previousPlanValue.planId || previousPlanValue.id).slice(0, 160),
+          planName: sanitizeText(
+            previousPlanValue.planName || previousPlanValue.name || previousPlanValue.label
+          ).slice(0, 160) || 'Previous plan',
+          planAmount: previousPlanAmount
+        };
+        if (previousPlanCategory === 'prepaid' || previousPlanCategory === 'postpaid') {
+          entry.previousPlan.planCategory = previousPlanCategory;
+        }
+      }
     }
     byMonth.set(effectiveMonth, entry);
   });
@@ -645,15 +675,16 @@ router.get('/', async (req, res, next) => {
   try {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
-    const [customers, payments, plans, decisions, adjustments] = await Promise.all([
+    const [customers, payments, plans, decisions, adjustments, referralRegistry] = await Promise.all([
       readCustomers(branchId),
       readPayments(branchId),
       readPlans(branchId),
       readBranchDisconnections(branchId),
-      readPaymentBreakdownAdjustments()
+      readPaymentBreakdownAdjustments(),
+      readReferralRegistry(branchId)
     ]);
     const referralDiscountsByAccount = buildReferralDiscountMap(
-      buildReferralLedger({ customers, payments, now: new Date() })
+      buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
     );
     const snapshotContext = { customers, adjustments, branchId, referralDiscountsByAccount };
 
@@ -700,14 +731,15 @@ router.post('/:accountNumber/keep-active', async (req, res, next) => {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
-    const [customers, payments, adjustments] = await Promise.all([
+    const [customers, payments, adjustments, referralRegistry] = await Promise.all([
       readCustomers(branchId),
       readPayments(branchId),
-      readPaymentBreakdownAdjustments()
+      readPaymentBreakdownAdjustments(),
+      readReferralRegistry(branchId)
     ]);
     const customer = findCustomerOrThrow(customers, accountNumber);
     const referralDiscountsByAccount = buildReferralDiscountMap(
-      buildReferralLedger({ customers, payments, now: new Date() })
+      buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
     );
     const snapshot = buildSnapshot(customer, payments, { customers, adjustments, branchId, referralDiscountsByAccount });
     const now = new Date().toISOString();
@@ -741,14 +773,15 @@ router.post('/:accountNumber/disconnect', async (req, res, next) => {
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
     const billingPolicy = normalizeBillingPolicy(req.body?.billingPolicy, BILLING_POLICY_STOP);
-    const [customers, payments, adjustments] = await Promise.all([
+    const [customers, payments, adjustments, referralRegistry] = await Promise.all([
       readCustomers(branchId),
       readPayments(branchId),
-      readPaymentBreakdownAdjustments()
+      readPaymentBreakdownAdjustments(),
+      readReferralRegistry(branchId)
     ]);
     const customer = findCustomerOrThrow(customers, accountNumber);
     const referralDiscountsByAccount = buildReferralDiscountMap(
-      buildReferralLedger({ customers, payments, now: new Date() })
+      buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
     );
     const snapshot = buildSnapshot(customer, payments, { customers, adjustments, branchId, referralDiscountsByAccount });
     const pppoeResult = await disableCustomerPppoe(customer, branchId);

@@ -3,10 +3,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         items: [],
         metrics: {},
-        loading: false
+        customers: [],
+        agents: [],
+        loading: false,
+        saving: false,
+        editingReferralId: '',
+        statusAction: null
     };
 
     const els = {
+        create: document.getElementById('createReferralBtn'),
         refresh: document.getElementById('refreshReferralsBtn'),
         search: document.getElementById('referralSearchInput'),
         statusFilter: document.getElementById('referralStatusFilter'),
@@ -14,9 +20,32 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody: document.getElementById('referralTableBody'),
         summary: document.getElementById('referralSummary'),
         metricTotal: document.getElementById('metricReferralTotal'),
-        metricSuccessful: document.getElementById('metricReferralSuccessful'),
-        metricWaiting: document.getElementById('metricReferralWaiting'),
-        metricDiscount: document.getElementById('metricReferralDiscount')
+        metricEligible: document.getElementById('metricReferralSuccessful'),
+        metricPending: document.getElementById('metricReferralWaiting'),
+        metricDiscount: document.getElementById('metricReferralDiscount'),
+        createModal: document.getElementById('referralCreateModal'),
+        createClose: document.getElementById('closeReferralCreateModal'),
+        createCancel: document.getElementById('cancelReferralCreate'),
+        createForm: document.getElementById('referralCreateForm'),
+        createTitle: document.getElementById('referralCreateTitle'),
+        createSave: document.getElementById('saveReferralCreate'),
+        referredCustomer: document.getElementById('referralReferredCustomer'),
+        createSourceType: document.getElementById('referralCreateSourceType'),
+        createCustomerField: document.getElementById('referralCreateCustomerField'),
+        createCustomer: document.getElementById('referralCreateCustomer'),
+        createAgentField: document.getElementById('referralCreateAgentField'),
+        createAgent: document.getElementById('referralCreateAgent'),
+        createReason: document.getElementById('referralCreateReason'),
+        statusModal: document.getElementById('referralStatusModal'),
+        statusClose: document.getElementById('closeReferralStatusModal'),
+        statusCancel: document.getElementById('cancelReferralStatus'),
+        statusForm: document.getElementById('referralStatusForm'),
+        statusTitle: document.getElementById('referralStatusTitle'),
+        statusMessage: document.getElementById('referralStatusMessage'),
+        statusScheduleField: document.getElementById('referralStatusScheduleField'),
+        statusApplyFromMonth: document.getElementById('referralStatusApplyFromMonth'),
+        statusReason: document.getElementById('referralStatusReason'),
+        statusSave: document.getElementById('saveReferralStatus')
     };
 
     const currencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -42,7 +71,6 @@ document.addEventListener('DOMContentLoaded', () => {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-
     const normalizeText = (value) => String(value || '').trim().toLowerCase();
     const formatCurrency = (value) => currencyFormatter.format(Number(value) || 0);
     const formatCount = (value) => countFormatter.format(Number(value) || 0);
@@ -62,15 +90,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return date ? dateFormatter.format(date) : fallback;
     };
     const formatMonth = (value, fallback = '-') => {
-        const text = String(value || '').trim();
-        const match = text.match(/^(\d{4})-(\d{2})$/);
-        if (match) {
-            const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
-            return Number.isNaN(date.getTime()) ? fallback : monthFormatter.format(date);
-        }
-        return formatDate(value, fallback);
+        const match = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
+        if (!match) return formatDate(value, fallback);
+        const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+        return Number.isNaN(date.getTime()) ? fallback : monthFormatter.format(date);
     };
-
+    const getCurrentMonthKey = () => {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Manila',
+            year: 'numeric',
+            month: '2-digit'
+        }).formatToParts(new Date());
+        const year = parts.find((part) => part.type === 'year')?.value || '';
+        const month = parts.find((part) => part.type === 'month')?.value || '';
+        return year && month ? `${year}-${month}` : '';
+    };
     const showToast = (message, type = 'info') => {
         if (typeof window.appToast === 'function') {
             window.appToast(message, { type });
@@ -80,24 +114,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     async function fetchJSON(url, options = {}) {
-        const response = await fetch(url, {
-            credentials: 'include',
-            cache: 'no-store',
-            ...options
-        });
+        const response = await fetch(url, { credentials: 'include', cache: 'no-store', ...options });
         const payload = await response.json().catch(() => ({}));
         if (response.status === 401) {
-            try {
-                sessionStorage.setItem('next', 'referrals.html');
-            } catch {
-                // Keep redirect behavior even when storage is blocked.
-            }
+            try { sessionStorage.setItem('next', 'referrals.html'); } catch { /* Continue redirect. */ }
             window.location.href = 'login.html';
             throw new Error('Please log in again.');
         }
-        if (!response.ok) {
-            throw new Error(payload?.error || payload?.message || `Request failed: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(payload?.error || payload?.message || `Request failed: ${response.status}`);
         return payload;
     }
 
@@ -107,12 +131,58 @@ document.addEventListener('DOMContentLoaded', () => {
         if (normalized === 'agent') return { label: 'Agent', className: 'is-agent' };
         return { label: 'External', className: 'is-external' };
     };
-
     const statusMeta = (status = '') => {
         const normalized = normalizeText(status) || 'pending';
-        if (normalized === 'successful') return { label: 'Successful', className: 'is-successful' };
-        if (normalized === 'waiting-payment') return { label: 'Waiting payment', className: 'is-waiting-payment' };
-        return { label: 'Pending', className: 'is-pending' };
+        const labels = {
+            eligible: 'Queued',
+            applied: 'Applied',
+            approved: 'Approved',
+            reversed: 'Reversed',
+            cancelled: 'Cancelled',
+            pending: 'Pending'
+        };
+        return { label: labels[normalized] || 'Pending', className: `is-${normalized}` };
+    };
+    const customerLabel = (customer = {}) => {
+        const name = String(customer.name || customer.accountNumber || 'Customer').trim();
+        const plan = String(customer.planName || '').trim();
+        return [name, customer.accountNumber, plan].filter(Boolean).join(' · ');
+    };
+    const agentLabel = (agent = {}) => [agent.name || agent.username || agent.id, agent.role].filter(Boolean).join(' · ');
+    const fillSelect = (select, options, placeholder) => {
+        if (!select) return;
+        select.innerHTML = [
+            `<option value="">${escapeHtml(placeholder)}</option>`,
+            ...options
+        ].join('');
+    };
+    const populateCreateOptions = () => {
+        const referredAccount = String(els.referredCustomer?.value || '').trim();
+        fillSelect(
+            els.referredCustomer,
+            state.customers.map((customer) => `<option value="${escapeHtml(customer.accountNumber)}">${escapeHtml(customerLabel(customer))}</option>`),
+            'Select referred customer'
+        );
+        if (referredAccount) els.referredCustomer.value = referredAccount;
+        fillSelect(
+            els.createCustomer,
+            state.customers
+                .filter((customer) => customer.accountNumber !== String(els.referredCustomer?.value || '').trim())
+                .map((customer) => `<option value="${escapeHtml(customer.accountNumber)}">${escapeHtml(customerLabel(customer))}</option>`),
+            'Select referrer customer'
+        );
+        fillSelect(
+            els.createAgent,
+            state.agents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agentLabel(agent))}</option>`),
+            'Select referral agent'
+        );
+    };
+    const updateCreateSourceFields = () => {
+        const isAgent = normalizeText(els.createSourceType?.value) === 'agent';
+        if (els.createCustomerField) els.createCustomerField.hidden = isAgent;
+        if (els.createAgentField) els.createAgentField.hidden = !isAgent;
+        if (els.createCustomer) els.createCustomer.required = !isAgent;
+        if (els.createAgent) els.createAgent.required = isAgent;
     };
 
     const getFilteredItems = () => {
@@ -123,113 +193,92 @@ document.addEventListener('DOMContentLoaded', () => {
             if (status && normalizeText(item.status) !== status) return false;
             if (source && normalizeText(item.sourceType) !== source) return false;
             if (!query) return true;
-            const haystack = [
+            return [
                 item.referrerAccountNumber,
                 item.referrerName,
                 item.referrerId,
                 item.referredAccountNumber,
                 item.referredName,
                 item.referredPlanName,
-                item.statusLabel
-            ].map(normalizeText).join(' ');
-            return haystack.includes(query);
+                item.statusLabel,
+                item.approvalReason
+            ].map(normalizeText).join(' ').includes(query);
         });
     };
-
     const renderMetrics = (metrics = {}) => {
         if (els.metricTotal) els.metricTotal.textContent = formatCount(metrics.total);
-        if (els.metricSuccessful) els.metricSuccessful.textContent = formatCount(metrics.successful);
-        if (els.metricWaiting) els.metricWaiting.textContent = formatCount(metrics.waitingPayment);
+        if (els.metricEligible) els.metricEligible.textContent = formatCount(metrics.queued ?? metrics.eligible);
+        if (els.metricPending) els.metricPending.textContent = formatCount(metrics.pending);
         if (els.metricDiscount) els.metricDiscount.textContent = formatCurrency(metrics.discountValue);
     };
-
     const renderActions = (item = {}) => {
         const referredAccount = String(item.referredAccountNumber || '').trim();
         const referrerAccount = String(item.referrerAccountNumber || '').trim();
-        const referredHref = referredAccount
-            ? `payment-breakdown.html?account=${encodeURIComponent(referredAccount)}`
-            : '#';
-        const referrerHref = referrerAccount
-            ? `payment-breakdown.html?account=${encodeURIComponent(referrerAccount)}`
-            : '#';
+        const status = normalizeText(item.status);
+        const hasApplicationHistory = Array.isArray(item.applications) && item.applications.length > 0;
+        const hasActiveApplication = Array.isArray(item.activeApplications) && item.activeApplications.length > 0;
+        const statusButtons = status === 'applied'
+            ? '<span class="text-secondary small">Reverse in Payment Breakdown</span>'
+            : `
+                ${item.approvalStatus !== 'approved' ? `<button type="button" class="btn btn-sm btn-success" data-referral-action="approved" data-referral-id="${escapeHtml(item.id)}">Approve</button>` : ''}
+                ${item.sourceType === 'customer' && item.approvalStatus === 'approved' && !hasActiveApplication ? `<button type="button" class="btn btn-sm btn-outline-primary" data-referral-action="schedule" data-referral-id="${escapeHtml(item.id)}"><i class="ti ti-calendar" aria-hidden="true"></i> Apply Month</button>` : ''}
+                ${status !== 'cancelled' ? `<button type="button" class="btn btn-sm btn-outline-danger" data-referral-action="cancelled" data-referral-id="${escapeHtml(item.id)}">Cancel</button>` : ''}
+            `;
         return `
             <div class="referral-actions">
-                <a class="btn btn-sm btn-outline-secondary${referredAccount ? '' : ' disabled'}" href="${referredHref}" aria-disabled="${referredAccount ? 'false' : 'true'}">
-                    <i class="ti ti-user" aria-hidden="true"></i>
-                    Referred
+                <a class="btn btn-sm btn-outline-secondary${referredAccount ? '' : ' disabled'}" href="${referredAccount ? `payment-breakdown.html?account=${encodeURIComponent(referredAccount)}` : '#'}" aria-disabled="${referredAccount ? 'false' : 'true'}">
+                    <i class="ti ti-user" aria-hidden="true"></i> Referred
                 </a>
-                <a class="btn btn-sm btn-outline-primary${referrerAccount ? '' : ' disabled'}" href="${referrerHref}" aria-disabled="${referrerAccount ? 'false' : 'true'}">
-                    <i class="ti ti-gift" aria-hidden="true"></i>
-                    Discount
+                <a class="btn btn-sm btn-outline-primary${referrerAccount ? '' : ' disabled'}" href="${referrerAccount ? `payment-breakdown.html?account=${encodeURIComponent(referrerAccount)}` : '#'}" aria-disabled="${referrerAccount ? 'false' : 'true'}">
+                    <i class="ti ti-gift" aria-hidden="true"></i> Billing
                 </a>
+                ${!hasApplicationHistory ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-referral-edit="${escapeHtml(item.id)}"><i class="ti ti-edit" aria-hidden="true"></i> Edit</button>` : ''}
+                ${statusButtons}
             </div>
         `;
     };
-
     const renderRows = () => {
         if (!els.tableBody) return;
         const items = getFilteredItems();
         if (!items.length) {
-            els.tableBody.innerHTML = `
-                <tr>
-                    <td colspan="9" class="referral-empty">${state.loading ? 'Loading referrals...' : 'No referrals found.'}</td>
-                </tr>
-            `;
+            els.tableBody.innerHTML = `<tr><td colspan="8" class="referral-empty">${state.loading ? 'Loading referrals...' : 'No referrals found.'}</td></tr>`;
             if (els.summary) els.summary.textContent = state.loading ? 'Loading...' : 'No records match the current filters.';
             return;
         }
-
         els.tableBody.innerHTML = items.map((item) => {
             const source = sourceMeta(item.sourceType);
             const status = statusMeta(item.status);
-            const discountAmount = item.discountEligible ? Number(item.discountAmount) || 0 : 0;
-            const discountMeta = item.discountEligible
-                ? 'Applies to referrer bill'
-                : (normalizeText(item.sourceType) === 'agent' ? 'Agent referral' : 'Not eligible yet');
+            const activeApplication = Array.isArray(item.activeApplications) ? item.activeApplications[0] : null;
+            const discountAmount = item.approvedDiscountAmount || item.discountAmount || activeApplication?.amount || 0;
+            const scheduledMonthLabel = item.applyFromMonth
+                ? `Scheduled from ${formatMonth(item.applyFromMonth)}`
+                : 'Next available billing month';
+            const discountMeta = activeApplication
+                ? `Applied to ${formatMonth(activeApplication.billingMonth)}`
+                : (item.discountEligible
+                    ? `Queued · ${scheduledMonthLabel}`
+                    : (item.status === 'reversed' ? `Returned to queue · ${scheduledMonthLabel}` : item.statusLabel || 'Not queued'));
+            const approvalActor = item.approvedBy?.name || item.approvedBy?.username || '';
+            const approvalMeta = item.approvedAt
+                ? [formatDate(item.approvedAt), approvalActor].filter(Boolean).join(' · ')
+                : 'Waiting for Admin approval';
             return `
                 <tr>
-                    <td>
-                        <span class="referral-person">
-                            <strong>${escapeHtml(item.referrerName || 'Unknown referrer')}</strong>
-                            <small>${escapeHtml(item.referrerAccountNumber || item.referrerId || '-')}</small>
-                        </span>
-                    </td>
-                    <td>
-                        <span class="referral-person">
-                            <strong>${escapeHtml(item.referredName || 'Unnamed customer')}</strong>
-                            <small>${escapeHtml(item.referredAccountNumber || '-')} &middot; ${escapeHtml(item.referredPlanName || '-')}</small>
-                        </span>
-                    </td>
+                    <td><span class="referral-person"><strong>${escapeHtml(item.referrerName || 'Unknown referrer')}</strong><small>${escapeHtml(item.referrerAccountNumber || item.referrerId || '-')}</small></span></td>
+                    <td><span class="referral-person"><strong>${escapeHtml(item.referredName || 'Unnamed customer')}</strong><small>${escapeHtml(item.referredAccountNumber || '-')} &middot; ${escapeHtml(item.referredPlanName || '-')}</small></span></td>
                     <td><span class="referral-source ${source.className}">${source.label}</span></td>
-                    <td>
-                        <span class="referral-date-cell">
-                            <strong>${escapeHtml(formatMonth(item.eligibleMonth))}</strong>
-                            <small>${escapeHtml(formatDate(item.referredActivationDate, 'No activation'))}</small>
-                        </span>
-                    </td>
-                    <td>${escapeHtml(formatDate(item.firstBillAt))}</td>
-                    <td>
-                        <span class="referral-date-cell">
-                            <strong>${escapeHtml(formatDate(item.successAt))}</strong>
-                            <small>${item.paymentAmount ? escapeHtml(formatCurrency(item.paymentAmount)) : '-'}</small>
-                        </span>
-                    </td>
-                    <td class="is-num">
-                        <span class="referral-discount-cell">
-                            <strong>${escapeHtml(formatCurrency(discountAmount))}</strong>
-                            <small>${escapeHtml(discountMeta)}</small>
-                        </span>
-                    </td>
+                    <td><span class="referral-date-cell"><strong>${item.approvalStatus === 'approved' ? 'Approved' : escapeHtml(item.approvalStatus || 'Pending')}</strong><small>${escapeHtml(approvalMeta)}</small></span></td>
+                    <td class="is-num"><span class="referral-discount-cell"><strong>${escapeHtml(formatCurrency(discountAmount))}</strong><small>${item.approvedDiscountAmount ? 'Locked at approval' : 'Proposed amount'}</small></span></td>
+                    <td><span class="referral-date-cell"><strong>${escapeHtml(discountMeta)}</strong><small>Maximum two referrals per billing month</small></span></td>
                     <td><span class="referral-status ${status.className}">${status.label}</span></td>
                     <td>${renderActions(item)}</td>
                 </tr>
             `;
         }).join('');
-
-        const successful = items.filter((item) => normalizeText(item.status) === 'successful').length;
-        const waiting = items.filter((item) => normalizeText(item.status) === 'waiting-payment').length;
         if (els.summary) {
-            els.summary.textContent = `${formatCount(items.length)} shown. ${formatCount(successful)} successful. ${formatCount(waiting)} waiting payment.`;
+            const eligible = items.filter((item) => ['eligible', 'reversed'].includes(normalizeText(item.status))).length;
+            const applied = items.filter((item) => normalizeText(item.status) === 'applied').length;
+            els.summary.textContent = `${formatCount(items.length)} shown. ${formatCount(eligible)} queued. ${formatCount(applied)} applied.`;
         }
     };
 
@@ -242,14 +291,89 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '<i class="ti ti-refresh" aria-hidden="true"></i> Refresh';
         }
     };
+    const setSaving = (saving) => {
+        state.saving = Boolean(saving);
+        [els.createSave, els.statusSave].forEach((button) => { if (button) button.disabled = state.saving; });
+    };
+    const closeCreateModal = () => {
+        if (state.saving || !els.createModal) return;
+        els.createModal.hidden = true;
+        state.editingReferralId = '';
+        els.createForm?.reset();
+    };
+    const openCreateModal = (item = null) => {
+        if (!els.createModal) return;
+        state.editingReferralId = item?.id || '';
+        populateCreateOptions();
+        if (item) {
+            if (els.referredCustomer) els.referredCustomer.value = item.referredAccountNumber || '';
+            populateCreateOptions();
+            if (els.createSourceType) els.createSourceType.value = item.sourceType === 'agent' ? 'agent' : 'customer';
+            if (els.createCustomer) els.createCustomer.value = item.referrerAccountNumber || '';
+            if (els.createAgent) els.createAgent.value = item.referrerId || '';
+        }
+        updateCreateSourceFields();
+        if (els.createTitle) els.createTitle.textContent = item ? 'Edit Referral' : 'Create Referral';
+        if (els.createSave) els.createSave.textContent = item ? 'Save and Return to Pending' : 'Create Pending Referral';
+        if (els.createReason) els.createReason.value = '';
+        els.createModal.hidden = false;
+        els.referredCustomer?.focus();
+    };
+    const closeStatusModal = () => {
+        if (state.saving || !els.statusModal) return;
+        els.statusModal.hidden = true;
+        state.statusAction = null;
+        els.statusForm?.reset();
+    };
+    const openStatusModal = (item, status) => {
+        if (!item || !els.statusModal) return;
+        const approving = status === 'approved';
+        const scheduling = status === 'schedule';
+        const showApplyFromMonth = scheduling || (approving && item.sourceType === 'customer');
+        state.statusAction = { referralId: item.id, status };
+        if (els.statusTitle) {
+            els.statusTitle.textContent = approving
+                ? 'Approve Referral'
+                : (scheduling ? 'Schedule Referral Discount' : 'Cancel Referral');
+        }
+        if (els.statusMessage) {
+            els.statusMessage.textContent = approving
+                ? (item.sourceType === 'customer'
+                    ? `Approve the referral from ${item.referrerName} to ${item.referredName}. Its discount will be locked and queued from the selected month.`
+                    : `Approve the agent referral from ${item.referrerName} to ${item.referredName}.`)
+                : (scheduling
+                    ? `Choose the earliest billing month for ${item.referredName}'s queued discount.`
+                    : `Cancel the referral from ${item.referrerName} to ${item.referredName}.`);
+        }
+        if (els.statusScheduleField) els.statusScheduleField.hidden = !showApplyFromMonth;
+        if (els.statusApplyFromMonth) {
+            els.statusApplyFromMonth.min = getCurrentMonthKey();
+            els.statusApplyFromMonth.value = scheduling ? String(item.applyFromMonth || '') : '';
+        }
+        if (els.statusSave) {
+            els.statusSave.textContent = approving
+                ? (item.sourceType === 'customer' ? 'Approve and Queue' : 'Approve Referral')
+                : (scheduling ? 'Save Apply Month' : 'Cancel Referral');
+            els.statusSave.className = approving
+                ? 'btn btn-success'
+                : (scheduling ? 'btn btn-primary' : 'btn btn-danger');
+        }
+        els.statusModal.hidden = false;
+        els.statusReason?.focus();
+    };
 
     async function loadReferrals() {
         setLoading(true);
         renderRows();
         try {
-            const payload = await fetchJSON(API_ROOT);
+            const [payload, options] = await Promise.all([
+                fetchJSON(API_ROOT),
+                fetchJSON(`${API_ROOT}/options`)
+            ]);
             state.items = Array.isArray(payload.items) ? payload.items : [];
             state.metrics = payload.metrics || {};
+            state.customers = Array.isArray(options.customers) ? options.customers : [];
+            state.agents = Array.isArray(options.agents) ? options.agents : [];
             renderMetrics(state.metrics);
             renderRows();
         } catch (error) {
@@ -264,12 +388,104 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    els.refresh?.addEventListener('click', () => {
-        void loadReferrals();
+    els.createForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (state.saving) return;
+        const sourceType = normalizeText(els.createSourceType?.value);
+        const body = {
+            referredAccountNumber: String(els.referredCustomer?.value || '').trim(),
+            sourceType,
+            referrerAccountNumber: sourceType === 'customer' ? String(els.createCustomer?.value || '').trim() : '',
+            referrerId: sourceType === 'agent' ? String(els.createAgent?.value || '').trim() : '',
+            reason: String(els.createReason?.value || '').trim()
+        };
+        setSaving(true);
+        try {
+            const editing = Boolean(state.editingReferralId);
+            const endpoint = editing ? `${API_ROOT}/${encodeURIComponent(state.editingReferralId)}` : API_ROOT;
+            await fetchJSON(endpoint, {
+                method: editing ? 'PATCH' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            els.createModal.hidden = true;
+            state.editingReferralId = '';
+            els.createForm.reset();
+            showToast(
+                editing
+                    ? 'Referral updated and returned to Pending for approval.'
+                    : 'Pending referral created. Approve it after verification.',
+                'success'
+            );
+            await loadReferrals();
+        } catch (error) {
+            showToast(error.message || 'Failed to create referral.', 'error');
+        } finally {
+            setSaving(false);
+        }
     });
-    [els.search, els.statusFilter, els.sourceFilter].forEach((el) => {
-        el?.addEventListener('input', renderRows);
-        el?.addEventListener('change', renderRows);
+    els.statusForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (state.saving || !state.statusAction) return;
+        setSaving(true);
+        try {
+            const scheduling = state.statusAction.status === 'schedule';
+            const endpoint = `${API_ROOT}/${encodeURIComponent(state.statusAction.referralId)}/${scheduling ? 'schedule' : 'status'}`;
+            await fetchJSON(endpoint, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    status: scheduling ? undefined : state.statusAction.status,
+                    applyFromMonth: String(els.statusApplyFromMonth?.value || '').trim(),
+                    reason: String(els.statusReason?.value || '').trim()
+                })
+            });
+            const message = scheduling
+                ? 'Referral Apply From Month updated.'
+                : (state.statusAction.status === 'approved' ? 'Referral approved.' : 'Referral cancelled.');
+            els.statusModal.hidden = true;
+            state.statusAction = null;
+            els.statusForm.reset();
+            showToast(message, 'success');
+            await loadReferrals();
+        } catch (error) {
+            showToast(error.message || 'Failed to update referral.', 'error');
+        } finally {
+            setSaving(false);
+        }
+    });
+
+    els.tableBody?.addEventListener('click', (event) => {
+        const editButton = event.target.closest('[data-referral-edit]');
+        if (editButton && !state.saving) {
+            const item = state.items.find((entry) => entry.id === editButton.dataset.referralEdit) || null;
+            if (item) openCreateModal(item);
+            return;
+        }
+        const button = event.target.closest('[data-referral-action]');
+        if (!button || state.saving) return;
+        const item = state.items.find((entry) => entry.id === button.dataset.referralId) || null;
+        if (item) openStatusModal(item, button.dataset.referralAction);
+    });
+    els.create?.addEventListener('click', () => openCreateModal());
+    els.refresh?.addEventListener('click', () => void loadReferrals());
+    els.createSourceType?.addEventListener('change', updateCreateSourceFields);
+    els.referredCustomer?.addEventListener('change', populateCreateOptions);
+    [els.createClose, els.createCancel].forEach((button) => button?.addEventListener('click', closeCreateModal));
+    [els.statusClose, els.statusCancel].forEach((button) => button?.addEventListener('click', closeStatusModal));
+    [els.search, els.statusFilter, els.sourceFilter].forEach((element) => {
+        element?.addEventListener('input', renderRows);
+        element?.addEventListener('change', renderRows);
+    });
+    [els.createModal, els.statusModal].forEach((modal) => modal?.addEventListener('click', (event) => {
+        if (event.target !== modal) return;
+        if (modal === els.createModal) closeCreateModal();
+        else closeStatusModal();
+    }));
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (!els.statusModal?.hidden) closeStatusModal();
+        else if (!els.createModal?.hidden) closeCreateModal();
     });
 
     void loadReferrals();

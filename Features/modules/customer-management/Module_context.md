@@ -10,7 +10,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Manage account numbers, identity/contact details, service addresses, coordinates, plan/service metadata, PPPoE linkage, status, and billing dates.
 - Accept public applications and place them into the customer draft review workflow.
 - Maintain coverage areas and public Philippine address lookup flows.
-- Track customer referrals and related options/ledger presentation.
+- Create, edit, approve, cancel, and track customer/agent referrals through a centralized audited registry.
 
 ## Canonical runtime layout
 
@@ -20,7 +20,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - `backend/customer-archive-store.js`: archive retention, restore, and permanent deletion persistence.
 - `backend/customer-full-json-import.js`: storage-aware merge/persistence for full customer exports when JSON storage is selected.
 - `backend/api_coverage.js`: authenticated `/api/coverage` CRUD and reusable coverage reads.
-- `backend/referrals.js` and `backend/referral-engine.js`: `/api/referrals`, options, and ledger calculations.
+- `backend/referrals.js`, `backend/referral-engine.js`, and `backend/referral-store.js`: branch-scoped `/api/referrals` creation/edit/approval, optional `PATCH /api/referrals/:referralId/schedule` earliest-month changes, eligibility and ledger calculations, audited applications, and JSON/MySQL `app_store` persistence.
 - `backend/philippines-addresses.js`: repository package-backed province, municipality, and barangay lookup.
 - `web/` contains Customer Management pages and assets mounted at unchanged root URLs.
 
@@ -48,6 +48,8 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
 - Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- Referral relationships are registered once per referred account. New and edited records return to Pending. Admin approval immediately locks the proposed discount and places a customer referral in the unlimited FIFO Billing queue; the referred customer's first payment is not required. The optional registry `applyFromMonth` is an Admin-controlled current/future earliest month, with blank meaning next available. Approved records without an active application may be rescheduled with a required reason; an active application must be reversed first. Applied referrals cannot be cancelled, and records with billing-application history cannot be edited, preserving their audit chain. Legacy customer referral fields remain readable but are materialized into the registry when approved.
+- `updateCustomerRecord` accepts an internal `planChangeEffectiveAt` option for Billing-owned effective plan changes. A future timestamp preserves the active subscriber plan and writes the canonical scheduled plan/profile snapshot; a current/past change updates the subscriber plan and resolves/synchronizes the router-specific PPPoE profile immediately. The existing Billing scheduler applies due snapshots and retries when MikroTik synchronization cannot complete.
 - The Customers table loads Billing payment records before rendering cycle state and requires backend `billingSummary` version 2 for prepaid/postpaid cycle dates, status, and reactivation balance checks. It displays Billing unavailable rather than calculating from stored customer dates or balances; postpaid generation remains month-end only.
 - The shared `/api/import/customers-full` route delegates JSON-mode restoration to this module for plans, customers, payment history, tickets, jobs, SMS messages, SMS automation runs, and PON state/connections. Records are upserted by stable IDs, exact duplicate rows are collapsed, conflicting rows sharing an identity are rejected before writes, and payment fingerprint/Xendit identities cannot be reused under a different payment ID. Duplicate totals are returned to the shared UI. Unrelated data and other-branch customers are preserved, PON topology is restored before its connections, and empty-sheet `note: No records` placeholders are ignored.
 - `POST /api/customers/import-clients` now returns `warningRecords` with the skipped row, editable source record, affected fields, and issue details. `POST /api/customers/import-client-corrections` validates and retries at most 100 corrected rows in the current Admin branch, using the same create/update and plan-resolution path as the original import.
@@ -57,8 +59,9 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 
 ## Verification contract
 
-- `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
+- `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, the referral store/registry workflow, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
 - The focused check also verifies correction-record normalization plus the warning-review button, modal, retry API call, and responsive modal styling contract.
+- Referral-focused checks verify immediate Admin-approved eligibility, locked amounts, optional Admin-selected earliest application months, unlimited FIFO queuing, the two-per-month cap, month-to-month carryover, and reversal requeue behavior.
 - `npm run refactor:phase4` runs structural, core, Admin, Customer Management, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public application/address/coverage resources, protected-page redirects, and unauthenticated Customer Management API denial.
@@ -73,6 +76,10 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 
 ## Latest meaningful changes
 
+- 2026-08-07: Added an optional Admin-selected **Apply From Month** at referral approval and a reasoned reschedule action for approved referrals without an active application. Blank means next available; past months are rejected, scheduled records remain queued until their earliest month, the two-per-month cap still carries overflow forward, and active applications must be reversed before rescheduling.
+- 2026-08-07: Removed the referred-client payment requirement. Admin approval now locks and immediately queues each customer referral; unlimited queued records are ordered oldest approval first for Billing's automatic two-per-month carryover.
+- 2026-08-07: Centralized referrals in a branch-scoped registry. `referrals.html` now creates, edits, approves, cancels, filters, and tracks referrals; changes require reasons, edited relationships return to Pending, and applied/history records are protected from destructive edits.
+- 2026-08-07: Extended the customer update contract with an explicit effective timestamp so Billing can synchronize the current subscriber plan immediately or queue a future plan and router-specific PPPoE profile without changing the active plan early.
 - 2026-08-07: Standardized Customers and Customer Draft Queue modal close controls as shared Tabler outline-secondary icon buttons and replaced the empty Customer view close control with a real `ti-x` icon; modal behavior is unchanged.
 - 2026-08-06: Customers now requires backend-only `billingSummary` version 2 for prepaid/postpaid Billing Cycle display and postpaid reactivation balance checks. Stored customer dates/balances are no longer a browser fallback; postpaid generation remains month-end only and Temp remains unchanged.
 - 2026-08-06: Aligned the Customers table prepaid Billing Cycle with Payments by showing the current first-of-month cycle and status plus the next first-of-month cycle, backed by the current payment-record ending balance. Postpaid and Temp remain unchanged.

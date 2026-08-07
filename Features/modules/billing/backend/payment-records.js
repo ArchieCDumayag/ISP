@@ -5,7 +5,11 @@ const customersModule = require('../../customer-management/backend/customers');
 const { getEffectivePaymentEntries } = require('./payment-entry-normalizer');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const { readBranchDisconnections, getAccountDisconnection } = require('./disconnection-store');
-const { buildReferralLedger, buildReferralDiscountMap } = require('../../customer-management/backend/referral-engine');
+const {
+    buildReferralDiscountMap,
+    buildReferralOptionMap
+} = require('../../customer-management/backend/referral-engine');
+const referralsModule = require('../../customer-management/backend/referrals');
 const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
 
 const router = express.Router();
@@ -112,12 +116,17 @@ const normalizeAdjustmentAmount = (value) => {
     if (!Number.isFinite(parsed) || parsed < 0) return 0;
     return Number(parsed.toFixed(2));
 };
+const normalizeSignedAdjustmentAmount = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : 0;
+};
 const hasAdjustmentAmount = (value) => {
     if (value === null || value === undefined) return false;
     if (typeof value === 'string' && !value.trim()) return false;
     return Number.isFinite(Number(value));
 };
 const sanitizeAdjustmentText = (value) => String(value || '').trim().slice(0, 160);
+const sanitizeAdjustmentReason = (value) => String(value || '').trim().slice(0, 500);
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
 const normalizeAdjustmentMonthKey = (value) => {
     const text = sanitizeAdjustmentText(value);
@@ -194,14 +203,59 @@ const sanitizePlanChangeAdjustments = (input = []) => {
         const planAmount = normalizeAdjustmentAmount(value.planAmount ?? value.amount ?? value.price);
         if (!effectiveMonth || planAmount <= 0) return;
         const planCategory = sanitizeAdjustmentText(value.planCategory || value.category || value.planType).toLowerCase();
+        const billingEffectiveMonth = normalizeAdjustmentMonthKey(value.billingEffectiveMonth) || effectiveMonth;
+        const previousPlanValue = value.previousPlan && typeof value.previousPlan === 'object'
+            ? value.previousPlan
+            : null;
         const entry = {
             effectiveMonth,
+            billingEffectiveMonth,
+            changeId: sanitizeAdjustmentText(value.changeId) || `plan-change-${effectiveMonth}`,
             planId: sanitizeAdjustmentText(value.planId || value.id),
             planName: sanitizeAdjustmentText(value.planName || value.name || value.label) || 'Adjusted plan',
-            planAmount
+            planAmount,
+            retroactiveAdjustment: normalizeSignedAdjustmentAmount(value.retroactiveAdjustment),
+            protectedPaidMonths: Array.from(new Set(
+                (Array.isArray(value.protectedPaidMonths) ? value.protectedPaidMonths : [])
+                    .map(normalizeAdjustmentMonthKey)
+                    .filter(Boolean)
+            )),
+            reason: sanitizeAdjustmentReason(value.reason),
+            createdAt: sanitizeAdjustmentText(value.createdAt),
+            updatedAt: sanitizeAdjustmentText(value.updatedAt)
         };
         if (planCategory === 'prepaid' || planCategory === 'postpaid') {
             entry.planCategory = planCategory;
+        }
+        if (previousPlanValue) {
+            const previousPlanAmount = normalizeAdjustmentAmount(
+                previousPlanValue.planAmount ?? previousPlanValue.amount ?? previousPlanValue.price
+            );
+            const previousPlanCategory = sanitizeAdjustmentText(
+                previousPlanValue.planCategory || previousPlanValue.category || previousPlanValue.planType
+            ).toLowerCase();
+            if (previousPlanAmount > 0) {
+                entry.previousPlan = {
+                    planId: sanitizeAdjustmentText(previousPlanValue.planId || previousPlanValue.id),
+                    planName: sanitizeAdjustmentText(
+                        previousPlanValue.planName || previousPlanValue.name || previousPlanValue.label
+                    ) || 'Previous plan',
+                    planAmount: previousPlanAmount
+                };
+                if (previousPlanCategory === 'prepaid' || previousPlanCategory === 'postpaid') {
+                    entry.previousPlan.planCategory = previousPlanCategory;
+                }
+            }
+        }
+        const changedByValue = value.changedBy && typeof value.changedBy === 'object'
+            ? value.changedBy
+            : null;
+        if (changedByValue) {
+            entry.changedBy = {
+                id: changedByValue.id || null,
+                username: sanitizeAdjustmentText(changedByValue.username),
+                name: sanitizeAdjustmentText(changedByValue.name || changedByValue.username)
+            };
         }
         byMonth.set(effectiveMonth, entry);
     });
@@ -277,6 +331,135 @@ const toBillingDateKey = (value) => {
     const day = parts.find((part) => part.type === 'day')?.value || '';
     return year && month && day ? `${year}-${month}-${day}` : '';
 };
+const getCurrentBillingMonthKey = (now = new Date()) => toBillingDateKey(now).slice(0, 7);
+const addBillingMonths = (monthKey, offset = 1) => {
+    const normalized = normalizeAdjustmentMonthKey(monthKey);
+    if (!normalized) return '';
+    const [year, month] = normalized.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1 + Number(offset || 0), 1, 12, 0, 0));
+    return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const normalizePlanCategoryValue = (value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'prepaid' || normalized === 'postpaid' ? normalized : '';
+};
+const buildPlanSnapshot = (source = {}, fallbackCategory = '') => {
+    const planAmount = normalizeAdjustmentAmount(
+        source?.planAmount ?? source?.price ?? source?.amount ?? source?.monthlyFee
+    );
+    const planName = sanitizeAdjustmentText(source?.planName || source?.name || source?.label);
+    if (!planName || planAmount <= 0) return null;
+    return {
+        planId: sanitizeAdjustmentText(source?.planId || source?.id || source?.plan_id),
+        planName,
+        planAmount,
+        planCategory: normalizePlanCategoryValue(
+            source?.planCategory || source?.category || source?.planType || fallbackCategory
+        ) || 'postpaid'
+    };
+};
+const resolvePlanSnapshotForMonth = (planChanges = [], monthKey = '', fallbackPlan = null) => {
+    const targetMonth = normalizeAdjustmentMonthKey(monthKey);
+    const changes = sanitizePlanChangeAdjustments(planChanges);
+    let selected = changes.find((change) => change?.previousPlan)?.previousPlan || fallbackPlan;
+    changes.forEach((change) => {
+        if (!targetMonth || change.effectiveMonth > targetMonth) return;
+        selected = change;
+    });
+    return selected ? buildPlanSnapshot(selected) : null;
+};
+const findPlanSnapshot = (plans = [], requested = {}) => {
+    const requestedId = sanitizeAdjustmentText(requested?.planId || requested?.id).toLowerCase();
+    const requestedName = normalizePlanName(requested?.planName || requested?.name || requested?.label);
+    const match = (Array.isArray(plans) ? plans : []).find((plan) => {
+        const planId = sanitizeAdjustmentText(plan?.id || plan?.planId || plan?.plan_id).toLowerCase();
+        const planName = normalizePlanName(plan?.name || plan?.label || plan?.planName);
+        return (requestedId && planId === requestedId) || (requestedName && planName === requestedName);
+    });
+    return match ? buildPlanSnapshot(match) : null;
+};
+const buildEffectivePlanChangeEntry = ({
+    effectiveMonth,
+    selectedPlan,
+    previousPlan,
+    existingChange = null,
+    laterChange = null,
+    rows = [],
+    changedBy = null,
+    reason = '',
+    now = new Date()
+} = {}) => {
+    const normalizedEffectiveMonth = normalizeAdjustmentMonthKey(effectiveMonth);
+    const nextPlan = buildPlanSnapshot(selectedPlan);
+    const oldPlan = buildPlanSnapshot(existingChange?.previousPlan || previousPlan);
+    if (!normalizedEffectiveMonth || !nextPlan || !oldPlan) {
+        throw createError(400, 'The effective month, current plan, and new plan are required.');
+    }
+    if (nextPlan.planCategory !== oldPlan.planCategory) {
+        throw createError(409, 'Change between prepaid and postpaid from the subscriber editor so billing dates can be reviewed safely.');
+    }
+    if (
+        normalizePlanName(nextPlan.planName) === normalizePlanName(oldPlan.planName)
+        && Math.abs(nextPlan.planAmount - oldPlan.planAmount) <= BILLING_EPSILON
+    ) {
+        throw createError(409, 'Choose a plan that is different from the plan already effective for that month.');
+    }
+
+    const nextBoundary = normalizeAdjustmentMonthKey(laterChange?.effectiveMonth);
+    const affectedRowsByMonth = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const monthKey = normalizeAdjustmentMonthKey(row?.billingMonthKey || row?.billDate);
+        if (!monthKey || monthKey < normalizedEffectiveMonth || (nextBoundary && monthKey >= nextBoundary)) return;
+        affectedRowsByMonth.set(monthKey, row);
+    });
+    const affectedRows = Array.from(affectedRowsByMonth.values()).sort((left, right) => (
+        String(left?.billingMonthKey || left?.billDate).localeCompare(String(right?.billingMonthKey || right?.billDate))
+    ));
+    const protectedRows = affectedRows.filter((row) => String(row?.paymentStatus || '').toLowerCase() === 'paid');
+    const firstOpenRow = affectedRows.find((row) => String(row?.paymentStatus || '').toLowerCase() === 'unpaid');
+    const firstPendingRow = affectedRows.find((row) => String(row?.paymentStatus || '').toLowerCase() === 'not-generated');
+    const currentMonth = getCurrentBillingMonthKey(now);
+    const latestProtectedMonth = protectedRows.reduce((latest, row) => {
+        const monthKey = normalizeAdjustmentMonthKey(row?.billingMonthKey || row?.billDate);
+        return monthKey > latest ? monthKey : latest;
+    }, '');
+    const billingEffectiveMonth = normalizeAdjustmentMonthKey(
+        firstOpenRow?.billingMonthKey
+        || firstOpenRow?.billDate
+        || firstPendingRow?.billingMonthKey
+        || firstPendingRow?.billDate
+    ) || (
+        normalizedEffectiveMonth > currentMonth
+            ? normalizedEffectiveMonth
+            : addBillingMonths(
+                latestProtectedMonth > currentMonth ? latestProtectedMonth : currentMonth,
+                1
+            )
+    );
+    const retroactiveAdjustment = normalizeSignedAdjustmentAmount(protectedRows.reduce((total, row) => {
+        const originalAmount = normalizeAdjustmentAmount(row?.planAmount);
+        const ratio = oldPlan.planAmount > BILLING_EPSILON
+            ? originalAmount / oldPlan.planAmount
+            : 1;
+        const replacementAmount = normalizeSignedAdjustmentAmount(nextPlan.planAmount * ratio);
+        return total + replacementAmount - originalAmount;
+    }, 0));
+    const timestamp = now.toISOString();
+    const existingCreatedAt = sanitizeAdjustmentText(existingChange?.createdAt);
+    return sanitizePlanChangeAdjustments([{
+        ...nextPlan,
+        effectiveMonth: normalizedEffectiveMonth,
+        billingEffectiveMonth,
+        changeId: sanitizeAdjustmentText(existingChange?.changeId) || `plan-change-${normalizedEffectiveMonth}-${now.getTime()}`,
+        previousPlan: oldPlan,
+        retroactiveAdjustment,
+        protectedPaidMonths: protectedRows.map((row) => row?.billingMonthKey || row?.billDate),
+        reason: sanitizeAdjustmentReason(reason),
+        createdAt: existingCreatedAt || timestamp,
+        updatedAt: timestamp,
+        changedBy
+    }])[0];
+};
 const serializeBillingValue = (value) => {
     if (value instanceof Date) return toBillingDateKey(value);
     if (value instanceof Set) return Array.from(value).map(serializeBillingValue);
@@ -339,7 +522,12 @@ const serializeBillingRow = (row = {}, record = {}) => {
         billingMonthKey: row.billingMonthKey || billDate.slice(0, 7),
         planType,
         planTypeLabel: planType === 'prepaid' ? 'Prepaid' : 'Postpaid',
-        planLabel: String(record.planName || record.plan || 'Monthly plan').trim() || 'Monthly plan',
+        planLabel: String(
+            row?.planOverride?.planName
+            || record.planName
+            || record.plan
+            || 'Monthly plan'
+        ).trim() || 'Monthly plan',
         paymentDetails: (Array.isArray(row.paymentDetails) ? row.paymentDetails : []).map((detail) => ({
             ...serializeBillingValue(detail),
             date: detail?.date || ''
@@ -531,7 +719,41 @@ const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
     }
 };
 
-const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {}, branchId = null, disconnections = {}, referralDiscountsByAccount = {}) => {
+const buildPlanHistory = (record = {}, planChanges = [], now = new Date()) => {
+    const changes = sanitizePlanChangeAdjustments(planChanges);
+    const currentMonth = getCurrentBillingMonthKey(now);
+    const effectiveChanges = changes.filter((change) => change.effectiveMonth <= currentMonth);
+    const activeChange = effectiveChanges.length ? effectiveChanges[effectiveChanges.length - 1] : null;
+    const currentPlanName = normalizePlanName(record?.planName);
+    return changes.slice().reverse().map((change) => {
+        let status = 'history';
+        if (change.effectiveMonth > currentMonth) {
+            status = 'scheduled';
+        } else if (activeChange?.changeId === change.changeId) {
+            status = normalizePlanName(change.planName) === currentPlanName ? 'active' : 'pending-sync';
+        }
+        const adjustment = normalizeSignedAdjustmentAmount(change.retroactiveAdjustment);
+        return {
+            ...change,
+            status,
+            adjustmentType: adjustment > BILLING_EPSILON
+                ? 'debit'
+                : (adjustment < -BILLING_EPSILON ? 'credit' : 'none'),
+            adjustmentAmount: Math.abs(adjustment)
+        };
+    });
+};
+
+const buildPaymentRecord = (
+    customer,
+    payments = {},
+    plans = [],
+    adjustments = {},
+    branchId = null,
+    disconnections = {},
+    referralDiscountsByAccount = {},
+    referralOptionsByAccount = {}
+) => {
     if (!customer || typeof customer !== 'object') return null;
     const sanitizedCustomer = sanitizeCustomerForRecord(customer);
     if (!sanitizedCustomer) return null;
@@ -552,18 +774,66 @@ const buildPaymentRecord = (customer, payments = {}, plans = [], adjustments = {
         referralDiscounts: Array.isArray(referralDiscountsByAccount?.[accountNumber])
             ? referralDiscountsByAccount[accountNumber]
             : [],
+        referralOptions: Array.isArray(referralOptionsByAccount?.[accountNumber])
+            ? referralOptionsByAccount[accountNumber]
+            : [],
         paymentBreakdownAdjustment,
         ...summary,
         history: paymentHistory
     };
     const billingSummary = buildCanonicalBillingSummary(recordBase, summary.balance);
     const endingBalance = billingSummary.endingBalance;
+    const planHistory = buildPlanHistory(
+        recordBase,
+        paymentBreakdownAdjustment?.planChanges || []
+    );
 
     return {
         ...recordBase,
         billingSummary,
+        planHistory,
         paymentBreakdownEndingBalance: endingBalance,
         endingBalance
+    };
+};
+
+const buildAutomaticReferralTarget = (record = {}) => {
+    const accountNumber = String(record?.accountNumber || '').trim();
+    const rows = Array.isArray(record?.billingSummary?.rows) ? record.billingSummary.rows : [];
+    const billingRows = rows.filter((row) => {
+        const sourceType = String(row?.sourceType || '').toLowerCase();
+        if (!row?.billingMonthKey || !accountNumber) return false;
+        if (['opening', 'disconnection'].includes(sourceType)) return false;
+        return true;
+    });
+    if (!billingRows.length) return null;
+    const row = billingRows.slice().sort((left, right) => (
+        String(right?.billDate || right?.billingMonthKey || '')
+            .localeCompare(String(left?.billDate || left?.billingMonthKey || ''))
+    ))[0];
+    const sourceType = String(row?.sourceType || '').toLowerCase();
+    if (sourceType === 'pending-postpaid') return null;
+    if (String(row?.paymentStatus || '').toLowerCase() !== 'unpaid') return null;
+    {
+        const details = Array.isArray(row?.referralDetails) ? row.referralDetails : [];
+        const hasLegacyManualReferral = (Number(row?.referral) || 0) > BILLING_EPSILON
+            && (!details.length || details.some((detail) => !detail?.applicationId));
+        if (hasLegacyManualReferral) return null;
+    }
+    const activeReferralAmount = (Array.isArray(row.referralDetails) ? row.referralDetails : [])
+        .filter((detail) => detail?.applicationId)
+        .reduce((sum, detail) => sum + (Number(detail?.amount) || 0), 0);
+    const planAmount = Math.max(0, Number(row?.planAmount) || Number(record?.planAmount) || 0);
+    const balanceAfterPayment = Math.max(0, Number(row?.balanceAfterPayment) || 0);
+    const referralCapacity = normalizeAdjustmentAmount(Math.min(
+        planAmount,
+        Math.max(0, balanceAfterPayment + activeReferralAmount)
+    ));
+    if (referralCapacity <= BILLING_EPSILON) return null;
+    return {
+        referrerAccountNumber: accountNumber,
+        billingMonth: row.billingMonthKey,
+        referralCapacity
     };
 };
 
@@ -571,35 +841,72 @@ async function buildPaymentRecordForAccount(accountNumber, branchId = null) {
     const safeAccountNumber = String(accountNumber || '').trim();
     if (!safeAccountNumber) return null;
 
-    const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
-        readCustomers(branchId),
-        readPayments(branchId),
+    let [referralData, plans, adjustments, disconnections] = await Promise.all([
+        referralsModule.loadReferralLedgerForBranch(branchId),
         readPlans(branchId),
         readPaymentBreakdownAdjustments(),
         readBranchDisconnections(branchId)
     ]);
-    const referralDiscountsByAccount = buildReferralDiscountMap(
-        buildReferralLedger({ customers, payments, now: new Date() })
-    );
+    let customers = referralData.customers || [];
+    let payments = referralData.payments || {};
+    let referralDiscountsByAccount = buildReferralDiscountMap(referralData.items || []);
+    let referralOptionsByAccount = buildReferralOptionMap(referralData.items || []);
     const customer = Array.isArray(customers)
         ? customers.find((entry) => String(entry?.accountNumber || '').trim() === safeAccountNumber)
         : null;
     if (!customer) return null;
-    return buildPaymentRecord(customer, payments, plans, adjustments, branchId, disconnections, referralDiscountsByAccount);
+    let record = buildPaymentRecord(
+        customer,
+        payments,
+        plans,
+        adjustments,
+        branchId,
+        disconnections,
+        referralDiscountsByAccount,
+        referralOptionsByAccount
+    );
+    const billingTarget = buildAutomaticReferralTarget(record);
+    if (billingTarget) {
+        const allocation = await referralsModule.allocateQueuedReferralDiscounts({
+            branchId,
+            billingTargets: [billingTarget]
+        });
+        if (allocation?.changed) {
+            referralData = await referralsModule.loadReferralLedgerForBranch(branchId);
+            customers = referralData.customers || [];
+            payments = referralData.payments || {};
+            referralDiscountsByAccount = buildReferralDiscountMap(referralData.items || []);
+            referralOptionsByAccount = buildReferralOptionMap(referralData.items || []);
+            const refreshedCustomer = customers.find((entry) => (
+                String(entry?.accountNumber || '').trim() === safeAccountNumber
+            )) || customer;
+            record = buildPaymentRecord(
+                refreshedCustomer,
+                payments,
+                plans,
+                adjustments,
+                branchId,
+                disconnections,
+                referralDiscountsByAccount,
+                referralOptionsByAccount
+            );
+        }
+    }
+    return record;
 }
 
 async function buildPaymentRecordsForBranch(branchId = null) {
-    const [customers, payments, plans, adjustments, disconnections] = await Promise.all([
-        readCustomers(branchId),
-        readPayments(branchId),
+    let [referralData, plans, adjustments, disconnections] = await Promise.all([
+        referralsModule.loadReferralLedgerForBranch(branchId),
         readPlans(branchId),
         readPaymentBreakdownAdjustments(),
         readBranchDisconnections(branchId)
     ]);
-    const referralDiscountsByAccount = buildReferralDiscountMap(
-        buildReferralLedger({ customers, payments, now: new Date() })
-    );
-    return customers
+    let customers = referralData.customers || [];
+    let payments = referralData.payments || {};
+    let referralDiscountsByAccount = buildReferralDiscountMap(referralData.items || []);
+    let referralOptionsByAccount = buildReferralOptionMap(referralData.items || []);
+    let records = customers
         .map((customer) => buildPaymentRecord(
             customer,
             payments,
@@ -607,9 +914,32 @@ async function buildPaymentRecordsForBranch(branchId = null) {
             adjustments,
             branchId,
             disconnections,
-            referralDiscountsByAccount
+            referralDiscountsByAccount,
+            referralOptionsByAccount
         ))
         .filter(Boolean);
+    const billingTargets = records.map(buildAutomaticReferralTarget).filter(Boolean);
+    if (billingTargets.length) {
+        const allocation = await referralsModule.allocateQueuedReferralDiscounts({ branchId, billingTargets });
+        if (allocation?.changed) {
+            referralData = await referralsModule.loadReferralLedgerForBranch(branchId);
+            customers = referralData.customers || [];
+            payments = referralData.payments || {};
+            referralDiscountsByAccount = buildReferralDiscountMap(referralData.items || []);
+            referralOptionsByAccount = buildReferralOptionMap(referralData.items || []);
+            records = customers.map((customer) => buildPaymentRecord(
+                customer,
+                payments,
+                plans,
+                adjustments,
+                branchId,
+                disconnections,
+                referralDiscountsByAccount,
+                referralOptionsByAccount
+            )).filter(Boolean);
+        }
+    }
+    return records;
 }
 
 // Logic to calculate payment summary for a customer
@@ -742,7 +1072,59 @@ router.get('/:accountNumber', async (req, res, next) => {
     }
 });
 
-// PATCH /api/payment-records/:accountNumber/breakdown-adjustment - Save first bill adjustment
+const synchronizeCustomerPlanHistory = async ({ customer, planChanges = [], branchId } = {}) => {
+    const changes = sanitizePlanChangeAdjustments(planChanges);
+    const fallbackPlan = buildPlanSnapshot(customer);
+    const currentMonth = getCurrentBillingMonthKey();
+    const currentPlan = resolvePlanSnapshotForMonth(changes, currentMonth, fallbackPlan);
+    if (!currentPlan) throw createError(409, 'The subscriber current plan could not be resolved.');
+
+    const customerBranchId = Number(branchId || customer?.branchId);
+    if (!Number.isInteger(customerBranchId) || customerBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+    let synchronizedCustomer = await customersModule.updateCustomerRecord(
+        customer.accountNumber,
+        {
+            planId: currentPlan.planId,
+            planName: currentPlan.planName,
+            planCategory: currentPlan.planCategory
+        },
+        {
+            branchId: customerBranchId,
+            refreshSource: 'payment-breakdown-plan-change',
+            allowPastBillingDates: true
+        }
+    );
+
+    const futureChange = changes.find((change) => change.effectiveMonth > currentMonth) || null;
+    if (futureChange) {
+        synchronizedCustomer = await customersModule.updateCustomerRecord(
+            customer.accountNumber,
+            {
+                planId: futureChange.planId,
+                planName: futureChange.planName,
+                planCategory: futureChange.planCategory
+            },
+            {
+                branchId: customerBranchId,
+                refreshSource: 'payment-breakdown-plan-schedule',
+                allowPastBillingDates: true,
+                planChangeEffectiveAt: `${futureChange.effectiveMonth}-01T00:00:00+08:00`
+            }
+        );
+    }
+
+    return {
+        customer: synchronizedCustomer,
+        currentPlan,
+        scheduledPlan: futureChange ? buildPlanSnapshot(futureChange) : null,
+        scheduledEffectiveMonth: futureChange?.effectiveMonth || null,
+        warning: sanitizeAdjustmentText(synchronizedCustomer?.pppoeProfileSyncWarning)
+    };
+};
+
+// PATCH /api/payment-records/:accountNumber/breakdown-adjustment - Save audited backend adjustments
 router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
     try {
         const user = assertAdminUser(req);
@@ -752,7 +1134,10 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
         }
 
         const branchId = user.branchId || null;
-        const customers = await readCustomers(branchId);
+        const [customers, plans] = await Promise.all([
+            readCustomers(branchId),
+            readPlans(branchId)
+        ]);
         const customer = Array.isArray(customers)
             ? customers.find((entry) => String(entry?.accountNumber || '').trim() === accountNumber)
             : null;
@@ -767,6 +1152,87 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
             : {};
         const currentAdjustment = sanitizePaymentBreakdownAdjustment(branchBucket[accountNumber] || {});
         const rawBody = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+        if (hasOwn(rawBody, 'planChanges')) {
+            return next(createError(400, 'Plan changes must be submitted through the audited planChange request.'));
+        }
+        if (hasOwn(rawBody, 'monthlyReferrals')) {
+            return next(createError(400, 'Referral discounts must be submitted through the audited referralApplication request.'));
+        }
+        if (hasOwn(rawBody, 'referralApplication')) {
+            const requestApplication = rawBody.referralApplication && typeof rawBody.referralApplication === 'object'
+                ? rawBody.referralApplication
+                : {};
+            const action = sanitizeAdjustmentText(requestApplication.action).toLowerCase();
+            const referralId = sanitizeAdjustmentText(requestApplication.referralId);
+            const billingMonth = normalizeAdjustmentMonthKey(
+                requestApplication.billingMonth || requestApplication.monthKey
+            );
+            const reason = sanitizeAdjustmentReason(rawBody.reason);
+            if (!['apply', 'reverse'].includes(action)) {
+                return next(createError(400, 'Referral action must be apply or reverse.'));
+            }
+            if (action === 'apply') {
+                return next(createError(409, 'Approved referrals are applied automatically in queue order. Manual application is not allowed.'));
+            }
+            if (!referralId || !billingMonth) {
+                return next(createError(400, 'Choose an eligible referral and billing month.'));
+            }
+            if (reason.length < 3) {
+                return next(createError(400, 'Enter a reason for the referral billing action.'));
+            }
+            const currentRecord = await buildPaymentRecordForAccount(accountNumber, branchId);
+            if (!currentRecord) return next(createError(404, 'Customer payment record not found.'));
+            const billingRow = (currentRecord.billingSummary?.rows || []).find((row) => (
+                normalizeAdjustmentMonthKey(row?.billingMonthKey || row?.billDate) === billingMonth
+            )) || null;
+            if (!billingRow || billingRow.sourceType === 'opening' || billingRow.sourceType === 'disconnection') {
+                return next(createError(409, 'Choose a generated subscriber billing cycle.'));
+            }
+            if (String(billingRow.paymentStatus || '').toLowerCase() === 'not-generated') {
+                return next(createError(409, 'The selected billing cycle has not been generated yet.'));
+            }
+            if (action === 'apply' && String(billingRow.paymentStatus || '').toLowerCase() !== 'unpaid') {
+                return next(createError(409, 'Referral discounts can only be applied to an unpaid billing cycle.'));
+            }
+            if (action === 'apply' && (Number(billingRow.due) || 0) <= BILLING_EPSILON) {
+                return next(createError(409, 'The selected billing cycle has no remaining due amount.'));
+            }
+            const referralOption = (Array.isArray(currentRecord.referralOptions) ? currentRecord.referralOptions : [])
+                .find((option) => option?.referralId === referralId) || null;
+            if (!referralOption) {
+                return next(createError(404, 'This referral is not available for the selected subscriber.'));
+            }
+            const billDateKey = toBillingDateKey(billingRow.billDate);
+            const successDateKey = toBillingDateKey(referralOption.successAt);
+            if (action === 'apply' && (!successDateKey || !billDateKey || successDateKey > billDateKey)) {
+                return next(createError(409, 'This referral became eligible after the selected bill date. Choose a later billing cycle.'));
+            }
+            if (action === 'reverse') {
+                const hasMatchingApplication = (Array.isArray(referralOption.applications) ? referralOption.applications : [])
+                    .some((application) => (
+                        application?.status === 'applied'
+                        && normalizeAdjustmentMonthKey(application.billingMonth) === billingMonth
+                    ));
+                if (!hasMatchingApplication) {
+                    return next(createError(409, 'No applied referral discount was found for this billing cycle.'));
+                }
+            }
+            const referralApplication = await referralsModule.applyReferralDiscount({
+                branchId,
+                referrerAccountNumber: accountNumber,
+                referralId,
+                billingMonth,
+                action,
+                reason,
+                user
+            });
+            const record = await buildPaymentRecordForAccount(accountNumber, branchId);
+            return res.json({
+                ok: true,
+                referralApplication,
+                record
+            });
+        }
         const hasLegacyFirstBillFields = [
             'previousBalance',
             'advance',
@@ -778,18 +1244,94 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
             'referralAccountNumber',
             'referredAccountNumber'
         ].some((field) => hasOwn(rawBody, field));
+        let nextPlanChanges = currentAdjustment.planChanges;
+        let planChangeResult = null;
+        if (hasOwn(rawBody, 'planChange')) {
+            if (rawBody.confirmed !== true) {
+                return next(createError(400, 'Confirm that paid bills will remain unchanged before saving the plan change.'));
+            }
+            const reason = sanitizeAdjustmentReason(rawBody.reason);
+            if (reason.length < 3) {
+                return next(createError(400, 'Enter a reason for the plan change.'));
+            }
+            const requestPlanChange = rawBody.planChange && typeof rawBody.planChange === 'object'
+                ? rawBody.planChange
+                : {};
+            const effectiveMonth = normalizeAdjustmentMonthKey(requestPlanChange.effectiveMonth);
+            if (!effectiveMonth) {
+                return next(createError(400, 'Choose a valid effective month.'));
+            }
+            const currentRecord = await buildPaymentRecordForAccount(accountNumber, branchId);
+            if (!currentRecord) {
+                return next(createError(404, 'Customer payment record not found.'));
+            }
+            const earliestRowMonth = (currentRecord.billingSummary?.rows || [])
+                .map((row) => normalizeAdjustmentMonthKey(row?.billingMonthKey || row?.billDate))
+                .filter(Boolean)
+                .sort()[0] || '';
+            const activationMonth = normalizeAdjustmentMonthKey(customer.activationDate || customer.activation_date);
+            const earliestAllowedMonth = activationMonth || earliestRowMonth;
+            if (earliestAllowedMonth && effectiveMonth < earliestAllowedMonth) {
+                return next(createError(400, `The effective month cannot be before ${earliestAllowedMonth}.`));
+            }
+
+            const selectedPlan = findPlanSnapshot(plans, requestPlanChange);
+            if (!selectedPlan) {
+                return next(createError(404, 'The selected plan no longer exists. Reload the page and choose again.'));
+            }
+            const currentMonth = getCurrentBillingMonthKey();
+            const existingChange = currentAdjustment.planChanges.find((change) => (
+                change.effectiveMonth === effectiveMonth
+            )) || null;
+            let retainedChanges = currentAdjustment.planChanges.filter((change) => (
+                change.effectiveMonth !== effectiveMonth
+            ));
+            if (effectiveMonth > currentMonth) {
+                retainedChanges = retainedChanges.filter((change) => change.effectiveMonth <= currentMonth);
+            }
+            const previousPlan = existingChange?.previousPlan
+                || resolvePlanSnapshotForMonth(retainedChanges, effectiveMonth, buildPlanSnapshot(customer));
+            const laterChange = retainedChanges.find((change) => change.effectiveMonth > effectiveMonth) || null;
+            const changedBy = {
+                id: user.id || null,
+                username: user.username || null,
+                name: user.name || user.username || null
+            };
+            const entry = buildEffectivePlanChangeEntry({
+                effectiveMonth,
+                selectedPlan,
+                previousPlan,
+                existingChange,
+                laterChange,
+                rows: currentRecord.billingSummary?.rows || [],
+                changedBy,
+                reason
+            });
+            nextPlanChanges = sanitizePlanChangeAdjustments([...retainedChanges, entry]);
+            planChangeResult = entry;
+        }
+
+        const requestedFirstBill = hasOwn(rawBody, 'firstBill')
+            ? {
+                ...(currentAdjustment.firstBill || {}),
+                ...(rawBody.firstBill && typeof rawBody.firstBill === 'object' && !Array.isArray(rawBody.firstBill)
+                    ? rawBody.firstBill
+                    : {})
+            }
+            : (hasLegacyFirstBillFields
+                ? { ...(currentAdjustment.firstBill || {}), ...rawBody }
+                : currentAdjustment.firstBill);
         const nextAdjustment = sanitizePaymentBreakdownAdjustment({
-            firstBill: hasOwn(rawBody, 'firstBill')
-                ? rawBody.firstBill
-                : (hasLegacyFirstBillFields ? rawBody : currentAdjustment.firstBill),
+            firstBill: requestedFirstBill,
             monthlyReferrals: hasOwn(rawBody, 'monthlyReferrals')
                 ? rawBody.monthlyReferrals
                 : currentAdjustment.monthlyReferrals,
-            planChanges: hasOwn(rawBody, 'planChanges')
-                ? rawBody.planChanges
-                : currentAdjustment.planChanges
+            planChanges: nextPlanChanges
         });
 
+        const previousStoredAdjustment = branchBucket[accountNumber]
+            ? JSON.parse(JSON.stringify(branchBucket[accountNumber]))
+            : null;
         branchBucket[accountNumber] = {
             ...nextAdjustment,
             updatedAt: new Date().toISOString(),
@@ -801,11 +1343,32 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
         };
         adjustments[branchKey] = branchBucket;
         await writePaymentBreakdownAdjustments(adjustments);
+        let subscriberSync = null;
+        if (planChangeResult) {
+            try {
+                subscriberSync = await synchronizeCustomerPlanHistory({
+                    customer,
+                    planChanges: nextAdjustment.planChanges,
+                    branchId
+                });
+            } catch (syncError) {
+                if (previousStoredAdjustment) {
+                    branchBucket[accountNumber] = previousStoredAdjustment;
+                } else {
+                    delete branchBucket[accountNumber];
+                }
+                adjustments[branchKey] = branchBucket;
+                await writePaymentBreakdownAdjustments(adjustments);
+                throw syncError;
+            }
+        }
         const record = await buildPaymentRecordForAccount(accountNumber, branchId);
 
         res.json({
             ok: true,
             adjustment: sanitizePaymentBreakdownAdjustment(branchBucket[accountNumber]),
+            planChange: planChangeResult,
+            subscriberSync,
             record
         });
     } catch (error) {
@@ -818,3 +1381,6 @@ module.exports.buildPaymentRecordForAccount = buildPaymentRecordForAccount;
 module.exports.buildPaymentRecordsForBranch = buildPaymentRecordsForBranch;
 module.exports.buildPaymentRecord = buildPaymentRecord;
 module.exports.buildCanonicalBillingSummary = buildCanonicalBillingSummary;
+module.exports.buildAutomaticReferralTarget = buildAutomaticReferralTarget;
+module.exports.buildEffectivePlanChangeEntry = buildEffectivePlanChangeEntry;
+module.exports.resolvePlanSnapshotForMonth = resolvePlanSnapshotForMonth;

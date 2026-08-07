@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -20,6 +21,7 @@ const backendPairs = [
   ['customers.js', 'customers'],
   ['philippines-addresses.js', 'philippines-addresses'],
   ['referral-engine.js', 'referral-engine'],
+  ['referral-store.js', 'referral-store'],
   ['referrals.js', 'referrals']
 ];
 
@@ -79,6 +81,30 @@ webFiles.forEach((relativePath) => {
 });
 assert(!fs.existsSync(path.join(projectRoot, 'customers.css')));
 console.log(`PASS Customer Management web root (${webFiles.length} files)`);
+
+const referralsPageSource = fs.readFileSync(path.join(webRoot, 'referrals.html'), 'utf8');
+const referralsBrowserSource = fs.readFileSync(path.join(webRoot, 'js/referrals.js'), 'utf8');
+const referralsBackendSource = fs.readFileSync(path.join(
+  projectRoot,
+  'Features/modules/customer-management/backend/referrals.js'
+), 'utf8');
+assert(referralsPageSource.includes('id="referralCreateModal"'));
+assert(referralsPageSource.includes('id="referralStatusModal"'));
+assert(referralsPageSource.includes('id="referralStatusApplyFromMonth"'));
+assert(referralsBrowserSource.includes("method: editing ? 'PATCH' : 'POST'"));
+assert(referralsBrowserSource.includes('data-referral-edit'));
+assert(referralsBrowserSource.includes('data-referral-action="schedule"'));
+assert(referralsBackendSource.includes("router.post('/',"));
+assert(referralsBackendSource.includes("router.patch('/:referralId/status'"));
+assert(referralsBackendSource.includes("router.patch('/:referralId/schedule'"));
+assert(referralsBackendSource.includes("router.patch('/:referralId'"));
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/customer-management/tests/referral-workflow.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/customer-management/tests/referral-queue.test.js')
+], { stdio: 'inherit' });
+console.log('PASS Customer Management centralized referral workflow contract');
 
 const customerRouter = backend.load('customers');
 assert.strictEqual(typeof customerRouter.normalizeImportedClientCorrectionRecord, 'function');

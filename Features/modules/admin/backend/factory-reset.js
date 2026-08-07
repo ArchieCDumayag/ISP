@@ -49,6 +49,7 @@ const STORE_RESETTERS = Object.freeze({
   plans: () => [],
   'pon-state': () => ({}),
   public_applications: () => [],
+  referral_registry: () => ({ version: 1, branches: {} }),
   sessions: (now) => ({ sessions: {}, updatedAt: now }),
   sms_automation_runs: () => [],
   sms_messages: () => [],

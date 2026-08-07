@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { execFileSync } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -96,11 +97,25 @@ const paymentsHtmlSource = fs.readFileSync(path.join(webRoot, 'payments.html'), 
 const paymentsBrowserSource = fs.readFileSync(path.join(webRoot, 'payments.js'), 'utf8');
 const breakdownHtmlSource = fs.readFileSync(path.join(webRoot, 'payment-breakdown.html'), 'utf8');
 const breakdownBrowserSource = fs.readFileSync(path.join(webRoot, 'js/payment-breakdown.js'), 'utf8');
+const breakdownCssSource = fs.readFileSync(path.join(webRoot, 'css/payment-breakdown.css'), 'utf8');
 assert(paymentsHtmlSource.includes('id="paymentBreakdownModal"'));
 assert(paymentsHtmlSource.includes('id="paymentBreakdownModalTableBody"'));
 assert(paymentsHtmlSource.includes('id="paymentBreakdownModalAddPayment"'));
 assert(paymentsHtmlSource.includes('js/payment-breakdown-table.js'));
 assert(breakdownHtmlSource.includes('js/payment-breakdown-table.js'));
+assert(breakdownHtmlSource.includes('id="breakdownPlanReason"'));
+assert(breakdownHtmlSource.includes('id="breakdownPlanConfirmed"'));
+assert(breakdownHtmlSource.includes('id="breakdownPlanHistory"'));
+assert(breakdownHtmlSource.includes('id="breakdownAdjustmentModal"'));
+assert(breakdownHtmlSource.includes('id="breakdownPlanModal"'));
+assert(breakdownHtmlSource.includes('data-tabler-modal'));
+assert(breakdownHtmlSource.includes('id="breakdownAdjustmentClose"'));
+assert(breakdownHtmlSource.includes('id="breakdownPlanClose"'));
+assert(breakdownHtmlSource.includes('id="breakdownReferralReason"'));
+assert(breakdownHtmlSource.includes('id="breakdownReferralReverse"'));
+assert(breakdownHtmlSource.includes('id="breakdownReferralQueue"'));
+assert(breakdownHtmlSource.includes('id="breakdownReferralQueueList"'));
+assert(!breakdownHtmlSource.includes('id="breakdownAdjustmentReferral"'));
 assert(paymentsBrowserSource.includes('openPaymentBreakdownModal(accountNumber, breakdownLink)'));
 assert(paymentsBrowserSource.includes('openPaymentModalForAccount(targetAccount, { lockCustomer: true })'));
 assert(paymentsBrowserSource.includes('refreshPaymentBreakdown: true'));
@@ -108,6 +123,23 @@ assert(paymentsBrowserSource.includes('/api/payment-records/${encodeURIComponent
 assert(!paymentsBrowserSource.includes('window.location.assign(buildPaymentBreakdownUrl(accountNumber))'));
 assert(breakdownBrowserSource.includes('breakdownTableRenderer.render({'));
 assert(!breakdownBrowserSource.includes('const renderBillCell ='));
+assert(breakdownBrowserSource.includes('planChange: {'));
+assert(breakdownBrowserSource.includes('confirmed: true'));
+assert(breakdownBrowserSource.includes('const showBillingModal ='));
+assert(breakdownBrowserSource.includes('showBillingModal(adjustmentToolbar.modal)'));
+assert(breakdownBrowserSource.includes('showBillingModal(planToolbar.modal)'));
+assert(!breakdownBrowserSource.includes('Hide adjustment'));
+assert(!breakdownBrowserSource.includes('Hide plan'));
+assert(breakdownCssSource.includes('z-index: 1080 !important'));
+assert(breakdownCssSource.includes('.payment-breakdown-form-modal.show'));
+assert(breakdownCssSource.includes('pointer-events: auto !important'));
+assert(breakdownBrowserSource.includes('referralApplication: {'));
+assert(breakdownBrowserSource.includes("void saveReferralApplication('reverse')"));
+assert(breakdownBrowserSource.includes('const renderReferralQueue ='));
+assert(breakdownBrowserSource.includes('Next available generated unpaid month'));
+assert(!breakdownHtmlSource.includes('id="breakdownReferralSave"'));
+assert(!breakdownBrowserSource.includes('saveBreakdownAdjustmentPatch({ monthlyReferrals })'));
+assert(!breakdownBrowserSource.includes('saveBreakdownAdjustmentPatch({ planChanges })'));
 
 const sharedBreakdownSource = fs.readFileSync(path.join(webRoot, 'js/payment-breakdown-table.js'), 'utf8');
 const browserSandbox = { window: {}, Intl, Date, Number, Object, String, Array, Math };
@@ -186,5 +218,26 @@ assert.strictEqual(profiles.resolvePlanProfileForRouter(plan), 'default-profile'
 
 const breakdown = backend.load('paymentBreakdownBalance');
 assert.strictEqual(breakdown.roundMoney(123.456), 123.46);
+const paymentRecordsSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/billing/backend/payment-records.js'),
+  'utf8'
+);
+const customersSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/customer-management/backend/customers.js'),
+  'utf8'
+);
+assert(paymentRecordsSource.includes('buildEffectivePlanChangeEntry'));
+assert(paymentRecordsSource.includes('synchronizeCustomerPlanHistory'));
+assert(paymentRecordsSource.includes("Plan changes must be submitted through the audited planChange request."));
+assert(paymentRecordsSource.includes('allocateQueuedReferralDiscounts'));
+assert(paymentRecordsSource.includes('Approved referrals are applied automatically in queue order.'));
+assert(customersSource.includes('planChangeEffectiveAt = null'));
+assert(customersSource.includes('hasFutureEffectivePlanChange'));
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/effective-plan-change.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/referral-application.test.js')
+], { stdio: 'inherit' });
 console.log('PASS Billing normalization, plan-profile, and balance helper behavior');
 console.log('BILLING COMPATIBILITY PASSED');

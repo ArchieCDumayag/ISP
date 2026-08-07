@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/payment-breakdown-table.css?v=1.0">
-    <link rel="stylesheet" href="css/payment-breakdown.css?v=2.3">
+    <link rel="stylesheet" href="css/payment-breakdown.css?v=2.6">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -147,7 +147,8 @@
                                 type="button"
                                 class="btn btn-sm btn-outline-primary"
                                 id="breakdownAdjustmentToggle"
-                                aria-controls="breakdownAdjustmentToolbar"
+                                aria-controls="breakdownAdjustmentModal"
+                                aria-haspopup="dialog"
                                 aria-expanded="false"
                                 hidden
                             >
@@ -158,7 +159,8 @@
                                 type="button"
                                 class="btn btn-sm btn-outline-primary"
                                 id="breakdownPlanToggle"
-                                aria-controls="breakdownPlanToolbar"
+                                aria-controls="breakdownPlanModal"
+                                aria-haspopup="dialog"
                                 aria-expanded="false"
                                 hidden
                             >
@@ -184,130 +186,23 @@
                                 Reconnect
                             </button>
                         </div>
-                        <form class="card breakdown-adjustment-toolbar tabler-form" id="breakdownAdjustmentToolbar" hidden>
-                            <div class="card-body">
-                                <div class="row g-2 align-items-end">
-                                    <div class="col-12 col-lg-auto breakdown-adjustment-toolbar__copy">
-                                        <span class="breakdown-adjustment-toolbar__label">First bill adjustment</span>
-                                        <strong id="breakdownAdjustmentMonth">First bill only</strong>
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentPreviousBalance">Previous Balance</label>
-                                        <input
-                                            type="number"
-                                            class="form-control form-control-sm breakdown-adjustment-input"
-                                            id="breakdownAdjustmentPreviousBalance"
-                                            min="0"
-                                            step="0.01"
-                                            inputmode="decimal"
-                                            placeholder="0.00"
-                                        >
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentAdvance">Advance</label>
-                                        <input
-                                            type="number"
-                                            class="form-control form-control-sm breakdown-adjustment-input"
-                                            id="breakdownAdjustmentAdvance"
-                                            min="0"
-                                            step="0.01"
-                                            inputmode="decimal"
-                                            placeholder="0.00"
-                                        >
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentReferral">Referral</label>
-                                        <input
-                                            type="number"
-                                            class="form-control form-control-sm breakdown-adjustment-input"
-                                            id="breakdownAdjustmentReferral"
-                                            min="0"
-                                            step="0.01"
-                                            inputmode="decimal"
-                                            placeholder="0.00"
-                                        >
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentReferralName">Referred Client</label>
-                                        <input
-                                            type="text"
-                                            class="form-control form-control-sm breakdown-adjustment-name-input"
-                                            id="breakdownAdjustmentReferralName"
-                                            maxlength="160"
-                                            placeholder="Client name"
-                                        >
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownAdjustmentDue">Due</label>
-                                        <input
-                                            type="number"
-                                            class="form-control form-control-sm breakdown-adjustment-input"
-                                            id="breakdownAdjustmentDue"
-                                            min="0"
-                                            step="0.01"
-                                            inputmode="decimal"
-                                            placeholder="0.00"
-                                        >
-                                    </div>
-                                    <div class="col-12 col-lg-auto">
-                                        <button type="submit" class="btn btn-sm btn-primary w-100" id="breakdownAdjustmentSave">
-                                            Save adjustment
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </form>
-                        <form class="card breakdown-adjustment-toolbar tabler-form" id="breakdownPlanToolbar" hidden>
-                            <div class="card-body">
-                                <div class="row g-2 align-items-end">
-                                    <div class="col-12 col-lg-auto breakdown-adjustment-toolbar__copy">
-                                        <span class="breakdown-adjustment-toolbar__label">Future plan change</span>
-                                        <strong>Applies from selected month forward</strong>
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownPlanEffectiveMonth">Effective Month</label>
-                                        <input
-                                            type="month"
-                                            class="form-control form-control-sm breakdown-adjustment-month-input"
-                                            id="breakdownPlanEffectiveMonth"
-                                        >
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownPlanSelect">New Plan</label>
-                                        <select
-                                            class="form-select form-select-sm breakdown-adjustment-plan-select"
-                                            id="breakdownPlanSelect"
-                                        ></select>
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <button type="submit" class="btn btn-sm btn-primary w-100" id="breakdownPlanSave">
-                                            Save plan change
-                                        </button>
-                                    </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="breakdownPlanCancel">
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </form>
                         <form class="card breakdown-adjustment-toolbar tabler-form" id="breakdownReferralToolbar" hidden>
                             <div class="card-body">
                                 <div class="row g-2 align-items-end">
-                                    <div class="col-12 col-lg-auto breakdown-adjustment-toolbar__copy">
-                                        <span class="breakdown-adjustment-toolbar__label">Previous month referral</span>
+                                    <div class="col-12 breakdown-adjustment-toolbar__copy">
+                                        <span class="breakdown-adjustment-toolbar__label">Applied referral discount</span>
                                         <strong id="breakdownReferralMonth">Selected month</strong>
+                                        <small>Approved referrals apply automatically—up to two per month. Use this control only to reverse an applied discount.</small>
                                     </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralSubscriber">Referred Subscriber</label>
+                                    <div class="col-12 col-md-6 col-xl-4">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralSubscriber">Applied Referral</label>
                                         <select
                                             class="form-select form-select-sm breakdown-adjustment-subscriber-select"
                                             id="breakdownReferralSubscriber"
                                         ></select>
                                     </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralAmount">Referral Amount</label>
+                                    <div class="col-12 col-sm-6 col-xl-auto">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralAmount">Automatic Amount</label>
                                         <input
                                             type="number"
                                             class="form-control form-control-sm breakdown-adjustment-input"
@@ -316,14 +211,25 @@
                                             step="0.01"
                                             inputmode="decimal"
                                             placeholder="0.00"
+                                            readonly
                                         >
                                     </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
-                                        <button type="submit" class="btn btn-sm btn-primary w-100" id="breakdownReferralSave">
-                                            Save referral
+                                    <div class="col-12 col-md-6 col-xl">
+                                        <label class="form-label breakdown-adjustment-field__label" for="breakdownReferralReason">Reason</label>
+                                        <input
+                                            type="text"
+                                            class="form-control form-control-sm breakdown-referral-reason-input"
+                                            id="breakdownReferralReason"
+                                            maxlength="500"
+                                            placeholder="Required for the audit trail"
+                                        >
+                                    </div>
+                                    <div class="col-12 col-sm-6 col-xl-auto">
+                                        <button type="button" class="btn btn-sm btn-outline-danger w-100" id="breakdownReferralReverse" hidden>
+                                            Reverse application
                                         </button>
                                     </div>
-                                    <div class="col-12 col-sm-6 col-lg-auto">
+                                    <div class="col-12 col-sm-6 col-xl-auto">
                                         <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="breakdownReferralCancel">
                                             Cancel
                                         </button>
@@ -332,6 +238,24 @@
                             </div>
                         </form>
                     </div>
+
+                    <section class="card breakdown-referral-queue" id="breakdownReferralQueue" aria-labelledby="breakdownReferralQueueTitle">
+                        <div class="card-body">
+                            <div class="breakdown-referral-queue__header">
+                                <span class="breakdown-referral-queue__icon" aria-hidden="true">
+                                    <i class="ti ti-gift"></i>
+                                </span>
+                                <div>
+                                    <div class="breakdown-referral-queue__title-row">
+                                        <h3 id="breakdownReferralQueueTitle">Approved Referral Queue</h3>
+                                        <span class="badge bg-azure-lt" id="breakdownReferralQueueCount">0 waiting</span>
+                                    </div>
+                                    <p id="breakdownReferralQueueSummary">Loading approved referrals...</p>
+                                </div>
+                            </div>
+                            <div class="breakdown-referral-queue__list" id="breakdownReferralQueueList" aria-live="polite"></div>
+                        </div>
+                    </section>
 
                     <div class="table-wrapper elevated">
                         <table class="payment-breakdown-table" aria-label="Payment breakdown table">
@@ -370,9 +294,103 @@
         </div>
     </div>
 
+    <div class="modal modal-blur fade tabler-form-modal payment-breakdown-form-modal" id="breakdownAdjustmentModal" tabindex="-1" aria-labelledby="breakdownAdjustmentModalTitle" aria-hidden="true" data-tabler-modal>
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="breakdownAdjustmentModalTitle">Adjust First Bill</h2>
+                        <p class="modal-subtitle" id="breakdownAdjustmentMonth">First bill only</p>
+                    </div>
+                    <button type="button" class="btn-close" id="breakdownAdjustmentClose" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form class="tabler-modal-form" id="breakdownAdjustmentToolbar">
+                    <div class="modal-body">
+                        <p class="text-secondary small mb-3">Update only the first bill's opening balance, advance, or due amount. Billing will recalculate the breakdown in the backend.</p>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="breakdownAdjustmentPreviousBalance">Previous Balance</label>
+                                <input type="number" class="form-control breakdown-adjustment-input" id="breakdownAdjustmentPreviousBalance" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="breakdownAdjustmentAdvance">Advance</label>
+                                <input type="number" class="form-control breakdown-adjustment-input" id="breakdownAdjustmentAdvance" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="breakdownAdjustmentDue">Due</label>
+                                <input type="number" class="form-control breakdown-adjustment-input" id="breakdownAdjustmentDue" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" id="breakdownAdjustmentCancel" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="breakdownAdjustmentSave">
+                            <i class="ti ti-device-floppy" aria-hidden="true"></i>
+                            Save adjustment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal modal-blur fade tabler-form-modal payment-breakdown-form-modal" id="breakdownPlanModal" tabindex="-1" aria-labelledby="breakdownPlanModalTitle" aria-hidden="true" data-tabler-modal>
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="breakdownPlanModalTitle">Change Subscriber Plan</h2>
+                        <p class="modal-subtitle">Choose an effective month and keep finalized paid bills unchanged.</p>
+                    </div>
+                    <button type="button" class="btn-close" id="breakdownPlanClose" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form class="tabler-modal-form" id="breakdownPlanToolbar">
+                    <div class="modal-body">
+                        <div class="alert alert-info mb-3" role="note">
+                            <div class="d-flex">
+                                <i class="ti ti-info-circle me-2" aria-hidden="true"></i>
+                                <div>Unpaid months recalculate in the backend. Paid bills remain unchanged and create an audited debit or credit adjustment.</div>
+                            </div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-5">
+                                <label class="form-label" for="breakdownPlanEffectiveMonth">Effective Month</label>
+                                <input type="month" class="form-control breakdown-adjustment-month-input" id="breakdownPlanEffectiveMonth">
+                            </div>
+                            <div class="col-12 col-md-7">
+                                <label class="form-label" for="breakdownPlanSelect">New Plan</label>
+                                <select class="form-select breakdown-adjustment-plan-select" id="breakdownPlanSelect"></select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="breakdownPlanReason">Reason</label>
+                                <input type="text" class="form-control" id="breakdownPlanReason" maxlength="500" placeholder="Example: Plan upgrade was missed last month">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-check mb-0 breakdown-plan-confirmation" for="breakdownPlanConfirmed">
+                                    <input class="form-check-input" type="checkbox" id="breakdownPlanConfirmed">
+                                    <span class="form-check-label">I confirm the effective month and understand that finalized paid bills will not be rewritten.</span>
+                                </label>
+                            </div>
+                            <div class="col-12">
+                                <div class="breakdown-plan-history" id="breakdownPlanHistory" aria-live="polite"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" id="breakdownPlanCancel" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="breakdownPlanSave">
+                            <i class="ti ti-device-floppy" aria-hidden="true"></i>
+                            Save plan change
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="layout.js?v=3.9"></script>
     <script src="js/payment-breakdown-table.js?v=1.0"></script>
-    <script src="js/payment-breakdown.js?v=4.4"></script>
+    <script src="js/payment-breakdown.js?v=4.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

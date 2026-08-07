@@ -7,6 +7,7 @@ const entries = Object.freeze({
   customers: './customers',
   philippinesAddresses: './philippines-addresses',
   referralEngine: './referral-engine',
+  referralStore: './referral-store',
   referrals: './referrals'
 });
 

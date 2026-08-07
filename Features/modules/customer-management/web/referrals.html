@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/referrals.css?v=1.0">
+    <link rel="stylesheet" href="css/referrals.css?v=2.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 
@@ -24,10 +24,14 @@
                     <div class="page-title">
                         <p class="eyebrow">Billing Control</p>
                         <h1>Referrals</h1>
-                        <p class="subtitle">Track referral eligibility, successful payments, and earned bill discounts.</p>
+                        <p class="subtitle">Approve unlimited referrals and track automatic two-per-month billing carryover.</p>
                     </div>
                     <div class="header-actions">
-                        <button type="button" class="btn btn-primary btn-sm" id="refreshReferralsBtn">
+                        <button type="button" class="btn btn-primary btn-sm" id="createReferralBtn">
+                            <i class="ti ti-plus" aria-hidden="true"></i>
+                            Create Referral
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="refreshReferralsBtn">
                             <i class="ti ti-refresh" aria-hidden="true"></i>
                             Refresh
                         </button>
@@ -45,21 +49,21 @@
                     <article class="referral-metric">
                         <span class="referral-metric__icon is-success"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
                         <div>
-                            <span>Successful</span>
+                            <span>Queued</span>
                             <strong id="metricReferralSuccessful">0</strong>
                         </div>
                     </article>
                     <article class="referral-metric">
                         <span class="referral-metric__icon is-warning"><i class="ti ti-hourglass" aria-hidden="true"></i></span>
                         <div>
-                            <span>Waiting Payment</span>
+                            <span>Pending Review</span>
                             <strong id="metricReferralWaiting">0</strong>
                         </div>
                     </article>
                     <article class="referral-metric">
                         <span class="referral-metric__icon is-info"><i class="ti ti-gift" aria-hidden="true"></i></span>
                         <div>
-                            <span>Discount Value</span>
+                            <span>Applied Discounts</span>
                             <strong id="metricReferralDiscount">&#8369;0.00</strong>
                         </div>
                     </article>
@@ -77,9 +81,11 @@
                                 <div class="select-wrapper">
                                     <select id="referralStatusFilter">
                                         <option value="">All</option>
-                                        <option value="successful">Successful</option>
-                                        <option value="waiting-payment">Waiting payment</option>
+                                        <option value="eligible">Queued</option>
+                                        <option value="applied">Applied</option>
                                         <option value="pending">Pending</option>
+                                        <option value="reversed">Reversed</option>
+                                        <option value="cancelled">Cancelled</option>
                                     </select>
                                 </div>
                             </div>
@@ -105,17 +111,16 @@
                                     <th>Referrer</th>
                                     <th>Referred Customer</th>
                                     <th>Source</th>
-                                    <th>Eligible Month</th>
-                                    <th>First Bill</th>
-                                    <th>Success Payment</th>
-                                    <th class="is-num">Discount</th>
+                                    <th>Approval</th>
+                                    <th class="is-num">Locked Discount</th>
+                                    <th>Billing Application</th>
                                     <th>Status</th>
                                     <th class="col-actions">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="referralTableBody">
                                 <tr>
-                                    <td colspan="9" class="referral-empty">Loading referrals...</td>
+                                    <td colspan="8" class="referral-empty">Loading referrals...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -128,8 +133,78 @@
         </div>
     </div>
 
+    <div class="referral-modal" id="referralCreateModal" hidden>
+        <div class="referral-modal__dialog card" role="dialog" aria-modal="true" aria-labelledby="referralCreateTitle">
+            <div class="card-header">
+                <div>
+                    <p class="eyebrow mb-1">Referral Registry</p>
+                    <h2 class="card-title" id="referralCreateTitle">Create Referral</h2>
+                </div>
+                <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="closeReferralCreateModal" aria-label="Close create referral modal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="referralCreateForm">
+                <div class="card-body referral-modal__body">
+                    <label class="form-label" for="referralReferredCustomer">Referred Customer</label>
+                    <select class="form-select" id="referralReferredCustomer" required></select>
+
+                    <label class="form-label" for="referralCreateSourceType">Referral Source</label>
+                    <select class="form-select" id="referralCreateSourceType" required>
+                        <option value="customer">Existing customer</option>
+                        <option value="agent">Agent</option>
+                    </select>
+
+                    <div id="referralCreateCustomerField">
+                        <label class="form-label" for="referralCreateCustomer">Referrer Customer</label>
+                        <select class="form-select" id="referralCreateCustomer"></select>
+                    </div>
+                    <div id="referralCreateAgentField" hidden>
+                        <label class="form-label" for="referralCreateAgent">Referral Agent</label>
+                        <select class="form-select" id="referralCreateAgent"></select>
+                    </div>
+
+                    <label class="form-label" for="referralCreateReason">Reason / Reference</label>
+                    <textarea class="form-control" id="referralCreateReason" rows="3" maxlength="500" required placeholder="How this referral was verified"></textarea>
+                    <p class="form-hint">New referrals start as Pending. Admin approval locks the discount and queues it immediately; no referred-client payment is required.</p>
+                </div>
+                <div class="card-footer referral-modal__footer">
+                    <button type="button" class="btn btn-outline-secondary" id="cancelReferralCreate">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveReferralCreate">Create Pending Referral</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="referral-modal" id="referralStatusModal" hidden>
+        <div class="referral-modal__dialog card referral-modal__dialog--compact" role="dialog" aria-modal="true" aria-labelledby="referralStatusTitle">
+            <div class="card-header">
+                <h2 class="card-title" id="referralStatusTitle">Update Referral</h2>
+                <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="closeReferralStatusModal" aria-label="Close referral status modal">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="referralStatusForm">
+                <div class="card-body referral-modal__body">
+                    <p class="text-secondary mb-0" id="referralStatusMessage"></p>
+                    <div id="referralStatusScheduleField" hidden>
+                        <label class="form-label" for="referralStatusApplyFromMonth">Apply From Month</label>
+                        <input class="form-control" id="referralStatusApplyFromMonth" type="month">
+                        <p class="form-hint">Leave blank for the next available billing month. If that month already has two discounts, this referral carries forward automatically.</p>
+                    </div>
+                    <label class="form-label" for="referralStatusReason">Reason</label>
+                    <textarea class="form-control" id="referralStatusReason" rows="3" maxlength="500" required></textarea>
+                </div>
+                <div class="card-footer referral-modal__footer">
+                    <button type="button" class="btn btn-outline-secondary" id="cancelReferralStatus">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveReferralStatus">Confirm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="layout.js?v=3.9"></script>
-    <script src="js/referrals.js?v=1.0"></script>
+    <script src="js/referrals.js?v=2.3"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

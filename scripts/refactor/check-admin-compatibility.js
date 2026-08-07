@@ -155,6 +155,7 @@ const factoryReset = require(path.join(
 ));
 assert.strictEqual(factoryReset.CONFIRMATION_PHRASE, 'CLEAR ALL DATA');
 assert.strictEqual(factoryReset.shouldResetStoreKey('customers'), true);
+assert.strictEqual(factoryReset.shouldResetStoreKey('referral_registry'), true);
 assert.strictEqual(factoryReset.shouldResetStoreKey('finance_expenses_branch_1'), true);
 assert.strictEqual(factoryReset.shouldResetStoreKey('integrations'), false);
 assert(accountsHtml.includes('id="settings-tab-data-reset"'));
@@ -175,6 +176,10 @@ const memoryStores = {
   messenger_reminders: {
     version: 1,
     branches: { 1: { preferences: { 1001: {} }, reminders: { r1: {}, r2: {} } } }
+  },
+  referral_registry: {
+    version: 1,
+    branches: { 1: { records: [{ id: 'referral-1' }] } }
   },
   finance_expenses_branch_1: [{ id: 'expense-1' }],
   sessions: {
@@ -214,6 +219,7 @@ async function verifyFactoryResetContract() {
   assert.strictEqual(memoryStores.accounts[0].role, 'Admin', 'Factory reset must preserve Admin access');
   assert.deepStrictEqual(memoryStores.customers, [], 'Factory reset must clear customers');
   assert.deepStrictEqual(memoryStores.payments, {}, 'Factory reset must clear payments');
+  assert.deepStrictEqual(memoryStores.referral_registry, { version: 1, branches: {} }, 'Factory reset must clear referrals');
   assert.deepStrictEqual(memoryStores.finance_expenses_branch_1, [], 'Factory reset must clear dynamic Finance stores');
   assert.deepStrictEqual(memoryStores.integrations, { xendit: { enabled: true } }, 'Factory reset must preserve integrations');
   assert.deepStrictEqual(Object.keys(memoryStores.sessions.sessions), ['adminSession'], 'Factory reset must retain only Admin sessions');

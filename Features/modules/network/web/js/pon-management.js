@@ -1521,9 +1521,35 @@
     const points = getAllNapCoordinatePoints(state.selectedNapConfigId);
     points.forEach((point) => {
       const marker = window.L.marker([point.lat, point.lng], { zIndexOffset: -120 });
-      const locationLine = point.location ? `<br><small>${escapeHtml(point.location)}</small>` : '';
+      const locationLine = point.location ? `
+        <div class="list-group-item">
+          <span class="map-popup-card__list-label"><i class="ti ti-map-pin" aria-hidden="true"></i> Location</span>
+          <span class="map-popup-card__list-value">${escapeHtml(point.location)}</span>
+        </div>
+      ` : '';
       marker.bindPopup(
-        `<strong>${escapeHtml(point.code)}</strong><br><small>${escapeHtml(formatCoordinatePair(point.lat, point.lng))}</small>${locationLine}`
+        `<div class="card map-popup-card">
+          <div class="card-header">
+            <span class="avatar avatar-sm bg-purple-lt text-purple map-popup-card__avatar"><i class="ti ti-network" aria-hidden="true"></i></span>
+            <div class="map-popup-card__heading">
+              <span class="map-popup-card__kicker">NAP Reference</span>
+              <div class="map-popup-card__title">${escapeHtml(point.code)}</div>
+            </div>
+          </div>
+          <div class="card-body map-popup-card__body">
+            <div class="list-group list-group-flush map-popup-card__list">
+              <div class="list-group-item">
+                <span class="map-popup-card__list-label"><i class="ti ti-current-location" aria-hidden="true"></i> Coordinate</span>
+                <span class="map-popup-card__list-value">${escapeHtml(formatCoordinatePair(point.lat, point.lng))}</span>
+              </div>
+              ${locationLine}
+            </div>
+          </div>
+        </div>`,
+        {
+          className: 'network-map-popup pon-reference-popup',
+          maxWidth: 330
+        }
       );
       marker.addTo(napMapState.napMarkersLayer);
     });

@@ -784,8 +784,8 @@
         button.addEventListener('click', () => byId(button.dataset.closeDialog).close());
     });
     document.querySelectorAll('.temp-dialog').forEach((dialog) => {
-        dialog.addEventListener('click', (event) => {
-            if (event.target === dialog) dialog.close();
+        dialog.addEventListener('cancel', (event) => {
+            event.preventDefault();
         });
     });
 

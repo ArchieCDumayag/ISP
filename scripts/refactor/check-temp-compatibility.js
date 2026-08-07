@@ -496,6 +496,10 @@ async function main() {
   assert(tempJs.includes('The first automatic full monthly charge is on'));
   assert(!tempJs.includes('Manual renewal'));
   assert(!tempJs.includes('Prepaid has no automatic monthly charge'));
+  assert(tempJs.includes("dialog.addEventListener('cancel', (event) => {"));
+  assert(tempJs.includes('event.preventDefault();'));
+  assert(!tempJs.includes('if (event.target === dialog) dialog.close()'));
+  assert(tempJs.includes("document.querySelectorAll('[data-close-dialog]').forEach"));
   assert(tempJs.includes("TEMP_SERVICE_ADDRESSES.includes(customer?.address)"));
   assert(tempJs.includes('const TEMP_PLAN_RATES = Object.freeze({'));
   assert(tempJs.includes("synchronizeCustomerPlanAndRate('plan')"));

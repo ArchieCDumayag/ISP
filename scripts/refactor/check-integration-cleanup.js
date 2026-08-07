@@ -79,6 +79,23 @@ assert(sharedStylesSource.includes(`font-family: var(--app-font-sans-serif, ${ta
 assert(webAppStylesSource.includes(`--app-font-sans-serif: var(--tblr-font-sans-serif, ${tablerSansFallback})`));
 console.log('PASS shared and standalone web typography use the Tabler font stacks');
 
+const tablerEnhanceSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'js', 'tabler-enhance.js'), 'utf8');
+[
+  'const blockImplicitModalDismissal =',
+  'const isInteractiveModalControl =',
+  'if (isInteractiveModalControl(element)) return false',
+  "document.addEventListener('keydown', blockImplicitModalDismissal, true)",
+  "document.addEventListener('mousedown', blockImplicitModalDismissal, true)",
+  "document.addEventListener('click', blockImplicitModalDismissal, true)",
+  "modal.setAttribute('data-bs-backdrop', 'static')",
+  "modal.setAttribute('data-bs-keyboard', 'false')",
+  "modal.setAttribute('data-modal-dismiss-policy', 'explicit')"
+].forEach((expected) => {
+  assert(tablerEnhanceSource.includes(expected), `Shared modal policy is missing ${expected}`);
+});
+assert(tablerEnhanceSource.includes("'button, a, input, select, textarea, label, [role=\"button\"]'"));
+console.log('PASS shared modals require an explicit close, cancel, or completed action');
+
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 [
   './core/config/env-loader',

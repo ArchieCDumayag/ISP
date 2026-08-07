@@ -43,6 +43,7 @@ const webFiles = [
   'pon-management.html',
   'pppoe.html',
   'css/genieacs.css',
+  'css/leaflet-popups-tabler.css',
   'css/pon-management-tabler.css',
   'css/pon-management.css',
   'js/genieacs.js',
@@ -58,6 +59,42 @@ webFiles.forEach((relativePath) => {
   );
 });
 console.log(`PASS Network web root (${webFiles.length} files)`);
+
+const coverageMapSource = fs.readFileSync(path.join(webRoot, 'coverage-map.html'), 'utf8');
+const publicCoverageMapSource = fs.readFileSync(path.join(webRoot, 'coverage-map-app.html'), 'utf8');
+const ponManagementHtmlSource = fs.readFileSync(path.join(webRoot, 'pon-management.html'), 'utf8');
+const ponManagementJsSource = fs.readFileSync(path.join(webRoot, 'js', 'pon-management.js'), 'utf8');
+const leafletPopupStyles = fs.readFileSync(path.join(webRoot, 'css', 'leaflet-popups-tabler.css'), 'utf8');
+
+[coverageMapSource, publicCoverageMapSource].forEach((source) => {
+  assert(source.includes('css/leaflet-popups-tabler.css?v=1.1'));
+  assert(source.includes("className: 'network-map-popup network-link-popup'"));
+  assert(source.includes("className: 'network-map-popup customer-map-popup'"));
+  assert(source.includes("className: 'network-map-popup nap-map-popup'"));
+  assert(source.includes('class="card map-popup-card"'));
+  assert(source.includes('progress progress-sm'));
+  assert(source.includes('const statusBadgeClass ='));
+});
+assert(ponManagementHtmlSource.includes('css/leaflet-popups-tabler.css?v=1.1'));
+assert(ponManagementHtmlSource.includes('js/pon-management.js?v=4.6'));
+assert(ponManagementJsSource.includes("className: 'network-map-popup pon-reference-popup'"));
+assert(ponManagementJsSource.includes('class="card map-popup-card"'));
+[
+  '.network-map-popup.leaflet-popup .leaflet-popup-content-wrapper',
+  '.network-map-popup.leaflet-popup .leaflet-popup-content',
+  '.network-map-popup.leaflet-popup .leaflet-popup-close-button',
+  '.network-map-popup .map-popup-card.card',
+  '.network-map-popup .map-popup-card__list.list-group',
+  'var(--tblr-card-bg',
+  'body.theme-dark .network-map-popup',
+  '@media (max-width: 640px)'
+].forEach((expected) => {
+  assert(leafletPopupStyles.includes(expected), `Tabler Leaflet popup stylesheet is missing ${expected}`);
+});
+assert(leafletPopupStyles.includes('.leaflet-popup-close-button > span'));
+assert(leafletPopupStyles.includes('content: none !important'));
+assert(!leafletPopupStyles.includes('content: "\\00d7"'));
+console.log('PASS coverage and PON Leaflet popups use shared Tabler card UI');
 
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(serverSource.includes('const MODULE_RUNTIMES = loadModuleRuntimes({'));

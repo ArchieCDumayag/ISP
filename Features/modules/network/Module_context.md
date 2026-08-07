@@ -1,6 +1,6 @@
 # Network Module Context
 
-Last reviewed: 2026-07-29
+Last reviewed: 2026-08-07
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -28,10 +28,11 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Frontend entry points
 
-- Canonical browser implementations live under `web/`: five HTML entry points, three stylesheets, and three JavaScript files.
+- Canonical browser implementations live under `web/`: five HTML entry points, four stylesheets, and three JavaScript files.
 - Existing URLs remain `/pppoe.html`, `/pon-management.html`, `/genieacs.html`, `/coverage-map.html`, and `/coverage-map-app.html`.
 - PPPoE, PON, GenieACS, and the administrative coverage map retain shared feature and authentication guards.
 - The application coverage map remains public at `/coverage-map-app.html` and `/coverage-map-app`.
+- `web/css/leaflet-popups-tabler.css` gives administrative/public coverage-map subscriber, NAP, and network-link popups plus PON coordinate reference popups one shared responsive Tabler card presentation with avatars, status badges, lists, progress, dark mode, and one Tabler-style close control. It styles Leaflet's native close glyph and suppresses generated pseudo-element glyphs to prevent duplicate close icons.
 - Network pages continue consuming shared Admin styles, Customer Management coverage styles, Billing current-bill helpers, and shared shell/vendor assets through their unchanged root URLs.
 - All 11 moved browser files are byte-identical to their pre-migration versions.
 
@@ -56,7 +57,7 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Validation
 
-- `npm run refactor:network` verifies the descriptor, retirement of six root entries, 11 web files, server wiring, canonical cross-module dependencies, and representative endpoint/PPPoE/audit/client/PON helper behavior.
+- `npm run refactor:network` verifies the descriptor, retirement of six root entries, 12 web files, server wiring, canonical cross-module dependencies, representative endpoint/PPPoE/audit/client/PON helper behavior, and shared Tabler Leaflet popup structure across both coverage maps and PON Management.
 - `npm run refactor:phase6` runs inventory, Core, Admin, Customer Management, Billing, Network, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Network asset/page URLs, authentication and feature boundaries, public coverage-map data, and unauthenticated MikroTik/PON/GenieACS denials on ports `3190`/`4190`.
@@ -64,6 +65,8 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Latest meaningful changes
 
+- 2026-08-07: Removed the duplicate Leaflet popup close icon by retaining and styling only Leaflet's native close glyph; the popup card layout is unchanged.
+- 2026-08-07: Replaced default/custom Leaflet popup content on both coverage maps and the PON coordinate picker with a shared responsive Tabler card UI, including status badges, icons, structured lists, NAP port progress, dark mode, and mobile sizing.
 - 2026-07-29: Added branch-scoped PON topology and customer-connection round-trip behavior to the shared dashboard full backup/import workflow; live router operations are not invoked.
 - 2026-07-29: Phase 12 revalidated Network through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.
 - 2026-07-29: Phase 11 retired all six Network root shims; runtime and scripts now resolve Network code only through canonical module paths.

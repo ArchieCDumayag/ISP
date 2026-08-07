@@ -1,6 +1,6 @@
 # Temp Workspace Module Context
 
-Last reviewed: 2026-07-31
+Last reviewed: 2026-08-07
 Status: Hidden auxiliary module with isolated secondary-location customer and billing storage.
 
 ## Purpose and current scope
@@ -23,6 +23,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - `web/temp.html` is the module's only browser entry point and contains the combined Customer and Billing panels and dialogs.
 - `web/temp.css` uses Tabler's default font variable and owns the responsive standalone layout.
 - `web/temp.js` calls only `/api/temp`, renders both panels, and handles CRUD, statements, filtering, backup, and restore.
+- Native Temp dialogs ignore Escape and backdrop clicks. They close only through their explicit Close/Cancel controls or after a successful completed action.
 - The plan and monthly-rate dropdowns synchronize in both directions so the stored plan/rate pair cannot disagree through normal form entry.
 - The service-address dropdown stores only Poblacion or Masical through normal form entry.
 - Each customer ledger dialog presents account details and totals first, a chronological debit/credit ledger with running balances, then a newest-first payments-only history with receipt, method, reference, recorder, and amount.
@@ -56,7 +57,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 ## Validation
 
 - `npm run refactor:temp` verifies the runtime descriptor, distinct storage key, in-memory isolation from canonical store sentinels, balance behavior, exact JSON and Excel export/import round trips, workbook columns and sheets, standalone page assets, absence of canonical page/API references, hidden navigation, and Admin guards.
-- The focused Temp check also verifies all four plan/rate dropdown pairs, their two-way synchronization hooks, the exact Poblacion/Masical service-address choices, all three plan types, Date/Number schedule behavior, automatic full-rate Prepaid/Postpaid charges, day-mode Prorate computation, legacy no-back-bill migration, idempotency, customer/transaction sortable headers, and the arranged ledger/payment-history structure.
+- The focused Temp check also verifies all four plan/rate dropdown pairs, their two-way synchronization hooks, the exact Poblacion/Masical service-address choices, all three plan types, Date/Number schedule behavior, automatic full-rate Prepaid/Postpaid charges, day-mode Prorate computation, legacy no-back-bill migration, idempotency, customer/transaction sortable headers, the arranged ledger/payment-history structure, and explicit-only native dialog dismissal.
 - `npm run refactor:smoke` verifies `/temp.html` redirects unauthenticated users, Temp CSS/JS assets resolve, and `/api/temp/workspace` denies unauthenticated requests.
 - `npm run refactor:phase12` is the complete cross-module, security, HTTP, package, and cutover gate.
 - On 2026-07-30, focused isolation checks, HTML/JavaScript structural checks, authenticated read-only API verification, HTTP smoke, and the complete `npm test` suite passed. Interactive browser inspection was unavailable in the session.
@@ -70,6 +71,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 
 ## Latest meaningful changes
 
+- 2026-08-07: Prevented native Temp dialogs from closing through Escape or backdrop clicks; explicit Close/Cancel controls and successful actions remain available.
 - 2026-07-31: Corrected Collector Excel to use the same Asia/Manila calendar date as Temp billing, preventing due-date charges from disappearing during the UTC/local date boundary.
 - 2026-07-30: Updated Collector Excel so Balance is current, Due stays unchanged before billing, and the monthly rate is generated only when billing is reached without double-counting automatic charges.
 - 2026-07-30: Added a confirmed Clear data action that resets only the isolated Temp workspace and leaves canonical Customer Management and Billing storage untouched.

@@ -506,6 +506,7 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="css/leaflet-popups-tabler.css?v=1.1">
 </head>
 <body class="public-coverage-map">
   <div class="coverage-page coverage-map-app-page">
@@ -803,6 +804,14 @@
         if (safe === 'active') return 'Active';
         if (safe === 'inactive') return 'Inactive';
         return 'Planned';
+      };
+
+      const statusBadgeClass = (status, type = 'customer') => {
+        const safe = normalizeStatus(status, 'planned');
+        if (safe === 'active' && type === 'nap') return 'badge bg-purple-lt text-purple';
+        if (safe === 'active') return 'badge bg-green-lt text-green';
+        if (safe === 'inactive') return 'badge bg-red-lt text-red';
+        return 'badge bg-blue-lt text-blue';
       };
 
       const normalizeMikrotikCustomerStatus = (value) => {
@@ -1354,10 +1363,35 @@
             linkRecord.line = line;
             const customerLabel = connection?.customerName || connection?.customerId || connection?.customerRef || 'Customer';
             line.bindPopup(`
-              <strong>${escapeHtml(nap?.code || 'NAP')}</strong> &rarr; <strong>${escapeHtml(customerLabel)}</strong><br>
-              <small>Port: ${escapeHtml(connection?.port || '-')}</small><br>
-              <small>Status: ${escapeHtml(customerMapStatusLabel(customerPoint.status))}</small>
-            `);
+              <div class="card map-popup-card">
+                <div class="card-header">
+                  <span class="avatar avatar-sm bg-blue-lt text-blue map-popup-card__avatar"><i class="ti ti-route" aria-hidden="true"></i></span>
+                  <div class="map-popup-card__heading">
+                    <span class="map-popup-card__kicker">Network Link</span>
+                    <div class="map-popup-card__title map-popup-card__route">
+                      <span>${escapeHtml(nap?.code || 'NAP')}</span>
+                      <i class="ti ti-arrow-right" aria-hidden="true"></i>
+                      <span>${escapeHtml(customerLabel)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="card-body map-popup-card__body">
+                  <div class="list-group list-group-flush map-popup-card__list">
+                    <div class="list-group-item">
+                      <span class="map-popup-card__list-label"><i class="ti ti-plug-connected" aria-hidden="true"></i> Port</span>
+                      <span class="map-popup-card__list-value">${escapeHtml(connection?.port || '-')}</span>
+                    </div>
+                    <div class="list-group-item">
+                      <span class="map-popup-card__list-label"><i class="ti ti-activity" aria-hidden="true"></i> Status</span>
+                      <span class="${statusBadgeClass(customerPoint.status)}">${escapeHtml(customerMapStatusLabel(customerPoint.status))}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `, {
+              className: 'network-map-popup network-link-popup',
+              maxWidth: 340
+            });
             linkRecords.push(linkRecord);
             points.push([napParsed.lat, napParsed.lng], [customerPoint.lat, customerPoint.lng]);
           });
@@ -1405,23 +1439,30 @@
           const paymentRecord = paymentRecordsByAccount.get(normalizeLookupKey(accountNumber)) || null;
           const balance = resolveCustomerCurrentBillDisplay(customer, paymentRecord, paymentRecords);
           const billRow = balance ? `
-              <div class="customer-map-popup__divider" role="presentation"></div>
-              <div class="customer-map-popup__row">
-                <span class="customer-map-popup__metric-label">Current Bill</span>
-                <span>${escapeHtml(balance)}</span>
+            <div class="card-body map-popup-card__body">
+              <div class="list-group list-group-flush map-popup-card__list">
+                <div class="list-group-item">
+                  <span class="map-popup-card__list-label"><i class="ti ti-receipt" aria-hidden="true"></i> Current Bill</span>
+                  <span class="map-popup-card__list-value">${escapeHtml(balance)}</span>
+                </div>
               </div>
+            </div>
           ` : '';
           const marker = L.marker([lat, lng], { icon: markerIcon(status, 'customer') }).bindPopup(`
-            <div class="customer-map-popup__content">
-              <div class="customer-map-popup__header">
-                <div class="customer-map-popup__title">${escapeHtml(name)}</div>
-                <span class="customer-map-popup__name-status customer-map-popup__name-status--${escapeHtml(status)}"></span>
+            <div class="card map-popup-card">
+              <div class="card-header">
+                <span class="avatar avatar-sm bg-blue-lt text-blue map-popup-card__avatar"><i class="ti ti-user" aria-hidden="true"></i></span>
+                <div class="map-popup-card__heading">
+                  <span class="map-popup-card__kicker">Subscriber</span>
+                  <div class="map-popup-card__title">${escapeHtml(name)}</div>
+                  <div class="map-popup-card__subtitle"><i class="ti ti-id" aria-hidden="true"></i> ${escapeHtml(accountNumber)}</div>
+                </div>
+                <span class="${statusBadgeClass(status)} map-popup-card__status">${escapeHtml(customerMapStatusLabel(status))}</span>
               </div>
-              <div class="customer-map-popup__account">${escapeHtml(accountNumber)}</div>
               ${billRow}
             </div>
           `, {
-            className: 'customer-map-popup',
+            className: 'network-map-popup customer-map-popup',
             maxWidth: 320
           });
           customerRecords.push({ marker, status, name, accountNumber, lat, lng });
@@ -1479,35 +1520,43 @@
           const offlineSubscribers = formatSubscriberMetric(nap?.offlineSubscribers, subscriberStatusAvailable);
           const usagePercent = formatUsagePercent(usedPorts, totalPorts);
           const marker = L.marker([lat, lng], { icon: markerIcon(status, 'nap') }).bindPopup(`
-            <div class="nap-map-popup__content">
-              <div class="nap-map-popup__header">
-                <div class="nap-map-popup__badge"><i class="ti ti-network" aria-hidden="true"></i></div>
-                <div class="nap-map-popup__headcopy">
-                  <div class="nap-map-popup__eyebrow">NAP Management</div>
-                  <div class="nap-map-popup__title">${escapeHtml(code)}</div>
+            <div class="card map-popup-card">
+              <div class="card-header">
+                <span class="avatar avatar-sm bg-purple-lt text-purple map-popup-card__avatar"><i class="ti ti-network" aria-hidden="true"></i></span>
+                <div class="map-popup-card__heading">
+                  <span class="map-popup-card__kicker">NAP Management</span>
+                  <div class="map-popup-card__title">${escapeHtml(code)}</div>
                 </div>
+                <span class="${statusBadgeClass(status, 'nap')} map-popup-card__status">${escapeHtml(statusLabel(status))}</span>
               </div>
-              <div class="nap-map-popup__usage">
-                <div class="nap-map-popup__usage-header">
-                  <span class="nap-map-popup__usage-label">Port Usage</span>
-                  <span class="nap-map-popup__usage-value">${escapeHtml(usedPorts)} / ${escapeHtml(totalPorts)} (${escapeHtml(usagePercent)})</span>
+              <div class="card-body map-popup-card__body">
+                <div class="map-popup-card__section">
+                  <div class="map-popup-card__section-head">
+                    <span class="map-popup-card__label">Port Usage</span>
+                    <span class="map-popup-card__value">${escapeHtml(usedPorts)} / ${escapeHtml(totalPorts)} (${escapeHtml(usagePercent)})</span>
+                  </div>
+                  <div class="progress progress-sm"><div class="progress-bar bg-purple" style="width:${escapeHtml(usagePercent)};"></div></div>
                 </div>
-                <div class="nap-map-popup__usage-bar"><span style="width:${escapeHtml(usagePercent)};"></span></div>
-              </div>
-              <div class="nap-map-popup__stats">
-                <div class="nap-map-popup__stat">
-                  <span class="nap-map-popup__stat-label">Online Subscribers</span>
-                  <span class="nap-map-popup__stat-value">${escapeHtml(onlineSubscribers)}</span>
+                <div class="row g-2 map-popup-card__metrics">
+                  <div class="col-4"><div class="map-popup-card__metric"><span class="map-popup-card__label">Available</span><strong>${escapeHtml(availablePorts)}</strong></div></div>
+                  <div class="col-4"><div class="map-popup-card__metric"><span class="map-popup-card__label">Online</span><strong>${escapeHtml(onlineSubscribers)}</strong></div></div>
+                  <div class="col-4"><div class="map-popup-card__metric"><span class="map-popup-card__label">Offline</span><strong>${escapeHtml(offlineSubscribers)}</strong></div></div>
                 </div>
-                <div class="nap-map-popup__stat">
-                  <span class="nap-map-popup__stat-label">Offline Subscribers</span>
-                  <span class="nap-map-popup__stat-value">${escapeHtml(offlineSubscribers)}</span>
+                <div class="list-group list-group-flush map-popup-card__list mt-3">
+                  <div class="list-group-item">
+                    <span class="map-popup-card__list-label"><i class="ti ti-server" aria-hidden="true"></i> OLT</span>
+                    <span class="map-popup-card__list-value">${escapeHtml(linkedOlt)}</span>
+                  </div>
+                  <div class="list-group-item">
+                    <span class="map-popup-card__list-label"><i class="ti ti-hierarchy-2" aria-hidden="true"></i> PON</span>
+                    <span class="map-popup-card__list-value">${escapeHtml(ponRef)}</span>
+                  </div>
                 </div>
               </div>
             </div>
           `, {
-            className: 'nap-map-popup',
-            maxWidth: 380
+            className: 'network-map-popup nap-map-popup',
+            maxWidth: 400
           });
           napRecords.push({ marker, status, code, linkedOlt, ponRef, lat, lng });
           points.push([lat, lng]);

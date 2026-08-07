@@ -1167,6 +1167,66 @@
     '[data-tabler-modal]'
   ].join(',');
 
+  const visibleDialogSelector = [
+    'dialog[open]',
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    '[aria-modal="true"]'
+  ].join(',');
+
+  const isElementTreeVisible = (element) => {
+    if (!element?.isConnected) return false;
+    if (element.matches('dialog') && !element.open) return false;
+    let current = element;
+    while (current && current !== document.documentElement) {
+      if (current.hidden || current.getAttribute?.('aria-hidden') === 'true') return false;
+      const style = window.getComputedStyle(current);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      current = current.parentElement;
+    }
+    return element.getClientRects().length > 0;
+  };
+
+  const hasOpenDialog = () => Array.from(document.querySelectorAll(visibleDialogSelector))
+    .some(isElementTreeVisible);
+
+  const hasBackdropClass = (element) => Array.from(element?.classList || []).some((className) => (
+    className === 'modal-backdrop'
+    || className.endsWith('__backdrop')
+    || className.endsWith('-backdrop')
+  ));
+
+  const isInteractiveModalControl = (element) => Boolean(element?.closest?.(
+    'button, a, input, select, textarea, label, [role="button"]'
+  ));
+
+  const isModalRoot = (element) => {
+    if (!element?.matches) return false;
+    if (isInteractiveModalControl(element)) return false;
+    if (element.matches('[data-tabler-modal], [role="dialog"], [role="alertdialog"], [aria-modal="true"]')) return true;
+    return Array.from(element.classList || []).some((className) => (
+      className === 'modal'
+      || className === 'modal-overlay'
+      || className.endsWith('-modal')
+    ));
+  };
+
+  const blockImplicitModalDismissal = (event) => {
+    if (!hasOpenDialog()) return;
+    if (event.type === 'keydown') {
+      if (event.key !== 'Escape') return;
+    } else {
+      const target = event.target;
+      if (!hasBackdropClass(target) && !isModalRoot(target)) return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  document.addEventListener('keydown', blockImplicitModalDismissal, true);
+  document.addEventListener('mousedown', blockImplicitModalDismissal, true);
+  document.addEventListener('click', blockImplicitModalDismissal, true);
+
   const modalContentSelector = [
     ':scope > .modal-dialog > .modal-content',
     ':scope > .modal-content',
@@ -1418,6 +1478,9 @@
     if (!content) return;
 
     addClasses(modal, 'tabler-modal');
+    modal.setAttribute('data-bs-backdrop', 'static');
+    modal.setAttribute('data-bs-keyboard', 'false');
+    modal.setAttribute('data-modal-dismiss-policy', 'explicit');
     if (modal.classList.contains('modal')) addClasses(modal, 'modal-blur');
     addClasses(content, 'modal-content');
     const dialog = ensureModalDialog(modal, content);

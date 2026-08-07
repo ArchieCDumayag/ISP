@@ -15,6 +15,7 @@ const {
   buildReconnectionSettlement,
   getManilaDateKey,
   getPendingReconnectionSettlement,
+  normalizeChargePolicy,
   normalizeDateKey
 } = require('./reconnection-settlement');
 const { buildReferralLedger, buildReferralDiscountMap } = require('../../customer-management/backend/referral-engine');
@@ -936,9 +937,7 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
     const balanceTreatment = ['keep', 'write-off', 'installment'].includes(String(req.body?.balanceTreatment || '').trim().toLowerCase())
       ? String(req.body.balanceTreatment).trim().toLowerCase()
       : 'keep';
-    const chargePolicy = String(req.body?.chargePolicy || '').trim().toLowerCase() === 'prorated'
-      ? 'prorated'
-      : 'next-cycle';
+    const chargePolicy = normalizeChargePolicy(req.body?.chargePolicy);
     const activationPolicy = String(req.body?.activationPolicy || '').trim().toLowerCase() === 'after-payment'
       ? 'after-payment'
       : 'immediate';
@@ -962,7 +961,7 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
     if (balanceTreatment === 'installment' && snapshot.balance <= 0.005) {
       throw createError(409, 'There is no previous balance to convert into installments.');
     }
-    if (chargePolicy === 'prorated' && hasGeneratedCycleForMonth(snapshot.billingRows, effectiveDate.slice(0, 7))) {
+    if (chargePolicy !== 'next-cycle' && hasGeneratedCycleForMonth(snapshot.billingRows, effectiveDate.slice(0, 7))) {
       throw createError(409, 'A regular bill already exists for this month. Choose Start on next regular cycle to avoid a duplicate reconnection charge.');
     }
     const planCategory = resolvePlanCategory(customer, plans);

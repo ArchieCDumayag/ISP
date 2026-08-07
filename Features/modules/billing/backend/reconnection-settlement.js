@@ -86,17 +86,24 @@ const getMonthEndDateKey = (value) => {
   return formatDateKey(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), day, 12)));
 };
 
+const normalizeChargePolicy = (value) => {
+  const policy = trimText(value, 40).toLowerCase();
+  if (policy === 'prorated') return 'prorated';
+  if (['full-month', 'full_month', 'full month'].includes(policy)) return 'full-month';
+  return 'next-cycle';
+};
+
 const getNextRegularCycleDate = ({ effectiveDate, planType = 'postpaid', chargePolicy = 'next-cycle' } = {}) => {
   const key = normalizeDateKey(effectiveDate);
   const date = parseDateKey(key);
   if (!date) return '';
   const prepaid = String(planType || '').trim().toLowerCase() === 'prepaid';
-  const prorated = String(chargePolicy || '').trim().toLowerCase() === 'prorated';
+  const immediateCharge = normalizeChargePolicy(chargePolicy) !== 'next-cycle';
   if (prepaid) {
-    if (!prorated && date.getUTCDate() === 1) return key;
+    if (!immediateCharge && date.getUTCDate() === 1) return key;
     return formatDateKey(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1, 12)));
   }
-  if (!prorated) return getMonthEndDateKey(key);
+  if (!immediateCharge) return getMonthEndDateKey(key);
   return addMonths(getMonthEndDateKey(key), 1, 'month-end');
 };
 
@@ -178,9 +185,7 @@ const sanitizeReconnectionSettlement = (value = {}) => {
   const balanceTreatment = ['keep', 'write-off', 'installment'].includes(balanceTreatmentValue)
     ? balanceTreatmentValue
     : 'keep';
-  const chargePolicy = trimText(value.chargePolicy, 40).toLowerCase() === 'prorated'
-    ? 'prorated'
-    : 'next-cycle';
+  const chargePolicy = normalizeChargePolicy(value.chargePolicy);
   const activationPolicy = trimText(value.activationPolicy, 40).toLowerCase() === 'after-payment'
     ? 'after-payment'
     : 'immediate';
@@ -200,11 +205,21 @@ const sanitizeReconnectionSettlement = (value = {}) => {
         months: installmentMonths,
         firstMonth: value.installmentSchedule?.[0]?.monthKey
           || value.firstInstallmentMonth
-          || (chargePolicy === 'prorated' ? effectiveDate.slice(0, 7) : normalizeMonthKey(value.nextRegularCycleDate))
+          || (chargePolicy !== 'next-cycle' ? effectiveDate.slice(0, 7) : normalizeMonthKey(value.nextRegularCycleDate))
       })
     : [];
   const activationPayments = sanitizeActivationPayments(value.activationPayments);
   const paidTowardActivation = roundMoney(activationPayments.reduce((sum, entry) => sum + entry.amount, 0));
+  const prorationAmount = chargePolicy === 'prorated'
+    ? roundMoney(Math.max(0, Number(value.prorationAmount ?? value.reconnectionChargeAmount) || 0))
+    : 0;
+  const fullMonthChargeAmount = chargePolicy === 'full-month'
+    ? roundMoney(Math.max(0, Number(
+        value.fullMonthChargeAmount
+        ?? value.reconnectionChargeAmount
+        ?? value.planAmount
+      ) || 0))
+    : 0;
   const statusValue = trimText(value.status, 40).toLowerCase();
   const status = statusValue === 'cancelled'
     ? 'cancelled'
@@ -227,9 +242,9 @@ const sanitizeReconnectionSettlement = (value = {}) => {
     installmentMonths,
     installmentSchedule,
     chargePolicy,
-    prorationAmount: chargePolicy === 'prorated'
-      ? roundMoney(Math.max(0, Number(value.prorationAmount) || 0))
-      : 0,
+    reconnectionChargeAmount: chargePolicy === 'full-month' ? fullMonthChargeAmount : prorationAmount,
+    prorationAmount,
+    fullMonthChargeAmount,
     prorationPeriodStart: chargePolicy === 'prorated'
       ? normalizeDateKey(value.prorationPeriodStart || effectiveDate)
       : '',
@@ -298,7 +313,7 @@ const buildReconnectionSettlement = ({
 } = {}) => {
   const safeEffectiveDate = normalizeDateKey(effectiveDate);
   const safePlanType = String(planType || '').trim().toLowerCase() === 'prepaid' ? 'prepaid' : 'postpaid';
-  const safeChargePolicy = String(chargePolicy || '').trim().toLowerCase() === 'prorated' ? 'prorated' : 'next-cycle';
+  const safeChargePolicy = normalizeChargePolicy(chargePolicy);
   const safeBalanceTreatment = ['keep', 'write-off', 'installment'].includes(String(balanceTreatment || '').trim().toLowerCase())
     ? String(balanceTreatment).trim().toLowerCase()
     : 'keep';
@@ -314,7 +329,7 @@ const buildReconnectionSettlement = ({
   const proration = safeChargePolicy === 'prorated'
     ? calculateProration({ effectiveDate: safeEffectiveDate, planAmount })
     : { amount: 0, periodStart: '', periodEnd: '' };
-  const firstInstallmentMonth = safeChargePolicy === 'prorated'
+  const firstInstallmentMonth = safeChargePolicy !== 'next-cycle'
     ? safeEffectiveDate.slice(0, 7)
     : nextRegularCycleDate.slice(0, 7);
   const safeInstallmentMonths = safeBalanceTreatment === 'installment'
@@ -342,7 +357,13 @@ const buildReconnectionSettlement = ({
     installmentMonths: safeInstallmentMonths,
     installmentSchedule,
     chargePolicy: safeChargePolicy,
+    reconnectionChargeAmount: safeChargePolicy === 'full-month'
+      ? roundMoney(Math.max(0, Number(planAmount) || 0))
+      : proration.amount,
     prorationAmount: proration.amount,
+    fullMonthChargeAmount: safeChargePolicy === 'full-month'
+      ? roundMoney(Math.max(0, Number(planAmount) || 0))
+      : 0,
     prorationPeriodStart: proration.periodStart,
     prorationPeriodEnd: proration.periodEnd,
     nextRegularCycleDate,
@@ -440,6 +461,7 @@ module.exports = {
   getNextRegularCycleDate,
   getPendingReconnectionSettlement,
   isBillingDateSuppressedByReconnection,
+  normalizeChargePolicy,
   normalizeDateKey,
   normalizeMonthKey,
   roundMoney,

@@ -499,9 +499,10 @@
                                 <label class="form-label" for="breakdownReconnectChargePolicy">New Billing Start</label>
                                 <select class="form-select" id="breakdownReconnectChargePolicy">
                                     <option value="prorated">Create a prorated reconnection charge now</option>
+                                    <option value="full-month">Charge the full monthly plan now</option>
                                     <option value="next-cycle">Start on the next regular billing cycle</option>
                                 </select>
-                                <small class="form-hint" id="breakdownReconnectChargeHint">Postpaid and prepaid proration covers today through month-end.</small>
+                                <small class="form-hint" id="breakdownReconnectChargeHint">Proration covers today through month-end; full month charges the complete plan amount.</small>
                             </div>
                             <div class="col-12 col-md-6">
                                 <label class="form-label" for="breakdownReconnectActivationPolicy">Service Activation</label>
@@ -544,7 +545,7 @@
 
     <script src="layout.js?v=3.9"></script>
     <script src="js/payment-breakdown-table.js?v=1.0"></script>
-    <script src="js/payment-breakdown.js?v=5.1"></script>
+    <script src="js/payment-breakdown.js?v=5.2"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

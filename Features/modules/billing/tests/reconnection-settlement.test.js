@@ -48,6 +48,26 @@ assert.strictEqual(isBillingDateSuppressedByReconnection(keepSettlement, '2026-0
 assert.strictEqual(isBillingDateSuppressedByReconnection(keepSettlement, '2026-08-31'), true);
 assert.strictEqual(isBillingDateSuppressedByReconnection(keepSettlement, '2026-09-30'), false);
 
+const fullMonthSettlement = buildReconnectionSettlement({
+  ...baseOptions,
+  balanceTreatment: 'keep',
+  chargePolicy: 'full-month'
+});
+assert.strictEqual(fullMonthSettlement.chargePolicy, 'full-month');
+assert.strictEqual(fullMonthSettlement.reconnectionChargeAmount, 1000);
+assert.strictEqual(fullMonthSettlement.fullMonthChargeAmount, 1000);
+assert.strictEqual(fullMonthSettlement.prorationAmount, 0);
+assert.strictEqual(fullMonthSettlement.nextRegularCycleDate, '2026-09-30');
+assert.strictEqual(isBillingDateSuppressedByReconnection(fullMonthSettlement, '2026-08-31'), true);
+
+const prepaidFullMonthSettlement = buildReconnectionSettlement({
+  ...baseOptions,
+  planType: 'prepaid',
+  chargePolicy: 'full-month'
+});
+assert.strictEqual(prepaidFullMonthSettlement.reconnectionChargeAmount, 1000);
+assert.strictEqual(prepaidFullMonthSettlement.nextRegularCycleDate, '2026-09-01');
+
 const baseRecord = {
   accountNumber: 'RECONNECT-001',
   status: 'active',
@@ -91,6 +111,15 @@ assert.strictEqual(keepRow.previousBalance, 2000);
 assert.strictEqual(keepRow.planAmount, 806);
 assert.strictEqual(keepRow.due, 2806);
 assert.strictEqual(keepBreakdown.endingBalance, 2806);
+
+const fullMonthBreakdown = calculateFor(fullMonthSettlement);
+const fullMonthRow = fullMonthBreakdown.rows.find((row) => row.sourceType === 'reconnection-full-month');
+assert(fullMonthRow, 'The full-month reconnection charge must use its own canonical row type.');
+assert.strictEqual(fullMonthRow.planAmount, 1000);
+assert.strictEqual(fullMonthRow.isProrated, false);
+assert.strictEqual(fullMonthRow.previousBalance, 2000);
+assert.strictEqual(fullMonthRow.due, 3000);
+assert.strictEqual(fullMonthBreakdown.endingBalance, 3000);
 
 const writeOffSettlement = buildReconnectionSettlement({
   ...baseOptions,
@@ -183,6 +212,23 @@ assert.strictEqual(delayedActivation.prorationAmount, 700);
 assert.strictEqual(delayedActivation.nextRegularCycleDate, '2026-10-31');
 assert.strictEqual(delayedActivation.nextDueDate, '2026-11-05');
 assert.strictEqual(delayedActivation.paidTowardActivation, 1000);
+
+const delayedFullMonthActivation = activatePendingReconnectionSettlement(
+  buildReconnectionSettlement({
+    ...baseOptions,
+    chargePolicy: 'full-month',
+    activationPolicy: 'after-payment',
+    requiredPaymentAmount: 1000
+  }),
+  {
+    effectiveDate: '2026-09-10',
+    activationPayments: [{ entryId: 'full-pay-1', amount: 1000, recordedAt: '2026-09-10T02:00:00Z' }],
+    now: new Date('2026-09-10T02:00:00Z')
+  }
+);
+assert.strictEqual(delayedFullMonthActivation.effectiveDate, '2026-09-10');
+assert.strictEqual(delayedFullMonthActivation.reconnectionChargeAmount, 1000);
+assert.strictEqual(delayedFullMonthActivation.nextRegularCycleDate, '2026-10-31');
 
 const activationPaymentHistory = [
   ...baseRecord.history,

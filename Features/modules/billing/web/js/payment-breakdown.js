@@ -2595,13 +2595,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const monthIndex = Number(match[2]) - 1;
         const day = Number(match[3]);
         const prepaid = normalizePlanTypeValue(planType) === 'prepaid';
-        const prorated = chargePolicy === 'prorated';
+        const immediateCharge = chargePolicy !== 'next-cycle';
         if (prepaid) {
-            if (!prorated && day === 1) return dateKey;
+            if (!immediateCharge && day === 1) return dateKey;
             const next = new Date(Date.UTC(year, monthIndex + 1, 1, 12));
             return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-01`;
         }
-        const cycleMonthIndex = prorated ? monthIndex + 1 : monthIndex;
+        const cycleMonthIndex = immediateCharge ? monthIndex + 1 : monthIndex;
         const end = new Date(Date.UTC(year, cycleMonthIndex + 1, 0, 12));
         return `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`;
     };
@@ -2623,19 +2623,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const balanceTreatment = reconnectForm.balanceTreatment?.value || 'keep';
         const installmentMonths = Math.max(2, Math.min(24, Math.trunc(Number(reconnectForm.installmentMonths?.value) || 3)));
         const currentCycleExists = hasGeneratedReconnectionMonth();
-        const proratedOption = Array.from(reconnectForm.chargePolicy?.options || []).find((option) => option.value === 'prorated');
-        if (proratedOption) proratedOption.disabled = currentCycleExists;
-        if (currentCycleExists && reconnectForm.chargePolicy?.value === 'prorated') {
+        const immediateChargeOptions = Array.from(reconnectForm.chargePolicy?.options || [])
+            .filter((option) => ['prorated', 'full-month'].includes(option.value));
+        immediateChargeOptions.forEach((option) => {
+            option.disabled = currentCycleExists;
+        });
+        if (currentCycleExists && ['prorated', 'full-month'].includes(reconnectForm.chargePolicy?.value)) {
             reconnectForm.chargePolicy.value = 'next-cycle';
         }
-        const chargePolicy = reconnectForm.chargePolicy?.value === 'prorated' ? 'prorated' : 'next-cycle';
+        const selectedChargePolicy = reconnectForm.chargePolicy?.value;
+        const chargePolicy = ['prorated', 'full-month'].includes(selectedChargePolicy)
+            ? selectedChargePolicy
+            : 'next-cycle';
         const activationPolicy = reconnectForm.activationPolicy?.value === 'after-payment' ? 'after-payment' : 'immediate';
         const proration = chargePolicy === 'prorated' ? calculateReconnectionProration(today, planAmount) : 0;
+        const reconnectionCharge = chargePolicy === 'full-month' ? planAmount : proration;
         const firstInstallment = balanceTreatment === 'installment'
             ? roundMoney(Math.ceil((balance * 100) / installmentMonths) / 100)
             : 0;
         const suggestedRequiredPayment = roundMoney(
-            proration
+            reconnectionCharge
                 + (balanceTreatment === 'keep' ? balance : 0)
                 + (balanceTreatment === 'installment' ? firstInstallment : 0)
         );
@@ -2657,8 +2664,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (reconnectForm.chargeHint) {
             reconnectForm.chargeHint.textContent = currentCycleExists
-                ? 'A bill already exists this month, so another prorated charge is blocked.'
-                : `${planType === 'prepaid' ? 'Prepaid' : 'Postpaid'} proration covers today through month-end.`;
+                ? 'A bill already exists this month, so both immediate reconnection charge options are blocked.'
+                : `${planType === 'prepaid' ? 'Prepaid' : 'Postpaid'} proration covers today through month-end; full month charges the complete plan amount.`;
         }
         if (reconnectForm.preview) {
             const balanceText = balanceTreatment === 'write-off'
@@ -2668,7 +2675,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     : `${formatCurrency(balance)} remains collectible as the previous balance.`);
             const chargeText = chargePolicy === 'prorated'
                 ? `A separate ${formatCurrency(proration)} reconnection proration will cover today through month-end.`
-                : 'No immediate recurring charge will be created.';
+                : (chargePolicy === 'full-month'
+                    ? `A separate ${formatCurrency(planAmount)} full-month reconnection charge will be created now.`
+                    : 'No immediate recurring charge will be created.');
             const activationText = activationPolicy === 'after-payment'
                 ? `Service waits for the required new-payment amount entered below.`
                 : 'Service activates immediately.';
@@ -3315,8 +3324,11 @@ document.addEventListener('DOMContentLoaded', () => {
             reconnectForm.installmentMonths?.focus();
             return;
         }
-        const chargePolicy = reconnectForm.chargePolicy?.value === 'prorated' ? 'prorated' : 'next-cycle';
-        if (chargePolicy === 'prorated' && hasGeneratedReconnectionMonth()) {
+        const selectedChargePolicy = reconnectForm.chargePolicy?.value;
+        const chargePolicy = ['prorated', 'full-month'].includes(selectedChargePolicy)
+            ? selectedChargePolicy
+            : 'next-cycle';
+        if (chargePolicy !== 'next-cycle' && hasGeneratedReconnectionMonth()) {
             showToast('A bill already exists this month. Choose the next regular billing cycle.', 'error');
             reconnectForm.chargePolicy?.focus();
             return;

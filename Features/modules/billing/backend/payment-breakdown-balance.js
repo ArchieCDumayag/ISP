@@ -1177,6 +1177,33 @@ const takeReconnectionEffects = ({
   };
 };
 
+const getReconnectionChargeAmount = (settlement = {}) => {
+  const chargePolicy = String(settlement?.chargePolicy || '').trim().toLowerCase();
+  if (chargePolicy === 'full-month') {
+    return roundMoney(Math.max(0, Number(
+      settlement.fullMonthChargeAmount
+      ?? settlement.reconnectionChargeAmount
+      ?? settlement.planAmount
+    ) || 0));
+  }
+  if (chargePolicy === 'prorated') {
+    return roundMoney(Math.max(0, Number(
+      settlement.prorationAmount
+      ?? settlement.reconnectionChargeAmount
+    ) || 0));
+  }
+  return 0;
+};
+
+const getReconnectionSourceType = (settlement = {}) => {
+  if (String(settlement?.chargePolicy || '').trim().toLowerCase() === 'full-month') {
+    return 'reconnection-full-month';
+  }
+  return getReconnectionChargeAmount(settlement) > EPSILON
+    ? 'reconnection-proration'
+    : 'reconnection-opening';
+};
+
 const buildSyntheticReconnectionEntries = (context = {}) => (
   (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : [])
     .filter((settlement) => settlement?.status === 'active')
@@ -1187,7 +1214,7 @@ const buildSyntheticReconnectionEntries = (context = {}) => (
         raw: { reconnectionSettlement: settlement },
         index: 1000000 + index,
         id: settlement.reconnectionId,
-        amount: roundMoney(Math.max(0, Number(settlement.prorationAmount) || 0)),
+        amount: getReconnectionChargeAmount(settlement),
         direction: 'debit',
         kind: 'reconnection',
         dateObj,
@@ -1432,7 +1459,7 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
     const openingPreviousBalance = !reconnectionSettlement && isOpeningPreviousBalanceEntry(debit);
     const planChange = resolvePlanChangeForMonth(context, debit.dateObj);
     const planAmount = reconnectionSettlement
-      ? roundMoney(Math.max(0, Number(reconnectionSettlement.prorationAmount) || 0))
+      ? getReconnectionChargeAmount(reconnectionSettlement)
       : openingPreviousBalance
       ? 0
       : (
@@ -1448,9 +1475,9 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
       runningBalance,
       context,
       sourceType: reconnectionSettlement
-        ? (planAmount > EPSILON ? 'reconnection-proration' : 'reconnection-opening')
+        ? getReconnectionSourceType(reconnectionSettlement)
         : (openingPreviousBalance ? 'opening' : 'posted'),
-      proration: reconnectionSettlement && planAmount > EPSILON
+      proration: reconnectionSettlement?.chargePolicy === 'prorated' && planAmount > EPSILON
         ? {
             isProrated: true,
             periodStart: safeDate(reconnectionSettlement.prorationPeriodStart),
@@ -1541,7 +1568,7 @@ const createReconnectionMarkerRow = ({
   isFirstRow = false
 } = {}) => {
   const billDate = safeDate(settlement?.effectiveDate);
-  const planAmount = roundMoney(Math.max(0, Number(settlement?.prorationAmount) || 0));
+  const planAmount = getReconnectionChargeAmount(settlement);
   if (!billDate) return null;
   return createBreakdownRow({
     record,
@@ -1550,8 +1577,8 @@ const createReconnectionMarkerRow = ({
     credits,
     runningBalance,
     context,
-    sourceType: planAmount > EPSILON ? 'reconnection-proration' : 'reconnection-opening',
-    proration: planAmount > EPSILON
+    sourceType: getReconnectionSourceType(settlement),
+    proration: settlement?.chargePolicy === 'prorated' && planAmount > EPSILON
       ? {
           isProrated: true,
           periodStart: safeDate(settlement.prorationPeriodStart),

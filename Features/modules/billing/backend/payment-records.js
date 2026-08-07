@@ -546,7 +546,9 @@ const serializeBillingRow = (row = {}, record = {}) => {
         billLabel: complimentaryRow
             ? 'Complimentary account'
             : (reconnectionRow
-                ? (Number(row?.planAmount) > BILLING_EPSILON ? 'Reconnection prorated charge' : 'Reconnection opening balance')
+                ? (String(row?.sourceType || '').trim().toLowerCase() === 'reconnection-full-month'
+                    ? 'Full-month reconnection charge'
+                    : (Number(row?.planAmount) > BILLING_EPSILON ? 'Reconnection prorated charge' : 'Reconnection opening balance'))
                 : row?.billLabel),
         billMeta: complimentaryRow
             ? (complimentaryWriteOff > BILLING_EPSILON
@@ -554,6 +556,9 @@ const serializeBillingRow = (row = {}, record = {}) => {
                 : 'No recurring charge for this complimentary month')
             : (reconnectionRow
                 ? [
+                    String(row?.sourceType || '').trim().toLowerCase() === 'reconnection-full-month'
+                        ? 'Admin selected the complete monthly plan amount for this reconnection'
+                        : '',
                     Number(row?.reconnectionPreviousBalance) > BILLING_EPSILON
                         ? `Previous disconnected balance ${Number(row.reconnectionPreviousBalance).toFixed(2)}`
                         : 'No previous disconnected balance',

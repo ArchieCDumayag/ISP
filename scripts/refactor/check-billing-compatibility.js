@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -63,6 +64,7 @@ const webFiles = [
   'css/billing-statement.css',
   'css/disconnections.css',
   'css/payment-breakdown.css',
+  'css/payment-breakdown-table.css',
   'css/payment-confirmation-queue-history.css',
   'css/payment-confirmation-queue.css',
   'css/payment-history.css',
@@ -74,6 +76,7 @@ const webFiles = [
   'css/statements.css',
   'js/disconnections.js',
   'js/payment-breakdown.js',
+  'js/payment-breakdown-table.js',
   'js/payment-current-bill.js',
   'js/payment-history.js',
   'js/payment-receipt.js',
@@ -88,6 +91,53 @@ webFiles.forEach((relativePath) => {
   );
 });
 console.log(`PASS Billing web root (${webFiles.length} files)`);
+
+const paymentsHtmlSource = fs.readFileSync(path.join(webRoot, 'payments.html'), 'utf8');
+const paymentsBrowserSource = fs.readFileSync(path.join(webRoot, 'payments.js'), 'utf8');
+const breakdownHtmlSource = fs.readFileSync(path.join(webRoot, 'payment-breakdown.html'), 'utf8');
+const breakdownBrowserSource = fs.readFileSync(path.join(webRoot, 'js/payment-breakdown.js'), 'utf8');
+assert(paymentsHtmlSource.includes('id="paymentBreakdownModal"'));
+assert(paymentsHtmlSource.includes('id="paymentBreakdownModalTableBody"'));
+assert(paymentsHtmlSource.includes('id="paymentBreakdownModalAddPayment"'));
+assert(paymentsHtmlSource.includes('js/payment-breakdown-table.js'));
+assert(breakdownHtmlSource.includes('js/payment-breakdown-table.js'));
+assert(paymentsBrowserSource.includes('openPaymentBreakdownModal(accountNumber, breakdownLink)'));
+assert(paymentsBrowserSource.includes('openPaymentModalForAccount(targetAccount, { lockCustomer: true })'));
+assert(paymentsBrowserSource.includes('refreshPaymentBreakdown: true'));
+assert(paymentsBrowserSource.includes('/api/payment-records/${encodeURIComponent(accountNumber)}'));
+assert(!paymentsBrowserSource.includes('window.location.assign(buildPaymentBreakdownUrl(accountNumber))'));
+assert(breakdownBrowserSource.includes('breakdownTableRenderer.render({'));
+assert(!breakdownBrowserSource.includes('const renderBillCell ='));
+
+const sharedBreakdownSource = fs.readFileSync(path.join(webRoot, 'js/payment-breakdown-table.js'), 'utf8');
+const browserSandbox = { window: {}, Intl, Date, Number, Object, String, Array, Math };
+vm.runInNewContext(sharedBreakdownSource, browserSandbox, { filename: 'payment-breakdown-table.js' });
+const tableRenderer = browserSandbox.window.PaymentBreakdownTable;
+assert.strictEqual(typeof tableRenderer?.createDisplayRows, 'function');
+assert.strictEqual(typeof tableRenderer?.render, 'function');
+const displayRows = tableRenderer.createDisplayRows(
+  { planName: 'Test Plan', billingCycle: 'Every 1st of the month' },
+  [{
+    billDate: '2026-08-01',
+    planType: 'prepaid',
+    planAmount: 1000,
+    previousBalance: 0,
+    advance: 0,
+    referral: 0,
+    due: 1000,
+    amountPaid: 1000,
+    paymentStatus: 'paid',
+    balanceAfterPayment: 0,
+    paymentDetails: [{ amount: 1000, mode: 'Cash', date: '2026-08-01' }]
+  }]
+);
+const mockTableBody = { innerHTML: '' };
+tableRenderer.render({ tbody: mockTableBody, rows: displayRows });
+assert(mockTableBody.innerHTML.includes('Aug 2026'));
+assert(mockTableBody.innerHTML.includes('Every 1st of the month'));
+assert(mockTableBody.innerHTML.includes('is-paid'));
+assert(mockTableBody.innerHTML.includes('Cash'));
+console.log('PASS shared Payment Breakdown table renderer and Payments modal wiring');
 
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(serverSource.includes('const MODULE_RUNTIMES = loadModuleRuntimes({'));

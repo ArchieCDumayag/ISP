@@ -168,6 +168,7 @@ The local development login page is `http://localhost:3100/login.html` when the 
 - Express routers are mounted centrally in `server.js`.
 - The shared static shell comes from `public/index.html`, `public/layout.js`, `public/sidebar.html`, `public/topbar.html`, `public/styles.css`, and related common assets.
 - Shared `public/css/tabler-app.css` applies Tabler's installed default sans-serif stack (`Inter Var`, `Inter`, then system fallbacks) to all rendered UI text across every module page; code-like elements retain Tabler's monospace stack and icon-font classes retain their dedicated fonts.
+- Shared `.close-modal` controls use actual Tabler `btn btn-icon btn-outline-secondary` markup with the `ti-x` icon. `public/css/tabler-app.css` keeps their Tabler sizing, variables, contrast, hover, and focus treatment consistent in light and dark themes without changing modal JavaScript.
 - Module pages and API prefixes are recorded in each `Module_context.md` and `module.json`.
 - `/api/payment-records` is the canonical cross-page billing read model. Each record includes a versioned backend-only `billingSummary`; Payments, Customers, Payment History, and Payment Breakdown require this response and do not fall back to browser billing calculations. `/api/payment-records/reconciliation/report` recalculates branch records and reports duplicate cycles, missing calculated charges, invalid advances/carry-over, missing current cycles, and ending-balance mismatches.
 - Any change to shared navigation, route mounts, common middleware, auth/session contracts, storage contracts, or cross-module response shapes is integration work.
@@ -207,5 +208,6 @@ Use one shared working tree and the coordination script. Agents lock exact files
 
 ## Latest integration changes
 
+- 2026-08-07: Standardized shared `.close-modal` controls as Tabler outline-secondary icon buttons with real `ti-x` glyphs, including the formerly empty Customer view close control. Shared sizing, contrast, hover, and focus behavior now follow Tabler variables in both themes.
 - 2026-08-06: Added the global Admin factory-reset workflow in Admin Settings. It uses read-only preview, current-password and typed-phrase authorization, JSON rollback or a MySQL transaction, preserves Admin/configuration state, clears operational module/Temp records plus generated record files, and is covered without executing the live reset.
 - 2026-08-06: Completed the backend-only Billing read cutover. Version 2 of `/api/payment-records` supplies rows, current/next cycles, status, due date, balance, advance, and reconciliation results; the four Billing/Customer pages show an unavailable state instead of recalculating in the browser. Postpaid generation remains month-end only, and the isolated Temp module is unchanged.

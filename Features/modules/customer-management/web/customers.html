@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="css/customers.css?v=3.1">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body>
@@ -181,7 +181,7 @@
                     <h2 id="customerModalTitle">Add customer</h2>
                     <p class="modal-subtitle">Generate a customer profile, assign a plan, and set the first billing cycle.</p>
                 </div>
-                <button class="close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <form class="customer-form">
                 <div class="form-card form-card--primary">
@@ -453,7 +453,7 @@
                     <p class="modal-eyebrow"><i class="ti ti-map-pin" aria-hidden="true"></i> Coordinates Picker</p>
                     <h2 id="mapPinPickerTitle">Pin Customer Location</h2>
                 </div>
-                <button class="close-modal" id="closeMapPinPickerBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeMapPinPickerBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <div class="map-picker-toolbar">
@@ -491,7 +491,7 @@
                     <p class="modal-eyebrow"><i class="ti ti-map-pin" aria-hidden="true"></i> NAP Map Picker</p>
                     <h2 id="napMapPreviewTitle">Select NAP on Map</h2>
                 </div>
-                <button class="close-modal" id="closeNapMapPreviewBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeNapMapPreviewBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <p class="map-picker-status" id="napMapPreviewInfo"></p>
@@ -510,7 +510,7 @@
                     <p class="modal-eyebrow"><i class="ti ti-scale" aria-hidden="true"></i> Add New Credit Limit</p>
                     <h2 id="creditOverrideTitle">Add New Credit Limit</h2>
                 </div>
-                <button class="close-modal" id="closeCreditOverrideBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeCreditOverrideBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <p class="credit-override-summary" id="creditOverrideSummary">
@@ -541,7 +541,9 @@
                     <button type="button" class="btn btn-icon btn-ghost-primary" data-view-action="edit-account" aria-label="Edit account" title="Edit account">
                         <i class="ti ti-pencil" aria-hidden="true"></i>
                     </button>
-                    <button type="button" class="btn-close close-modal" id="closeViewModalBtn" data-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="closeViewModalBtn" data-dismiss="modal" aria-label="Close">
+                        <i class="ti ti-x" aria-hidden="true"></i>
+                    </button>
                 </div>
             </div>
             <div class="modal-body">
@@ -869,7 +871,7 @@
                     <h2 id="importWarningModalTitle">Review import warnings</h2>
                     <p class="modal-subtitle">Correct the skipped rows below, then retry only those records.</p>
                 </div>
-                <button class="close-modal" id="closeImportWarningModalBtn" type="button" aria-label="Close import warning review">
+                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeImportWarningModalBtn" type="button" aria-label="Close import warning review">
                     <i class="ti ti-x" aria-hidden="true"></i>
                 </button>
             </div>

@@ -3,13 +3,13 @@
   "project": "ISP Billing System",
   "architectureState": "manifest-driven modular monolith",
   "counts": {
-    "files": 376,
-    "javascriptFiles": 186,
+    "files": 378,
+    "javascriptFiles": 187,
     "htmlFiles": 51,
-    "cssFiles": 48,
+    "cssFiles": 49,
     "modules": 9,
     "localRequireEdges": 358,
-    "localHtmlAssetReferences": 445
+    "localHtmlAssetReferences": 449
   },
   "modules": [
     {
@@ -124,6 +124,7 @@
         "Features/modules/billing/web/billing-statement.html",
         "Features/modules/billing/web/css/billing-statement.css",
         "Features/modules/billing/web/css/disconnections.css",
+        "Features/modules/billing/web/css/payment-breakdown-table.css",
         "Features/modules/billing/web/css/payment-breakdown.css",
         "Features/modules/billing/web/css/payment-confirmation-queue-history.css",
         "Features/modules/billing/web/css/payment-confirmation-queue.css",
@@ -136,6 +137,7 @@
         "Features/modules/billing/web/css/statements.css",
         "Features/modules/billing/web/disconnections.html",
         "Features/modules/billing/web/js/disconnections.js",
+        "Features/modules/billing/web/js/payment-breakdown-table.js",
         "Features/modules/billing/web/js/payment-breakdown.js",
         "Features/modules/billing/web/js/payment-current-bill.js",
         "Features/modules/billing/web/js/payment-history.js",
@@ -2619,7 +2621,7 @@
     },
     {
       "from": "Features/modules/billing/web/disconnections.html",
-      "reference": "css/tabler-app.css?v=3.1",
+      "reference": "css/tabler-app.css?v=3.2",
       "resolved": "public/css/tabler-app.css"
     },
     {
@@ -2664,6 +2666,11 @@
     },
     {
       "from": "Features/modules/billing/web/payment-breakdown.html",
+      "reference": "css/payment-breakdown-table.css?v=1.0",
+      "resolved": "Features/modules/billing/web/css/payment-breakdown-table.css"
+    },
+    {
+      "from": "Features/modules/billing/web/payment-breakdown.html",
       "reference": "css/payment-breakdown.css?v=2.3",
       "resolved": "Features/modules/billing/web/css/payment-breakdown.css"
     },
@@ -2674,7 +2681,12 @@
     },
     {
       "from": "Features/modules/billing/web/payment-breakdown.html",
-      "reference": "js/payment-breakdown.js?v=4.3",
+      "reference": "js/payment-breakdown-table.js?v=1.0",
+      "resolved": "Features/modules/billing/web/js/payment-breakdown-table.js"
+    },
+    {
+      "from": "Features/modules/billing/web/payment-breakdown.html",
+      "reference": "js/payment-breakdown.js?v=4.4",
       "resolved": "Features/modules/billing/web/js/payment-breakdown.js"
     },
     {
@@ -2769,7 +2781,7 @@
     },
     {
       "from": "Features/modules/billing/web/payment-confirmation-queue.html",
-      "reference": "css/tabler-app.css?v=3.1",
+      "reference": "css/tabler-app.css?v=3.2",
       "resolved": "public/css/tabler-app.css"
     },
     {
@@ -2899,13 +2911,23 @@
     },
     {
       "from": "Features/modules/billing/web/payments.html",
-      "reference": "css/payments.css?v=3.7",
+      "reference": "css/payment-breakdown-table.css?v=1.0",
+      "resolved": "Features/modules/billing/web/css/payment-breakdown-table.css"
+    },
+    {
+      "from": "Features/modules/billing/web/payments.html",
+      "reference": "css/payments.css?v=4.4",
       "resolved": "Features/modules/billing/web/css/payments.css"
     },
     {
       "from": "Features/modules/billing/web/payments.html",
-      "reference": "css/tabler-app.css?v=3.1",
+      "reference": "css/tabler-app.css?v=3.2",
       "resolved": "public/css/tabler-app.css"
+    },
+    {
+      "from": "Features/modules/billing/web/payments.html",
+      "reference": "js/payment-breakdown-table.js?v=1.0",
+      "resolved": "Features/modules/billing/web/js/payment-breakdown-table.js"
     },
     {
       "from": "Features/modules/billing/web/payments.html",
@@ -2919,7 +2941,7 @@
     },
     {
       "from": "Features/modules/billing/web/payments.html",
-      "reference": "payments.js?v=9.0",
+      "reference": "payments.js?v=9.2",
       "resolved": "Features/modules/billing/web/payments.js"
     },
     {
@@ -3464,7 +3486,7 @@
     },
     {
       "from": "Features/modules/customer-app/web/sms.html",
-      "reference": "css/tabler-app.css?v=3.1",
+      "reference": "css/tabler-app.css?v=3.2",
       "resolved": "public/css/tabler-app.css"
     },
     {
@@ -3699,7 +3721,7 @@
     },
     {
       "from": "Features/modules/customer-management/web/customer-draft-queue.html",
-      "reference": "css/tabler-app.css?v=3.1",
+      "reference": "css/tabler-app.css?v=3.2",
       "resolved": "public/css/tabler-app.css"
     },
     {
@@ -3759,7 +3781,7 @@
     },
     {
       "from": "Features/modules/customer-management/web/customers.html",
-      "reference": "css/tabler-app.css?v=3.1",
+      "reference": "css/tabler-app.css?v=3.2",
       "resolved": "public/css/tabler-app.css"
     },
     {

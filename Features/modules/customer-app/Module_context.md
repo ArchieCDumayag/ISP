@@ -1,6 +1,6 @@
 # Customer App Module Context
 
-Last reviewed: 2026-08-06
+Last reviewed: 2026-08-07
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -34,6 +34,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - Canonical browser implementations live under `web/`; `messenger-reminders.html` with its owned CSS/JavaScript provides the reviewed queue, filters, consent editor, message preview, Meta Inbox link, and audit actions.
 - Existing customer URLs remain `/customer-login.html`, `/customer-portal.html`, `/customer-app.html`, and `/customer-app-popup-reminder.html` with their existing guards and redirects. `/messenger-reminders.html` and `/messenger-reminders` allow Admin or Collector staff; collectors see only customers in their assigned areas.
 - SMS remains protected at `/sms.html`; company information, privacy, and terms pages remain public at their existing root and friendly URLs.
+- SMS modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons.
 - Existing CSS/JavaScript URLs, including root `/sms.js`, remain unchanged through module static composition.
 - Existing migrated browser files retain their original contracts; the Messenger reminder page is an additive module-owned entry point.
 
@@ -67,6 +68,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Latest meaningful changes
 
+- 2026-08-07: Standardized all SMS modal close controls as shared Tabler outline-secondary icon buttons; modal behavior is unchanged.
 - 2026-08-06: Added the semi-automated Messenger Reminder Queue for admins and assigned collectors, with backend-derived billing stages, current-month payment confirmations, deterministic duplicate-resistant keys, Messenger link/consent management, manual review/copy/open workflow, sent/skip/reopen audit history, and no automatic Meta delivery.
 - 2026-07-29: Dashboard full backup/restore now round-trips SMS message history and automation-run records through archive JSON keys when JSON storage is selected; provider delivery and interactive SMS behavior remain MySQL-only.
 - 2026-07-29: Phase 12 revalidated Customer App through the canonical runtime and final package gate; no owned behavior, API, or UI contract changed.

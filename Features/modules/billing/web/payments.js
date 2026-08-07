@@ -39,6 +39,18 @@ document.addEventListener('DOMContentLoaded', function () {
     const paymentHistorySelectedCount = document.getElementById('paymentHistorySelectedCount');
     const paymentHistoryDeleteSelectedBtn = document.getElementById('paymentHistoryDeleteSelectedBtn');
     const paymentHistoryTimeline = document.getElementById('paymentHistoryTimeline');
+    const paymentBreakdownModal = document.getElementById('paymentBreakdownModal');
+    const paymentBreakdownModalSubtitle = document.getElementById('paymentBreakdownModalSubtitle');
+    const paymentBreakdownModalAddPayment = document.getElementById('paymentBreakdownModalAddPayment');
+    const paymentBreakdownModalFullPage = document.getElementById('paymentBreakdownModalFullPage');
+    const paymentBreakdownModalAccount = document.getElementById('paymentBreakdownModalAccount');
+    const paymentBreakdownModalPlan = document.getElementById('paymentBreakdownModalPlan');
+    const paymentBreakdownModalStatus = document.getElementById('paymentBreakdownModalStatus');
+    const paymentBreakdownModalBalance = document.getElementById('paymentBreakdownModalBalance');
+    const paymentBreakdownModalNotice = document.getElementById('paymentBreakdownModalNotice');
+    const paymentBreakdownModalTableBody = document.getElementById('paymentBreakdownModalTableBody');
+    const paymentBreakdownModalSummary = document.getElementById('paymentBreakdownModalSummary');
+    const paymentBreakdownTableRenderer = window.PaymentBreakdownTable || null;
     const accountInfoModal = document.getElementById('accountInfoModal');
     const accountInfoEditBtn = document.getElementById('accountInfoEditBtn');
     const accountInfoInitials = document.getElementById('accountInfoInitials');
@@ -140,6 +152,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const accountInfoHistoryExpandedYears = new Set();
     let paymentHistoryExpandedAccount = '';
     let paymentHistoryEntries = [];
+    let paymentBreakdownRequestId = 0;
+    let activePaymentBreakdownAccount = '';
+    let paymentBreakdownPaymentAccount = '';
     const paymentHistorySelectedEntryIds = new Set();
     const paymentHistoryExpandedYears = new Set();
     let currentBillStateCache = new WeakMap();
@@ -2766,11 +2781,226 @@ document.addEventListener('DOMContentLoaded', function () {
         return true;
     }
 
+    const setPaymentBreakdownNotice = (message = '', type = 'info') => {
+        if (!paymentBreakdownModalNotice) return;
+        const text = String(message || '').trim();
+        paymentBreakdownModalNotice.textContent = text;
+        paymentBreakdownModalNotice.dataset.type = type;
+        paymentBreakdownModalNotice.hidden = !text;
+    };
+
+    const setPaymentBreakdownSummaryValue = (element, value = '-') => {
+        if (!element) return;
+        const text = String(value ?? '').trim();
+        element.textContent = text || '-';
+    };
+
+    const setPaymentBreakdownPaymentLayer = (active) => {
+        const isActive = Boolean(active);
+        paymentModal?.classList.toggle('payment-modal--over-breakdown', isActive);
+        paymentBreakdownModal?.classList.toggle('payment-breakdown-modal--behind-payment', isActive);
+        if (paymentBreakdownModal) {
+            paymentBreakdownModal.inert = isActive;
+            const isVisible = paymentBreakdownModal.classList.contains('show');
+            paymentBreakdownModal.setAttribute('aria-hidden', isActive || !isVisible ? 'true' : 'false');
+        }
+    };
+
+    const resetPaymentBreakdownModal = (accountNumber, customer = null) => {
+        const targetAccount = normalizeAccountNumber(accountNumber);
+        const displayName = customer ? formatCustomerName(customer) : 'Subscriber';
+        if (paymentBreakdownModalSubtitle) {
+            paymentBreakdownModalSubtitle.textContent = [
+                displayName,
+                targetAccount ? `Account ${targetAccount}` : ''
+            ].filter(Boolean).join(' • ');
+        }
+        if (paymentBreakdownModalFullPage) {
+            paymentBreakdownModalFullPage.href = buildPaymentBreakdownUrl(targetAccount);
+        }
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalAccount, targetAccount);
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalPlan);
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalStatus, 'Loading');
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalBalance);
+        if (paymentBreakdownModalStatus) paymentBreakdownModalStatus.dataset.status = 'loading';
+        if (paymentBreakdownTableRenderer?.renderEmpty) {
+            paymentBreakdownTableRenderer.renderEmpty(paymentBreakdownModalTableBody, 'Loading payment breakdown...');
+        }
+        if (paymentBreakdownModalSummary) paymentBreakdownModalSummary.textContent = 'Loading payment breakdown...';
+        setPaymentBreakdownNotice('Loading the canonical billing record...', 'loading');
+    };
+
+    const renderPaymentBreakdownModalRecord = (record = {}) => {
+        const summary = record?.billingSummary;
+        if (!summary || Number(summary.version) < 2 || summary.available !== true || !Array.isArray(summary.rows)) {
+            throw new Error('The canonical backend billing result is unavailable for this account.');
+        }
+        if (!paymentBreakdownTableRenderer?.createDisplayRows || !paymentBreakdownTableRenderer?.render) {
+            throw new Error('The payment breakdown table could not be loaded. Refresh the page and try again.');
+        }
+
+        const accountNumber = normalizeAccountNumber(record.accountNumber || activePaymentBreakdownAccount);
+        const displayName = formatCustomerName(record);
+        const planName = String(record.planName || record.plan || 'Monthly plan').trim() || 'Monthly plan';
+        const latestCanonicalRow = summary.rows.length ? summary.rows[summary.rows.length - 1] : null;
+        const planAmount = Number(
+            record.planAmount
+            ?? record.monthlyAmount
+            ?? latestCanonicalRow?.planAmount
+            ?? record.amount
+        ) || 0;
+        const billingStatus = String(summary.billingStatus || 'unavailable').trim().toLowerCase() || 'unavailable';
+        const billingStatusLabel = toTitleCase(billingStatus);
+        const rows = paymentBreakdownTableRenderer.createDisplayRows(record, summary.rows);
+        const paidRows = rows.filter((row) => row.paymentStatus === 'paid').length;
+        const pendingRows = rows.filter((row) => row.paymentStatus === 'not-generated').length;
+        const unpaidRows = Math.max(0, rows.length - paidRows - pendingRows);
+        const endingBalance = Number(summary.endingBalance ?? summary.balance ?? record.balance) || 0;
+        const reconciliation = summary.reconciliation;
+
+        if (paymentBreakdownModalSubtitle) {
+            paymentBreakdownModalSubtitle.textContent = [
+                displayName,
+                accountNumber ? `Account ${accountNumber}` : '',
+                planName
+            ].filter(Boolean).join(' • ');
+        }
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalAccount, accountNumber);
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalPlan, `${planName} • ${formatCurrency(planAmount)}`);
+        setPaymentBreakdownSummaryValue(paymentBreakdownModalStatus, billingStatusLabel);
+        setPaymentBreakdownSummaryValue(
+            paymentBreakdownModalBalance,
+            paymentBreakdownTableRenderer.formatBalance?.(endingBalance) || formatCurrency(Math.max(0, endingBalance))
+        );
+        if (paymentBreakdownModalStatus) paymentBreakdownModalStatus.dataset.status = billingStatus;
+        if (paymentBreakdownModalFullPage) paymentBreakdownModalFullPage.href = buildPaymentBreakdownUrl(accountNumber);
+
+        paymentBreakdownTableRenderer.render({
+            tbody: paymentBreakdownModalTableBody,
+            rows,
+            editableReferrals: false
+        });
+
+        const summaryParts = [
+            `Showing ${rows.length} bill breakdown${rows.length === 1 ? '' : 's'}.`,
+            `${paidRows} paid, ${unpaidRows} unpaid.`
+        ];
+        if (pendingRows) {
+            summaryParts.push(`${pendingRows} postpaid bill${pendingRows === 1 ? '' : 's'} not generated yet.`);
+        }
+        if (Number(reconciliation?.issueCount) > 0) {
+            summaryParts.push(`Reconciliation: ${Number(reconciliation.issueCount)} issue${Number(reconciliation.issueCount) === 1 ? '' : 's'} detected.`);
+        } else if (reconciliation?.status === 'clean') {
+            summaryParts.push('Reconciliation: clean.');
+        }
+        if (paymentBreakdownModalSummary) paymentBreakdownModalSummary.textContent = summaryParts.join(' ');
+        setPaymentBreakdownNotice('', 'success');
+    };
+
+    const loadPaymentBreakdownModal = async (accountNumber, requestId) => {
+        try {
+            const response = await fetch(`/api/payment-records/${encodeURIComponent(accountNumber)}`, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload?.error || payload?.message || 'Unable to load the payment breakdown.');
+            }
+            if (requestId !== paymentBreakdownRequestId || !paymentBreakdownModal?.classList.contains('show')) return;
+            if (!payload?.record) throw new Error('Customer payment record was not found.');
+            renderPaymentBreakdownModalRecord(payload.record);
+        } catch (error) {
+            if (requestId !== paymentBreakdownRequestId || !paymentBreakdownModal?.classList.contains('show')) return;
+            const message = error?.message || 'Unable to load the payment breakdown.';
+            console.error('Failed to load payment breakdown modal:', error);
+            paymentBreakdownTableRenderer?.renderEmpty?.(paymentBreakdownModalTableBody, message);
+            if (paymentBreakdownModalSummary) paymentBreakdownModalSummary.textContent = 'Payment breakdown could not be loaded.';
+            setPaymentBreakdownSummaryValue(paymentBreakdownModalStatus, 'Unavailable');
+            if (paymentBreakdownModalStatus) paymentBreakdownModalStatus.dataset.status = 'unavailable';
+            setPaymentBreakdownNotice(message, 'error');
+        }
+    };
+
+    function refreshPaymentBreakdownModal(accountNumber) {
+        const targetAccount = normalizeAccountNumber(accountNumber || activePaymentBreakdownAccount);
+        if (!paymentBreakdownModal?.classList.contains('show') || !targetAccount) return;
+        const customer = findCustomerByAccount(allCustomers, targetAccount)
+            || findCustomerByAccount(window.allCustomers, targetAccount)
+            || null;
+        activePaymentBreakdownAccount = targetAccount;
+        paymentBreakdownRequestId += 1;
+        const requestId = paymentBreakdownRequestId;
+        resetPaymentBreakdownModal(targetAccount, customer);
+        void loadPaymentBreakdownModal(targetAccount, requestId);
+    }
+
+    function openPaymentBreakdownModal(accountNumber, triggerElement = null) {
+        const targetAccount = normalizeAccountNumber(accountNumber);
+        if (!paymentBreakdownModal || !targetAccount) return false;
+        const customer = findCustomerByAccount(allCustomers, targetAccount)
+            || findCustomerByAccount(window.allCustomers, targetAccount)
+            || null;
+        activePaymentBreakdownAccount = targetAccount;
+        paymentBreakdownRequestId += 1;
+        const requestId = paymentBreakdownRequestId;
+        const focusableTrigger = triggerElement instanceof HTMLElement
+            && triggerElement.matches('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        lastFocusedElement = focusableTrigger ? triggerElement : document.activeElement;
+        resetPaymentBreakdownModal(targetAccount, customer);
+        paymentBreakdownModal.classList.add('show');
+        paymentBreakdownModal.setAttribute('aria-hidden', 'false');
+        syncModalScrollLock();
+        paymentBreakdownModal.querySelector('.close-modal')?.focus();
+        void loadPaymentBreakdownModal(targetAccount, requestId);
+        return true;
+    }
+
+    function openPaymentFromBreakdownModal() {
+        const targetAccount = normalizeAccountNumber(activePaymentBreakdownAccount);
+        if (!targetAccount) {
+            showToast('Unable to identify the subscriber for this payment.');
+            return;
+        }
+        const opened = openPaymentModalForAccount(targetAccount, { lockCustomer: true });
+        if (!opened) {
+            showToast('Unable to open the payment form for this subscriber.');
+            return;
+        }
+        paymentBreakdownPaymentAccount = targetAccount;
+        setPaymentBreakdownPaymentLayer(true);
+    }
+
+    function closePaymentBreakdownModal() {
+        if (!paymentBreakdownModal) return;
+        paymentBreakdownRequestId += 1;
+        activePaymentBreakdownAccount = '';
+        paymentBreakdownPaymentAccount = '';
+        setPaymentBreakdownPaymentLayer(false);
+        paymentBreakdownModal.classList.remove('show');
+        paymentBreakdownModal.setAttribute('aria-hidden', 'true');
+        syncModalScrollLock();
+        lastFocusedElement?.focus();
+    }
+
     function closeModal(options = {}) {
         if (!options.force && Date.now() < paymentModalIgnoreCloseUntil) return;
+        const breakdownAccount = normalizeAccountNumber(paymentBreakdownPaymentAccount);
+        const shouldReturnToBreakdown = Boolean(
+            breakdownAccount && paymentBreakdownModal?.classList.contains('show')
+        );
+        paymentBreakdownPaymentAccount = '';
         paymentModal.classList.remove('show');
         paymentModal.setAttribute('aria-hidden', 'true');
+        setPaymentBreakdownPaymentLayer(false);
         syncModalScrollLock();
+        if (shouldReturnToBreakdown) {
+            if (options.refreshPaymentBreakdown) {
+                refreshPaymentBreakdownModal(breakdownAccount);
+            }
+            paymentBreakdownModalAddPayment?.focus();
+            return;
+        }
         lastFocusedElement?.focus();
     }
 
@@ -3226,6 +3456,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     openPaymentModalBtn.addEventListener('click', openModal);
+    paymentBreakdownModalAddPayment?.addEventListener('click', openPaymentFromBreakdownModal);
     paymentKindSelect?.addEventListener('change', () => {
         syncPaymentMethodVisibility();
     });
@@ -3521,6 +3752,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 closeHistoryModal();
                 return;
             }
+            if (modalToClose === paymentBreakdownModal) {
+                closePaymentBreakdownModal();
+                return;
+            }
             if (modalToClose === paymentModal) {
                 closeModal();
                 return;
@@ -3547,6 +3782,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (event.target === accountInfoModal) {
             closeAccountInfoModal();
         }
+        if (event.target === paymentBreakdownModal) {
+            closePaymentBreakdownModal();
+        }
         if (event.target === customerAddModal) {
             closeCustomerAddModal();
         }
@@ -3555,6 +3793,7 @@ document.addEventListener('DOMContentLoaded', function () {
     window.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && paymentModal.classList.contains('show')) {
             closeModal();
+            return;
         }
         if (event.key === 'Escape' && customerAddModal?.classList.contains('show')) {
             closeCustomerAddModal();
@@ -3567,6 +3806,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (event.key === 'Escape' && accountInfoModal?.classList.contains('show')) {
             closeAccountInfoModal();
+        }
+        if (event.key === 'Escape' && paymentBreakdownModal?.classList.contains('show')) {
+            closePaymentBreakdownModal();
         }
     });
 
@@ -3765,7 +4007,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const responseData = await response.json();
                 if (!response.ok) throw new Error(responseData.message || `Failed to add transaction`);
                 showToast(`Transaction added successfully!`);
-                closeModal({ force: true });
+                closeModal({ force: true, refreshPaymentBreakdown: true });
                 // Reload all data to reflect changes
                 init();
         } catch (error) {
@@ -3932,7 +4174,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         </span>
                     </td>
                     <td>
-                        <a class="subscriber subscriber-link" href="${paymentBreakdownUrl}" aria-label="Open payment breakdown for ${escapeHtml(displayName)}">
+                        <a class="subscriber subscriber-link" href="${paymentBreakdownUrl}" data-account-number="${accountNumber}" aria-label="Open payment breakdown for ${escapeHtml(displayName)}">
                             <span class="avatar">${displayInitials}</span>
                             <div>
                                 <p class="subscriber-name">${displayName}</p>
@@ -4171,12 +4413,23 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     paymentsTableBody.addEventListener('click', (event) => {
+        const breakdownLink = event.target.closest('a.subscriber-link');
+        if (breakdownLink && paymentsTableBody.contains(breakdownLink)) {
+            event.preventDefault();
+            const accountNumber = normalizeAccountNumber(breakdownLink.dataset.accountNumber || breakdownLink.closest('tr')?.dataset.accountNumber);
+            if (!openPaymentBreakdownModal(accountNumber, breakdownLink)) {
+                showToast('Unable to open the payment breakdown for this subscriber.');
+            }
+            return;
+        }
         if (event.target.closest('button, a, input, select, textarea, label')) return;
         const row = event.target.closest('tr[data-account-number]');
         if (!row) return;
         const accountNumber = normalizeAccountNumber(row.dataset.accountNumber);
         if (!accountNumber) return;
-        window.location.assign(buildPaymentBreakdownUrl(accountNumber));
+        if (!openPaymentBreakdownModal(accountNumber, row)) {
+            showToast('Unable to open the payment breakdown for this subscriber.');
+        }
     });
 
     // Add event listener for deleting entries within the history modal

@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tableBody = document.getElementById('breakdownTableBody');
     const summaryEl = document.getElementById('breakdownSummary');
     const addPaymentBtn = document.getElementById('breakdownAddPaymentBtn');
+    const breakdownTableRenderer = window.PaymentBreakdownTable || null;
     const adjustmentToolbar = {
         form: document.getElementById('breakdownAdjustmentToolbar'),
         toggle: document.getElementById('breakdownAdjustmentToggle'),
@@ -1891,21 +1892,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return { rows: appendDisconnectionMarkerRow(record, rows), context };
     };
 
-    const getAmountClass = (value) => {
-        const amount = Number(value) || 0;
-        if (amount > EPSILON) return 'is-debit';
-        return 'is-even';
-    };
-
-    const getCreditClass = (value) => ((Number(value) || 0) > EPSILON ? 'is-credit' : 'is-even');
-
-    const getBalanceClass = (value) => {
-        const amount = Number(value) || 0;
-        if (amount > EPSILON) return 'is-debit';
-        if (amount < -EPSILON) return 'is-credit';
-        return 'is-even';
-    };
-
     const formatBalance = (value) => {
         const amount = Number(value) || 0;
         if (amount < -EPSILON) return `${formatCurrency(Math.abs(amount))} advance`;
@@ -1929,137 +1915,24 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDisconnectButton(null);
     };
 
-    const renderBillCell = (row) => {
-        return `
-            <span class="breakdown-bill">
-                <span class="breakdown-bill__title">${escapeHtml(row.billLabel)}</span>
-                <span class="breakdown-bill__meta">${escapeHtml(row.billMeta)}</span>
-            </span>
-        `;
-    };
-
-    const renderReferralCell = (row) => {
-        const details = Array.isArray(row.referralDetails) ? row.referralDetails : [];
-        const labels = details
-            .map((item) => {
-                const name = String(item?.referredName || item?.referredAccountNumber || '').trim();
-                const amount = Number(item?.amount) || 0;
-                if (!name) return '';
-                return amount > EPSILON ? `${name} - ${formatCurrency(amount)}` : name;
-            })
-            .filter(Boolean);
-        const detailLabel = labels.length
-            ? labels.slice(0, 2).join(', ') + (labels.length > 2 ? ` +${labels.length - 2}` : '')
-            : '';
-        const detailTitle = details
-            .map((item) => {
-                const name = String(item?.referredName || item?.referredAccountNumber || 'Referral').trim();
-                const amount = Number(item?.amount) || 0;
-                return amount > EPSILON ? `${name}: ${formatCurrency(amount)}` : name;
-            })
-            .join(', ');
-        return `
-            <span class="breakdown-referral-cell">
-                <span class="breakdown-amount ${getCreditClass(row.referral)}">${formatCurrency(row.referral)}</span>
-                ${detailLabel ? `<span class="breakdown-referral-note" title="${escapeHtml(detailTitle)}">${escapeHtml(detailLabel)}</span>` : ''}
-                ${row.isReferralAdjustmentEditable ? `
-                    <button
-                        type="button"
-                        class="btn btn-icon btn-sm btn-outline-primary breakdown-referral-edit"
-                        data-action="edit-referral"
-                        data-month-key="${escapeHtml(row.billingMonthKey || '')}"
-                        title="Edit referral for ${escapeHtml(row.billLabel || 'month')}"
-                        aria-label="Edit referral for ${escapeHtml(row.billLabel || 'month')}"
-                    >
-                        <i class="ti ti-user-dollar" aria-hidden="true"></i>
-                    </button>
-                ` : ''}
-            </span>
-        `;
-    };
-
-    const renderPaymentAmountCell = (row) => {
-        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        if (!details.length) {
-            return `<span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${formatCurrency(row.amountPaid)}</span>`;
-        }
-        return `
-            <span class="breakdown-payment-stack">
-                ${details.map((detail) => `
-                    <span class="breakdown-payment-line">
-                        <span class="breakdown-amount ${getCreditClass(detail.amount)}">${formatCurrency(detail.amount)}</span>
-                    </span>
-                `).join('')}
-            </span>
-        `;
-    };
-
-    const renderPaymentModeCell = (row) => {
-        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        if (!details.length) {
-            return `<span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span>`;
-        }
-        return `
-            <span class="breakdown-payment-stack">
-                ${details.map((detail) => `
-                    <span class="breakdown-payment-line"><span class="breakdown-mode">${escapeHtml(detail.mode || '-')}</span></span>
-                `).join('')}
-            </span>
-        `;
-    };
-
-    const renderPaymentDateCell = (row) => {
-        const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        if (!details.length) {
-            return `<span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span>`;
-        }
-        return `
-            <span class="breakdown-payment-stack">
-                ${details.map((detail) => `
-                    <span class="breakdown-payment-line"><span class="breakdown-date">${escapeHtml(detail.dateLabel || '-')}</span></span>
-                `).join('')}
-            </span>
-        `;
-    };
-
     const renderRows = (rows = []) => {
         if (!tableBody) return;
         if (!rows.length) {
             renderEmpty('No payment breakdown rows available.');
             return;
         }
-
-        tableBody.innerHTML = rows.map((row) => {
-            const formatRowBillAmount = (value) => row.isProrated ? formatCurrencyNoCents(value) : formatCurrency(value);
-            const previousBalanceCell = `<span class="breakdown-amount ${getAmountClass(row.previousBalance)}">${formatCurrency(row.previousBalance)}</span>`;
-            const advanceCell = `<span class="breakdown-amount ${getCreditClass(row.advance)}">${formatCurrency(row.advance)}</span>`;
-            const rowClasses = [
-                row.isAdjustmentEditable ? 'is-first-adjustment-row' : '',
-                row.isMonthlyReferralOverride ? 'is-referral-adjustment-row' : '',
-                row.isDisconnected ? 'is-disconnected-row' : ''
-            ].filter(Boolean).join(' ');
-            const statusCell = row.isDisconnected
-                ? `<span class="breakdown-status is-disconnected">disconnected</span><span class="breakdown-status-note">${escapeHtml(row.disconnectionBillingPolicyLabel || '')}</span>`
-                : `<span class="breakdown-status is-${escapeHtml(row.paymentStatus)}">${escapeHtml(row.paymentStatusLabel || row.paymentStatus)}</span>`;
-            return `
-            <tr${rowClasses ? ` class="${rowClasses}"` : ''}>
-                <td>
-                    ${renderBillCell(row)}
-                </td>
-                <td><span class="breakdown-type is-${escapeHtml(row.planType || 'postpaid')}">${escapeHtml(row.planTypeLabel || 'Postpaid')}</span></td>
-                <td><span class="breakdown-cycle">${escapeHtml(row.billingCycle || '-')}</span></td>
-                <td class="is-num">${previousBalanceCell}</td>
-                <td class="is-num">${advanceCell}</td>
-                <td class="is-num">${renderReferralCell(row)}</td>
-                <td class="is-num"><span class="breakdown-amount ${getAmountClass(row.due)}">${formatRowBillAmount(row.due)}</span></td>
-                <td class="is-num">${renderPaymentAmountCell(row)}</td>
-                <td>${renderPaymentModeCell(row)}</td>
-                <td>${renderPaymentDateCell(row)}</td>
-                <td>${statusCell}</td>
-                <td class="is-num"><span class="breakdown-amount ${getBalanceClass(row.balanceAfterPayment)}">${escapeHtml(formatBalance(row.balanceAfterPayment))}</span></td>
-            </tr>
-        `;
-        }).join('');
+        if (!breakdownTableRenderer?.render) {
+            renderEmpty('Payment breakdown table could not be loaded. Refresh the page and try again.');
+            return;
+        }
+        breakdownTableRenderer.render({
+            tbody: tableBody,
+            rows,
+            editableReferrals: true,
+            formatCurrency,
+            formatCurrencyNoCents,
+            formatBalance
+        });
         renderAdjustmentToolbar(rows);
         renderReferralToolbar(rows);
         renderPlanToolbar();

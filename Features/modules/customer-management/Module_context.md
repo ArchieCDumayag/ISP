@@ -1,6 +1,6 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-08-06
+Last reviewed: 2026-08-07
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -37,6 +37,8 @@ The eight former root backend shims were retired in Phase 11. Existing API prefi
 
 Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/apply-now.js`, `/coverage.css`, and `/coverage.js`. Shared shell/vendor assets fall through to `public/`. Network-owned coverage-map pages continue consuming `/coverage.css` through the module web mount.
 
+Customers and Customer Draft Queue modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons; the formerly empty Customer view close button now uses the same markup.
+
 ## Data and dependencies
 
 - Canonical storage, database, password, session, role, and path imports come from `core/`.
@@ -71,6 +73,7 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/a
 
 ## Latest meaningful changes
 
+- 2026-08-07: Standardized Customers and Customer Draft Queue modal close controls as shared Tabler outline-secondary icon buttons and replaced the empty Customer view close control with a real `ti-x` icon; modal behavior is unchanged.
 - 2026-08-06: Customers now requires backend-only `billingSummary` version 2 for prepaid/postpaid Billing Cycle display and postpaid reactivation balance checks. Stored customer dates/balances are no longer a browser fallback; postpaid generation remains month-end only and Temp remains unchanged.
 - 2026-08-06: Aligned the Customers table prepaid Billing Cycle with Payments by showing the current first-of-month cycle and status plus the next first-of-month cycle, backed by the current payment-record ending balance. Postpaid and Temp remain unchanged.
 - 2026-07-31: Added structured CLIENTS LIST warning records, an editable Customers-page warning modal, and a branch-scoped correction endpoint that retries only skipped rows after account or plan fixes.

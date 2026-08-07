@@ -108,7 +108,6 @@ body {
 .profile-modal__close,
 .logs-modal__close,
 .modal-close,
-.close-modal,
 .toggle-password {
   border-radius: 6px !important;
   border: 1px solid transparent !important;
@@ -122,12 +121,65 @@ body {
 .footer-btn:hover:not(:disabled),
 .profile-modal__close:hover,
 .logs-modal__close:hover,
-.modal-close:hover,
-.close-modal:hover {
+.modal-close:hover {
   background: #eef3f8 !important;
   color: var(--app-primary) !important;
   border-color: #d8e2ee !important;
   transform: none !important;
+}
+
+/* Standard Tabler icon-button treatment for shared modal close controls. */
+.close-modal.btn.btn-icon {
+  width: 2.25rem !important;
+  min-width: 2.25rem !important;
+  height: 2.25rem !important;
+  min-height: 2.25rem !important;
+  flex: 0 0 2.25rem !important;
+  padding: 0 !important;
+  border: 1px solid var(--tblr-border-color, #dce3e9) !important;
+  border-radius: var(--tblr-border-radius, 4px) !important;
+  color: var(--tblr-secondary, #626976) !important;
+  background: var(--tblr-bg-surface, #ffffff) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.close-modal.btn.btn-icon .ti {
+  display: inline-block !important;
+  width: 1.25rem;
+  min-width: 1.25rem;
+  margin: 0 !important;
+  font-family: "tabler-icons" !important;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.close-modal.btn.btn-icon:hover {
+  border-color: var(--tblr-secondary, #626976) !important;
+  color: #ffffff !important;
+  background: var(--tblr-secondary, #626976) !important;
+  box-shadow: none !important;
+}
+
+.close-modal.btn.btn-icon:focus-visible {
+  outline: 3px solid rgba(var(--tblr-secondary-rgb, 98, 105, 118), .25) !important;
+  outline-offset: 2px !important;
+}
+
+body.theme-dark .close-modal.btn.btn-icon,
+[data-bs-theme="dark"] .close-modal.btn.btn-icon {
+  border-color: var(--tblr-border-color, #475569) !important;
+  color: var(--tblr-secondary-color, #cbd5e1) !important;
+  background: var(--tblr-bg-surface, #1e293b) !important;
+}
+
+body.theme-dark .close-modal.btn.btn-icon:hover,
+[data-bs-theme="dark"] .close-modal.btn.btn-icon:hover {
+  border-color: var(--tblr-secondary, #626976) !important;
+  color: #ffffff !important;
+  background: var(--tblr-secondary, #626976) !important;
 }
 
 .topbar-menu-toggle {

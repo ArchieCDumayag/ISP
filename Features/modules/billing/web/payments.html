@@ -9,8 +9,9 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payments.css?v=3.7">
-    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+    <link rel="stylesheet" href="css/payments.css?v=4.4">
+    <link rel="stylesheet" href="css/payment-breakdown-table.css?v=1.0">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 
@@ -161,7 +162,7 @@
                     <p class="modal-subtitle">Record a new financial transaction for a customer.</p>
                     <p class="modal-subtitle" id="paymentModalRecorder"></p>
                 </div>
-                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <form id="paymentForm" class="payment-form" novalidate>
                 <div class="form-grid">
@@ -222,6 +223,92 @@
         </div>
     </div>
 
+    <div id="paymentBreakdownModal" class="modal payment-breakdown-modal" role="dialog" aria-modal="true"
+        aria-labelledby="paymentBreakdownModalTitle" aria-describedby="paymentBreakdownModalSubtitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="payment-breakdown-modal__heading">
+                    <p class="payment-breakdown-modal__eyebrow">Subscriber Billing</p>
+                    <h2 id="paymentBreakdownModalTitle">Payment Breakdown</h2>
+                    <p class="modal-subtitle" id="paymentBreakdownModalSubtitle">Loading subscriber billing details...</p>
+                </div>
+                <div class="payment-breakdown-modal__header-actions">
+                    <button type="button" class="primary-btn payment-breakdown-modal__add-payment"
+                        id="paymentBreakdownModalAddPayment" aria-label="Add payment for this subscriber"
+                        aria-haspopup="dialog">
+                        <i class="ti ti-plus" aria-hidden="true"></i>
+                        <span>Add Payment</span>
+                    </button>
+                    <a class="ghost-btn payment-breakdown-modal__full-page" id="paymentBreakdownModalFullPage"
+                        href="payment-breakdown.html" target="_blank" rel="noopener">
+                        <i class="ti ti-external-link" aria-hidden="true"></i>
+                        <span>Open Full Page</span>
+                    </a>
+                    <button type="button" class="btn btn-icon btn-outline-secondary close-modal" data-dismiss="modal" aria-label="Close payment breakdown">
+                        <i class="ti ti-x" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body payment-breakdown-modal__body">
+                <div class="payment-breakdown-modal__overview" aria-label="Payment breakdown summary">
+                    <article class="payment-breakdown-modal__summary-card">
+                        <span>Account</span>
+                        <strong id="paymentBreakdownModalAccount">-</strong>
+                    </article>
+                    <article class="payment-breakdown-modal__summary-card">
+                        <span>Plan</span>
+                        <strong id="paymentBreakdownModalPlan">-</strong>
+                    </article>
+                    <article class="payment-breakdown-modal__summary-card">
+                        <span>Billing Status</span>
+                        <strong id="paymentBreakdownModalStatus">-</strong>
+                    </article>
+                    <article class="payment-breakdown-modal__summary-card">
+                        <span>Ending Balance</span>
+                        <strong id="paymentBreakdownModalBalance">-</strong>
+                    </article>
+                </div>
+
+                <div class="payment-breakdown-modal__notice" id="paymentBreakdownModalNotice" role="status" aria-live="polite">
+                    Loading payment breakdown...
+                </div>
+
+                <div class="payment-breakdown-modal__table-wrapper elevated">
+                    <table class="payment-breakdown-table" aria-label="Payment breakdown table">
+                        <caption>Payment breakdown records</caption>
+                        <thead>
+                            <tr>
+                                <th>Bill</th>
+                                <th>Type</th>
+                                <th>Billing Cycle</th>
+                                <th class="is-num">Previous Balance</th>
+                                <th class="is-num">Advance</th>
+                                <th class="is-num">Referral</th>
+                                <th class="is-num">Due</th>
+                                <th class="is-num">Amount Paid</th>
+                                <th>Payment Mode</th>
+                                <th>Payment Date</th>
+                                <th>Payment Status</th>
+                                <th class="is-num">Balance After Payment</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentBreakdownModalTableBody">
+                            <tr class="payment-breakdown-empty-row">
+                                <td colspan="12" class="payment-breakdown-empty-cell">
+                                    <span class="payment-breakdown-empty-message">Loading payment breakdown...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="payment-breakdown-modal__footer-summary" id="paymentBreakdownModalSummary">
+                    Loading payment breakdown...
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="customerAddModal" class="modal customer-add-embed-modal" role="dialog" aria-modal="true"
         aria-labelledby="customerAddModalTitle" aria-hidden="true">
         <div class="modal-content">
@@ -238,7 +325,7 @@
                     <h2 id="historyModalTitle">Transaction History</h2>
                     <p class="modal-subtitle">For <span id="selectedCustomerName"></span></p>
                 </div>
-                <button class="close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary close-modal" data-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body history-modal-body">
                 <div class="history-bulk-toolbar" id="paymentHistoryBulkToolbar" hidden>
@@ -261,7 +348,8 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payments.js?v=9.0"></script>
+    <script src="js/payment-breakdown-table.js?v=1.0"></script>
+    <script src="payments.js?v=9.2"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

@@ -1,6 +1,6 @@
 # Billing Module Context
 
-Last reviewed: 2026-08-05
+Last reviewed: 2026-08-07
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -33,9 +33,12 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 - Canonical browser implementations live under `web/`, including twelve HTML entry points plus their root, `css/`, and `js/` assets.
 - Existing root URLs such as `/plans.html`, `/payments.html`, `/quick-payment.html`, `/payment-receipt`, `/billing-statement.html`, and `/account-statement.html` are preserved through the configured module web root.
 - `/payments.js` and `/plans.js` resolve from the Billing web root through shared static composition.
+- Billing modal close controls on Payments, Disconnections, and Payment Confirmation Queue use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons.
+- Selecting a subscriber name or row on `/payments.html` opens a Payment Breakdown modal. The modal hides Type, Billing Cycle, and the plan/amount/source metadata beneath each Bill, uses nearly the full desktop viewport (up to 1760px wide), and redistributes a compact fixed layout across the other 10 columns with wrapped, whole-word table headers; narrow screens retain horizontal scrolling for readability. **Add Payment** opens the existing transaction form with that subscriber locked, then refreshes the canonical breakdown after a successful payment. It also retains an **Open Full Page** link to `/payment-breakdown.html` for adjustment, plan-change, disconnection, and other full-page controls. The full Payment Breakdown page continues to show Type, Billing Cycle, and Bill metadata.
+- `web/js/payment-breakdown-table.js` and `web/css/payment-breakdown-table.css` are shared by the Payments modal and the full Payment Breakdown page so table markup, status styling, payment stacks, and currency presentation do not diverge.
 - Protected Billing pages retain the shared admin/customer authentication redirects.
 - Payment confirmation queue pages retain their feature gates; both are disabled by the default feature profile.
-- All 34 moved browser files are byte-identical to their pre-migration versions.
+- Existing Billing browser URLs remain unchanged; current UI behavior is implemented only from the canonical module web root.
 
 ## Data and dependencies
 
@@ -51,6 +54,7 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 - Customer App submits payment confirmations and displays customer balances/statements.
 - Business profile and integration settings are Admin-owned shared inputs.
 - Payments, Payment History, Payment Breakdown, and the Customer Management customer list require `/api/payment-records` as their shared billing read source. Missing/invalid summaries display a Billing unavailable state; browser billing fallbacks are not executed.
+- The Payments breakdown table remains display-only: it formats version 2 `billingSummary.rows` but does not calculate charges, balances, advances, or statuses in the browser. Its **Add Payment** action reuses the existing locked-customer payment form and `/api/payments/:accountNumber` write path; adjustment, plan-change, and service controls remain on the existing full page.
 - Manual Billing payments already pass through `/api/payments/:accountNumber`, which validates duplicate references/fingerprints and uses a database transaction in relational mode. Collector capture remains a separate Collector-owned write contract and is not changed by this read-model cutover.
 
 ## Known risks and follow-up
@@ -64,7 +68,8 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 
 ## Validation
 
-- `npm run refactor:billing` verifies the descriptor, retirement of thirteen root entries, 34 web files, server wiring, repository-root data paths, and representative normalization/profile/balance behavior.
+- `npm run refactor:billing` verifies the descriptor, retirement of thirteen root entries, 36 web files, server wiring, repository-root data paths, and representative normalization/profile/balance behavior.
+- `npm run refactor:billing` also verifies both breakdown views load the shared table renderer, Payments no longer navigates away on subscriber/row selection, the modal requests the per-account canonical API, and a representative prepaid row renders through the shared component.
 - `node Features/modules/billing/tests/prepaid-billing-cycle.test.js` covers first-of-month prepaid dates, same-month payment consolidation, legacy debit exclusion, advance carry-over, and unchanged postpaid month-end rows.
 - `node Features/modules/billing/tests/canonical-billing-summary.test.js` verifies version 2 of the backend summary, same-month payment consolidation, unchanged pre-month-end recurring postpaid representation, postpaid activation-proration settlement, reconciliation detection, and backend-only consumption by all four pages.
 - `npm run refactor:phase5` runs inventory, Core, Admin, Customer Management, Billing, security, and isolated HTTP checks.
@@ -73,6 +78,8 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 
 ## Latest meaningful changes
 
+- 2026-08-07: Standardized Billing modal close controls on Payments, Disconnections, and Payment Confirmation Queue as shared Tabler outline-secondary icon buttons; modal behavior is unchanged.
+- 2026-08-06: Changed Payments subscriber and row selection to open a responsive Payment Breakdown modal backed by the latest canonical per-account billing summary. Its presentation hides Type, Billing Cycle, and the plan/amount/source metadata beneath each Bill, then redistributes a viewport-wide compact fixed layout across the remaining 10 columns with whole-word header wrapping; narrow screens scroll horizontally. **Add Payment** now opens the existing locked-subscriber transaction form above the breakdown and refreshes the canonical rows after success. The modal and retained full page share one table renderer; the full page still shows all fields and keeps adjustment and service controls available through **Open Full Page**.
 - 2026-08-06: Preserved a postpaid customer's stored first billing cycle when the first payment arrives later, represented a mid-month activation as one prorated backend cycle, and applied payments to that charge before classifying any excess as advance. Normal recurring postpaid generation remains month-end only; Temp is unchanged.
 - 2026-08-06: Cut Payments, Payment History, Payment Breakdown, and Customers over to required backend-only `billingSummary` version 2 results. The backend now owns status/due-date calculations and returns per-account reconciliation plus an Admin branch report; postpaid remains month-end only and Temp remains unchanged.
 - 2026-08-06: Prepaid synthetic breakdowns now retain an earlier stored billing-cycle month when the first payment is recorded later, preventing prior unpaid cycles from disappearing and being misclassified as advance. Postpaid and Temp calculations are unchanged.

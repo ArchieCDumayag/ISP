@@ -200,6 +200,12 @@
     background: rgba(245, 159, 0, .12);
 }
 
+.breakdown-status.is-complimentary {
+    color: var(--tblr-azure, #4299e1);
+    background: color-mix(in srgb, var(--tblr-azure, #4299e1) 14%, transparent);
+    border-color: color-mix(in srgb, var(--tblr-azure, #4299e1) 32%, transparent);
+}
+
 .breakdown-status-note {
     display: block;
     margin-top: .2rem;

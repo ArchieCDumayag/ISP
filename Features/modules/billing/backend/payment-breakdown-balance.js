@@ -1,6 +1,11 @@
 const EPSILON = 0.005;
 const MAX_SYNTHETIC_ROWS = 120;
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'Asia/Manila';
+const {
+  buildComplimentaryAccountSummary,
+  getComplimentaryPeriodForMonth,
+  sanitizeComplimentaryPeriods
+} = require('./complimentary-account');
 
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONTH_KEY_RE = /^(\d{4})-(\d{2})$/;
@@ -203,7 +208,7 @@ const normalizePlanChangeAdjustments = (input = []) => {
 };
 const normalizePaymentBreakdownAdjustment = (adjustment = null) => {
   if (!adjustment || typeof adjustment !== 'object' || Array.isArray(adjustment)) {
-    return { firstBill: null, monthlyReferrals: {}, planChanges: [] };
+    return { firstBill: null, monthlyReferrals: {}, planChanges: [], complimentaryPeriods: [] };
   }
   return {
     firstBill: normalizeFirstBillAdjustment(adjustment),
@@ -216,6 +221,11 @@ const normalizePaymentBreakdownAdjustment = (adjustment = null) => {
       adjustment.planChanges
       || adjustment.scheduledPlanChanges
       || adjustment.planChangeAdjustments
+    ),
+    complimentaryPeriods: sanitizeComplimentaryPeriods(
+      adjustment.complimentaryPeriods
+      || adjustment.complimentaryAccountPeriods
+      || adjustment.freeAccountPeriods
     )
   };
 };
@@ -886,7 +896,14 @@ const createReferralContext = (record, entries, customers) => {
     usedSyntheticBills: false,
     firstBillAdjustment: breakdownAdjustment.firstBill,
     monthlyReferralAdjustments: breakdownAdjustment.monthlyReferrals,
-    planChanges: breakdownAdjustment.planChanges
+    planChanges: breakdownAdjustment.planChanges,
+    complimentaryPeriods: breakdownAdjustment.complimentaryPeriods,
+    complimentaryWriteOffRemaining: new Map(
+      breakdownAdjustment.complimentaryPeriods.map((period) => [
+        period.periodId,
+        Number(period.writeOffAmount) || 0
+      ])
+    )
   };
 };
 
@@ -1047,6 +1064,37 @@ const buildManualReferralDetails = (adjustment = {}, amount = 0, fallbackId = 'm
   }];
 };
 
+const takeComplimentaryWriteOff = (context = {}, billDate = null, outstandingAmount = 0) => {
+  const monthKey = getBillingMonthKey(billDate);
+  let remainingDue = roundMoney(Math.max(0, Number(outstandingAmount) || 0));
+  if (!monthKey || remainingDue <= EPSILON) return { amount: 0, details: [] };
+  const periods = Array.isArray(context.complimentaryPeriods) ? context.complimentaryPeriods : [];
+  const remainingByPeriod = context.complimentaryWriteOffRemaining instanceof Map
+    ? context.complimentaryWriteOffRemaining
+    : new Map(periods.map((period) => [period.periodId, Number(period.writeOffAmount) || 0]));
+  context.complimentaryWriteOffRemaining = remainingByPeriod;
+  const details = [];
+  let amount = 0;
+
+  periods.forEach((period) => {
+    if (remainingDue <= EPSILON || !period?.periodId || period.effectiveMonth > monthKey) return;
+    const available = roundMoney(Math.max(0, Number(remainingByPeriod.get(period.periodId)) || 0));
+    if (available <= EPSILON) return;
+    const applied = roundMoney(Math.min(available, remainingDue));
+    remainingByPeriod.set(period.periodId, roundMoney(available - applied));
+    remainingDue = roundMoney(remainingDue - applied);
+    amount = roundMoney(amount + applied);
+    details.push({
+      periodId: period.periodId,
+      effectiveMonth: period.effectiveMonth,
+      amount: applied,
+      reason: period.reason || ''
+    });
+  });
+
+  return { amount, details };
+};
+
 const createBreakdownRow = ({
   record,
   billDate,
@@ -1114,11 +1162,12 @@ const createBreakdownRow = ({
   const referralDetails = hasReferralOverride
     ? buildManualReferralDetails(referralAdjustment, referral, firstBillAdjustment ? 'manual-first-bill-referral' : `manual-referral-${getBillingMonthKey(billDate)}`)
     : automaticReferral.items;
-  const computedRawDue = roundMoney(planAmount - advance + previousBalance - referral);
   const hasDueOverride = Boolean(firstBillAdjustment && hasAmountOverride(firstBillAdjustment.due));
-  const rawDue = hasDueOverride
+  const rawDueBeforeWriteOff = hasDueOverride
     ? roundMoney(Math.max(0, Number(firstBillAdjustment.due) || 0))
-    : computedRawDue;
+    : roundMoney(planAmount - advance + previousBalance - referral);
+  const complimentaryWriteOff = takeComplimentaryWriteOff(context, billDate, rawDueBeforeWriteOff);
+  const rawDue = roundMoney(rawDueBeforeWriteOff - complimentaryWriteOff.amount);
   const due = roundMoney(Math.max(0, rawDue));
   const amountPaid = sumEntries(paymentCredits);
   const paymentDetails = buildPaymentDetails(paymentCredits);
@@ -1136,6 +1185,8 @@ const createBreakdownRow = ({
       advance,
       referral,
       referralDetails,
+      complimentaryWriteOff: complimentaryWriteOff.amount,
+      complimentaryWriteOffDetails: complimentaryWriteOff.details,
       due,
       isReferralOverride: hasReferralOverride,
       isMonthlyReferralOverride: Boolean(monthlyReferralAdjustment && hasReferralOverride),
@@ -1420,20 +1471,25 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
 
     const pendingPostpaidBill = isPendingPostpaidSyntheticBill(record, billDate, todayBillingDate);
     const activationProration = Boolean(proration.isProrated);
+    const complimentaryPeriod = getComplimentaryPeriodForMonth(context.complimentaryPeriods, getBillingMonthKey(billDate));
     const result = createBreakdownRow({
       record,
       billDate,
-      planAmount: pendingPostpaidBill && !activationProration ? 0 : proration.amount,
+      planAmount: complimentaryPeriod ? 0 : (pendingPostpaidBill && !activationProration ? 0 : proration.amount),
       credits: cycleCredits,
       runningBalance,
       context,
-      sourceType: activationProration
+      sourceType: complimentaryPeriod
+        ? 'complimentary'
+        : (activationProration
         ? 'activation-proration'
-        : (pendingPostpaidBill ? 'pending-postpaid' : 'monthly'),
-      proration: activationProration ? proration : null,
+        : (pendingPostpaidBill ? 'pending-postpaid' : 'monthly')),
+      proration: activationProration && !complimentaryPeriod ? proration : null,
       planOverride: planChange,
       isFirstRow: rows.length === 0,
-      paymentStatusOverride: pendingPostpaidBill && !activationProration ? 'not-generated' : ''
+      paymentStatusOverride: complimentaryPeriod
+        ? 'complimentary'
+        : (pendingPostpaidBill && !activationProration ? 'not-generated' : '')
     });
     rows.push(result.row);
     runningBalance = result.nextBalance;
@@ -1445,6 +1501,33 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
   }
 
   return rows;
+};
+
+const appendCurrentComplimentaryRow = (record = {}, rows = [], context = {}) => {
+  const planType = resolvePlanType(record);
+  const summary = buildComplimentaryAccountSummary(context.complimentaryPeriods || [], { planType });
+  if (!summary.active || !summary.currentMonth) return rows;
+  if ((Array.isArray(rows) ? rows : []).some((row) => row?.billingMonthKey === summary.currentMonth)) {
+    return rows;
+  }
+  const [year, month] = summary.currentMonth.split('-').map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return rows;
+  const billDate = buildMonthlyDate(year, month, resolveBillingDay(record, new Date()));
+  const runningBalance = rows.length ? Number(rows[rows.length - 1]?.balanceAfterPayment) || 0 : 0;
+  const planChange = resolvePlanChangeForMonth(context, billDate);
+  const result = createBreakdownRow({
+    record,
+    billDate,
+    planAmount: 0,
+    credits: [],
+    runningBalance,
+    context,
+    sourceType: 'complimentary',
+    planOverride: planChange,
+    isFirstRow: rows.length === 0,
+    paymentStatusOverride: 'complimentary'
+  });
+  return [...rows, result.row];
 };
 
 const calculatePaymentBreakdownRows = (record = {}, customers = []) => {
@@ -1467,6 +1550,8 @@ const calculatePaymentBreakdownRows = (record = {}, customers = []) => {
   if (!rows.length) {
     rows = buildRowsFromMonthlyPlan(record, entries, context);
   }
+
+  rows = appendCurrentComplimentaryRow(record, rows, context);
 
   return { rows, context };
 };

@@ -115,6 +115,10 @@ assert(breakdownHtmlSource.includes('id="breakdownReferralReason"'));
 assert(breakdownHtmlSource.includes('id="breakdownReferralReverse"'));
 assert(breakdownHtmlSource.includes('id="breakdownReferralQueue"'));
 assert(breakdownHtmlSource.includes('id="breakdownReferralQueueList"'));
+assert(breakdownHtmlSource.includes('id="breakdownComplimentaryModal"'));
+assert(breakdownHtmlSource.includes('id="breakdownComplimentaryEffectiveMonth"'));
+assert(breakdownHtmlSource.includes('id="breakdownComplimentaryBalanceTreatment"'));
+assert(breakdownHtmlSource.includes('id="breakdownComplimentaryConfirmed"'));
 assert(!breakdownHtmlSource.includes('id="breakdownAdjustmentReferral"'));
 assert(paymentsBrowserSource.includes('openPaymentBreakdownModal(accountNumber, breakdownLink)'));
 assert(paymentsBrowserSource.includes('openPaymentModalForAccount(targetAccount, { lockCustomer: true })'));
@@ -137,6 +141,8 @@ assert(breakdownBrowserSource.includes('referralApplication: {'));
 assert(breakdownBrowserSource.includes("void saveReferralApplication('reverse')"));
 assert(breakdownBrowserSource.includes('const renderReferralQueue ='));
 assert(breakdownBrowserSource.includes('Next available generated unpaid month'));
+assert(breakdownBrowserSource.includes("complimentaryAccount: action === 'disable'"));
+assert(breakdownBrowserSource.includes('Save complimentary policy'));
 assert(!breakdownHtmlSource.includes('id="breakdownReferralSave"'));
 assert(!breakdownBrowserSource.includes('saveBreakdownAdjustmentPatch({ monthlyReferrals })'));
 assert(!breakdownBrowserSource.includes('saveBreakdownAdjustmentPatch({ planChanges })'));
@@ -222,6 +228,14 @@ const paymentRecordsSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/billing/backend/payment-records.js'),
   'utf8'
 );
+const billingSchedulerSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/billing/backend/billing-scheduler.js'),
+  'utf8'
+);
+const disconnectionsSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/billing/backend/disconnections.js'),
+  'utf8'
+);
 const customersSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/customer-management/backend/customers.js'),
   'utf8'
@@ -231,6 +245,9 @@ assert(paymentRecordsSource.includes('synchronizeCustomerPlanHistory'));
 assert(paymentRecordsSource.includes("Plan changes must be submitted through the audited planChange request."));
 assert(paymentRecordsSource.includes('allocateQueuedReferralDiscounts'));
 assert(paymentRecordsSource.includes('Approved referrals are applied automatically in queue order.'));
+assert(paymentRecordsSource.includes('Complimentary periods must be submitted through the audited complimentaryAccount request.'));
+assert(billingSchedulerSource.includes('isComplimentaryMonth(complimentaryPeriods, billMonth)'));
+assert(disconnectionsSource.includes('complimentaryAccount.active'));
 assert(customersSource.includes('planChangeEffectiveAt = null'));
 assert(customersSource.includes('hasFutureEffectivePlanChange'));
 execFileSync(process.execPath, [
@@ -238,6 +255,9 @@ execFileSync(process.execPath, [
 ], { stdio: 'inherit' });
 execFileSync(process.execPath, [
   path.join(projectRoot, 'Features/modules/billing/tests/referral-application.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/complimentary-account.test.js')
 ], { stdio: 'inherit' });
 console.log('PASS Billing normalization, plan-profile, and balance helper behavior');
 console.log('BILLING COMPATIBILITY PASSED');

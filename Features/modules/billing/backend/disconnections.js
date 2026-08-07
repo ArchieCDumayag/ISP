@@ -7,6 +7,10 @@ const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter 
 const { connectMikrotikClient } = require('../../network/backend/mikrotik-client');
 const { auditMikrotikPppoeCommand } = require('../../network/backend/mikrotik-audit-log');
 const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
+const {
+  buildComplimentaryAccountSummary,
+  sanitizeComplimentaryPeriods
+} = require('./complimentary-account');
 const { buildReferralLedger, buildReferralDiscountMap } = require('../../customer-management/backend/referral-engine');
 const { readReferralRegistry } = require('../../customer-management/backend/referral-store');
 const {
@@ -210,6 +214,11 @@ const sanitizePaymentBreakdownAdjustment = (adjustment = {}) => {
       adjustment?.planChanges
       || adjustment?.scheduledPlanChanges
       || adjustment?.planChangeAdjustments
+    ),
+    complimentaryPeriods: sanitizeComplimentaryPeriods(
+      adjustment?.complimentaryPeriods
+      || adjustment?.complimentaryAccountPeriods
+      || adjustment?.freeAccountPeriods
     )
   };
   if (hasAdjustmentAmount(firstBill.referral)) {
@@ -342,12 +351,24 @@ const buildSnapshot = (customer = {}, payments = {}, context = {}) => {
   });
   const balance = ending.balance;
   const creditLimit = deriveCreditLimit(customer);
-  const overLimit = isOverCreditLimit({ balance, creditLimit });
+  const adjustment = getPaymentBreakdownAdjustment(
+    context.adjustments,
+    context.branchId,
+    customer?.accountNumber
+  );
+  const complimentaryAccount = buildComplimentaryAccountSummary(
+    adjustment?.complimentaryPeriods || [],
+    { planType: resolvePlanCategory(customer, context.plans || []) }
+  );
+  const overLimit = complimentaryAccount.active
+    ? false
+    : isOverCreditLimit({ balance, creditLimit });
   return {
     balance,
     creditLimit,
     overLimit,
-    overAmount: roundMoney(Math.max(0, balance - creditLimit)),
+    overAmount: complimentaryAccount.active ? 0 : roundMoney(Math.max(0, balance - creditLimit)),
+    complimentaryAccount,
     balanceRows: ending.rows,
     balanceSource: ending.source
   };
@@ -378,6 +399,7 @@ const buildQueueItem = ({ customer, plans, payments, decision, snapshot, context
     overLimit: itemSnapshot.overLimit,
     balanceSource: itemSnapshot.balanceSource,
     balanceRows: itemSnapshot.balanceRows,
+    complimentaryAccount: itemSnapshot.complimentaryAccount,
     status,
     billingPolicy,
     hitCreditLimitAt: decision?.hitCreditLimitAt || null,
@@ -686,7 +708,7 @@ router.get('/', async (req, res, next) => {
     const referralDiscountsByAccount = buildReferralDiscountMap(
       buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
     );
-    const snapshotContext = { customers, adjustments, branchId, referralDiscountsByAccount };
+    const snapshotContext = { customers, plans, adjustments, branchId, referralDiscountsByAccount };
 
     const items = [];
     for (const customer of Array.isArray(customers) ? customers : []) {

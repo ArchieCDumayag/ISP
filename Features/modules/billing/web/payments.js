@@ -749,6 +749,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const parsed = parseDateValue(dateStr);
         return parsed ? MANILA_DATE_FORMATTER.format(parsed) : 'N/A';
     };
+    const formatMonthKeyLabel = (monthKey) => {
+        const match = String(monthKey || '').trim().match(/^(\d{4})-(\d{2})$/);
+        if (!match) return 'selected month';
+        const date = buildStableManilaDate(Number(match[1]), Number(match[2]), 1);
+        return new Intl.DateTimeFormat('en-PH', { timeZone: window.__APP_TIMEZONE__ || 'Asia/Manila', month: 'short', year: 'numeric' }).format(date);
+    };
     const formatDateTime = (value, fallback = 'N/A') => {
         if (!hasExplicitTime(value)) return formatDate(value);
         const parsed = parseTimestampValue(value);
@@ -4023,6 +4029,7 @@ document.addEventListener('DOMContentLoaded', function () {
         due: { class: 'warning', text: 'Due' },
         overdue: { class: 'inactive', text: 'Overdue' },
         advance: { class: 'advance', text: 'Advance' },
+        complimentary: { class: 'info', text: 'Complimentary' },
         unavailable: { class: 'neutral', text: 'Unavailable' }
     };
 
@@ -4064,6 +4071,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const derivedStatusKey = deriveStatus(customer);
             const statusInfo = statusMap[derivedStatusKey] || { class: 'neutral', text: 'Unknown' };
+            const complimentaryAccount = customer?.complimentaryAccount || customer?.billingSummary?.complimentaryAccount || {};
+            const complimentaryActive = complimentaryAccount.active === true;
 
             // Subscriber status (active/inactive) separate from billing status
             let subscriberStatusClass = 'success';
@@ -4087,7 +4096,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const currentBillState = resolveCurrentBillState(customer);
             const canonicalCycle = customer?.billingSummary?.currentCycle;
 
-            if (!currentBillState.billingUnavailable && canonicalCycle?.billDate) {
+            if (complimentaryActive) {
+                const currentPeriod = complimentaryAccount.currentPeriod || {};
+                billingCycleDisplay = `Complimentary from ${formatMonthKeyLabel(currentPeriod.effectiveMonth)}`;
+                billingCycleMeta = complimentaryAccount.nextBillableCycleDate
+                    ? `Billing resumes ${formatDate(complimentaryAccount.nextBillableCycleDate)}`
+                    : 'No end month';
+            } else if (!currentBillState.billingUnavailable && canonicalCycle?.billDate) {
                 const cycleStatus = canonicalCycle.paymentStatus === 'paid'
                     ? 'Paid'
                     : (canonicalCycle.paymentStatus === 'unpaid' ? 'Unpaid' : 'Not generated');
@@ -4135,9 +4150,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 : currentBillState.amount < -EPSILON
                 ? (currentBillState.existingCustomerStart ? 'Opening advance' : 'Advance after current bill')
                 : (currentBillState.amount <= EPSILON ? 'Paid' : (currentBillState.existingCustomerStart ? 'Opening balance' : (currentBillState.isProrated ? 'Prorated bill' : `Due ${dueForDisplay}`)));
-            const currentBill = planCategory === 'prepaid'
-                ? `${balanceAmount}<br>${prepaidBillMeta}`
-                : `${balanceAmount}<br>${postpaidBillMeta}`;
+            const currentBill = complimentaryActive
+                ? `${balanceAmount}<br>Collection paused`
+                : (planCategory === 'prepaid'
+                    ? `${balanceAmount}<br>${prepaidBillMeta}`
+                    : `${balanceAmount}<br>${postpaidBillMeta}`);
             
             // Plan catalog usage for display
             const matchedPlan = customer.planName ? planByName.get(normalizePlanName(customer.planName)) : undefined;
@@ -4178,7 +4195,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             <span class="avatar">${displayInitials}</span>
                             <div>
                                 <p class="subscriber-name">${displayName}</p>
-                                <p class="subscriber-meta">Joined ${customer.since || customer.joinDate || 'N/A'} &middot; <span class="status-pill status-pill--indicator ${subscriberStatusClass}" title="${escapeHtml(subscriberStatusLabel)}" aria-label="${escapeHtml(subscriberStatusLabel)}"></span></p>
+                                <p class="subscriber-meta">Joined ${customer.since || customer.joinDate || 'N/A'} &middot; <span class="status-pill status-pill--indicator ${subscriberStatusClass}" title="${escapeHtml(subscriberStatusLabel)}" aria-label="${escapeHtml(subscriberStatusLabel)}"></span>${complimentaryActive ? ' <span class="badge bg-azure-lt text-azure">COMPLIMENTARY</span>' : ''}</p>
                             </div>
                         </a>
                     </td>

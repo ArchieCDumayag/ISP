@@ -23,7 +23,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - `backend/firebase-push.js`: Firebase Admin integration with credential paths anchored to the repository root.
 - `backend/sms.js`, `backend/sms-delivery.js`, `backend/sms-scheduler.js`, and `backend/sms-schema.js`: `/api/sms`, provider dispatch, schedules, automations, and relational schema.
 - `backend/messenger-bot.js`: verification and delivery under `/webhooks/messenger`.
-- `backend/messenger-reminders.js`: `/api/messenger-reminders` queue generation from Billing's canonical payment records, branch/collector-area authorization, deterministic duplicate-resistant reminder keys, Messenger preferences/consent, manual open/copy/send auditing, skip/reopen history, and payment confirmations. It never bulk-sends through the Meta API.
+- `backend/messenger-reminders.js`: `/api/messenger-reminders` queue generation from Billing's canonical payment records, branch/collector-area authorization, deterministic duplicate-resistant reminder keys, Messenger preferences/consent, manual open/copy/send auditing, skip/reopen history, and payment confirmations. Active Billing-owned Complimentary accounts are excluded. It never bulk-sends through the Meta API.
 - `backend/customer-upstream.js`: development stub, normally port `4101` in this checkout; production remains opt-in through `ENABLE_CUSTOMER_UPSTREAM_STUB=true`.
 - The former ten repository-root backend shims were retired in Phase 11.
 
@@ -43,6 +43,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - Canonical shared storage, database, relational-readiness, password, role, storage-mode, and project-path imports come from `core/`.
 - Customer Management provides customer identity, credentials, customer sessions, status, and contact records; its customer backend imports FCM/inbox helpers directly from this module.
 - Billing provides balances, payment confirmations, receipts, statements, and quick-payment contracts through unchanged APIs and shared composition.
+- Billing/due SMS scheduler runs and Messenger queue generation honor Billing's canonical Complimentary flag and omit active exempt accounts; custom/non-billing communications remain available.
 - Network provides modem/GenieACS and WiFi operations through Customer Management and shared handlers.
 - Admin provides integration settings, business profile, staff authorization, SMS/email provider configuration, and protected secrets.
 - JSON/app-store keys include `customer_app_settings`, `customer_fcm_tokens`, `customer_notification_inbox`, and branch-scoped `messenger_reminders`. The Messenger store retains preferences, affirmative-consent audit fields, deterministic reminder identities, status, and manual action history without storing Meta credentials. Dashboard backup/restore also preserves archived `sms_messages` and `sms_automation_runs` arrays in JSON mode. Interactive SMS tools still require MySQL and their existing relational schema.
@@ -68,6 +69,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Latest meaningful changes
 
+- 2026-08-07: Billing/due SMS automation and Messenger reminder generation now suppress active Billing-owned Complimentary accounts while preserving custom communications and the existing manual Messenger audit workflow.
 - 2026-08-07: Standardized all SMS modal close controls as shared Tabler outline-secondary icon buttons; modal behavior is unchanged.
 - 2026-08-06: Added the semi-automated Messenger Reminder Queue for admins and assigned collectors, with backend-derived billing stages, current-month payment confirmations, deterministic duplicate-resistant keys, Messenger link/consent management, manual review/copy/open workflow, sent/skip/reopen audit history, and no automatic Meta delivery.
 - 2026-07-29: Dashboard full backup/restore now round-trips SMS message history and automation-run records through archive JSON keys when JSON storage is selected; provider delivery and interactive SMS behavior remain MySQL-only.

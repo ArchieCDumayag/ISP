@@ -92,6 +92,12 @@
     background: rgba(214, 57, 57, .12);
 }
 
+.subscriber-info-status.is-complimentary {
+    color: var(--tblr-azure, #4299e1);
+    background: color-mix(in srgb, var(--tblr-azure, #4299e1) 14%, transparent);
+    border-color: color-mix(in srgb, var(--tblr-azure, #4299e1) 35%, transparent);
+}
+
 .subscriber-info-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

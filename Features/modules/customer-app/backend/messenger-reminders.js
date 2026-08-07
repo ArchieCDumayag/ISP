@@ -370,6 +370,7 @@ const buildReminderCandidates = ({ records = [], branchId = 1, businessName = 'T
     (Array.isArray(records) ? records : []).forEach((record) => {
         const accountNumber = customerAccountNumber(record);
         if (!accountNumber || !customerIsActive(record)) return;
+        if (record?.complimentaryAccount?.active === true || record?.billingSummary?.complimentaryAccount?.active === true) return;
         const balance = getBillingBalance(record);
         const billingStatus = getBillingStatus(record);
         const scheduled = resolveScheduledStage({ now, balance });

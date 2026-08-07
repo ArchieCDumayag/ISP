@@ -3,6 +3,7 @@ const { assertRelationalReady } = require('../../../../core/data/db-relational')
 const { ensureSmsSchema } = require('./sms-schema');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
 const { toText, normalizeDeliveryMethods, normalizeMobileForSms, normalizeEmail, dispatchMessageToRecipients } = require('./sms-delivery');
+const paymentRecords = require('../../billing/backend/payment-records');
 
 const DEFAULT_TICK_MS = Number.parseInt(process.env.SMS_SCHEDULER_TICK_MS || '60000', 10) || 60000;
 const LOCK_KEY = 'billing_system_sms_scheduler_lock';
@@ -338,9 +339,23 @@ const processBillingOrDueSchedule = async (schedule, now, customers) => {
   const dueTime = parseScheduleDueTime(schedule.scheduleDueTime);
   const sentSet = await readScheduleLogsForCycle({ scheduleId: schedule.id, cycleStart, cycleEnd });
   const mode = normalizeScheduleMode(schedule.scheduleMode);
+  const complimentaryAccounts = new Set();
+  try {
+    const billingRecords = await paymentRecords.buildPaymentRecordsForBranch(schedule.branchId);
+    (Array.isArray(billingRecords) ? billingRecords : []).forEach((record) => {
+      if (record?.complimentaryAccount?.active === true || record?.billingSummary?.complimentaryAccount?.active === true) {
+        const accountNumber = toText(record?.accountNumber).toLowerCase();
+        if (accountNumber) complimentaryAccounts.add(accountNumber);
+      }
+    });
+  } catch (error) {
+    console.warn(`Skipped SMS schedule ${schedule.id} because complimentary-account exclusions could not be loaded:`, error?.message || error);
+    return false;
+  }
   let sentAny = false;
 
   for (const recipient of recipients) {
+    if (complimentaryAccounts.has(toText(recipient.accountNumber).toLowerCase())) continue;
     const customer = customers.find((item) => toText(item.accountNumber) === toText(recipient.accountNumber));
     if (!customer) continue;
     const targetAt = getDueCycleDateForCustomer({

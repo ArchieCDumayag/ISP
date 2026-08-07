@@ -11,6 +11,12 @@ const {
 } = require('../../customer-management/backend/referral-engine');
 const referralsModule = require('../../customer-management/backend/referrals');
 const { calculatePaymentBreakdownEndingBalance } = require('./payment-breakdown-balance');
+const {
+    addMonthKey,
+    buildComplimentaryAccountSummary,
+    getCurrentMonthKey: getCurrentComplimentaryMonthKey,
+    sanitizeComplimentaryPeriods
+} = require('./complimentary-account');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -279,6 +285,11 @@ const sanitizePaymentBreakdownAdjustment = (adjustment = {}) => {
             adjustment?.planChanges
             || adjustment?.scheduledPlanChanges
             || adjustment?.planChangeAdjustments
+        ),
+        complimentaryPeriods: sanitizeComplimentaryPeriods(
+            adjustment?.complimentaryPeriods
+            || adjustment?.complimentaryAccountPeriods
+            || adjustment?.freeAccountPeriods
         )
     };
     if (hasAdjustmentAmount(firstBill.referral)) {
@@ -515,6 +526,8 @@ const serializeBillingRow = (row = {}, record = {}) => {
     const planType = String(row.planType || record.planCategory || 'postpaid').trim().toLowerCase() === 'prepaid'
         ? 'prepaid'
         : 'postpaid';
+    const complimentaryRow = String(row?.sourceType || '').trim().toLowerCase() === 'complimentary';
+    const complimentaryWriteOff = Number(row?.complimentaryWriteOff) || 0;
     return {
         ...serializeBillingValue(row),
         billDate,
@@ -528,6 +541,13 @@ const serializeBillingRow = (row = {}, record = {}) => {
             || record.plan
             || 'Monthly plan'
         ).trim() || 'Monthly plan',
+        billLabel: complimentaryRow ? 'Complimentary account' : row?.billLabel,
+        billMeta: complimentaryRow
+            ? (complimentaryWriteOff > BILLING_EPSILON
+                ? `No recurring charge; ${complimentaryWriteOff.toFixed(2)} existing balance written off`
+                : 'No recurring charge for this complimentary month')
+            : row?.billMeta,
+        paymentStatusLabel: complimentaryRow ? 'Complimentary' : row?.paymentStatusLabel,
         paymentDetails: (Array.isArray(row.paymentDetails) ? row.paymentDetails : []).map((detail) => ({
             ...serializeBillingValue(detail),
             date: detail?.date || ''
@@ -582,7 +602,8 @@ const buildBillingReconciliation = ({ record = {}, rows = [], endingBalance = 0,
         const isGeneratedCycle = !row?.openingPreviousBalance
             && !row?.openingAdvance
             && row?.sourceType !== 'pending-postpaid'
-            && row?.sourceType !== 'disconnection';
+            && row?.sourceType !== 'disconnection'
+            && row?.sourceType !== 'complimentary';
         if (isGeneratedCycle && planAmount <= BILLING_EPSILON) {
             missingChargeMonths.push(monthKey || 'unknown');
         }
@@ -606,7 +627,11 @@ const buildBillingReconciliation = ({ record = {}, rows = [], endingBalance = 0,
     }
 
     const billingStopped = String(record?.disconnection?.billingPolicy || '').trim().toLowerCase() === 'stop';
-    if (!currentCycle && !billingStopped) {
+    const complimentaryAccount = buildComplimentaryAccountSummary(
+        record?.paymentBreakdownAdjustment?.complimentaryPeriods || [],
+        { planType: record?.planCategory }
+    );
+    if (!currentCycle && !billingStopped && !complimentaryAccount.active) {
         addIssue('missing-current-cycle', 'error', 'The current billing cycle is missing.');
     }
     const lastRowBalance = rows.length ? Number(rows[rows.length - 1]?.balanceAfterPayment) || 0 : 0;
@@ -647,6 +672,10 @@ const buildFallbackBillingSummary = (record = {}, fallbackBalance = 0) => {
     const planType = String(record.planCategory || 'postpaid').trim().toLowerCase() === 'prepaid'
         ? 'prepaid'
         : 'postpaid';
+    const complimentaryAccount = buildComplimentaryAccountSummary(
+        record?.paymentBreakdownAdjustment?.complimentaryPeriods || [],
+        { planType }
+    );
     return {
         version: BILLING_SUMMARY_VERSION,
         source: 'payment-breakdown-backend',
@@ -656,11 +685,14 @@ const buildFallbackBillingSummary = (record = {}, fallbackBalance = 0) => {
         balance: Math.max(0, endingBalance),
         advance: Math.max(0, -endingBalance),
         currentCycle: null,
-        nextCycleDate: getNextCycleDate(planType),
+        nextCycleDate: complimentaryAccount.active
+            ? complimentaryAccount.nextBillableCycleDate
+            : getNextCycleDate(planType),
         rows: [],
         context: {},
         billingStatus: 'unavailable',
         dueDate: null,
+        complimentaryAccount,
         reconciliation: {
             status: 'error',
             issueCount: 1,
@@ -687,7 +719,13 @@ const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
             ? 'prepaid'
             : 'postpaid';
         const currentCycle = currentRows.length ? currentRows[currentRows.length - 1] : null;
-        const billingState = resolveCanonicalBillingStatus({ rows, endingBalance: safeEndingBalance, currentCycle });
+        const complimentaryAccount = buildComplimentaryAccountSummary(
+            record?.paymentBreakdownAdjustment?.complimentaryPeriods || [],
+            { planType }
+        );
+        const billingState = complimentaryAccount.active
+            ? { status: 'complimentary', dueDate: null }
+            : resolveCanonicalBillingStatus({ rows, endingBalance: safeEndingBalance, currentCycle });
         const reconciliation = buildBillingReconciliation({
             record,
             rows,
@@ -703,11 +741,14 @@ const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
             balance: Math.max(0, safeEndingBalance),
             advance: Math.max(0, -safeEndingBalance),
             currentCycle,
-            nextCycleDate: getNextCycleDate(planType),
+            nextCycleDate: complimentaryAccount.active
+                ? complimentaryAccount.nextBillableCycleDate
+                : getNextCycleDate(planType),
             rows,
             context: serializeBillingValue(breakdown?.context || {}),
             billingStatus: billingState.status,
             dueDate: billingState.dueDate,
+            complimentaryAccount,
             reconciliation
         };
     } catch (error) {
@@ -783,6 +824,8 @@ const buildPaymentRecord = (
     };
     const billingSummary = buildCanonicalBillingSummary(recordBase, summary.balance);
     const endingBalance = billingSummary.endingBalance;
+    const complimentaryAccount = billingSummary.complimentaryAccount
+        || buildComplimentaryAccountSummary(paymentBreakdownAdjustment?.complimentaryPeriods || [], { planType: planCategory });
     const planHistory = buildPlanHistory(
         recordBase,
         paymentBreakdownAdjustment?.planChanges || []
@@ -791,6 +834,7 @@ const buildPaymentRecord = (
     return {
         ...recordBase,
         billingSummary,
+        complimentaryAccount,
         planHistory,
         paymentBreakdownEndingBalance: endingBalance,
         endingBalance
@@ -798,6 +842,7 @@ const buildPaymentRecord = (
 };
 
 const buildAutomaticReferralTarget = (record = {}) => {
+    if (record?.complimentaryAccount?.active === true || record?.billingSummary?.complimentaryAccount?.active === true) return null;
     const accountNumber = String(record?.accountNumber || '').trim();
     const rows = Array.isArray(record?.billingSummary?.rows) ? record.billingSummary.rows : [];
     const billingRows = rows.filter((row) => {
@@ -1158,6 +1203,9 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
         if (hasOwn(rawBody, 'monthlyReferrals')) {
             return next(createError(400, 'Referral discounts must be submitted through the audited referralApplication request.'));
         }
+        if (hasOwn(rawBody, 'complimentaryPeriods')) {
+            return next(createError(400, 'Complimentary periods must be submitted through the audited complimentaryAccount request.'));
+        }
         if (hasOwn(rawBody, 'referralApplication')) {
             const requestApplication = rawBody.referralApplication && typeof rawBody.referralApplication === 'object'
                 ? rawBody.referralApplication
@@ -1244,6 +1292,119 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
             'referralAccountNumber',
             'referredAccountNumber'
         ].some((field) => hasOwn(rawBody, field));
+        let nextComplimentaryPeriods = currentAdjustment.complimentaryPeriods;
+        let complimentaryChangeResult = null;
+        if (hasOwn(rawBody, 'complimentaryAccount')) {
+            if (rawBody.confirmed !== true) {
+                return next(createError(400, 'Confirm the complimentary-account billing policy before saving.'));
+            }
+            const reason = sanitizeAdjustmentReason(rawBody.reason);
+            if (reason.length < 3) {
+                return next(createError(400, 'Enter a reason for the complimentary-account change.'));
+            }
+            const requestPolicy = rawBody.complimentaryAccount && typeof rawBody.complimentaryAccount === 'object'
+                ? rawBody.complimentaryAccount
+                : {};
+            const action = sanitizeAdjustmentText(requestPolicy.action).toLowerCase();
+            const currentMonth = getCurrentComplimentaryMonthKey();
+            const changedBy = {
+                id: user.id || null,
+                username: user.username || null,
+                name: user.name || user.username || null
+            };
+            const timestamp = new Date().toISOString();
+
+            if (action === 'enable') {
+                const subscriberStatus = String(customer?.status || 'active').trim().toLowerCase();
+                if (subscriberStatus !== 'active') {
+                    return next(createError(409, 'Reactivate or reconnect the subscriber before enabling complimentary billing.'));
+                }
+                const effectiveMonth = normalizeAdjustmentMonthKey(requestPolicy.effectiveMonth) || currentMonth;
+                const endMonth = normalizeAdjustmentMonthKey(requestPolicy.endMonth);
+                if (!effectiveMonth || effectiveMonth < currentMonth) {
+                    return next(createError(400, `Choose ${currentMonth} or a future effective month.`));
+                }
+                if (endMonth && endMonth < effectiveMonth) {
+                    return next(createError(400, 'The optional end month cannot be before the effective month.'));
+                }
+                const overlapsExisting = currentAdjustment.complimentaryPeriods.some((period) => {
+                    if (period.cancelledAt) return false;
+                    const leftEnd = endMonth || '9999-12';
+                    const rightEnd = period.endMonth || '9999-12';
+                    return effectiveMonth <= rightEnd && period.effectiveMonth <= leftEnd;
+                });
+                if (overlapsExisting) {
+                    return next(createError(409, 'This complimentary period overlaps an existing active, scheduled, or historical period.'));
+                }
+                const balanceTreatment = String(requestPolicy.balanceTreatment || 'keep').trim().toLowerCase() === 'write-off'
+                    ? 'write-off'
+                    : 'keep';
+                if (balanceTreatment === 'write-off' && effectiveMonth > currentMonth) {
+                    return next(createError(409, 'A future complimentary period must keep the current balance. Choose write off when that month begins so the amount can be audited exactly.'));
+                }
+                const currentRecord = await buildPaymentRecordForAccount(accountNumber, branchId);
+                if (!currentRecord) return next(createError(404, 'Customer payment record not found.'));
+                const writeOffAmount = balanceTreatment === 'write-off'
+                    ? normalizeAdjustmentAmount(Math.max(0, Number(currentRecord?.billingSummary?.endingBalance) || 0))
+                    : 0;
+                complimentaryChangeResult = sanitizeComplimentaryPeriods([{
+                    periodId: `complimentary-${accountNumber}-${effectiveMonth}-${Date.now()}`,
+                    effectiveMonth,
+                    endMonth,
+                    balanceTreatment,
+                    writeOffAmount,
+                    reason,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                    changedBy
+                }])[0];
+                nextComplimentaryPeriods = sanitizeComplimentaryPeriods([
+                    ...currentAdjustment.complimentaryPeriods,
+                    complimentaryChangeResult
+                ]);
+            } else if (action === 'disable') {
+                const resumeMonth = normalizeAdjustmentMonthKey(requestPolicy.resumeMonth || requestPolicy.effectiveMonth);
+                if (!resumeMonth || resumeMonth <= currentMonth) {
+                    return next(createError(400, `Choose a resume month after ${currentMonth}. The free month will not be back-billed.`));
+                }
+                const candidate = currentAdjustment.complimentaryPeriods
+                    .filter((period) => (
+                        !period.cancelledAt
+                        && period.effectiveMonth <= resumeMonth
+                        && (!period.endMonth || period.endMonth >= resumeMonth)
+                    ))
+                    .slice(-1)[0] || null;
+                if (!candidate) {
+                    return next(createError(409, 'No complimentary period covers the selected resume month.'));
+                }
+                const endMonth = addMonthKey(resumeMonth, -1);
+                nextComplimentaryPeriods = sanitizeComplimentaryPeriods(
+                    currentAdjustment.complimentaryPeriods.map((period) => (
+                        period.periodId === candidate.periodId
+                            ? (candidate.effectiveMonth === resumeMonth
+                                ? {
+                                    ...period,
+                                    cancelledAt: timestamp,
+                                    cancelledFromMonth: resumeMonth,
+                                    endReason: reason,
+                                    updatedAt: timestamp,
+                                    endedBy: changedBy
+                                }
+                                : {
+                                ...period,
+                                endMonth,
+                                endReason: reason,
+                                updatedAt: timestamp,
+                                endedBy: changedBy
+                                })
+                            : period
+                    ))
+                );
+                complimentaryChangeResult = nextComplimentaryPeriods.find((period) => period.periodId === candidate.periodId) || null;
+            } else {
+                return next(createError(400, 'Complimentary-account action must be enable or disable.'));
+            }
+        }
         let nextPlanChanges = currentAdjustment.planChanges;
         let planChangeResult = null;
         if (hasOwn(rawBody, 'planChange')) {
@@ -1326,7 +1487,8 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
             monthlyReferrals: hasOwn(rawBody, 'monthlyReferrals')
                 ? rawBody.monthlyReferrals
                 : currentAdjustment.monthlyReferrals,
-            planChanges: nextPlanChanges
+            planChanges: nextPlanChanges,
+            complimentaryPeriods: nextComplimentaryPeriods
         });
 
         const previousStoredAdjustment = branchBucket[accountNumber]
@@ -1368,6 +1530,7 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
             ok: true,
             adjustment: sanitizePaymentBreakdownAdjustment(branchBucket[accountNumber]),
             planChange: planChangeResult,
+            complimentaryAccount: complimentaryChangeResult,
             subscriberSync,
             record
         });

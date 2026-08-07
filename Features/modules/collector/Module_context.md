@@ -1,6 +1,6 @@
 # Collector Module Context
 
-Last reviewed: 2026-08-05
+Last reviewed: 2026-08-07
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -42,6 +42,7 @@ All API prefixes, collector/admin authentication requirements, feature gates, an
 - Depends directly on migrated Admin accounts/roles and collector authentication.
 - Depends on Customer Management for customer identity, area, and account number.
 - Depends directly on migrated Billing for canonical payment records, entry numbering, balances, and service refresh.
+- Collector client review uses Billing's canonical Complimentary flag: active exempt subscribers are labeled Complimentary and excluded from area unpaid totals so they are not treated as collection targets. Other collector payment/reschedule contracts are unchanged.
 - Remittance and approval data may be consumed by Finance reporting.
 
 ## Known risks and follow-up
@@ -70,6 +71,7 @@ All API prefixes, collector/admin authentication requirements, feature gates, an
 
 ## Latest meaningful changes
 
+- 2026-08-07: Collector client review now labels active Billing-owned Complimentary accounts and excludes them from unpaid area totals; subscriber plans, payment history, and collector reschedules remain unchanged.
 - 2026-08-05: Added a responsive right-side Rescheduled Clients column beside Collector Area Assignment, while Pending Collector Payments remains full-width below both cards; narrower screens preserve the one-page workflow by stacking all sections.
 - 2026-08-05: Added branch-scoped Admin create/edit/delete schedule management in `collectors.html` and `/api/collector/payments/reschedules`; schedules target assigned collectors and create/update/delete lifecycle changes reconcile into Android version 1.1 on Sync.
 - 2026-08-05: Reorganized `collectors.html` into three stacked Tabler cards so area assignments, pending payment approvals, and rescheduled clients remain visible together on one page; existing data rendering, filters, actions, and API contracts remain unchanged.

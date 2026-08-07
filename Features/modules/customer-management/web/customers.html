@@ -7064,6 +7064,9 @@
                         const displayInitials = initials || '??';
                         const canonicalFullName = fullName || [firstName, lastName].filter(Boolean).join(' ').trim() || 'No Name';
                         const accountNumber = String(customer.accountNumber || '').trim();
+                        const paymentRecord = getPaymentRecord(accountNumber);
+                        const complimentaryAccount = paymentRecord?.complimentaryAccount || paymentRecord?.billingSummary?.complimentaryAccount || {};
+                        const complimentaryActive = complimentaryAccount.active === true;
                         const isSelected = selectedCustomerIds.has(accountNumber);
                         
                         const address = [customer.street, customer.barangay, customer.municipality, customer.province].filter(Boolean).join(', ');
@@ -7106,7 +7109,13 @@
                     let billingCycleMeta = 'No cycle recorded';
                     const planCategory = resolveCustomerPlanCategory(customer);
 
-                    if (planCategory === 'prepaid') {
+                    if (complimentaryActive) {
+                        const currentPeriod = complimentaryAccount.currentPeriod || {};
+                        billingCycleDisplay = `Complimentary from ${formatBillingCycleLabel(currentPeriod.effectiveMonth)}`;
+                        billingCycleMeta = complimentaryAccount.nextBillableCycleDate
+                            ? `Billing resumes ${formatViewDate(complimentaryAccount.nextBillableCycleDate)}`
+                            : 'No end month';
+                    } else if (planCategory === 'prepaid') {
                         const prepaidCycle = resolvePrepaidCycleDisplay(customer);
                         billingCycleDisplay = prepaidCycle.display;
                         billingCycleMeta = prepaidCycle.meta;
@@ -7178,7 +7187,7 @@
                                     <span class="avatar">${displayInitials}</span>
                                     <div>
                                         <p class="subscriber-name">${displayName}</p>
-                                        <p class="subscriber-meta">Joined ${customer.since || 'Unknown'} &middot; <span class="status-pill status-pill--indicator ${statusClass}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span></p>
+                                        <p class="subscriber-meta">Joined ${customer.since || 'Unknown'} &middot; <span class="status-pill status-pill--indicator ${statusClass}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>${complimentaryActive ? ' <span class="badge bg-azure-lt text-azure">COMPLIMENTARY</span>' : ''}</p>
                                     </div>
                                 </div>
                             </td>

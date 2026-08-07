@@ -260,6 +260,7 @@
   }
 
   function getClientStatusLabel(customer) {
+    if (customer?.complimentaryAccount?.active === true) return 'Complimentary';
     const label = String(
       customer?.accountStatusLabel
       || customer?.statusLabel
@@ -395,15 +396,27 @@
     clientReviewError = '';
     renderAssignmentClientReview();
 
-    clientReviewPromise = fetch('/api/customers', { credentials: 'include', cache: 'no-store' })
-      .then(async (res) => {
+    clientReviewPromise = Promise.all([
+      fetch('/api/customers', { credentials: 'include', cache: 'no-store' }),
+      fetch('/api/payment-records', { credentials: 'include', cache: 'no-store' }).catch(() => null)
+    ])
+      .then(async ([res, billingRes]) => {
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(payload?.error || payload?.message || 'Unable to load clients for review.');
         }
-        clientReviewCustomers = Array.isArray(payload?.customers)
+        const billingPayload = billingRes?.ok ? await billingRes.json().catch(() => ({})) : {};
+        const billingByAccount = new Map((Array.isArray(billingPayload?.records) ? billingPayload.records : []).map((record) => [
+          getClientAccountNumber(record),
+          record?.complimentaryAccount || record?.billingSummary?.complimentaryAccount || null
+        ]));
+        const customers = Array.isArray(payload?.customers)
           ? payload.customers
           : (Array.isArray(payload) ? payload : []);
+        clientReviewCustomers = customers.map((customer) => ({
+          ...customer,
+          complimentaryAccount: billingByAccount.get(getClientAccountNumber(customer)) || null
+        }));
         clientReviewLoaded = true;
         rebuildClientReviewIndex();
         return clientReviewCustomers;
@@ -1290,6 +1303,7 @@
       const unpaid = {};
       records.forEach((record) => {
         if (isPrepaidRecord(record)) return;
+        if (record?.complimentaryAccount?.active === true || record?.billingSummary?.complimentaryAccount?.active === true) return;
         const area = String(record?.area || '').trim();
         if (!area) return;
         const balance = Math.max(Number(record?.balance) || 0, 0);

@@ -25,11 +25,18 @@ const {
   shouldContinueBillingAfterDisconnection,
   shouldStopBillingAfterDisconnection
 } = require('./disconnection-store');
+const {
+  getAccountComplimentaryPeriods,
+  getCurrentMonthKey: getCurrentComplimentaryMonthKey,
+  isComplimentaryMonth,
+  normalizeMonthKey: normalizeComplimentaryMonthKey
+} = require('./complimentary-account');
 
 const STORE_KEYS = {
   customers: 'customers',
   payments: 'payments',
-  plans: 'plans'
+  plans: 'plans',
+  paymentBreakdownAdjustments: 'payment_breakdown_adjustments'
 };
 const BILLING_CLOCK_GUARD_KEY = 'billing-clock-guard';
 const SYSTEM_RECORDER = { id: 'system', username: 'System', role: 'System' };
@@ -908,7 +915,8 @@ function isPrepaidActive(customer, now = new Date()) {
   return expiry.getTime() >= now.getTime();
 }
 
-function isServiceEligible(customer, plans = [], now = new Date()) {
+function isServiceEligible(customer, plans = [], now = new Date(), complimentaryPeriods = []) {
+  if (isComplimentaryMonth(complimentaryPeriods, getCurrentComplimentaryMonthKey(now))) return true;
   const planCategory = resolvePlanCategory(customer, plans);
   if (planCategory === 'prepaid') {
     return isPrepaidActive(customer, now);
@@ -1309,6 +1317,7 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
   const customers = await readCustomers(branchId);
   const payments = await readPayments(branchId);
   const plans = await readPlans(branchId);
+  const paymentBreakdownAdjustments = await readStore(STORE_KEYS.paymentBreakdownAdjustments, {});
   let settings;
   try {
     settings = await loadIntegrationSettings(branchId);
@@ -1365,7 +1374,12 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
         ineligibleUsers.push(unameLower);
         return;
       }
-      const eligible = isServiceEligible(customer, plans, now);
+      const complimentaryPeriods = getAccountComplimentaryPeriods(
+        paymentBreakdownAdjustments,
+        branchId,
+        customer?.accountNumber
+      );
+      const eligible = isServiceEligible(customer, plans, now, complimentaryPeriods);
       if (!eligible) {
         ineligibleUsers.push(unameLower);
         return;
@@ -1473,7 +1487,12 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
         }
         const uname = String(cust.pppoeUsername || '').trim().toLowerCase();
         if (!uname) return;
-        const eligible = isServiceEligible(cust, plans, now);
+        const complimentaryPeriods = getAccountComplimentaryPeriods(
+          paymentBreakdownAdjustments,
+          branchId,
+          cust?.accountNumber
+        );
+        const eligible = isServiceEligible(cust, plans, now, complimentaryPeriods);
         desiredStatus = eligible ? STATUS_ACTIVE : STATUS_INACTIVE;
         if (blockBulkDisable && desiredStatus !== STATUS_ACTIVE) {
           return;
@@ -1551,6 +1570,7 @@ async function generateDuePrepaidMonthlyCycles({
   customer,
   planAmount,
   payments,
+  complimentaryPeriods = [],
   now = new Date()
 }) {
   const todayLocal = getManilaStartOfDay(now);
@@ -1567,8 +1587,10 @@ async function generateDuePrepaidMonthlyCycles({
   while (billDate <= todayLocal && guard < 120) {
     const billId = makeBillId(accountNumber, billDate.getFullYear(), billDate.getMonth());
     const alreadyExists = payments[accountNumber].history.some((entry) => entry.id === billId);
+    const billMonth = normalizeComplimentaryMonthKey(formatDateOnly(billDate));
+    const complimentaryMonth = isComplimentaryMonth(complimentaryPeriods, billMonth);
 
-    if (!alreadyExists) {
+    if (!alreadyExists && !complimentaryMonth) {
       const firstBillingCharge = resolveFirstBillingCharge(customer, billDate, planAmount);
       if ((Number(firstBillingCharge.amount) || 0) > 0 && !firstBillingCharge.skipInitialCharge) {
         const chargeDescription = firstBillingCharge.prorated
@@ -1626,6 +1648,7 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
   const payments = await readPayments(branchId);
   const plans = await readPlans(branchId);
   const disconnections = await readBranchDisconnections(branchId);
+  const paymentBreakdownAdjustments = await readStore(STORE_KEYS.paymentBreakdownAdjustments, {});
 
   const normalize = (s) => String(s || '').trim().toLowerCase();
   const planPriceByName = new Map();
@@ -1653,7 +1676,12 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
         return;
       }
       if (currentStatus.status === STATUS_ACTIVE) activeCustomersSeen += 1;
-      const eligible = isServiceEligible(cust, plans, now);
+      const complimentaryPeriods = getAccountComplimentaryPeriods(
+        paymentBreakdownAdjustments,
+        branchId,
+        cust?.accountNumber
+      );
+      const eligible = isServiceEligible(cust, plans, now, complimentaryPeriods);
       const desiredStatus = eligible ? STATUS_ACTIVE : STATUS_INACTIVE;
       const downgrade = currentStatus.status === STATUS_ACTIVE && desiredStatus === STATUS_INACTIVE;
       if (downgrade) activeToInactiveCount += 1;
@@ -1690,6 +1718,11 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
     if (statusState.status !== STATUS_ACTIVE && !continueDisconnectedBilling) continue;
     const planCategory = resolvePlanCategory(customer, plans);
     if (!hasAssignedPlan(customer)) continue;
+    const complimentaryPeriods = getAccountComplimentaryPeriods(
+      paymentBreakdownAdjustments,
+      branchId,
+      accountNumber
+    );
 
     let planAmount = Number(customer.planAmount) || 0;
     if (planAmount <= 0 && customer.planName) {
@@ -1705,6 +1738,7 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
         customer,
         planAmount,
         payments,
+        complimentaryPeriods,
         now
       });
       if (prepaidResult.customerDatesChanged) {
@@ -1741,6 +1775,19 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
     const billId = makeBillId(accountNumber, billDate.getFullYear(), billDate.getMonth());
     const alreadyExists = payments[accountNumber].history.some(h => h.id === billId);
     const nextCycleState = buildNextBillingCycleState(customer, billDate);
+    const billMonth = normalizeComplimentaryMonthKey(formatDateOnly(billDate));
+    if (isComplimentaryMonth(complimentaryPeriods, billMonth)) {
+      if (nextCycleState) {
+        customers[index] = {
+          ...customer,
+          billDate: nextCycleState.billDate,
+          dueDate: nextCycleState.dueDate
+        };
+        customerDatesChanged = true;
+        changed = true;
+      }
+      continue;
+    }
     if (alreadyExists) {
       if (nextCycleState && (
         String(customer?.billDate || '') !== String(nextCycleState.billDate || '')

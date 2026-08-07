@@ -59,6 +59,25 @@ document.addEventListener('DOMContentLoaded', () => {
         save: document.getElementById('breakdownPlanSave'),
         cancel: document.getElementById('breakdownPlanCancel')
     };
+    const complimentaryToolbar = {
+        modal: document.getElementById('breakdownComplimentaryModal'),
+        form: document.getElementById('breakdownComplimentaryToolbar'),
+        toggle: document.getElementById('breakdownComplimentaryToggle'),
+        close: document.getElementById('breakdownComplimentaryClose'),
+        cancel: document.getElementById('breakdownComplimentaryCancel'),
+        summary: document.getElementById('breakdownComplimentarySummary'),
+        action: document.getElementById('breakdownComplimentaryAction'),
+        effectiveMonth: document.getElementById('breakdownComplimentaryEffectiveMonth'),
+        effectiveMonthLabel: document.getElementById('breakdownComplimentaryEffectiveMonthLabel'),
+        endMonthField: document.getElementById('breakdownComplimentaryEndMonthField'),
+        endMonth: document.getElementById('breakdownComplimentaryEndMonth'),
+        balanceField: document.getElementById('breakdownComplimentaryBalanceField'),
+        balanceTreatment: document.getElementById('breakdownComplimentaryBalanceTreatment'),
+        reason: document.getElementById('breakdownComplimentaryReason'),
+        confirmed: document.getElementById('breakdownComplimentaryConfirmed'),
+        history: document.getElementById('breakdownComplimentaryHistory'),
+        save: document.getElementById('breakdownComplimentarySave')
+    };
     const disconnectBtn = document.getElementById('breakdownDisconnectBtn');
     const reconnectBtn = document.getElementById('breakdownReconnectBtn');
     const subscriberInfo = {
@@ -94,11 +113,13 @@ document.addEventListener('DOMContentLoaded', () => {
         savingAdjustment: false,
         savingReferralAdjustment: false,
         savingPlanChange: false,
+        savingComplimentaryAccount: false,
         disconnecting: false,
         reconnecting: false,
         adjustmentToolbarOpen: false,
         referralToolbarOpen: false,
         planToolbarOpen: false,
+        complimentaryToolbarOpen: false,
         selectedReferralMonthKey: '',
         plans: []
     };
@@ -785,6 +806,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const resolveSubscriberStatus = (record = {}) => {
+        if (record?.complimentaryAccount?.active === true || record?.billingSummary?.complimentaryAccount?.active === true) {
+            return { label: 'Complimentary', className: 'is-complimentary' };
+        }
         const raw = normalizeText(
             record.customerStatus
             || record.subscriberStatus
@@ -921,7 +945,24 @@ document.addEventListener('DOMContentLoaded', () => {
             `${planName}${planAmount ? ` • ${formatCurrency(planAmount)}` : ''}`
         );
         setSubscriberText(subscriberInfo.activationDate, formatRecordDate(record.activationDate || record.activation_date));
-        if (planType === 'prepaid') {
+        const complimentaryAccount = record?.complimentaryAccount || record?.billingSummary?.complimentaryAccount || {};
+        if (complimentaryAccount.active === true) {
+            const currentPeriod = complimentaryAccount.currentPeriod || {};
+            setSubscriberText(subscriberInfo.billingCycleLabel, 'Complimentary Period');
+            setSubscriberText(
+                subscriberInfo.billingCycle,
+                currentPeriod.endMonth
+                    ? `${formatMonthKeyLabel(currentPeriod.effectiveMonth)} to ${formatMonthKeyLabel(currentPeriod.endMonth)}`
+                    : `${formatMonthKeyLabel(currentPeriod.effectiveMonth)} onward`
+            );
+            setSubscriberText(subscriberInfo.dueDateLabel, 'Billing Resumes');
+            setSubscriberText(
+                subscriberInfo.dueDate,
+                complimentaryAccount.nextBillableCycleDate
+                    ? formatRecordDate(complimentaryAccount.nextBillableCycleDate)
+                    : 'No end month'
+            );
+        } else if (planType === 'prepaid') {
             const today = getTodayBillingDate();
             const todayParts = getZonedDateParts(today);
             const currentCycleRow = (Array.isArray(rows) ? rows : [])
@@ -1977,6 +2018,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderReferralToolbar([]);
         renderReferralQueue(null);
         renderPlanToolbar();
+        renderComplimentaryToolbar();
         renderDisconnectButton(null);
     };
 
@@ -2001,6 +2043,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAdjustmentToolbar(rows);
         renderReferralToolbar(rows);
         renderPlanToolbar();
+        renderComplimentaryToolbar();
     };
 
     const renderAdjustmentToolbar = (rows = []) => {
@@ -2222,8 +2265,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderDisconnectButton = (record = state.record) => {
         const account = String(record?.accountNumber || accountNumber || '').trim();
         const disconnection = getDisconnectionState(record);
+        const complimentaryActive = record?.complimentaryAccount?.active === true
+            || record?.billingSummary?.complimentaryAccount?.active === true;
         if (disconnectBtn) {
-            disconnectBtn.hidden = !account;
+            disconnectBtn.hidden = !account || complimentaryActive;
             disconnectBtn.disabled = state.disconnecting || state.reconnecting || Boolean(disconnection?.billingPolicy === 'stop');
             disconnectBtn.classList.toggle('btn-danger', !disconnection);
             disconnectBtn.classList.toggle('btn-outline-danger', Boolean(disconnection));
@@ -2494,6 +2539,107 @@ document.addEventListener('DOMContentLoaded', () => {
         const parts = getZonedDateParts(new Date()) || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
         const next = getNextMonthParts(parts.year, parts.month);
         return `${String(next.year).padStart(4, '0')}-${String(next.month).padStart(2, '0')}`;
+    };
+    const getCurrentBillingMonthKey = () => {
+        const parts = getZonedDateParts(new Date()) || { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+        return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}`;
+    };
+    const renderComplimentaryHistory = () => {
+        if (!complimentaryToolbar.history) return;
+        const periods = Array.isArray(state.record?.complimentaryAccount?.periods)
+            ? state.record.complimentaryAccount.periods.slice().reverse()
+            : [];
+        if (!periods.length) {
+            complimentaryToolbar.history.innerHTML = '<p class="breakdown-plan-history__title">Complimentary history</p><p class="breakdown-plan-history__empty">No complimentary periods recorded yet.</p>';
+            return;
+        }
+        const currentMonth = getCurrentBillingMonthKey();
+        const items = periods.map((period) => {
+            const cancelled = Boolean(period.cancelledAt);
+            const active = !cancelled && period.effectiveMonth <= currentMonth && (!period.endMonth || period.endMonth >= currentMonth);
+            const scheduled = !cancelled && period.effectiveMonth > currentMonth;
+            const statusLabel = cancelled ? 'Cancelled' : (active ? 'Active' : (scheduled ? 'Scheduled' : 'History'));
+            const statusClass = active
+                ? 'bg-azure-lt text-azure'
+                : (scheduled ? 'bg-primary-lt text-primary' : 'bg-secondary-lt text-secondary');
+            const range = period.endMonth
+                ? `${formatMonthKeyLabel(period.effectiveMonth)} to ${formatMonthKeyLabel(period.endMonth)}`
+                : `${formatMonthKeyLabel(period.effectiveMonth)} onward`;
+            const balanceNote = period.balanceTreatment === 'write-off'
+                ? `${formatCurrency(period.writeOffAmount)} written off`
+                : 'Existing balance kept';
+            const actor = period.changedBy?.name || period.changedBy?.username || 'Admin';
+            return `
+                <div class="breakdown-plan-history__item">
+                    <strong>${escapeHtml(range)}</strong>
+                    <span>${escapeHtml(balanceNote)}</span>
+                    <span class="badge ${statusClass}">${statusLabel}</span>
+                    <span class="breakdown-plan-history__meta">${escapeHtml(`${period.reason || 'No reason recorded.'} — ${actor}`)}</span>
+                </div>
+            `;
+        }).join('');
+        complimentaryToolbar.history.innerHTML = `<p class="breakdown-plan-history__title">Complimentary history</p><div class="breakdown-plan-history__list">${items}</div>`;
+    };
+    const renderComplimentaryToolbar = () => {
+        const policy = state.record?.complimentaryAccount || {};
+        const active = policy.active === true;
+        const scheduled = policy.status === 'scheduled';
+        if (complimentaryToolbar.toggle) {
+            complimentaryToolbar.toggle.hidden = !accountNumber;
+            complimentaryToolbar.toggle.disabled = state.savingComplimentaryAccount;
+            complimentaryToolbar.toggle.setAttribute('aria-expanded', state.complimentaryToolbarOpen ? 'true' : 'false');
+            complimentaryToolbar.toggle.innerHTML = active
+                ? '<i class="ti ti-gift" aria-hidden="true"></i> Complimentary active'
+                : (scheduled
+                    ? '<i class="ti ti-calendar-event" aria-hidden="true"></i> Complimentary scheduled'
+                    : '<i class="ti ti-gift" aria-hidden="true"></i> Complimentary account');
+            complimentaryToolbar.toggle.classList.toggle('btn-azure', active || scheduled);
+            complimentaryToolbar.toggle.classList.toggle('btn-outline-azure', !active && !scheduled);
+        }
+        if (!complimentaryToolbar.form) return;
+        const action = complimentaryToolbar.action?.value === 'disable' ? 'disable' : 'enable';
+        const currentMonth = getCurrentBillingMonthKey();
+        const nextMonth = getNextBillingMonthKey();
+        if (complimentaryToolbar.summary) {
+            const currentPeriod = policy.currentPeriod;
+            complimentaryToolbar.summary.textContent = active
+                ? `Complimentary billing is active from ${formatMonthKeyLabel(currentPeriod?.effectiveMonth)}${currentPeriod?.endMonth ? ` through ${formatMonthKeyLabel(currentPeriod.endMonth)}` : ' with no end month'}. Recurring bills, billing reminders, and collection/disconnection queues are paused.`
+                : (policy.status === 'scheduled'
+                    ? `Complimentary billing is scheduled from ${formatMonthKeyLabel(policy.scheduledPeriod?.effectiveMonth)}.`
+                    : 'Standard billing is active. The subscriber keeps the real plan even during a complimentary period.');
+        }
+        if (complimentaryToolbar.action) complimentaryToolbar.action.disabled = state.savingComplimentaryAccount;
+        if (complimentaryToolbar.effectiveMonthLabel) {
+            complimentaryToolbar.effectiveMonthLabel.textContent = action === 'disable' ? 'Resume Billing Month' : 'Effective Month';
+        }
+        if (complimentaryToolbar.effectiveMonth) {
+            complimentaryToolbar.effectiveMonth.min = action === 'disable' ? nextMonth : currentMonth;
+            if (!normalizeAdjustmentMonthKey(complimentaryToolbar.effectiveMonth.value)) {
+                complimentaryToolbar.effectiveMonth.value = action === 'disable' ? nextMonth : currentMonth;
+            }
+            complimentaryToolbar.effectiveMonth.disabled = state.savingComplimentaryAccount;
+        }
+        if (complimentaryToolbar.endMonthField) complimentaryToolbar.endMonthField.hidden = action === 'disable';
+        if (complimentaryToolbar.balanceField) complimentaryToolbar.balanceField.hidden = action === 'disable';
+        if (complimentaryToolbar.endMonth) complimentaryToolbar.endMonth.disabled = state.savingComplimentaryAccount || action === 'disable';
+        if (complimentaryToolbar.balanceTreatment) {
+            complimentaryToolbar.balanceTreatment.disabled = state.savingComplimentaryAccount || action === 'disable';
+            const futureStart = normalizeAdjustmentMonthKey(complimentaryToolbar.effectiveMonth?.value) > currentMonth;
+            const writeOffOption = Array.from(complimentaryToolbar.balanceTreatment.options || []).find((option) => option.value === 'write-off');
+            if (writeOffOption) writeOffOption.disabled = futureStart;
+            if (futureStart && complimentaryToolbar.balanceTreatment.value === 'write-off') complimentaryToolbar.balanceTreatment.value = 'keep';
+        }
+        if (complimentaryToolbar.reason) complimentaryToolbar.reason.disabled = state.savingComplimentaryAccount;
+        if (complimentaryToolbar.confirmed) complimentaryToolbar.confirmed.disabled = state.savingComplimentaryAccount;
+        if (complimentaryToolbar.save) {
+            complimentaryToolbar.save.disabled = state.savingComplimentaryAccount;
+            complimentaryToolbar.save.innerHTML = state.savingComplimentaryAccount
+                ? '<i class="ti ti-loader-2" aria-hidden="true"></i> Saving...'
+                : '<i class="ti ti-device-floppy" aria-hidden="true"></i> Save complimentary policy';
+        }
+        if (complimentaryToolbar.close) complimentaryToolbar.close.disabled = state.savingComplimentaryAccount;
+        if (complimentaryToolbar.cancel) complimentaryToolbar.cancel.disabled = state.savingComplimentaryAccount;
+        renderComplimentaryHistory();
     };
     const flattenPlansPayload = (payload = {}) => {
         const rawPlans = payload?.plans;
@@ -2822,6 +2968,79 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function saveComplimentaryAccount() {
+        if (state.savingComplimentaryAccount) return;
+        const action = complimentaryToolbar.action?.value === 'disable' ? 'disable' : 'enable';
+        const effectiveMonth = normalizeAdjustmentMonthKey(complimentaryToolbar.effectiveMonth?.value);
+        const currentMonth = getCurrentBillingMonthKey();
+        const minimumMonth = action === 'disable' ? getNextBillingMonthKey() : currentMonth;
+        if (!effectiveMonth || effectiveMonth < minimumMonth) {
+            showToast(`Choose ${formatMonthKeyLabel(minimumMonth)} or a later month.`, 'error');
+            complimentaryToolbar.effectiveMonth?.focus();
+            return;
+        }
+        const endMonth = action === 'enable'
+            ? normalizeAdjustmentMonthKey(complimentaryToolbar.endMonth?.value)
+            : '';
+        if (endMonth && endMonth < effectiveMonth) {
+            showToast('The end month cannot be before the effective month.', 'error');
+            complimentaryToolbar.endMonth?.focus();
+            return;
+        }
+        const balanceTreatment = action === 'enable' && complimentaryToolbar.balanceTreatment?.value === 'write-off'
+            ? 'write-off'
+            : 'keep';
+        if (balanceTreatment === 'write-off' && effectiveMonth > currentMonth) {
+            showToast('Choose Keep balance for a future period. Write off can be selected when that month begins.', 'error');
+            return;
+        }
+        const reason = String(complimentaryToolbar.reason?.value || '').trim();
+        if (reason.length < 3) {
+            showToast('Enter a reason for the complimentary-account change.', 'error');
+            complimentaryToolbar.reason?.focus();
+            return;
+        }
+        if (!complimentaryToolbar.confirmed?.checked) {
+            showToast('Confirm the complimentary-account policy before saving.', 'error');
+            complimentaryToolbar.confirmed?.focus();
+            return;
+        }
+
+        state.savingComplimentaryAccount = true;
+        renderComplimentaryToolbar();
+        try {
+            const payload = await saveBreakdownAdjustmentPatch({
+                complimentaryAccount: action === 'disable'
+                    ? { action, resumeMonth: effectiveMonth }
+                    : { action, effectiveMonth, endMonth, balanceTreatment },
+                reason,
+                confirmed: true
+            });
+            const nextRecord = requireCanonicalRecord(payload?.record);
+            state.complimentaryToolbarOpen = false;
+            hideBillingModal(complimentaryToolbar.modal);
+            if (complimentaryToolbar.reason) complimentaryToolbar.reason.value = '';
+            if (complimentaryToolbar.confirmed) complimentaryToolbar.confirmed.checked = false;
+            applyLoadedBreakdown(nextRecord, state.customers, state.plans);
+            const writeOffAmount = Number(payload?.complimentaryAccount?.writeOffAmount) || 0;
+            const cancelledBeforeStart = action === 'disable' && Boolean(payload?.complimentaryAccount?.cancelledAt);
+            showToast(
+                cancelledBeforeStart
+                    ? `Scheduled complimentary billing was cancelled. Standard billing remains active in ${formatMonthKeyLabel(effectiveMonth)}.`
+                    : action === 'disable'
+                    ? `Standard billing will resume in ${formatMonthKeyLabel(effectiveMonth)} without back-billing free months.`
+                    : `Complimentary billing saved${writeOffAmount > EPSILON ? `; ${formatCurrency(writeOffAmount)} was written off.` : '.'}`,
+                'success'
+            );
+        } catch (error) {
+            showToast(error?.message || 'Failed to save complimentary-account policy.', 'error');
+        } finally {
+            state.savingComplimentaryAccount = false;
+            renderComplimentaryToolbar();
+            renderDisconnectButton(state.record);
+        }
+    }
+
     async function disconnectFromBreakdown() {
         if (state.disconnecting) return;
         const account = String(state.record?.accountNumber || accountNumber || '').trim();
@@ -3040,6 +3259,53 @@ document.addEventListener('DOMContentLoaded', () => {
     planToolbar.modal?.addEventListener('hidden.bs.modal', () => {
         state.planToolbarOpen = false;
         renderPlanToolbar();
+    });
+
+    complimentaryToolbar.toggle?.addEventListener('click', () => {
+        if (state.savingComplimentaryAccount) return;
+        const policy = state.record?.complimentaryAccount || {};
+        const active = policy.active === true;
+        const scheduled = policy.status === 'scheduled';
+        state.complimentaryToolbarOpen = true;
+        if (complimentaryToolbar.action) complimentaryToolbar.action.value = active || scheduled ? 'disable' : 'enable';
+        if (complimentaryToolbar.effectiveMonth) {
+            complimentaryToolbar.effectiveMonth.value = scheduled
+                ? normalizeAdjustmentMonthKey(policy.scheduledPeriod?.effectiveMonth)
+                : (active ? getNextBillingMonthKey() : getCurrentBillingMonthKey());
+        }
+        if (complimentaryToolbar.endMonth) complimentaryToolbar.endMonth.value = '';
+        if (complimentaryToolbar.balanceTreatment) complimentaryToolbar.balanceTreatment.value = 'keep';
+        if (complimentaryToolbar.reason) complimentaryToolbar.reason.value = '';
+        if (complimentaryToolbar.confirmed) complimentaryToolbar.confirmed.checked = false;
+        renderComplimentaryToolbar();
+        showBillingModal(complimentaryToolbar.modal);
+        window.setTimeout(() => complimentaryToolbar.action?.focus(), 0);
+    });
+
+    complimentaryToolbar.action?.addEventListener('change', () => {
+        if (complimentaryToolbar.effectiveMonth) {
+            complimentaryToolbar.effectiveMonth.value = complimentaryToolbar.action.value === 'disable'
+                ? getNextBillingMonthKey()
+                : getCurrentBillingMonthKey();
+        }
+        renderComplimentaryToolbar();
+    });
+    complimentaryToolbar.effectiveMonth?.addEventListener('change', renderComplimentaryToolbar);
+    complimentaryToolbar.form?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void saveComplimentaryAccount();
+    });
+    const closeComplimentaryModal = () => {
+        if (state.savingComplimentaryAccount) return;
+        state.complimentaryToolbarOpen = false;
+        renderComplimentaryToolbar();
+        hideBillingModal(complimentaryToolbar.modal);
+    };
+    complimentaryToolbar.close?.addEventListener('click', closeComplimentaryModal);
+    complimentaryToolbar.cancel?.addEventListener('click', closeComplimentaryModal);
+    complimentaryToolbar.modal?.addEventListener('hidden.bs.modal', () => {
+        state.complimentaryToolbarOpen = false;
+        renderComplimentaryToolbar();
     });
 
     disconnectBtn?.addEventListener('click', () => {

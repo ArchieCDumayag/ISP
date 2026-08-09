@@ -32,7 +32,8 @@ const stores = {
       'North Area': ['collector-1']
     }
   },
-  payments: {}
+  payments: {},
+  collector_remittances: { records: [] }
 };
 let relationalReady = false;
 const relationalPaymentRows = [];
@@ -195,6 +196,11 @@ async function run() {
     const storedAfterSubmit = stores.payments['ACC-100'].history;
     assert.equal(storedAfterSubmit.length, 1);
     assert.equal(storedAfterSubmit[0].status, 'pending_approval');
+    assert.equal(stores.collector_remittances.records.length, 1);
+    assert.equal(stores.collector_remittances.records[0].status, 'pending');
+    assert.equal(stores.collector_remittances.records[0].autoBatch, true);
+    assert.equal(stores.collector_remittances.records[0].payments.length, 1);
+    assert.equal(stores.collector_remittances.records[0].payments[0].paymentEntryId, submitted.body.id);
 
     const replay = await request('/ACC-100', {
       method: 'POST',
@@ -204,6 +210,7 @@ async function run() {
     assert.equal(replay.body.replayed, true);
     assert.equal(replay.body.id, submitted.body.id);
     assert.equal(stores.payments['ACC-100'].history.length, 1);
+    assert.equal(stores.collector_remittances.records[0].payments.length, 1);
 
     const conflictingDuplicate = await request('/ACC-100', {
       method: 'POST',
@@ -279,6 +286,79 @@ async function run() {
     });
     assert.equal(queueAfterDecisions.status, 200);
     assert.equal(queueAfterDecisions.body.records.length, 0);
+
+    const combinedCandidate = await request('/ACC-100', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payment,
+        reference: 'COL-REF-003',
+        clientPaymentId: 'local-payment-003'
+      })
+    });
+    assert.equal(combinedCandidate.status, 201);
+    assert.equal(combinedCandidate.body.status, 'pending_approval');
+    assert.equal(stores.collector_remittances.records.length, 1);
+    assert.equal(stores.collector_remittances.records[0].payments.length, 3);
+
+    const pendingRemittances = await request('/remittances', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(pendingRemittances.status, 200);
+    assert.equal(pendingRemittances.body.records.length, 1);
+    assert.equal(pendingRemittances.body.records[0].paymentSummary.pending, 1);
+    assert.equal(pendingRemittances.body.records[0].paymentSummary.approved, 1);
+    assert.equal(pendingRemittances.body.records[0].paymentSummary.rejected, 1);
+
+    const remittanceId = pendingRemittances.body.records[0].id;
+    const collectorCannotConfirm = await request(`/remittances/${encodeURIComponent(remittanceId)}/confirm`, {
+      method: 'POST'
+    });
+    assert.equal(collectorCannotConfirm.status, 403);
+
+    const blockedRemittance = await request(`/remittances/${encodeURIComponent(remittanceId)}/confirm`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ note: 'Daily cash verified.' })
+    });
+    assert.equal(blockedRemittance.status, 409);
+    assert.match(blockedRemittance.body.error, /Complete Customer Payment Approval/i);
+    const combinedBeforeApproval = stores.payments['ACC-100'].history.find((entry) => entry.id === combinedCandidate.body.id);
+    assert.equal(combinedBeforeApproval.status, 'pending_approval');
+    assert.equal(isEffectivePaymentEntryStatus(combinedBeforeApproval), false);
+    assert.equal(stores.collector_remittances.records[0].status, 'pending');
+
+    const separatelyApproved = await request(`/approvals/${encodeURIComponent(combinedCandidate.body.id)}/approve`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(separatelyApproved.status, 200);
+    assert.equal(separatelyApproved.body.record.status, 'approved');
+
+    const confirmedRemittance = await request(`/remittances/${encodeURIComponent(remittanceId)}/confirm`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ note: 'Daily cash verified.' })
+    });
+    assert.equal(confirmedRemittance.status, 200);
+    assert.equal(confirmedRemittance.body.record.status, 'remitted');
+    assert.equal(confirmedRemittance.body.paymentApproval.approved, 0);
+    assert.equal(confirmedRemittance.body.paymentApproval.alreadyApproved, 2);
+    assert.equal(confirmedRemittance.body.paymentApproval.pending, 0);
+    assert.equal(confirmedRemittance.body.record.totalAmount, 2000);
+    assert.equal(confirmedRemittance.body.record.rejectedTotalAmount, 1000);
+    assert.equal(confirmedRemittance.body.record.adminNote, 'Daily cash verified.');
+    const combinedStored = stores.payments['ACC-100'].history.find((entry) => entry.id === combinedCandidate.body.id);
+    assert.equal(combinedStored.status, 'approved');
+    assert.equal(isEffectivePaymentEntryStatus(combinedStored), true);
+
+    const confirmedReplay = await request(`/remittances/${encodeURIComponent(remittanceId)}/confirm`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(confirmedReplay.status, 200);
+    assert.equal(confirmedReplay.body.replayed, true);
 
     relationalPaymentRows.push({
       id: 'rel-pay-001',

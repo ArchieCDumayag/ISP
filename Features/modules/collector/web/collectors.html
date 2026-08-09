@@ -47,7 +47,7 @@
                     <article class="collectors-kpi-card">
                         <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-chart-line"></i></span>
                         <div class="collectors-kpi-copy">
-                            <span class="subheader">Collected This Month</span>
+                            <span class="subheader">Total Collected This Month</span>
                             <div class="collectors-kpi-value">
                                 <strong id="collectorStatsCollected">PHP 0.00</strong>
                             </div>
@@ -75,6 +75,68 @@
 
                 <div class="collectors-dashboard-grid">
                     <div class="collectors-primary-column">
+                        <section class="card collectors-board collectors-section-card collector-priority-card" aria-labelledby="collectorPriorityTitle">
+                            <div class="card-status-top bg-danger"></div>
+                            <div class="collector-priority-panel">
+                                <div class="collector-approval-panel__header collector-priority-panel__header">
+                                    <div class="collector-section-heading">
+                                        <span class="avatar avatar-sm bg-danger-lt text-danger" aria-hidden="true"><i class="ti ti-flag-3"></i></span>
+                                        <div>
+                                            <h2 id="collectorPriorityTitle">Priority Clients</h2>
+                                            <p>Shared priority queue visible to every collector in the branch.</p>
+                                        </div>
+                                    </div>
+                                    <div class="collector-priority-header-actions">
+                                        <span class="badge bg-danger-lt text-danger" id="collectorPriorityCount">0 active</span>
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" id="collectorPriorityHistoryToggle" aria-pressed="false">
+                                            <i class="ti ti-history" aria-hidden="true"></i>
+                                            <span id="collectorPriorityHistoryToggleLabel">View History</span>
+                                            <span class="badge bg-secondary-lt text-secondary" id="collectorPriorityHistoryCount">0</span>
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" type="button" id="collectorPriorityCreate">
+                                            <i class="ti ti-flag-plus" aria-hidden="true"></i>
+                                            <span>Assign Priority</span>
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorPriorityRefresh" title="Refresh priority clients" aria-label="Refresh priority clients">
+                                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive collector-priority-table-wrapper">
+                                    <table class="table table-vcenter table-sm collectors-table collector-priority-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Priority</th>
+                                                <th>Collection</th>
+                                                <th>Client</th>
+                                                <th>Collection scope</th>
+                                                <th>Balance</th>
+                                                <th>Reason</th>
+                                                <th class="text-center">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="collectorPriorityList"></tbody>
+                                    </table>
+                                    <div class="empty-state p-3" id="collectorPriorityEmptyState" style="display:none;">
+                                        <i class="ti ti-flag-off" aria-hidden="true"></i>
+                                        <p>No active priority clients.</p>
+                                    </div>
+                                </div>
+                                <div class="collector-payment-pagination collector-priority-pagination" id="collectorPriorityPagination" hidden>
+                                    <span class="text-secondary" id="collectorPriorityPageSummary">No priority clients</span>
+                                    <div class="btn-group" role="group" aria-label="Priority client pages">
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorPriorityPreviousPage" aria-label="Previous priority page">
+                                            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                                        </button>
+                                        <span class="btn btn-sm disabled" id="collectorPriorityPageIndicator" aria-live="polite">Page 1 of 1</span>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorPriorityNextPage" aria-label="Next priority page">
+                                            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
                         <section class="card collectors-board collectors-section-card collectors-reschedule-card" aria-labelledby="collectorRescheduleTitle">
                             <div class="card-status-top bg-azure"></div>
                             <div class="collector-approval-panel collector-reschedule-panel">
@@ -88,6 +150,11 @@
                                     </div>
                                     <div class="collector-reschedule-header-actions">
                                         <span class="badge bg-primary-lt text-primary" id="collectorRescheduleCount">0 active</span>
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" id="collectorRescheduleFiltersToggle" aria-expanded="false" aria-controls="collectorRescheduleFiltersPanel">
+                                            <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
+                                            <span>Schedule Filters</span>
+                                            <span class="badge bg-primary-lt text-primary" id="collectorRescheduleActiveFilterCount" hidden>0</span>
+                                        </button>
                                         <button class="btn btn-primary btn-sm" type="button" id="collectorRescheduleCreate">
                                             <i class="ti ti-calendar-plus" aria-hidden="true"></i>
                                             <span>Create Schedule</span>
@@ -97,7 +164,7 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="collector-reschedule-filters">
+                                <div class="collector-reschedule-filters" id="collectorRescheduleFiltersPanel" hidden>
                                     <label class="collector-filter-control collector-filter-control--search" for="collectorRescheduleSearch">
                                         <span>Search</span>
                                         <span class="input-icon">
@@ -177,7 +244,7 @@
                         </section>
                     </div>
 
-                    <aside class="collectors-side-column" aria-label="Payment review and collector assignments">
+                    <aside class="collectors-side-column" aria-label="Customer payment approval, cash remittance, and collector assignments">
                         <section class="card collectors-board collectors-section-card collectors-payments-card" aria-labelledby="collectorApprovalTitle">
                             <div class="card-status-top bg-warning"></div>
                             <div class="collector-approval-panel">
@@ -185,8 +252,8 @@
                                     <div class="collector-section-heading">
                                         <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-cash"></i></span>
                                         <div>
-                                            <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
-                                            <p class="text-secondary mb-0 collector-approval-panel__subtitle">Balances stay unchanged until an Admin approves.</p>
+                                            <h2 id="collectorApprovalTitle">Customer Payment Approval</h2>
+                                            <p class="text-secondary mb-0 collector-approval-panel__subtitle">Verify each payment first. Balances update only after approval.</p>
                                         </div>
                                     </div>
                                     <div class="collector-approval-panel__actions">
@@ -195,7 +262,7 @@
                                         <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalFiltersToggle" aria-expanded="false" aria-controls="collectorApprovalFiltersPanel" title="Show payment filters" aria-label="Show payment filters">
                                             <i class="ti ti-filter" aria-hidden="true"></i>
                                         </button>
-                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalRefresh" title="Refresh pending payments" aria-label="Refresh pending payments">
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalRefresh" title="Refresh payment approvals" aria-label="Refresh payment approvals">
                                             <i class="ti ti-refresh" aria-hidden="true"></i>
                                         </button>
                                     </div>
@@ -236,12 +303,12 @@
                                     <div class="collector-approval-groups" id="collectorApprovalList" role="list" aria-live="polite"></div>
                                     <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
                                         <i class="ti ti-circle-check" aria-hidden="true"></i>
-                                        <p>No pending collector payments.</p>
+                                        <p>No customer payments await approval.</p>
                                     </div>
                                 </div>
                                 <div class="collector-payment-pagination" id="collectorApprovalPagination" hidden>
                                     <span class="text-secondary" id="collectorApprovalPageSummary">No payments</span>
-                                    <div class="btn-group" role="group" aria-label="Pending payment pages">
+                                    <div class="btn-group" role="group" aria-label="Customer payment approval pages">
                                         <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalPreviousPage" aria-label="Previous page">
                                             <i class="ti ti-chevron-left" aria-hidden="true"></i>
                                         </button>
@@ -250,6 +317,38 @@
                                             <i class="ti ti-chevron-right" aria-hidden="true"></i>
                                         </button>
                                     </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card collectors-board collectors-section-card collector-remittance-card" aria-labelledby="collectorRemittanceTitle">
+                            <div class="card-status-top bg-green"></div>
+                            <div class="collector-approval-panel collector-remittance-panel">
+                                <div class="collector-approval-panel__header">
+                                    <div class="collector-section-heading">
+                                        <span class="avatar avatar-sm bg-green-lt text-green" aria-hidden="true"><i class="ti ti-cash-banknote"></i></span>
+                                        <div>
+                                            <h2 id="collectorRemittanceTitle">Collector Cash Remittance</h2>
+                                            <p class="text-secondary mb-0 collector-approval-panel__subtitle">Confirm received cash only after every customer payment is decided.</p>
+                                        </div>
+                                    </div>
+                                    <div class="collector-approval-panel__actions">
+                                        <span class="collector-approval-total" id="collectorRemittanceTotal">PHP 0.00</span>
+                                        <span class="badge bg-warning-lt text-warning" id="collectorRemittanceCount">0 pending</span>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorRemittanceRefresh" title="Refresh remittances" aria-label="Refresh remittances">
+                                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="btn-group collector-remittance-tabs" role="group" aria-label="Cash remittance status filter">
+                                    <button class="btn btn-sm btn-primary" type="button" data-collector-remittance-filter="pending" aria-pressed="true">Pending <span id="collectorRemittancePendingCount">0</span></button>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="remitted" aria-pressed="false">Remitted <span id="collectorRemittanceCompletedCount">0</span></button>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="rejected" aria-pressed="false">Rejected <span id="collectorRemittanceRejectedCount">0</span></button>
+                                </div>
+                                <div class="collector-remittance-list" id="collectorRemittanceList" role="list" aria-live="polite"></div>
+                                <div class="empty-state p-3" id="collectorRemittanceEmptyState" style="display:none;">
+                                    <i class="ti ti-receipt-off" aria-hidden="true"></i>
+                                    <p>No cash remittances match this status.</p>
                                 </div>
                             </div>
                         </section>
@@ -295,6 +394,81 @@
                     </aside>
                 </div>
             </main>
+        </div>
+    </div>
+
+    <!-- Admin Priority Collection Modal -->
+    <div id="collectorPriorityModal" class="modal modal-blur tabler-form-modal collector-priority-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable collector-priority-modal__dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="collectorPriorityModalTitle">Assign Priority Client</h2>
+                        <p class="modal-subtitle mb-0">Select one or more clients. The shared queue appears for every collector after Sync.</p>
+                    </div>
+                    <button class="btn-close" type="button" id="closeCollectorPriorityModal" aria-label="Close"></button>
+                </div>
+                <form class="tabler-modal-form" id="collectorPriorityForm">
+                    <div class="modal-body">
+                        <input type="hidden" id="collectorPriorityRecordId" name="recordId">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="collector-priority-picker-heading">
+                                    <div>
+                                        <label class="form-label mb-0" for="collectorPriorityCustomerSearch">Clients</label>
+                                        <span class="form-hint" id="collectorPriorityCustomerHint">Unpaid clients are sorted from highest balance to lowest.</span>
+                                    </div>
+                                    <div class="collector-priority-picker-actions">
+                                        <span class="badge bg-danger-lt text-danger" id="collectorPrioritySelectedCount">0 selected</span>
+                                        <button class="btn btn-outline-primary btn-sm" type="button" id="collectorPrioritySelectAllVisible">Select All Visible</button>
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" id="collectorPriorityClearSelected">Clear</button>
+                                    </div>
+                                </div>
+                                <label class="input-icon mt-2" for="collectorPriorityCustomerSearch">
+                                    <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                                    <input class="form-control" type="search" id="collectorPriorityCustomerSearch" placeholder="Search client, account, or area" autocomplete="off">
+                                </label>
+                                <div class="collector-priority-client-picker mt-2" id="collectorPriorityCustomerList" role="group" aria-label="Select priority clients"></div>
+                            </div>
+                            <div class="col-12">
+                                <div class="alert alert-info py-2 mb-0 collector-priority-scope-note" role="note">
+                                    <i class="ti ti-users" aria-hidden="true"></i>
+                                    <span><strong>Anyone can collect.</strong> Every active collector in this branch will see the selected clients after Sync.</span>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="collectorPriorityLevel">Priority</label>
+                                <select class="form-select" id="collectorPriorityLevel" name="priority" required>
+                                    <option value="urgent">Urgent</option>
+                                    <option value="high">High</option>
+                                    <option value="normal" selected>Normal</option>
+                                    <option value="low">Low</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="collectorPriorityDate">Collection date</label>
+                                <input class="form-control" type="date" id="collectorPriorityDate" name="collectionDate" required>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label" for="collectorPriorityExpires">Expires on <span class="text-secondary">(optional)</span></label>
+                                <input class="form-control" type="date" id="collectorPriorityExpires" name="expiresOn">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="collectorPriorityReason">Collection reason or instruction</label>
+                                <textarea class="form-control" id="collectorPriorityReason" name="reason" rows="4" maxlength="500" placeholder="Example: Large overdue balance; collect before service review." required></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-message" id="collectorPriorityMessage" role="status" aria-live="polite"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorPriorityModal">Cancel</button>
+                        <button type="submit" class="btn btn-danger btn-sm" id="collectorPrioritySave">
+                            <i class="ti ti-device-floppy" aria-hidden="true"></i>
+                            <span>Save Priority</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -457,6 +631,41 @@
         </div>
     </div>
 
+    <!-- Admin Cash Remittance Review Modal -->
+    <div id="collectorRemittanceReviewModal" class="modal modal-blur tabler-form-modal collector-remittance-review-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="collectorRemittanceReviewTitle">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="collectorRemittanceReviewTitle">Confirm Remitted</h2>
+                        <p class="modal-subtitle mb-0" id="collectorRemittanceReviewSubtitle">Verify the batch totals before confirming.</p>
+                    </div>
+                    <button class="btn btn-icon btn-outline-secondary close-modal" type="button" id="closeCollectorRemittanceReviewModal" aria-label="Close cash remittance review">
+                        <i class="ti ti-x" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <form id="collectorRemittanceReviewForm">
+                    <div class="modal-body">
+                        <input type="hidden" id="collectorRemittanceReviewId">
+                        <input type="hidden" id="collectorRemittanceReviewAction">
+                        <div class="alert alert-info collector-remittance-review-summary" id="collectorRemittanceReviewSummary" role="status"></div>
+                        <div class="collector-remittance-review-payments" id="collectorRemittanceReviewPayments"></div>
+                        <label class="form-label mt-3" for="collectorRemittanceReviewNote" id="collectorRemittanceReviewNoteLabel">Admin note <span class="text-secondary">(optional)</span></label>
+                        <textarea class="form-control" id="collectorRemittanceReviewNote" rows="3" maxlength="500" placeholder="Example: Cash and electronic totals verified."></textarea>
+                        <div class="modal-message" id="collectorRemittanceReviewMessage" role="status" aria-live="polite"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorRemittanceReviewModal">Cancel</button>
+                        <button type="submit" class="btn btn-success btn-sm" id="collectorRemittanceReviewSubmit">
+                            <i class="ti ti-check" aria-hidden="true"></i>
+                            <span>Confirm Remitted</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Collector Payment Rejection Modal -->
     <div id="collectorPaymentRejectModal" class="modal modal-blur tabler-form-modal collector-payment-reject-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="collectorPaymentRejectTitle">
         <div class="modal-dialog modal-sm modal-dialog-centered collector-payment-reject-modal__dialog">
@@ -492,7 +701,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=3.9"></script>
+    <script src="js/collectors-page.js?v=3.10"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

@@ -1,5 +1,7 @@
 const assert = require('assert/strict');
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 
 const ADMIN = {
   id: 'admin-1',
@@ -364,6 +366,16 @@ async function run() {
     assert.equal(relationalCreate.body.record.accountNumber, 'ACC-200');
     assert.equal(relationalCreate.body.record.branchId, 'branch-1');
     relationalReady = false;
+
+    const collectorsHtml = fs.readFileSync(path.join(__dirname, '..', 'web', 'collectors.html'), 'utf8');
+    const collectorsScript = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'collectors-page.js'), 'utf8');
+    assert.match(collectorsHtml, /id="collectorRescheduleFiltersToggle"[^>]+aria-expanded="false"[^>]+aria-controls="collectorRescheduleFiltersPanel"/);
+    assert.match(collectorsHtml, /id="collectorRescheduleActiveFilterCount" hidden/);
+    assert.match(collectorsHtml, /id="collectorRescheduleFiltersPanel" hidden/);
+    assert.match(collectorsHtml, /collectorRescheduleFiltersPanel[\s\S]+collectorRescheduleSearch[\s\S]+collectorRescheduleCollectorFilter[\s\S]+collectorRescheduleStatusFilter[\s\S]+collectorRescheduleDateFilter[\s\S]+collectorRescheduleClearFilters/);
+    assert.match(collectorsScript, /function countCollectorRescheduleFilters\(\)/);
+    assert.match(collectorsScript, /collectorRescheduleFiltersPanel\.hidden = !collectorRescheduleFiltersPanel\.hidden/);
+    assert.match(collectorsScript, /const resetCollectorReschedulePageAndRender = \(\) => \{\s*collectorReschedulePage = 1;/);
 
     console.log('ADMIN COLLECTOR SCHEDULE CRUD PASSED');
   } finally {

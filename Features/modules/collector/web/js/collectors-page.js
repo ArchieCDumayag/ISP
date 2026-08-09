@@ -34,9 +34,66 @@
   const collectorPaymentRejectSubmit = document.getElementById('collectorPaymentRejectSubmit');
   const closeCollectorPaymentRejectModal = document.getElementById('closeCollectorPaymentRejectModal');
   const cancelCollectorPaymentRejectModal = document.getElementById('cancelCollectorPaymentRejectModal');
+  const collectorRemittanceList = document.getElementById('collectorRemittanceList');
+  const collectorRemittanceCount = document.getElementById('collectorRemittanceCount');
+  const collectorRemittanceTotal = document.getElementById('collectorRemittanceTotal');
+  const collectorRemittanceRefresh = document.getElementById('collectorRemittanceRefresh');
+  const collectorRemittanceEmptyState = document.getElementById('collectorRemittanceEmptyState');
+  const collectorRemittancePendingCount = document.getElementById('collectorRemittancePendingCount');
+  const collectorRemittanceCompletedCount = document.getElementById('collectorRemittanceCompletedCount');
+  const collectorRemittanceRejectedCount = document.getElementById('collectorRemittanceRejectedCount');
+  const collectorRemittanceFilterButtons = document.querySelectorAll('[data-collector-remittance-filter]');
+  const collectorRemittanceReviewModal = document.getElementById('collectorRemittanceReviewModal');
+  const collectorRemittanceReviewForm = document.getElementById('collectorRemittanceReviewForm');
+  const collectorRemittanceReviewTitle = document.getElementById('collectorRemittanceReviewTitle');
+  const collectorRemittanceReviewSubtitle = document.getElementById('collectorRemittanceReviewSubtitle');
+  const collectorRemittanceReviewId = document.getElementById('collectorRemittanceReviewId');
+  const collectorRemittanceReviewAction = document.getElementById('collectorRemittanceReviewAction');
+  const collectorRemittanceReviewSummary = document.getElementById('collectorRemittanceReviewSummary');
+  const collectorRemittanceReviewPayments = document.getElementById('collectorRemittanceReviewPayments');
+  const collectorRemittanceReviewNoteLabel = document.getElementById('collectorRemittanceReviewNoteLabel');
+  const collectorRemittanceReviewNote = document.getElementById('collectorRemittanceReviewNote');
+  const collectorRemittanceReviewMessage = document.getElementById('collectorRemittanceReviewMessage');
+  const collectorRemittanceReviewSubmit = document.getElementById('collectorRemittanceReviewSubmit');
+  const closeCollectorRemittanceReviewModal = document.getElementById('closeCollectorRemittanceReviewModal');
+  const cancelCollectorRemittanceReviewModal = document.getElementById('cancelCollectorRemittanceReviewModal');
+  const collectorPriorityList = document.getElementById('collectorPriorityList');
+  const collectorPriorityCount = document.getElementById('collectorPriorityCount');
+  const collectorPriorityEmptyState = document.getElementById('collectorPriorityEmptyState');
+  const collectorPriorityHistoryToggle = document.getElementById('collectorPriorityHistoryToggle');
+  const collectorPriorityHistoryToggleLabel = document.getElementById('collectorPriorityHistoryToggleLabel');
+  const collectorPriorityHistoryCount = document.getElementById('collectorPriorityHistoryCount');
+  const collectorPriorityPagination = document.getElementById('collectorPriorityPagination');
+  const collectorPriorityPageSummary = document.getElementById('collectorPriorityPageSummary');
+  const collectorPriorityPageIndicator = document.getElementById('collectorPriorityPageIndicator');
+  const collectorPriorityPreviousPage = document.getElementById('collectorPriorityPreviousPage');
+  const collectorPriorityNextPage = document.getElementById('collectorPriorityNextPage');
+  const collectorPriorityRefresh = document.getElementById('collectorPriorityRefresh');
+  const collectorPriorityCreate = document.getElementById('collectorPriorityCreate');
+  const collectorPriorityModal = document.getElementById('collectorPriorityModal');
+  const collectorPriorityForm = document.getElementById('collectorPriorityForm');
+  const collectorPriorityModalTitle = document.getElementById('collectorPriorityModalTitle');
+  const collectorPriorityRecordId = document.getElementById('collectorPriorityRecordId');
+  const collectorPriorityCustomerSearch = document.getElementById('collectorPriorityCustomerSearch');
+  const collectorPriorityCustomerList = document.getElementById('collectorPriorityCustomerList');
+  const collectorPriorityCustomerHint = document.getElementById('collectorPriorityCustomerHint');
+  const collectorPrioritySelectedCount = document.getElementById('collectorPrioritySelectedCount');
+  const collectorPrioritySelectAllVisible = document.getElementById('collectorPrioritySelectAllVisible');
+  const collectorPriorityClearSelected = document.getElementById('collectorPriorityClearSelected');
+  const collectorPriorityLevel = document.getElementById('collectorPriorityLevel');
+  const collectorPriorityDate = document.getElementById('collectorPriorityDate');
+  const collectorPriorityExpires = document.getElementById('collectorPriorityExpires');
+  const collectorPriorityReason = document.getElementById('collectorPriorityReason');
+  const collectorPriorityMessage = document.getElementById('collectorPriorityMessage');
+  const collectorPrioritySave = document.getElementById('collectorPrioritySave');
+  const closeCollectorPriorityModal = document.getElementById('closeCollectorPriorityModal');
+  const cancelCollectorPriorityModal = document.getElementById('cancelCollectorPriorityModal');
   const collectorRescheduleList = document.getElementById('collectorRescheduleList');
   const collectorRescheduleCount = document.getElementById('collectorRescheduleCount');
   const collectorReschedulesEmptyState = document.getElementById('collectorReschedulesEmptyState');
+  const collectorRescheduleFiltersToggle = document.getElementById('collectorRescheduleFiltersToggle');
+  const collectorRescheduleFiltersPanel = document.getElementById('collectorRescheduleFiltersPanel');
+  const collectorRescheduleActiveFilterCount = document.getElementById('collectorRescheduleActiveFilterCount');
   const collectorRescheduleSearch = document.getElementById('collectorRescheduleSearch');
   const collectorRescheduleCollectorFilter = document.getElementById('collectorRescheduleCollectorFilter');
   const collectorRescheduleStatusFilter = document.getElementById('collectorRescheduleStatusFilter');
@@ -128,10 +185,21 @@
   let areaUnpaidCache = {};
   let collectorApprovalRecords = [];
   let collectorPaymentRejectTrigger = null;
+  let collectorRemittanceRecords = [];
+  let collectorRemittanceFilter = 'pending';
+  let collectorRemittanceReviewTrigger = null;
   const collectorApprovalSelectedIds = new Set();
   const collectorApprovalCollapsedGroups = new Set();
   let collectorApprovalPage = 1;
   const collectorApprovalPageSize = 5;
+  let collectorPriorityRecords = [];
+  let collectorPriorityView = 'active';
+  let collectorPriorityPage = 1;
+  const collectorPriorityPageSize = 10;
+  let collectorPriorityViewMode = false;
+  let collectorPrioritySelectionLocked = false;
+  let collectorPriorityCustomerCandidates = [];
+  const collectorPrioritySelectedAccounts = new Set();
   let collectorRescheduleRecords = [];
   let collectorReschedulePage = 1;
   const collectorReschedulePageSize = 10;
@@ -265,10 +333,9 @@
   }
 
   function getCollectorMonthTotal(collectorId, areas, monthKey) {
-    const areaTotal = (areas || []).reduce((sum, area) => sum + getCollectorAreaAmount(collectorId, area, monthKey), 0);
-    if (Object.keys(collectorAreaReportCache[String(collectorId)] || {}).length > 0) return areaTotal;
+    void areas;
     const monthlyTotal = Number(loadReport.lastReport?.[String(collectorId)]?.[monthKey] || 0);
-    return monthlyTotal || areaTotal || 0;
+    return Number.isFinite(monthlyTotal) ? monthlyTotal : 0;
   }
 
   function areaCountLabel(count) {
@@ -447,7 +514,8 @@
     `;
   }
 
-  async function loadClientReviewCustomers() {
+  async function loadClientReviewCustomers(forceRefresh = false) {
+    if (forceRefresh && !clientReviewPromise) clientReviewLoaded = false;
     if (clientReviewLoaded) return clientReviewCustomers;
     if (clientReviewPromise) return clientReviewPromise;
     clientReviewLoading = true;
@@ -466,15 +534,19 @@
         const billingPayload = billingRes?.ok ? await billingRes.json().catch(() => ({})) : {};
         const billingByAccount = new Map((Array.isArray(billingPayload?.records) ? billingPayload.records : []).map((record) => [
           getClientAccountNumber(record),
-          record?.complimentaryAccount || record?.billingSummary?.complimentaryAccount || null
+          record
         ]));
         const customers = Array.isArray(payload?.customers)
           ? payload.customers
           : (Array.isArray(payload) ? payload : []);
-        clientReviewCustomers = customers.map((customer) => ({
-          ...customer,
-          complimentaryAccount: billingByAccount.get(getClientAccountNumber(customer)) || null
-        }));
+        clientReviewCustomers = customers.map((customer) => {
+          const billingRecord = billingByAccount.get(getClientAccountNumber(customer)) || null;
+          return {
+            ...customer,
+            complimentaryAccount: billingRecord?.complimentaryAccount || billingRecord?.billingSummary?.complimentaryAccount || null,
+            collectorBillingRecord: billingRecord
+          };
+        });
         clientReviewLoaded = true;
         rebuildClientReviewIndex();
         return clientReviewCustomers;
@@ -654,7 +726,7 @@
       if (collectorApprovalsEmptyState) {
         collectorApprovalsEmptyState.style.display = 'flex';
         const emptyCopy = collectorApprovalsEmptyState.querySelector('p');
-        if (emptyCopy) emptyCopy.textContent = 'No pending collector payments.';
+        if (emptyCopy) emptyCopy.textContent = 'No customer payments await approval.';
       }
       if (collectorApprovalPagination) collectorApprovalPagination.hidden = true;
       return;
@@ -806,10 +878,10 @@
   }
 
   function getCollectorApprovalErrorMessage(status, payload = {}) {
-    if (status === 401) return 'Please log in again as admin to load pending collector payments.';
+    if (status === 401) return 'Please log in again as admin to load customer payment approvals.';
     if (status === 403) return payload?.error || 'Admin access is required to review collector payments.';
     if (status === 404) return 'Collector approval API is not active yet. Restart the server and refresh this page.';
-    return payload?.error || payload?.message || 'Failed to load pending collector payments.';
+    return payload?.error || payload?.message || 'Failed to load customer payment approvals.';
   }
 
   async function loadCollectorApprovals() {
@@ -828,9 +900,717 @@
       console.warn('Failed to load collector payment approvals', err);
       const status = Number(err?.status || 0);
       const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
-      renderCollectorApprovalNotice(err?.message || 'Failed to load pending collector payments.', tone);
+      renderCollectorApprovalNotice(err?.message || 'Failed to load customer payment approvals.', tone);
     } finally {
       if (collectorApprovalRefresh) collectorApprovalRefresh.disabled = false;
+    }
+  }
+
+  function normalizeCollectorRemittanceStatus(value = '') {
+    const status = String(value || 'pending').trim().toLowerCase();
+    if (status === 'remitted' || status === 'approved' || status === 'confirmed') return 'remitted';
+    if (status === 'rejected' || status === 'declined' || status === 'cancelled') return 'rejected';
+    return 'pending';
+  }
+
+  function collectorRemittanceStatusMeta(value = '') {
+    const status = normalizeCollectorRemittanceStatus(value);
+    if (status === 'remitted') return { label: 'Remitted', badge: 'bg-green-lt text-green' };
+    if (status === 'rejected') return { label: 'Rejected', badge: 'bg-danger-lt text-danger' };
+    return { label: 'Pending Review', badge: 'bg-warning-lt text-warning' };
+  }
+
+  function collectorRemittancePaymentStatusMeta(value = '') {
+    const status = String(value || 'pending_approval').trim().toLowerCase();
+    if (status === 'approved') return { label: 'Approved', badge: 'bg-green-lt text-green' };
+    if (status === 'rejected') return { label: 'Rejected', badge: 'bg-danger-lt text-danger' };
+    return { label: 'Pending Approval', badge: 'bg-warning-lt text-warning' };
+  }
+
+  function collectorRemittanceSummary(record = {}) {
+    const summary = record?.paymentSummary || {};
+    const payments = Array.isArray(record?.payments) ? record.payments : [];
+    return {
+      count: Number(summary.count ?? payments.length) || 0,
+      pending: Number(summary.pending || 0),
+      approved: Number(summary.approved || 0),
+      rejected: Number(summary.rejected || 0),
+      pendingAmount: Number(summary.pendingAmount || 0),
+      approvedAmount: Number(summary.approvedAmount || 0),
+      rejectedAmount: Number(summary.rejectedAmount || record?.rejectedTotalAmount || 0),
+      totalAmount: Number(summary.totalAmount || record?.originalTotalAmount || record?.totalAmount || 0)
+    };
+  }
+
+  function collectorRemittanceVerifiedAmount(record = {}) {
+    const summary = collectorRemittanceSummary(record);
+    return Number(summary.approvedAmount.toFixed(2));
+  }
+
+  function collectorRemittanceConfirmationState(record = {}) {
+    const summary = collectorRemittanceSummary(record);
+    if (summary.pending > 0) {
+      return {
+        allowed: false,
+        reason: `${summary.pending} customer payment${summary.pending === 1 ? ' still needs' : 's still need'} approval or rejection.`
+      };
+    }
+    if (summary.approved < 1) {
+      return { allowed: false, reason: 'This batch has no approved customer payments to remit.' };
+    }
+    return { allowed: true, reason: '' };
+  }
+
+  function collectorRemittanceDate(record = {}) {
+    return record?.collectionDate || record?.submittedAt || record?.updatedAt || '';
+  }
+
+  function renderCollectorRemittances() {
+    if (!collectorRemittanceList) return;
+    const counts = { pending: 0, remitted: 0, rejected: 0 };
+    collectorRemittanceRecords.forEach((record) => {
+      counts[normalizeCollectorRemittanceStatus(record?.status)] += 1;
+    });
+    if (collectorRemittancePendingCount) collectorRemittancePendingCount.textContent = String(counts.pending);
+    if (collectorRemittanceCompletedCount) collectorRemittanceCompletedCount.textContent = String(counts.remitted);
+    if (collectorRemittanceRejectedCount) collectorRemittanceRejectedCount.textContent = String(counts.rejected);
+    if (collectorRemittanceCount) {
+      collectorRemittanceCount.textContent = counts.pending === 1 ? '1 pending' : `${counts.pending} pending`;
+    }
+    collectorRemittanceFilterButtons.forEach((button) => {
+      const active = button.getAttribute('data-collector-remittance-filter') === collectorRemittanceFilter;
+      button.classList.toggle('btn-primary', active);
+      button.classList.toggle('btn-outline-secondary', !active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+
+    const filtered = collectorRemittanceRecords
+      .filter((record) => normalizeCollectorRemittanceStatus(record?.status) === collectorRemittanceFilter)
+      .sort((left, right) => {
+        const leftTime = Date.parse(left?.updatedAt || left?.submittedAt || collectorRemittanceDate(left)) || 0;
+        const rightTime = Date.parse(right?.updatedAt || right?.submittedAt || collectorRemittanceDate(right)) || 0;
+        return rightTime - leftTime;
+      });
+    const visibleTotal = filtered.reduce((sum, record) => (
+      sum + (collectorRemittanceFilter === 'pending'
+        ? collectorRemittanceVerifiedAmount(record)
+        : Number(record?.totalAmount || 0))
+    ), 0);
+    if (collectorRemittanceTotal) collectorRemittanceTotal.textContent = `PHP ${fmtMoney(visibleTotal)}`;
+    collectorRemittanceList.innerHTML = '';
+    if (collectorRemittanceEmptyState) collectorRemittanceEmptyState.style.display = filtered.length ? 'none' : 'flex';
+
+    filtered.forEach((record) => {
+      const recordId = String(record?.id || '').trim();
+      const statusMeta = collectorRemittanceStatusMeta(record?.status);
+      const summary = collectorRemittanceSummary(record);
+      const collectorName = String(record?.collectorName || record?.submittedBy?.name || record?.submittedBy?.username || 'Collector').trim();
+      const submittedAt = formatCollectorPaymentDate(record?.submittedAt || collectorRemittanceDate(record));
+      const reviewedAt = record?.reviewedAt ? formatCollectorPaymentDate(record.reviewedAt) : '';
+      const reviewer = String(record?.reviewedBy?.name || record?.reviewedBy?.username || '').trim();
+      const verifiedAmount = collectorRemittanceVerifiedAmount(record);
+      const confirmationState = collectorRemittanceConfirmationState(record);
+      const paymentRows = (Array.isArray(record?.payments) ? record.payments : []).map((payment) => {
+        const paymentStatus = collectorRemittancePaymentStatusMeta(payment?.status);
+        const identity = String(payment?.customerName || payment?.accountNumber || 'Payment').trim();
+        const reference = String(payment?.reference || payment?.paymentEntryId || 'No reference').trim();
+        return `
+          <div class="collector-remittance-payment-row">
+            <div>
+              <strong>${escapeHtml(identity)}</strong>
+              <small>${escapeHtml(reference)}</small>
+            </div>
+            <span class="badge ${paymentStatus.badge}">${paymentStatus.label}</span>
+            <strong>PHP ${fmtMoney(payment?.amount)}</strong>
+          </div>
+        `;
+      }).join('');
+      const card = document.createElement('article');
+      card.className = 'collector-remittance-record';
+      card.setAttribute('role', 'listitem');
+      card.innerHTML = `
+        <div class="collector-remittance-record__header">
+          <div>
+            <strong>${escapeHtml(collectorName)}</strong>
+            <small>${escapeHtml(submittedAt || 'Date unavailable')} &middot; ${summary.count} payment${summary.count === 1 ? '' : 's'}</small>
+          </div>
+          <span class="badge ${statusMeta.badge}">${statusMeta.label}</span>
+        </div>
+        <div class="collector-remittance-record__totals">
+          <div><span>${collectorRemittanceFilter === 'pending' ? 'Approved cash' : 'Confirmed'}</span><strong>PHP ${fmtMoney(collectorRemittanceFilter === 'pending' ? verifiedAmount : record?.totalAmount)}</strong></div>
+          <div><span>Pending approval</span><strong>${summary.pending}</strong></div>
+          <div><span>Approved</span><strong>${summary.approved}</strong></div>
+          <div><span>Rejected</span><strong>${summary.rejected}</strong></div>
+        </div>
+        <details class="collector-remittance-payment-details">
+          <summary>View payment breakdown</summary>
+          <div>${paymentRows || '<p class="text-secondary mb-0">No payment details are available.</p>'}</div>
+        </details>
+        ${(reviewedAt || record?.adminNote) ? `
+          <div class="collector-remittance-review-audit">
+            ${reviewedAt ? `<span>Reviewed ${escapeHtml(reviewedAt)}${reviewer ? ` by ${escapeHtml(reviewer)}` : ''}</span>` : ''}
+            ${record?.adminNote ? `<span>Note: ${escapeHtml(record.adminNote)}</span>` : ''}
+          </div>
+        ` : ''}
+        ${normalizeCollectorRemittanceStatus(record?.status) === 'pending' && !confirmationState.allowed ? `
+          <div class="collector-remittance-gate text-warning" role="status">
+            <i class="ti ti-lock" aria-hidden="true"></i>
+            <span>${escapeHtml(confirmationState.reason)}</span>
+          </div>
+        ` : ''}
+        ${normalizeCollectorRemittanceStatus(record?.status) === 'pending' ? `
+          <div class="collector-remittance-record__actions">
+            <button class="btn btn-outline-danger btn-sm" type="button" data-collector-remittance-action="reject" data-remittance-id="${escapeHtml(recordId)}">
+              <i class="ti ti-x" aria-hidden="true"></i><span>Reject</span>
+            </button>
+            <button class="btn btn-success btn-sm" type="button" data-collector-remittance-action="confirm" data-remittance-id="${escapeHtml(recordId)}"${confirmationState.allowed ? '' : ` disabled aria-disabled="true" title="${escapeHtml(confirmationState.reason)}"`}>
+              <i class="ti ti-check" aria-hidden="true"></i><span>Confirm Remitted</span>
+            </button>
+          </div>
+        ` : ''}
+      `;
+      collectorRemittanceList.appendChild(card);
+    });
+  }
+
+  function renderCollectorRemittanceNotice(message, tone = 'danger') {
+    collectorRemittanceRecords = [];
+    if (!collectorRemittanceList) return;
+    collectorRemittanceList.innerHTML = `<div class="text-center text-${tone} py-3">${escapeHtml(message)}</div>`;
+    if (collectorRemittanceCount) collectorRemittanceCount.textContent = 'Unavailable';
+    if (collectorRemittanceTotal) collectorRemittanceTotal.textContent = 'PHP 0.00';
+    if (collectorRemittanceEmptyState) collectorRemittanceEmptyState.style.display = 'none';
+  }
+
+  async function loadCollectorRemittances() {
+    if (!collectorRemittanceList) return;
+    if (collectorRemittanceRefresh) collectorRemittanceRefresh.disabled = true;
+    try {
+      const response = await fetch('/api/collector/payments/remittances', {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const error = new Error(payload?.error || payload?.message || 'Failed to load remittances.');
+        error.status = response.status;
+        throw error;
+      }
+      collectorRemittanceRecords = Array.isArray(payload?.records) ? payload.records : [];
+      renderCollectorRemittances();
+    } catch (error) {
+      console.warn('Failed to load collector remittances', error);
+      const tone = [401, 403, 404].includes(Number(error?.status || 0)) ? 'secondary' : 'danger';
+      renderCollectorRemittanceNotice(error?.message || 'Failed to load remittances.', tone);
+    } finally {
+      if (collectorRemittanceRefresh) collectorRemittanceRefresh.disabled = false;
+    }
+  }
+
+  function setCollectorRemittanceReviewMessage(message = '', tone = '') {
+    if (!collectorRemittanceReviewMessage) return;
+    collectorRemittanceReviewMessage.textContent = message;
+    collectorRemittanceReviewMessage.className = `modal-message${tone ? ` text-${tone}` : ''}`;
+  }
+
+  function openCollectorRemittanceReview(record, action, triggerButton = null) {
+    if (!record?.id || !collectorRemittanceReviewModal || !collectorRemittanceReviewForm) return;
+    const rejecting = action === 'reject';
+    const summary = collectorRemittanceSummary(record);
+    const confirmationState = collectorRemittanceConfirmationState(record);
+    if (!rejecting && !confirmationState.allowed) {
+      toast(confirmationState.reason, 'danger');
+      return;
+    }
+    collectorRemittanceReviewForm.reset();
+    if (collectorRemittanceReviewId) collectorRemittanceReviewId.value = String(record.id);
+    if (collectorRemittanceReviewAction) collectorRemittanceReviewAction.value = rejecting ? 'reject' : 'confirm';
+    if (collectorRemittanceReviewTitle) collectorRemittanceReviewTitle.textContent = rejecting ? 'Reject Remittance' : 'Confirm Remitted';
+    if (collectorRemittanceReviewSubtitle) {
+      collectorRemittanceReviewSubtitle.textContent = rejecting
+        ? 'Return this batch to the collector with a required reason.'
+        : 'All customer payments are decided. Confirm that the received funds match the approved amount.';
+    }
+    if (collectorRemittanceReviewSummary) {
+      const collectorName = String(record?.collectorName || record?.submittedBy?.name || 'Collector').trim();
+      collectorRemittanceReviewSummary.className = `alert ${rejecting ? 'alert-danger' : 'alert-success'} collector-remittance-review-summary`;
+      collectorRemittanceReviewSummary.textContent = `${collectorName} - ${summary.approved} approved payment${summary.approved === 1 ? '' : 's'} - PHP ${fmtMoney(collectorRemittanceVerifiedAmount(record))} verified cash`;
+    }
+    if (collectorRemittanceReviewPayments) {
+      collectorRemittanceReviewPayments.innerHTML = (Array.isArray(record?.payments) ? record.payments : []).map((payment) => {
+        const statusMeta = collectorRemittancePaymentStatusMeta(payment?.status);
+        return `
+          <div class="collector-remittance-review-payment">
+            <div><strong>${escapeHtml(payment?.customerName || payment?.accountNumber || 'Payment')}</strong><small>${escapeHtml(payment?.reference || payment?.paymentEntryId || 'No reference')}</small></div>
+            <span class="badge ${statusMeta.badge}">${statusMeta.label}</span>
+            <strong>PHP ${fmtMoney(payment?.amount)}</strong>
+          </div>
+        `;
+      }).join('');
+    }
+    if (collectorRemittanceReviewNoteLabel) {
+      collectorRemittanceReviewNoteLabel.innerHTML = rejecting
+        ? 'Rejection reason'
+        : 'Admin note <span class="text-secondary">(optional)</span>';
+    }
+    if (collectorRemittanceReviewNote) {
+      collectorRemittanceReviewNote.required = rejecting;
+      collectorRemittanceReviewNote.placeholder = rejecting
+        ? 'Explain the amount or payment that needs correction.'
+        : 'Example: Cash and electronic totals verified.';
+    }
+    if (collectorRemittanceReviewSubmit) {
+      collectorRemittanceReviewSubmit.className = `btn ${rejecting ? 'btn-danger' : 'btn-success'} btn-sm`;
+      collectorRemittanceReviewSubmit.innerHTML = rejecting
+        ? '<i class="ti ti-x" aria-hidden="true"></i><span>Reject Remittance</span>'
+        : '<i class="ti ti-check" aria-hidden="true"></i><span>Confirm Remitted</span>';
+    }
+    collectorRemittanceReviewTrigger = triggerButton;
+    setCollectorRemittanceReviewMessage('');
+    collectorRemittanceReviewModal.classList.add('show');
+    collectorRemittanceReviewModal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => (rejecting ? collectorRemittanceReviewNote : collectorRemittanceReviewSubmit)?.focus(), 50);
+  }
+
+  function closeCollectorRemittanceReviewDialog() {
+    if (!collectorRemittanceReviewModal) return;
+    collectorRemittanceReviewModal.classList.remove('show');
+    collectorRemittanceReviewModal.setAttribute('aria-hidden', 'true');
+    collectorRemittanceReviewForm?.reset();
+    if (collectorRemittanceReviewId) collectorRemittanceReviewId.value = '';
+    if (collectorRemittanceReviewAction) collectorRemittanceReviewAction.value = '';
+    if (collectorRemittanceReviewSubmit) collectorRemittanceReviewSubmit.disabled = false;
+    setCollectorRemittanceReviewMessage('');
+    collectorRemittanceReviewTrigger?.focus?.();
+    collectorRemittanceReviewTrigger = null;
+  }
+
+  async function submitCollectorRemittanceDecision() {
+    const remittanceId = String(collectorRemittanceReviewId?.value || '').trim();
+    const action = String(collectorRemittanceReviewAction?.value || '').trim();
+    const note = String(collectorRemittanceReviewNote?.value || '').trim();
+    if (!remittanceId || !['confirm', 'reject'].includes(action)) return false;
+    if (action === 'reject' && !note) {
+      setCollectorRemittanceReviewMessage('Rejection reason is required.', 'danger');
+      collectorRemittanceReviewNote?.focus();
+      return false;
+    }
+    if (collectorRemittanceReviewSubmit) collectorRemittanceReviewSubmit.disabled = true;
+    setCollectorRemittanceReviewMessage(action === 'confirm' ? 'Confirming remittance...' : 'Rejecting remittance...');
+    try {
+      const response = await fetch(`/api/collector/payments/remittances/${encodeURIComponent(remittanceId)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ note })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload?.error || payload?.message || `Failed to ${action} remittance.`);
+      }
+      closeCollectorRemittanceReviewDialog();
+      await Promise.all([loadCollectorRemittances(), loadReport()]);
+      toast(action === 'confirm'
+        ? 'Cash remittance confirmed.'
+        : 'Remittance rejected and returned to the collector.', 'ok');
+      return true;
+    } catch (error) {
+      setCollectorRemittanceReviewMessage(error?.message || `Failed to ${action} remittance.`, 'danger');
+      return false;
+    } finally {
+      if (collectorRemittanceReviewSubmit) collectorRemittanceReviewSubmit.disabled = false;
+    }
+  }
+
+  function isActiveCollectorPriority(record = {}) {
+    return String(record?.status || '').trim().toLowerCase() === 'active';
+  }
+
+  function collectorPriorityLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Normal';
+  }
+
+  function collectorPriorityBadgeClass(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'urgent') return 'bg-danger-lt text-danger';
+    if (normalized === 'high') return 'bg-orange-lt text-orange';
+    if (normalized === 'low') return 'bg-secondary-lt text-secondary';
+    return 'bg-primary-lt text-primary';
+  }
+
+  function priorityCustomerBalance(customer = {}) {
+    const billing = customer?.collectorBillingRecord || {};
+    const candidates = [
+      billing.paymentBreakdownEndingBalance,
+      billing.endingBalance,
+      billing.balance,
+      customer.paymentBreakdownEndingBalance,
+      customer.endingBalance,
+      customer.currentBalance,
+      customer.balance
+    ];
+    for (const candidate of candidates) {
+      if (candidate === null || candidate === undefined || candidate === '') continue;
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }
+
+  function compareCollectorPriorities(left = {}, right = {}) {
+    if (collectorPriorityView === 'history') {
+      return String(right?.updatedAt || right?.createdAt || '')
+        .localeCompare(String(left?.updatedAt || left?.createdAt || ''));
+    }
+    const order = { urgent: 0, high: 1, normal: 2, low: 3 };
+    const priorityOrder = (order[String(left?.priority || '').toLowerCase()] ?? 9)
+      - (order[String(right?.priority || '').toLowerCase()] ?? 9);
+    if (priorityOrder) return priorityOrder;
+    const dateOrder = String(left?.collectionDate || '').localeCompare(String(right?.collectionDate || ''));
+    if (dateOrder) return dateOrder;
+    const balanceOrder = Number(right?.amountDue || 0) - Number(left?.amountDue || 0);
+    if (balanceOrder) return balanceOrder;
+    return String(right?.updatedAt || '').localeCompare(String(left?.updatedAt || ''));
+  }
+
+  function renderCollectorPriorities() {
+    if (!collectorPriorityList) return;
+    const activeCount = collectorPriorityRecords.filter(isActiveCollectorPriority).length;
+    const historyCount = Math.max(0, collectorPriorityRecords.length - activeCount);
+    const showingHistory = collectorPriorityView === 'history';
+    const rows = collectorPriorityRecords
+      .filter((record) => showingHistory ? !isActiveCollectorPriority(record) : isActiveCollectorPriority(record))
+      .sort(compareCollectorPriorities);
+    const pageCount = Math.max(1, Math.ceil(rows.length / collectorPriorityPageSize));
+    collectorPriorityPage = Math.min(Math.max(collectorPriorityPage, 1), pageCount);
+    const pageStart = (collectorPriorityPage - 1) * collectorPriorityPageSize;
+    const pageRows = rows.slice(pageStart, pageStart + collectorPriorityPageSize);
+    if (collectorPriorityCount) collectorPriorityCount.textContent = `${activeCount} active`;
+    if (collectorPriorityHistoryToggle) {
+      collectorPriorityHistoryToggle.setAttribute('aria-pressed', String(showingHistory));
+      collectorPriorityHistoryToggle.title = showingHistory ? 'Return to active priority clients' : 'View priority history';
+    }
+    if (collectorPriorityHistoryToggleLabel) {
+      collectorPriorityHistoryToggleLabel.textContent = showingHistory ? 'View Active' : 'View History';
+    }
+    if (collectorPriorityHistoryCount) {
+      collectorPriorityHistoryCount.textContent = String(showingHistory ? activeCount : historyCount);
+    }
+    collectorPriorityList.innerHTML = '';
+    if (collectorPriorityEmptyState) collectorPriorityEmptyState.style.display = rows.length ? 'none' : 'flex';
+    if (collectorPriorityEmptyState) {
+      const copy = collectorPriorityEmptyState.querySelector('p');
+      if (copy) copy.textContent = showingHistory ? 'No priority history yet.' : 'No active priority clients.';
+    }
+    if (collectorPriorityPagination) collectorPriorityPagination.hidden = rows.length <= collectorPriorityPageSize;
+    if (collectorPriorityPageSummary) {
+      const first = rows.length ? pageStart + 1 : 0;
+      const last = Math.min(pageStart + collectorPriorityPageSize, rows.length);
+      collectorPriorityPageSummary.textContent = rows.length
+        ? `Showing ${first}-${last} of ${rows.length} ${showingHistory ? 'history records' : 'active priorities'}`
+        : `No ${showingHistory ? 'history records' : 'active priorities'}`;
+    }
+    if (collectorPriorityPageIndicator) collectorPriorityPageIndicator.textContent = `Page ${collectorPriorityPage} of ${pageCount}`;
+    if (collectorPriorityPreviousPage) collectorPriorityPreviousPage.disabled = collectorPriorityPage <= 1;
+    if (collectorPriorityNextPage) collectorPriorityNextPage.disabled = collectorPriorityPage >= pageCount;
+
+    pageRows.forEach((record) => {
+      const active = isActiveCollectorPriority(record);
+      const tr = document.createElement('tr');
+      const recordId = String(record?.id || '').trim();
+      const balance = record?.amountDue === null || record?.amountDue === undefined || record?.amountDue === ''
+        ? Number.NaN
+        : Number(record.amountDue);
+      const historyLabel = String(record?.historyType || record?.status || 'History').trim();
+      tr.className = active ? '' : 'collector-priority-history-row';
+      tr.innerHTML = `
+        <td data-label="Priority">
+          <span class="badge ${collectorPriorityBadgeClass(record?.priority)}">${escapeHtml(collectorPriorityLabel(record?.priority))}</span>
+          ${active ? '' : `<span class="collector-priority-history-label">${escapeHtml(historyLabel)}</span>`}
+        </td>
+        <td data-label="Collection">
+          <strong>${escapeHtml(formatCollectorPaymentDate(record?.collectionDate))}</strong>
+          ${record?.expiresOn ? `<span class="collector-priority-cell-meta">Expires ${escapeHtml(formatCollectorPaymentDate(record.expiresOn))}</span>` : ''}
+        </td>
+        <td data-label="Client">
+          <strong title="${escapeHtml(record?.customerName || '')}">${escapeHtml(record?.customerName || 'Client')}</strong>
+          <span class="collector-priority-cell-meta" title="${escapeHtml(record?.accountNumber || '')}">${escapeHtml(record?.accountNumber || '')}${record?.area ? ` · ${escapeHtml(record.area)}` : ''}</span>
+        </td>
+        <td data-label="Collection scope"><span class="badge bg-green-lt text-green"><i class="ti ti-users" aria-hidden="true"></i> Anyone</span></td>
+        <td data-label="Balance"><strong class="${Number.isFinite(balance) && balance > 0 ? 'text-danger' : 'text-secondary'}">${Number.isFinite(balance) ? `PHP ${fmtMoney(balance)}` : 'Checking'}</strong></td>
+        <td data-label="Reason"><span class="collector-priority-reason" title="${escapeHtml(record?.reason || '')}">${escapeHtml(record?.reason || 'No reason')}</span></td>
+        <td data-label="Actions" class="text-center">
+          <div class="btn-list flex-nowrap justify-content-center collector-priority-actions">
+            <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-collector-priority-action="view" data-record-id="${escapeHtml(recordId)}" title="View priority" aria-label="View priority"><i class="ti ti-eye" aria-hidden="true"></i></button>
+            ${active ? `
+              <button class="btn btn-outline-primary btn-sm btn-icon" type="button" data-collector-priority-action="edit" data-record-id="${escapeHtml(recordId)}" title="Edit priority" aria-label="Edit priority"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+              <button class="btn btn-outline-danger btn-sm btn-icon" type="button" data-collector-priority-action="delete" data-record-id="${escapeHtml(recordId)}" title="Cancel priority" aria-label="Cancel priority"><i class="ti ti-trash" aria-hidden="true"></i></button>
+            ` : ''}
+          </div>
+        </td>
+      `;
+      collectorPriorityList.appendChild(tr);
+    });
+  }
+
+  function renderCollectorPriorityNotice(message, tone = 'danger') {
+    if (!collectorPriorityList) return;
+    collectorPriorityRecords = [];
+    collectorPriorityList.innerHTML = `<tr><td colspan="7" class="text-center text-${tone} py-3">${escapeHtml(message)}</td></tr>`;
+    if (collectorPriorityCount) collectorPriorityCount.textContent = 'Unavailable';
+    if (collectorPriorityEmptyState) collectorPriorityEmptyState.style.display = 'none';
+    if (collectorPriorityPagination) collectorPriorityPagination.hidden = true;
+  }
+
+  async function loadCollectorPriorities() {
+    if (!collectorPriorityList) return;
+    if (collectorPriorityRefresh) collectorPriorityRefresh.disabled = true;
+    try {
+      const response = await fetch('/api/collector/payments/priorities?status=all&limit=1000', {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const error = new Error(payload?.error || payload?.message || 'Failed to load priority clients.');
+        error.status = response.status;
+        throw error;
+      }
+      collectorPriorityRecords = Array.isArray(payload?.records) ? payload.records : [];
+      renderCollectorPriorities();
+    } catch (error) {
+      console.warn('Failed to load collector priority assignments', error);
+      const tone = [401, 403, 404].includes(Number(error?.status || 0)) ? 'secondary' : 'danger';
+      renderCollectorPriorityNotice(error?.message || 'Failed to load priority clients.', tone);
+    } finally {
+      if (collectorPriorityRefresh) collectorPriorityRefresh.disabled = false;
+    }
+  }
+
+  function setCollectorPriorityMessage(message = '', tone = 'info') {
+    if (!collectorPriorityMessage) return;
+    const colors = {
+      info: 'var(--app-muted, #64748b)',
+      success: 'var(--tblr-success, #2fb344)',
+      danger: 'var(--tblr-danger, #d63939)'
+    };
+    collectorPriorityMessage.style.color = colors[tone] || colors.info;
+    collectorPriorityMessage.textContent = message;
+  }
+
+  function visibleCollectorPriorityCustomers() {
+    const search = String(collectorPriorityCustomerSearch?.value || '').trim().toLowerCase();
+    if (!search) return collectorPriorityCustomerCandidates;
+    return collectorPriorityCustomerCandidates.filter((customer) => (
+      [getClientDisplayName(customer), getClientAccountNumber(customer), getClientArea(customer)]
+        .some((value) => String(value || '').toLowerCase().includes(search))
+    ));
+  }
+
+  function selectedCollectorPriorityAccounts() {
+    return collectorPriorityCustomerCandidates
+      .map((customer) => getClientAccountNumber(customer))
+      .filter((accountNumber) => collectorPrioritySelectedAccounts.has(accountNumber));
+  }
+
+  function renderCollectorPriorityCustomerPicker() {
+    if (!collectorPriorityCustomerList) return;
+    const visible = visibleCollectorPriorityCustomers();
+    const selectedCount = collectorPrioritySelectedAccounts.size;
+    if (collectorPrioritySelectedCount) collectorPrioritySelectedCount.textContent = `${selectedCount} selected`;
+    if (collectorPrioritySelectAllVisible) {
+      collectorPrioritySelectAllVisible.disabled = collectorPrioritySelectionLocked || !visible.length;
+    }
+    if (collectorPriorityClearSelected) {
+      collectorPriorityClearSelected.disabled = collectorPrioritySelectionLocked || !selectedCount;
+    }
+    collectorPriorityCustomerList.innerHTML = visible.length
+      ? visible.map((customer) => {
+          const accountNumber = getClientAccountNumber(customer);
+          const balance = priorityCustomerBalance(customer);
+          const checked = collectorPrioritySelectedAccounts.has(accountNumber);
+          return `
+            <label class="collector-priority-client-option${checked ? ' is-selected' : ''}">
+              <input class="form-check-input" type="checkbox" data-collector-priority-account="${escapeHtml(accountNumber)}"${checked ? ' checked' : ''}${collectorPrioritySelectionLocked ? ' disabled' : ''}>
+              <span class="collector-priority-client-option__rank" aria-hidden="true">${escapeHtml(String(customer._priorityRank || ''))}</span>
+              <span class="collector-priority-client-option__identity">
+                <strong>${escapeHtml(getClientDisplayName(customer))}</strong>
+                <small>${escapeHtml(accountNumber)}${getClientArea(customer) ? ` · ${escapeHtml(getClientArea(customer))}` : ''}</small>
+              </span>
+              <strong class="collector-priority-client-option__balance">${balance === null ? 'Unavailable' : `PHP ${fmtMoney(balance)}`}</strong>
+            </label>
+          `;
+        }).join('')
+      : '<div class="collector-priority-client-picker__empty">No unpaid clients match this search.</div>';
+  }
+
+  function prepareCollectorPriorityCustomers(record = null) {
+    const selectedAccount = String(record?.accountNumber || '').trim();
+    const activeAccounts = new Set(collectorPriorityRecords
+      .filter((item) => isActiveCollectorPriority(item) && String(item?.id || '') !== String(record?.id || ''))
+      .map((item) => String(item?.accountNumber || '').trim())
+      .filter(Boolean));
+    const candidates = clientReviewCustomers.filter((customer) => {
+      const accountNumber = getClientAccountNumber(customer);
+      const balance = priorityCustomerBalance(customer);
+      if (!accountNumber || activeAccounts.has(accountNumber)) return false;
+      return accountNumber === selectedAccount || (balance !== null && balance > 0.009);
+    });
+    if (selectedAccount && !candidates.some((customer) => getClientAccountNumber(customer) === selectedAccount)) {
+      candidates.push({
+        accountNumber: selectedAccount,
+        name: record?.customerName || 'Priority Client',
+        area: record?.area || '',
+        paymentBreakdownEndingBalance: record?.amountDue
+      });
+    }
+    candidates.sort((left, right) => {
+      const balanceOrder = Number(priorityCustomerBalance(right) || 0) - Number(priorityCustomerBalance(left) || 0);
+      return balanceOrder || compareClientRecords(left, right);
+    });
+    collectorPriorityCustomerCandidates = candidates.map((customer, index) => ({
+      ...customer,
+      _priorityRank: index + 1
+    }));
+    collectorPrioritySelectedAccounts.clear();
+    if (selectedAccount) collectorPrioritySelectedAccounts.add(selectedAccount);
+    if (collectorPriorityCustomerSearch) collectorPriorityCustomerSearch.value = '';
+    if (collectorPriorityCustomerHint) {
+      collectorPriorityCustomerHint.textContent = record
+        ? 'The client is locked while editing; priority details still apply to the shared queue.'
+        : 'Unpaid clients are sorted from highest balance to lowest. Existing active priorities are excluded.';
+    }
+    renderCollectorPriorityCustomerPicker();
+  }
+
+  async function openCollectorPriorityModal(record = null, options = {}) {
+    if (!collectorPriorityModal || !collectorPriorityForm) return;
+    collectorPriorityForm.reset();
+    const editing = Boolean(record?.id);
+    collectorPriorityViewMode = Boolean(options.viewOnly && editing);
+    collectorPrioritySelectionLocked = editing;
+    if (collectorPriorityRecordId) collectorPriorityRecordId.value = editing ? String(record.id) : '';
+    if (collectorPriorityModalTitle) {
+      collectorPriorityModalTitle.textContent = collectorPriorityViewMode
+        ? 'Priority Assignment Details'
+        : (editing ? 'Edit Priority Client' : 'Assign Priority Client');
+    }
+    if (collectorPriorityLevel) collectorPriorityLevel.value = editing ? String(record.priority || 'normal').toLowerCase() : 'normal';
+    if (collectorPriorityDate) collectorPriorityDate.value = editing ? String(record.collectionDate || '').slice(0, 10) : collectorScheduleToday();
+    if (collectorPriorityExpires) collectorPriorityExpires.value = editing ? String(record.expiresOn || '').slice(0, 10) : '';
+    if (collectorPriorityReason) collectorPriorityReason.value = editing ? String(record.reason || '') : '';
+    if (collectorPrioritySave) collectorPrioritySave.hidden = collectorPriorityViewMode;
+    setCollectorPriorityMessage('Loading unpaid clients by outstanding balance...');
+    collectorPriorityModal.classList.add('show');
+    collectorPriorityModal.setAttribute('aria-hidden', 'false');
+
+    try {
+      await loadClientReviewCustomers(true);
+      prepareCollectorPriorityCustomers(record);
+      if (collectorPriorityCustomerSearch) collectorPriorityCustomerSearch.disabled = collectorPrioritySelectionLocked;
+      [collectorPriorityLevel, collectorPriorityDate, collectorPriorityExpires, collectorPriorityReason]
+        .forEach((control) => { if (control) control.disabled = collectorPriorityViewMode; });
+      setCollectorPriorityMessage(collectorPriorityViewMode
+        ? `${record.historyType || record.status || 'Active'} assignment · Last updated ${formatCollectorPaymentDate(record.updatedAt)}`
+        : 'Shared priority assignment loaded.');
+      setCollectorPriorityMessage(collectorPriorityViewMode
+        ? `${record.historyType || record.status || 'Active'} assignment · Last updated ${formatCollectorPaymentDate(record.updatedAt)}`
+        : (editing
+          ? 'Changes update the shared queue after collectors tap Sync.'
+          : 'One priority, date, expiration, and instruction will be applied to every selected client.'));
+      setTimeout(() => (collectorPrioritySelectionLocked ? collectorPriorityLevel : collectorPriorityCustomerSearch)?.focus(), 50);
+    } catch (error) {
+      setCollectorPriorityMessage(error?.message || 'Unable to load unpaid clients.', 'danger');
+    }
+  }
+
+  function closeCollectorPriorityEditor() {
+    if (!collectorPriorityModal) return;
+    collectorPriorityModal.classList.remove('show');
+    collectorPriorityModal.setAttribute('aria-hidden', 'true');
+    collectorPriorityViewMode = false;
+    collectorPrioritySelectionLocked = false;
+    collectorPriorityCustomerCandidates = [];
+    collectorPrioritySelectedAccounts.clear();
+    if (collectorPrioritySave) collectorPrioritySave.hidden = false;
+    if (collectorPriorityCustomerSearch) collectorPriorityCustomerSearch.disabled = false;
+    [collectorPriorityLevel, collectorPriorityDate, collectorPriorityExpires, collectorPriorityReason]
+      .forEach((control) => { if (control) control.disabled = false; });
+    setCollectorPriorityMessage('');
+  }
+
+  async function saveCollectorPriority() {
+    if (collectorPriorityViewMode || !collectorPriorityForm?.reportValidity()) return;
+    const recordId = String(collectorPriorityRecordId?.value || '').trim();
+    const accountNumbers = selectedCollectorPriorityAccounts();
+    if (!accountNumbers.length) {
+      setCollectorPriorityMessage('Select at least one unpaid client.', 'danger');
+      collectorPriorityCustomerSearch?.focus();
+      return;
+    }
+    const payload = {
+      ...(recordId ? { accountNumber: accountNumbers[0] } : { accountNumbers }),
+      priority: String(collectorPriorityLevel?.value || '').trim(),
+      collectionDate: String(collectorPriorityDate?.value || '').trim(),
+      expiresOn: String(collectorPriorityExpires?.value || '').trim(),
+      reason: String(collectorPriorityReason?.value || '').trim()
+    };
+    if (collectorPrioritySave) collectorPrioritySave.disabled = true;
+    setCollectorPriorityMessage(recordId ? 'Updating priority assignment...' : `Creating ${accountNumbers.length} priority assignment(s)...`);
+    try {
+      const response = await fetch(recordId
+        ? `/api/collector/payments/priorities/${encodeURIComponent(recordId)}`
+        : '/api/collector/payments/priorities', {
+        method: recordId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok === false) throw new Error(result?.error || result?.message || 'Failed to save priority assignment.');
+      closeCollectorPriorityEditor();
+      collectorPriorityView = 'active';
+      collectorPriorityPage = 1;
+      await loadCollectorPriorities();
+      const savedCount = Number(result?.count || accountNumbers.length);
+      toast(recordId ? 'Priority assignment updated.' : `${savedCount} priority client${savedCount === 1 ? '' : 's'} assigned.`, 'ok');
+    } catch (error) {
+      setCollectorPriorityMessage(error?.message || 'Failed to save priority assignment.', 'danger');
+    } finally {
+      if (collectorPrioritySave) collectorPrioritySave.disabled = false;
+    }
+  }
+
+  async function deleteCollectorPriority(record, triggerButton = null) {
+    if (!record?.id) return;
+    const clientName = String(record.customerName || record.accountNumber || 'this client').trim();
+    const confirmed = window.appConfirm
+      ? await window.appConfirm(`Cancel the priority assignment for ${clientName}? It will disappear from Android after the collector's next Sync.`, {
+        title: 'Cancel Priority Assignment',
+        okText: 'Cancel Assignment',
+        type: 'danger'
+      })
+      : window.confirm(`Cancel the priority assignment for ${clientName}?`);
+    if (!confirmed) return;
+    if (triggerButton) triggerButton.disabled = true;
+    try {
+      const response = await fetch(`/api/collector/payments/priorities/${encodeURIComponent(record.id)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ reason: 'Cancelled by Admin from Collectors page' })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok === false) throw new Error(result?.error || result?.message || 'Failed to cancel priority assignment.');
+      await loadCollectorPriorities();
+      toast('Priority assignment cancelled.', 'ok');
+    } catch (error) {
+      toast(error?.message || 'Failed to cancel priority assignment.', 'danger');
+      if (triggerButton) triggerButton.disabled = false;
     }
   }
 
@@ -897,8 +1677,34 @@
     return 'upcoming';
   }
 
+  function countCollectorRescheduleFilters() {
+    let count = 0;
+    if (String(collectorRescheduleSearch?.value || '').trim()) count += 1;
+    if (String(collectorRescheduleCollectorFilter?.value || '').trim()) count += 1;
+    if (String(collectorRescheduleStatusFilter?.value || 'active').trim().toLowerCase() !== 'active') count += 1;
+    if (String(collectorRescheduleDateFilter?.value || '').trim()) count += 1;
+    return count;
+  }
+
+  function updateCollectorRescheduleFilterToggle() {
+    if (!collectorRescheduleFiltersToggle || !collectorRescheduleFiltersPanel) return;
+    const expanded = !collectorRescheduleFiltersPanel.hidden;
+    const activeFilterCount = countCollectorRescheduleFilters();
+    collectorRescheduleFiltersToggle.setAttribute('aria-expanded', String(expanded));
+    collectorRescheduleFiltersToggle.setAttribute('aria-label', expanded ? 'Hide schedule filters' : 'Show schedule filters');
+    collectorRescheduleFiltersToggle.title = expanded ? 'Hide schedule filters' : 'Show schedule filters';
+    collectorRescheduleFiltersToggle.classList.toggle('btn-primary', expanded);
+    collectorRescheduleFiltersToggle.classList.toggle('btn-outline-primary', !expanded && activeFilterCount > 0);
+    collectorRescheduleFiltersToggle.classList.toggle('btn-outline-secondary', !expanded && activeFilterCount === 0);
+    if (collectorRescheduleActiveFilterCount) {
+      collectorRescheduleActiveFilterCount.textContent = String(activeFilterCount);
+      collectorRescheduleActiveFilterCount.hidden = activeFilterCount === 0;
+    }
+  }
+
   function renderCollectorReschedules() {
     if (!collectorRescheduleList) return;
+    updateCollectorRescheduleFilterToggle();
     const searchQuery = String(collectorRescheduleSearch?.value || '').trim().toLowerCase();
     const collectorId = String(collectorRescheduleCollectorFilter?.value || '').trim();
     const status = String(collectorRescheduleStatusFilter?.value || 'active').trim().toLowerCase();
@@ -1377,7 +2183,7 @@
       .filter((record) => String(record?.id || '').trim())
       .filter((record) => !normalizedCollectorKey || getCollectorApprovalGroupKey(record) === normalizedCollectorKey);
     if (!rows.length) {
-      toast('No pending collector payments to approve.', 'danger');
+      toast('No customer payments await approval.', 'danger');
       return;
     }
     const collectorName = getCollectorApprovalGroupName(rows[0]);
@@ -1400,7 +2206,7 @@
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || payload.ok === false) {
-        throw new Error(payload?.error || 'Failed to approve pending collector payments.');
+        throw new Error(payload?.error || 'Failed to approve customer payments.');
       }
       const approvedCount = Number(payload?.approved || (Array.isArray(payload?.records) ? payload.records.length : 0));
       const skippedCount = Number(payload?.skipped || 0);
@@ -1408,15 +2214,16 @@
       toast(
         approvedCount
           ? `Approved ${approvedCount} pending payment${approvedCount === 1 ? '' : 's'} for ${collectorName}.${skippedText}`
-          : 'No pending collector payments were approved.',
+          : 'No customer payments were approved.',
         approvedCount ? 'ok' : 'danger'
       );
       await Promise.all([
         loadCollectorApprovals(),
+        loadCollectorRemittances(),
         loadAssignmentsAndReport(),
       ]);
     } catch (err) {
-      toast(err?.message || 'Failed to approve pending collector payments.', 'danger');
+      toast(err?.message || 'Failed to approve customer payments.', 'danger');
       if (triggerBtn) triggerBtn.disabled = false;
     }
   }
@@ -1477,6 +2284,7 @@
       );
       await Promise.all([
         loadCollectorApprovals(),
+        loadCollectorRemittances(),
         loadAssignmentsAndReport(),
       ]);
     } catch (err) {
@@ -1542,6 +2350,7 @@
       toast(safeAction === 'approve' ? 'Collector payment approved.' : 'Collector payment rejected.', 'ok');
       await Promise.all([
         loadCollectorApprovals(),
+        loadCollectorRemittances(),
         loadAssignmentsAndReport(),
       ]);
       return true;
@@ -2660,10 +3469,77 @@
     if (rejected) closeCollectorPaymentRejectDialog();
   });
 
+  collectorRemittanceFilterButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      collectorRemittanceFilter = button.getAttribute('data-collector-remittance-filter') || 'pending';
+      renderCollectorRemittances();
+    });
+  });
+  collectorRemittanceRefresh?.addEventListener('click', () => loadCollectorRemittances().catch(() => {}));
+  closeCollectorRemittanceReviewModal?.addEventListener('click', closeCollectorRemittanceReviewDialog);
+  cancelCollectorRemittanceReviewModal?.addEventListener('click', closeCollectorRemittanceReviewDialog);
+  collectorRemittanceReviewForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!collectorRemittanceReviewForm.reportValidity()) return;
+    submitCollectorRemittanceDecision().catch(() => {});
+  });
+
+  collectorPriorityHistoryToggle?.addEventListener('click', () => {
+    collectorPriorityView = collectorPriorityView === 'history' ? 'active' : 'history';
+    collectorPriorityPage = 1;
+    renderCollectorPriorities();
+  });
+  collectorPriorityPreviousPage?.addEventListener('click', () => {
+    if (collectorPriorityPage <= 1) return;
+    collectorPriorityPage -= 1;
+    renderCollectorPriorities();
+  });
+  collectorPriorityNextPage?.addEventListener('click', () => {
+    collectorPriorityPage += 1;
+    renderCollectorPriorities();
+  });
+  collectorPriorityRefresh?.addEventListener('click', () => loadCollectorPriorities().catch(() => {}));
+  collectorPriorityCreate?.addEventListener('click', () => openCollectorPriorityModal().catch(() => {}));
+  collectorPriorityCustomerSearch?.addEventListener('input', renderCollectorPriorityCustomerPicker);
+  collectorPrioritySelectAllVisible?.addEventListener('click', () => {
+    if (collectorPrioritySelectionLocked) return;
+    visibleCollectorPriorityCustomers().forEach((customer) => {
+      const accountNumber = getClientAccountNumber(customer);
+      if (accountNumber) collectorPrioritySelectedAccounts.add(accountNumber);
+    });
+    renderCollectorPriorityCustomerPicker();
+  });
+  collectorPriorityClearSelected?.addEventListener('click', () => {
+    if (collectorPrioritySelectionLocked) return;
+    collectorPrioritySelectedAccounts.clear();
+    renderCollectorPriorityCustomerPicker();
+  });
+  collectorPriorityCustomerList?.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-collector-priority-account]');
+    if (!input || collectorPrioritySelectionLocked) return;
+    const accountNumber = String(input.getAttribute('data-collector-priority-account') || '').trim();
+    if (!accountNumber) return;
+    if (input.checked) collectorPrioritySelectedAccounts.add(accountNumber);
+    else collectorPrioritySelectedAccounts.delete(accountNumber);
+    renderCollectorPriorityCustomerPicker();
+  });
+  closeCollectorPriorityModal?.addEventListener('click', closeCollectorPriorityEditor);
+  cancelCollectorPriorityModal?.addEventListener('click', closeCollectorPriorityEditor);
+  collectorPriorityForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveCollectorPriority().catch(() => {});
+  });
+
   const resetCollectorReschedulePageAndRender = () => {
     collectorReschedulePage = 1;
     renderCollectorReschedules();
   };
+  collectorRescheduleFiltersToggle?.addEventListener('click', () => {
+    if (!collectorRescheduleFiltersPanel) return;
+    collectorRescheduleFiltersPanel.hidden = !collectorRescheduleFiltersPanel.hidden;
+    updateCollectorRescheduleFilterToggle();
+    if (!collectorRescheduleFiltersPanel.hidden) collectorRescheduleSearch?.focus();
+  });
   collectorRescheduleSearch?.addEventListener('input', resetCollectorReschedulePageAndRender);
   collectorRescheduleCollectorFilter?.addEventListener('change', resetCollectorReschedulePageAndRender);
   collectorRescheduleStatusFilter?.addEventListener('change', resetCollectorReschedulePageAndRender);
@@ -2709,6 +3585,33 @@
   });
 
   document.addEventListener('click', (event) => {
+    const remittanceActionButton = event.target.closest('[data-collector-remittance-action]');
+    if (remittanceActionButton) {
+      const remittanceId = remittanceActionButton.getAttribute('data-remittance-id') || '';
+      const action = remittanceActionButton.getAttribute('data-collector-remittance-action') || '';
+      const record = collectorRemittanceRecords.find((item) => String(item?.id || '') === remittanceId);
+      if (record && ['confirm', 'reject'].includes(action)) {
+        openCollectorRemittanceReview(record, action, remittanceActionButton);
+      }
+      return;
+    }
+
+    const priorityActionButton = event.target.closest('[data-collector-priority-action]');
+    if (priorityActionButton) {
+      const recordId = priorityActionButton.getAttribute('data-record-id') || '';
+      const action = priorityActionButton.getAttribute('data-collector-priority-action') || '';
+      const record = collectorPriorityRecords.find((item) => String(item?.id || '') === recordId);
+      if (!record) return;
+      if (action === 'view') {
+        openCollectorPriorityModal(record, { viewOnly: true }).catch(() => {});
+      } else if (action === 'edit') {
+        openCollectorPriorityModal(record).catch(() => {});
+      } else if (action === 'delete') {
+        deleteCollectorPriority(record, priorityActionButton).catch(() => {});
+      }
+      return;
+    }
+
     const scheduleActionButton = event.target.closest('[data-collector-reschedule-action]');
     if (scheduleActionButton) {
       const recordId = scheduleActionButton.getAttribute('data-record-id') || '';
@@ -2784,6 +3687,8 @@
 
   loadAreas().catch(() => {});
   loadCollectorApprovals().catch(() => {});
+  loadCollectorRemittances().catch(() => {});
+  loadCollectorPriorities().catch(() => {});
   loadCollectorReschedules().catch(() => {});
   loadCollectors()
     .then(() => loadReport())

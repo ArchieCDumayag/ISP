@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
         agents: [],
         loading: false,
         saving: false,
+        page: 1,
+        pageSize: 10,
         editingReferralId: '',
         statusAction: null
     };
@@ -17,8 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
         search: document.getElementById('referralSearchInput'),
         statusFilter: document.getElementById('referralStatusFilter'),
         sourceFilter: document.getElementById('referralSourceFilter'),
+        clearFilters: document.getElementById('referralClearFilters'),
         tableBody: document.getElementById('referralTableBody'),
         summary: document.getElementById('referralSummary'),
+        pagination: document.getElementById('referralPagination'),
+        prevPage: document.getElementById('referralPrevPage'),
+        nextPage: document.getElementById('referralNextPage'),
+        pageIndicator: document.getElementById('referralPageIndicator'),
         metricTotal: document.getElementById('metricReferralTotal'),
         metricEligible: document.getElementById('metricReferralSuccessful'),
         metricPending: document.getElementById('metricReferralWaiting'),
@@ -45,7 +52,18 @@ document.addEventListener('DOMContentLoaded', () => {
         statusScheduleField: document.getElementById('referralStatusScheduleField'),
         statusApplyFromMonth: document.getElementById('referralStatusApplyFromMonth'),
         statusReason: document.getElementById('referralStatusReason'),
-        statusSave: document.getElementById('saveReferralStatus')
+        statusSave: document.getElementById('saveReferralStatus'),
+        detailsModal: document.getElementById('referralDetailsModal'),
+        detailsClose: document.getElementById('closeReferralDetailsModal'),
+        detailsCancel: document.getElementById('cancelReferralDetails'),
+        detailReferrer: document.getElementById('referralDetailReferrer'),
+        detailClient: document.getElementById('referralDetailClient'),
+        detailSource: document.getElementById('referralDetailSource'),
+        detailStatus: document.getElementById('referralDetailStatus'),
+        detailDiscount: document.getElementById('referralDetailDiscount'),
+        detailApplyMonth: document.getElementById('referralDetailApplyMonth'),
+        detailApproval: document.getElementById('referralDetailApproval'),
+        detailReason: document.getElementById('referralDetailReason')
     };
 
     const currencyFormatter = new Intl.NumberFormat('en-PH', {
@@ -212,28 +230,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (els.metricDiscount) els.metricDiscount.textContent = formatCurrency(metrics.discountValue);
     };
     const renderActions = (item = {}) => {
+        const id = escapeHtml(item.id);
         const referredAccount = String(item.referredAccountNumber || '').trim();
         const referrerAccount = String(item.referrerAccountNumber || '').trim();
         const status = normalizeText(item.status);
         const hasApplicationHistory = Array.isArray(item.applications) && item.applications.length > 0;
         const hasActiveApplication = Array.isArray(item.activeApplications) && item.activeApplications.length > 0;
-        const statusButtons = status === 'applied'
-            ? '<span class="text-secondary small">Reverse in Payment Breakdown</span>'
-            : `
-                ${item.approvalStatus !== 'approved' ? `<button type="button" class="btn btn-sm btn-success" data-referral-action="approved" data-referral-id="${escapeHtml(item.id)}">Approve</button>` : ''}
-                ${item.sourceType === 'customer' && item.approvalStatus === 'approved' && !hasActiveApplication ? `<button type="button" class="btn btn-sm btn-outline-primary" data-referral-action="schedule" data-referral-id="${escapeHtml(item.id)}"><i class="ti ti-calendar" aria-hidden="true"></i> Apply Month</button>` : ''}
-                ${status !== 'cancelled' ? `<button type="button" class="btn btn-sm btn-outline-danger" data-referral-action="cancelled" data-referral-id="${escapeHtml(item.id)}">Cancel</button>` : ''}
-            `;
         return `
             <div class="referral-actions">
-                <a class="btn btn-sm btn-outline-secondary${referredAccount ? '' : ' disabled'}" href="${referredAccount ? `payment-breakdown.html?account=${encodeURIComponent(referredAccount)}` : '#'}" aria-disabled="${referredAccount ? 'false' : 'true'}">
-                    <i class="ti ti-user" aria-hidden="true"></i> Referred
-                </a>
-                <a class="btn btn-sm btn-outline-primary${referrerAccount ? '' : ' disabled'}" href="${referrerAccount ? `payment-breakdown.html?account=${encodeURIComponent(referrerAccount)}` : '#'}" aria-disabled="${referrerAccount ? 'false' : 'true'}">
-                    <i class="ti ti-gift" aria-hidden="true"></i> Billing
-                </a>
-                ${!hasApplicationHistory ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-referral-edit="${escapeHtml(item.id)}"><i class="ti ti-edit" aria-hidden="true"></i> Edit</button>` : ''}
-                ${statusButtons}
+                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm referral-action-btn" data-referral-view="${id}" title="View details" aria-label="View referral details">
+                    <i class="ti ti-eye" aria-hidden="true"></i><span>View</span>
+                </button>
+                ${!hasApplicationHistory ? `<button type="button" class="btn btn-icon btn-outline-secondary btn-sm referral-action-btn" data-referral-edit="${id}" title="Edit referral" aria-label="Edit referral"><i class="ti ti-edit" aria-hidden="true"></i><span>Edit</span></button>` : ''}
+                ${item.approvalStatus !== 'approved' ? `<button type="button" class="btn btn-icon btn-success btn-sm referral-action-btn" data-referral-action="approved" data-referral-id="${id}" title="Approve referral" aria-label="Approve referral"><i class="ti ti-circle-check" aria-hidden="true"></i><span>Approve</span></button>` : ''}
+                ${item.sourceType === 'customer' && item.approvalStatus === 'approved' && !hasActiveApplication ? `<button type="button" class="btn btn-icon btn-outline-primary btn-sm referral-action-btn" data-referral-action="schedule" data-referral-id="${id}" title="Set apply month" aria-label="Set apply month"><i class="ti ti-calendar" aria-hidden="true"></i><span>Apply Month</span></button>` : ''}
+                ${referredAccount ? `<a class="btn btn-icon btn-outline-secondary btn-sm referral-action-btn" href="payment-breakdown.html?account=${encodeURIComponent(referredAccount)}" title="Open referred account" aria-label="Open referred account"><i class="ti ti-user" aria-hidden="true"></i><span>Referred</span></a>` : ''}
+                ${referrerAccount ? `<a class="btn btn-icon btn-outline-primary btn-sm referral-action-btn" href="payment-breakdown.html?account=${encodeURIComponent(referrerAccount)}" title="Open referrer billing" aria-label="Open referrer billing"><i class="ti ti-gift" aria-hidden="true"></i><span>Billing</span></a>` : ''}
+                ${status !== 'cancelled' && status !== 'applied' ? `<button type="button" class="btn btn-icon btn-outline-danger btn-sm referral-action-btn" data-referral-action="cancelled" data-referral-id="${id}" title="Cancel referral" aria-label="Cancel referral"><i class="ti ti-circle-x" aria-hidden="true"></i><span>Cancel</span></button>` : ''}
             </div>
         `;
     };
@@ -241,44 +254,56 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!els.tableBody) return;
         const items = getFilteredItems();
         if (!items.length) {
-            els.tableBody.innerHTML = `<tr><td colspan="8" class="referral-empty">${state.loading ? 'Loading referrals...' : 'No referrals found.'}</td></tr>`;
+            els.tableBody.innerHTML = `<tr><td colspan="6" class="referral-empty">${state.loading ? 'Loading referrals...' : 'No referrals found.'}</td></tr>`;
             if (els.summary) els.summary.textContent = state.loading ? 'Loading...' : 'No records match the current filters.';
+            if (els.pagination) els.pagination.hidden = true;
             return;
         }
-        els.tableBody.innerHTML = items.map((item) => {
+        const totalPages = Math.max(1, Math.ceil(items.length / state.pageSize));
+        state.page = Math.min(Math.max(1, state.page), totalPages);
+        const startIndex = (state.page - 1) * state.pageSize;
+        const pageItems = items.slice(startIndex, startIndex + state.pageSize);
+        if (els.pagination) els.pagination.hidden = items.length <= state.pageSize;
+        if (els.prevPage) els.prevPage.disabled = state.page <= 1;
+        if (els.nextPage) els.nextPage.disabled = state.page >= totalPages;
+        if (els.pageIndicator) els.pageIndicator.textContent = `Page ${state.page} of ${totalPages}`;
+
+        els.tableBody.innerHTML = pageItems.map((item) => {
             const source = sourceMeta(item.sourceType);
             const status = statusMeta(item.status);
             const activeApplication = Array.isArray(item.activeApplications) ? item.activeApplications[0] : null;
             const discountAmount = item.approvedDiscountAmount || item.discountAmount || activeApplication?.amount || 0;
-            const scheduledMonthLabel = item.applyFromMonth
-                ? `Scheduled from ${formatMonth(item.applyFromMonth)}`
-                : 'Next available billing month';
-            const discountMeta = activeApplication
-                ? `Applied to ${formatMonth(activeApplication.billingMonth)}`
-                : (item.discountEligible
-                    ? `Queued · ${scheduledMonthLabel}`
-                    : (item.status === 'reversed' ? `Returned to queue · ${scheduledMonthLabel}` : item.statusLabel || 'Not queued'));
+            const applicationMonth = activeApplication?.billingMonth || item.applyFromMonth || '';
+            const applicationLabel = applicationMonth ? formatMonth(applicationMonth) : 'Next available';
+            const applicationMeta = activeApplication
+                ? 'Applied to customer billing'
+                : (item.discountEligible || normalizeText(item.status) === 'reversed'
+                    ? 'Queued · two per month, then carry over'
+                    : item.statusLabel || 'Not queued');
             const approvalActor = item.approvedBy?.name || item.approvedBy?.username || '';
             const approvalMeta = item.approvedAt
                 ? [formatDate(item.approvedAt), approvalActor].filter(Boolean).join(' · ')
                 : 'Waiting for Admin approval';
             return `
                 <tr>
-                    <td><span class="referral-person"><strong>${escapeHtml(item.referrerName || 'Unknown referrer')}</strong><small>${escapeHtml(item.referrerAccountNumber || item.referrerId || '-')}</small></span></td>
-                    <td><span class="referral-person"><strong>${escapeHtml(item.referredName || 'Unnamed customer')}</strong><small>${escapeHtml(item.referredAccountNumber || '-')} &middot; ${escapeHtml(item.referredPlanName || '-')}</small></span></td>
-                    <td><span class="referral-source ${source.className}">${source.label}</span></td>
-                    <td><span class="referral-date-cell"><strong>${item.approvalStatus === 'approved' ? 'Approved' : escapeHtml(item.approvalStatus || 'Pending')}</strong><small>${escapeHtml(approvalMeta)}</small></span></td>
-                    <td class="is-num"><span class="referral-discount-cell"><strong>${escapeHtml(formatCurrency(discountAmount))}</strong><small>${item.approvedDiscountAmount ? 'Locked at approval' : 'Proposed amount'}</small></span></td>
-                    <td><span class="referral-date-cell"><strong>${escapeHtml(discountMeta)}</strong><small>Maximum two referrals per billing month</small></span></td>
-                    <td><span class="referral-status ${status.className}">${status.label}</span></td>
-                    <td>${renderActions(item)}</td>
+                    <td data-label="Referrer">
+                        <span class="referral-person">
+                            <strong title="${escapeHtml(item.referrerName || 'Unknown referrer')}">${escapeHtml(item.referrerName || 'Unknown referrer')}</strong>
+                            <span class="referral-person__meta"><span class="referral-source ${source.className}">${source.label}</span><small title="${escapeHtml(item.referrerAccountNumber || item.referrerId || '-')}">${escapeHtml(item.referrerAccountNumber || item.referrerId || '-')}</small></span>
+                        </span>
+                    </td>
+                    <td data-label="Referred Client"><span class="referral-person"><strong title="${escapeHtml(item.referredName || 'Unnamed customer')}">${escapeHtml(item.referredName || 'Unnamed customer')}</strong><small title="${escapeHtml([item.referredAccountNumber, item.referredPlanName].filter(Boolean).join(' · '))}">${escapeHtml([item.referredAccountNumber || '-', item.referredPlanName || '-'].join(' · '))}</small></span></td>
+                    <td data-label="Status"><span class="referral-status-cell"><span class="referral-status ${status.className}">${status.label}</span><small title="${escapeHtml(approvalMeta)}">${escapeHtml(approvalMeta)}</small></span></td>
+                    <td data-label="Apply Month"><span class="referral-application-cell"><strong>${escapeHtml(applicationLabel)}</strong><small title="${escapeHtml(applicationMeta)}">${escapeHtml(applicationMeta)}</small></span></td>
+                    <td class="is-num" data-label="Discount"><span class="referral-discount-cell"><strong>${escapeHtml(formatCurrency(discountAmount))}</strong><small>${item.approvedDiscountAmount ? 'Locked' : 'Proposed'}</small></span></td>
+                    <td data-label="Actions">${renderActions(item)}</td>
                 </tr>
             `;
         }).join('');
         if (els.summary) {
             const eligible = items.filter((item) => ['eligible', 'reversed'].includes(normalizeText(item.status))).length;
             const applied = items.filter((item) => normalizeText(item.status) === 'applied').length;
-            els.summary.textContent = `${formatCount(items.length)} shown. ${formatCount(eligible)} queued. ${formatCount(applied)} applied.`;
+            els.summary.textContent = `Showing ${formatCount(startIndex + 1)}-${formatCount(startIndex + pageItems.length)} of ${formatCount(items.length)} · ${formatCount(eligible)} queued · ${formatCount(applied)} applied`;
         }
     };
 
@@ -294,6 +319,45 @@ document.addEventListener('DOMContentLoaded', () => {
     const setSaving = (saving) => {
         state.saving = Boolean(saving);
         [els.createSave, els.statusSave].forEach((button) => { if (button) button.disabled = state.saving; });
+    };
+    const setDetailText = (element, value, fallback = 'Not available') => {
+        if (element) element.textContent = String(value || fallback);
+    };
+    const closeDetailsModal = () => {
+        if (els.detailsModal) els.detailsModal.hidden = true;
+    };
+    const openDetailsModal = (item = null) => {
+        if (!item || !els.detailsModal) return;
+        const source = sourceMeta(item.sourceType);
+        const status = statusMeta(item.status);
+        const activeApplication = Array.isArray(item.activeApplications) ? item.activeApplications[0] : null;
+        const discountAmount = item.approvedDiscountAmount || item.discountAmount || activeApplication?.amount || 0;
+        const applicationMonth = activeApplication?.billingMonth || item.applyFromMonth || '';
+        const approvalActor = item.approvedBy?.name || item.approvedBy?.username || '';
+        const approval = item.approvedAt
+            ? [`Approved ${formatDate(item.approvedAt)}`, approvalActor ? `by ${approvalActor}` : ''].filter(Boolean).join(' ')
+            : 'Waiting for Admin approval';
+        setDetailText(
+            els.detailReferrer,
+            [item.referrerName || 'Unknown referrer', item.referrerAccountNumber || item.referrerId].filter(Boolean).join(' · ')
+        );
+        setDetailText(
+            els.detailClient,
+            [item.referredName || 'Unnamed customer', item.referredAccountNumber, item.referredPlanName].filter(Boolean).join(' · ')
+        );
+        setDetailText(els.detailSource, source.label);
+        setDetailText(els.detailStatus, status.label);
+        setDetailText(els.detailDiscount, formatCurrency(discountAmount));
+        setDetailText(
+            els.detailApplyMonth,
+            applicationMonth
+                ? `${activeApplication ? 'Applied' : 'Eligible'} from ${formatMonth(applicationMonth)}`
+                : 'Next available billing month'
+        );
+        setDetailText(els.detailApproval, approval);
+        setDetailText(els.detailReason, item.approvalReason || item.reason || item.lastReason || 'No reason recorded.');
+        els.detailsModal.hidden = false;
+        setTimeout(() => els.detailsClose?.focus(), 50);
     };
     const closeCreateModal = () => {
         if (state.saving || !els.createModal) return;
@@ -456,26 +520,53 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     els.tableBody?.addEventListener('click', (event) => {
+        const viewButton = event.target.closest('[data-referral-view]');
+        if (viewButton) {
+            const item = state.items.find((entry) => entry.id === viewButton.dataset.referralView) || null;
+            if (item) openDetailsModal(item);
+            return;
+        }
         const editButton = event.target.closest('[data-referral-edit]');
         if (editButton && !state.saving) {
             const item = state.items.find((entry) => entry.id === editButton.dataset.referralEdit) || null;
             if (item) openCreateModal(item);
             return;
         }
-        const button = event.target.closest('[data-referral-action]');
-        if (!button || state.saving) return;
-        const item = state.items.find((entry) => entry.id === button.dataset.referralId) || null;
-        if (item) openStatusModal(item, button.dataset.referralAction);
+        const actionButton = event.target.closest('[data-referral-action]');
+        if (!actionButton || state.saving) return;
+        const item = state.items.find((entry) => entry.id === actionButton.dataset.referralId) || null;
+        if (item) openStatusModal(item, actionButton.dataset.referralAction);
     });
     els.create?.addEventListener('click', () => openCreateModal());
     els.refresh?.addEventListener('click', () => void loadReferrals());
+    els.clearFilters?.addEventListener('click', () => {
+        if (els.search) els.search.value = '';
+        if (els.statusFilter) els.statusFilter.value = '';
+        if (els.sourceFilter) els.sourceFilter.value = '';
+        state.page = 1;
+        renderRows();
+        els.search?.focus();
+    });
+    els.prevPage?.addEventListener('click', () => {
+        state.page = Math.max(1, state.page - 1);
+        renderRows();
+    });
+    els.nextPage?.addEventListener('click', () => {
+        state.page += 1;
+        renderRows();
+    });
     els.createSourceType?.addEventListener('change', updateCreateSourceFields);
     els.referredCustomer?.addEventListener('change', populateCreateOptions);
     [els.createClose, els.createCancel].forEach((button) => button?.addEventListener('click', closeCreateModal));
     [els.statusClose, els.statusCancel].forEach((button) => button?.addEventListener('click', closeStatusModal));
+    [els.detailsClose, els.detailsCancel].forEach((button) => button?.addEventListener('click', closeDetailsModal));
     [els.search, els.statusFilter, els.sourceFilter].forEach((element) => {
-        element?.addEventListener('input', renderRows);
-        element?.addEventListener('change', renderRows);
+        const applyFilters = () => {
+            state.page = 1;
+            renderRows();
+        };
+        element?.addEventListener('input', applyFilters);
+        element?.addEventListener('change', applyFilters);
     });
     [els.createModal, els.statusModal].forEach((modal) => modal?.addEventListener('click', (event) => {
         if (event.target !== modal) return;

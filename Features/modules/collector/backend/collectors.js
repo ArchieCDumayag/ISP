@@ -13,20 +13,16 @@ const STORE_KEYS = {
 };
 
 const router = express.Router();
-const EXCLUDED_COLLECTOR_PAYMENT_STATUSES = new Set([
-  'pending_approval',
-  'pending-approval',
-  'pending approval',
-  'rejected',
-  'cancelled',
-  'canceled',
-  'void',
-  'voided'
-]);
-
-const isReportableCollectorPaymentStatus = (status) => {
-  const normalized = String(status || '').trim().toLowerCase();
-  return !normalized || !EXCLUDED_COLLECTOR_PAYMENT_STATUSES.has(normalized);
+const isApprovedCollectorPaymentEntry = (entry = {}) => {
+  const kind = String(entry.kind || entry.type || '').trim().toLowerCase();
+  const direction = String(entry.direction || '').trim().toLowerCase();
+  const status = String(entry.status || '').trim().toLowerCase();
+  const amount = Number(entry.amount || 0);
+  return kind === 'payment'
+    && direction === 'credit'
+    && status === 'approved'
+    && Number.isFinite(amount)
+    && amount > 0;
 };
 
 const buildAssignmentsMap = (rows = []) => {
@@ -50,16 +46,6 @@ const normalizeAssignmentsMap = (assignments = {}) => {
     normalized[areaName] = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))];
   });
   return normalized;
-};
-
-const isPrepaidCustomer = (customer) => {
-  const explicit = String(customer?.planCategory || customer?.planType || '').trim().toLowerCase();
-  if (explicit === 'prepaid') return true;
-  if (explicit === 'postpaid') return false;
-  const billing = String(customer?.planBilling || '').trim().toLowerCase();
-  if (billing.includes('prepaid')) return true;
-  if (billing.includes('postpaid')) return false;
-  return false;
 };
 
 // GET /api/collectors - return current assignments and available collectors
@@ -339,14 +325,13 @@ router.get('/report', async (req, res) => {
       );
       const accountMeta = {};
       (customerRows || []).forEach((row) => {
-        if (isPrepaidCustomer(row)) return;
         const accountNumber = String(row.accountNumber || '').trim();
         if (!accountNumber) return;
         accountMeta[accountNumber] = { area: String(row.area || '').trim() || 'Unassigned' };
       });
 
       const [paymentRows] = await query(
-        `SELECT account_number AS accountNumber, amount, date, recorded_at AS recordedAt, direction, recorded_by_user_id AS recordedByUserId, recorded_by_role AS recordedByRole, status
+        `SELECT account_number AS accountNumber, amount, date, recorded_at AS recordedAt, kind, type, direction, recorded_by_user_id AS recordedByUserId, recorded_by_role AS recordedByRole, status
          FROM payment_entries WHERE branch_id = ?`,
         [branchId]
       );
@@ -357,8 +342,7 @@ router.get('/report', async (req, res) => {
       (paymentRows || []).forEach((row) => {
         const meta = accountMeta[String(row.accountNumber)];
         if (!meta) return;
-        if (!isReportableCollectorPaymentStatus(row.status)) return;
-        if (String(row.direction || '').toLowerCase() !== 'credit') return;
+        if (!isApprovedCollectorPaymentEntry(row)) return;
         const dateValue = row.date || row.recordedAt;
         if (!dateValue) return;
         const d = new Date(dateValue);
@@ -404,7 +388,6 @@ router.get('/report', async (req, res) => {
     // Build mapping accountNumber -> { area }
     const accountMeta = {};
     for (const c of customers) {
-      if (isPrepaidCustomer(c)) continue;
       const accountNumber = String(c?.accountNumber || '').trim();
       if (!accountNumber) continue;
       accountMeta[accountNumber] = { area: String(c?.area || '').trim() || 'Unassigned' };
@@ -421,9 +404,7 @@ router.get('/report', async (req, res) => {
       if (!meta) continue;
       const area = meta.area;
       for (const h of (bucket.history || [])) {
-        // Count only payments (credits) as collected amounts
-        if (String(h.direction || '').toLowerCase() !== 'credit') continue;
-        if (!isReportableCollectorPaymentStatus(h.status)) continue;
+        if (!isApprovedCollectorPaymentEntry(h)) continue;
 
         const date = h.date || h.recordedAt;
         if (!date) continue;

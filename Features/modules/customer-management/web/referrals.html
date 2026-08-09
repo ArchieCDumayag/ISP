@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/referrals.css?v=2.1">
+    <link rel="stylesheet" href="css/referrals.css?v=2.4">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 
@@ -20,7 +20,7 @@
         <div class="app-main">
             <div id="topbar"></div>
             <main class="page referrals-page">
-                <section class="page-header">
+                <section class="page-header referral-page-header">
                     <div class="page-title">
                         <p class="eyebrow">Billing Control</p>
                         <h1>Referrals</h1>
@@ -29,7 +29,7 @@
                     <div class="header-actions">
                         <button type="button" class="btn btn-primary btn-sm" id="createReferralBtn">
                             <i class="ti ti-plus" aria-hidden="true"></i>
-                            Create Referral
+                            New Referral
                         </button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="refreshReferralsBtn">
                             <i class="ti ti-refresh" aria-hidden="true"></i>
@@ -38,29 +38,29 @@
                     </div>
                 </section>
 
-                <section class="referral-metrics" aria-label="Referral summary">
-                    <article class="referral-metric">
+                <section class="card referral-kpi-strip" aria-label="Referral summary">
+                    <article class="referral-kpi-item">
                         <span class="referral-metric__icon"><i class="ti ti-users-plus" aria-hidden="true"></i></span>
                         <div>
                             <span>Total Referrals</span>
                             <strong id="metricReferralTotal">0</strong>
                         </div>
                     </article>
-                    <article class="referral-metric">
+                    <article class="referral-kpi-item">
                         <span class="referral-metric__icon is-success"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
                         <div>
                             <span>Queued</span>
                             <strong id="metricReferralSuccessful">0</strong>
                         </div>
                     </article>
-                    <article class="referral-metric">
+                    <article class="referral-kpi-item">
                         <span class="referral-metric__icon is-warning"><i class="ti ti-hourglass" aria-hidden="true"></i></span>
                         <div>
                             <span>Pending Review</span>
                             <strong id="metricReferralWaiting">0</strong>
                         </div>
                     </article>
-                    <article class="referral-metric">
+                    <article class="referral-kpi-item">
                         <span class="referral-metric__icon is-info"><i class="ti ti-gift" aria-hidden="true"></i></span>
                         <div>
                             <span>Applied Discounts</span>
@@ -69,67 +69,109 @@
                     </article>
                 </section>
 
-                <section class="section-frame">
+                <section class="section-frame referral-ledger-card">
                     <div class="section-toolbar referral-toolbar">
                         <div class="search-field">
                             <i class="ti ti-search" aria-hidden="true"></i>
-                            <input id="referralSearchInput" type="search" placeholder="Search referrer, customer, account" aria-label="Search referrals">
+                            <input class="form-control form-control-sm" id="referralSearchInput" type="search" placeholder="Search referrer, client or account" aria-label="Search referrals">
                         </div>
                         <div class="toolbar-inline-filters">
-                            <div class="page-size-control toolbar-filter-control">
+                            <div class="toolbar-filter-control">
                                 <label for="referralStatusFilter">Status</label>
-                                <div class="select-wrapper">
-                                    <select id="referralStatusFilter">
+                                <select class="form-select form-select-sm" id="referralStatusFilter">
                                         <option value="">All</option>
                                         <option value="eligible">Queued</option>
                                         <option value="applied">Applied</option>
                                         <option value="pending">Pending</option>
                                         <option value="reversed">Reversed</option>
                                         <option value="cancelled">Cancelled</option>
-                                    </select>
-                                </div>
+                                </select>
                             </div>
-                            <div class="page-size-control toolbar-filter-control">
+                            <div class="toolbar-filter-control">
                                 <label for="referralSourceFilter">Source</label>
-                                <div class="select-wrapper">
-                                    <select id="referralSourceFilter">
+                                <select class="form-select form-select-sm" id="referralSourceFilter">
                                         <option value="">All</option>
                                         <option value="customer">Customer</option>
                                         <option value="agent">Agent</option>
                                         <option value="external">External</option>
-                                    </select>
-                                </div>
+                                </select>
                             </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="referralClearFilters">
+                                <i class="ti ti-filter-off" aria-hidden="true"></i>
+                                Clear
+                            </button>
                         </div>
                     </div>
 
-                    <div class="table-wrapper elevated">
-                        <table class="referral-table">
+                    <div class="table-wrapper referral-table-wrap">
+                        <table class="table table-vcenter referral-table">
                             <caption>Referral ledger</caption>
+                            <colgroup>
+                                <col class="col-referrer">
+                                <col class="col-client">
+                                <col class="col-status">
+                                <col class="col-application">
+                                <col class="col-discount">
+                                <col class="col-actions">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>Referrer</th>
-                                    <th>Referred Customer</th>
-                                    <th>Source</th>
-                                    <th>Approval</th>
-                                    <th class="is-num">Locked Discount</th>
-                                    <th>Billing Application</th>
+                                    <th>Referred Client</th>
                                     <th>Status</th>
+                                    <th>Apply Month</th>
+                                    <th class="is-num">Discount</th>
                                     <th class="col-actions">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="referralTableBody">
                                 <tr>
-                                    <td colspan="8" class="referral-empty">Loading referrals...</td>
+                                    <td colspan="6" class="referral-empty">Loading referrals...</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                     <div class="table-footer">
                         <div class="footer-summary" id="referralSummary">Loading...</div>
+                        <nav class="referral-pagination" id="referralPagination" aria-label="Referral pages" hidden>
+                            <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="referralPrevPage" aria-label="Previous referral page">
+                                <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                            </button>
+                            <span id="referralPageIndicator">Page 1 of 1</span>
+                            <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="referralNextPage" aria-label="Next referral page">
+                                <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                            </button>
+                        </nav>
                     </div>
                 </section>
             </main>
+        </div>
+    </div>
+
+    <div class="referral-modal" id="referralDetailsModal" hidden>
+        <div class="referral-modal__dialog card referral-modal__dialog--compact" role="dialog" aria-modal="true" aria-labelledby="referralDetailsTitle">
+            <div class="card-header">
+                <div>
+                    <p class="eyebrow mb-1">Referral Record</p>
+                    <h2 class="card-title" id="referralDetailsTitle">Referral Details</h2>
+                </div>
+                <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="closeReferralDetailsModal" aria-label="Close referral details">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="card-body referral-detail-grid">
+                <div class="referral-detail-item referral-detail-item--wide"><span>Referrer</span><strong id="referralDetailReferrer">&mdash;</strong></div>
+                <div class="referral-detail-item referral-detail-item--wide"><span>Referred client</span><strong id="referralDetailClient">&mdash;</strong></div>
+                <div class="referral-detail-item"><span>Source</span><strong id="referralDetailSource">&mdash;</strong></div>
+                <div class="referral-detail-item"><span>Status</span><strong id="referralDetailStatus">&mdash;</strong></div>
+                <div class="referral-detail-item"><span>Locked discount</span><strong id="referralDetailDiscount">&mdash;</strong></div>
+                <div class="referral-detail-item"><span>Apply month</span><strong id="referralDetailApplyMonth">&mdash;</strong></div>
+                <div class="referral-detail-item referral-detail-item--wide"><span>Approval</span><strong id="referralDetailApproval">&mdash;</strong></div>
+                <div class="referral-detail-item referral-detail-item--wide"><span>Reason / reference</span><strong id="referralDetailReason">&mdash;</strong></div>
+            </div>
+            <div class="card-footer referral-modal__footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelReferralDetails">Close</button>
+            </div>
         </div>
     </div>
 
@@ -204,7 +246,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/referrals.js?v=2.3"></script>
+    <script src="js/referrals.js?v=2.6"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

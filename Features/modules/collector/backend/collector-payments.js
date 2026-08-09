@@ -11,9 +11,11 @@ const { resolveCollectorNextDue } = require('./collector-next-due');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const paymentRecordsRouter = require('../../billing/backend/payment-records');
 const collectorReschedulesRouter = require('./collector-reschedules');
+const collectorPrioritiesRouter = require('./collector-priorities');
 
 const router = express.Router();
 router.use('/reschedules', collectorReschedulesRouter);
+router.use('/priorities', collectorPrioritiesRouter);
 const REFERENCE_MAX_LENGTH = 32;
 const PAYMENT_METHOD_MAX_LENGTH = 40;
 const MANILA_OFFSET_SUFFIX = '+08:00';
@@ -112,8 +114,220 @@ function normalizeRemittancePayment(row = {}) {
     paymentEntryId,
     accountNumber,
     reference,
-    amount: Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0
+    amount: Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0,
+    customerName: remittanceText(row.customerName || row.customer || row.payer),
+    paymentMethod: remittanceText(row.paymentMethod || row.method),
+    collectionDate: toPaymentDateOnly(row.collectionDate || row.date || row.recordedAt || row.submittedAt),
+    recordedAt: row.recordedAt || row.submittedAt || null,
+    status: normalizeCollectorPaymentStatus(row.status || row.approvalStatus)
   };
+}
+
+function remittancePaymentKey(row = {}) {
+  const payment = normalizeRemittancePayment(row);
+  return remittanceText(payment.paymentEntryId || payment.reference
+    || `${payment.accountNumber}|${payment.collectionDate}|${payment.amount.toFixed(2)}`);
+}
+
+function remittanceBatchDate(payment = {}) {
+  return toPaymentDateOnly(payment.collectionDate || payment.date || payment.recordedAt || payment.submittedAt)
+    || new Date().toISOString().slice(0, 10);
+}
+
+function remittanceStatus(value) {
+  return remittanceText(value || 'pending').toLowerCase();
+}
+
+function remittancePaymentSummary(payments = []) {
+  const summary = {
+    count: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    pendingAmount: 0,
+    approvedAmount: 0,
+    rejectedAmount: 0,
+    totalAmount: 0
+  };
+  for (const payment of Array.isArray(payments) ? payments : []) {
+    const amount = Math.max(Number(payment?.amount || 0), 0);
+    const status = normalizeCollectorPaymentStatus(payment?.status);
+    summary.count += 1;
+    summary.totalAmount += amount;
+    if (status === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+      summary.approved += 1;
+      summary.approvedAmount += amount;
+    } else if (status === COLLECTOR_PAYMENT_REJECTED_STATUS) {
+      summary.rejected += 1;
+      summary.rejectedAmount += amount;
+    } else {
+      summary.pending += 1;
+      summary.pendingAmount += amount;
+    }
+  }
+  Object.keys(summary).forEach((key) => {
+    if (key.toLowerCase().includes('amount')) summary[key] = Number(summary[key].toFixed(2));
+  });
+  return summary;
+}
+
+function findCanonicalRemittancePayment(entries = [], payment = {}) {
+  const target = normalizeRemittancePayment(payment);
+  return (Array.isArray(entries) ? entries : []).find((entry) => {
+    const entryId = remittanceText(entry?.id || entry?.paymentEntryId);
+    if (target.paymentEntryId && entryId === target.paymentEntryId) return true;
+    const entryReference = remittanceText(entry?.reference || entry?.orNumber);
+    if (target.reference && entryReference && entryReference.toLowerCase() === target.reference.toLowerCase()) {
+      return !target.accountNumber
+        || remittanceText(entry?.accountNumber).toLowerCase() === target.accountNumber.toLowerCase();
+    }
+    return false;
+  }) || null;
+}
+
+async function loadCanonicalRemittancePayments(record = {}) {
+  const submittedPayments = (Array.isArray(record?.payments) ? record.payments : [])
+    .map(normalizeRemittancePayment);
+  const paymentIds = [...new Set(submittedPayments.map((item) => item.paymentEntryId).filter(Boolean))];
+  let canonicalEntries = [];
+
+  if (await isRelationalReady()) {
+    const branchId = record?.branchId || null;
+    if (branchId && paymentIds.length) {
+      const placeholders = paymentIds.map(() => '?').join(', ');
+      const [rows] = await query(
+        `SELECT
+           id,
+           account_number AS accountNumber,
+           amount,
+           date,
+           kind,
+           direction,
+           reference,
+           or_number AS orNumber,
+           recorded_at AS recordedAt,
+           recorded_by_user_id AS recordedByUserId,
+           recorded_by_username AS recordedByUsername,
+           recorded_by_name AS recordedByName,
+           recorded_by_role AS recordedByRole,
+           payer,
+           status,
+           payment_method AS paymentMethod
+         FROM payment_entries
+         WHERE branch_id = ?
+           AND id IN (${placeholders})`,
+        [branchId, ...paymentIds]
+      );
+      canonicalEntries = (rows || []).map(mapReceiptPaymentRow);
+    }
+  } else {
+    const paymentsStore = await readJson(STORE_KEYS.payments, {});
+    Object.entries(paymentsStore || {}).forEach(([accountNumber, bucket]) => {
+      (Array.isArray(bucket?.history) ? bucket.history : []).forEach((entry) => {
+        canonicalEntries.push({ ...entry, accountNumber: entry?.accountNumber || accountNumber });
+      });
+    });
+  }
+
+  return submittedPayments.map((payment) => {
+    const canonical = findCanonicalRemittancePayment(canonicalEntries, payment);
+    return {
+      ...payment,
+      canonicalFound: Boolean(canonical),
+      accountNumber: payment.accountNumber || remittanceText(canonical?.accountNumber),
+      reference: payment.reference || remittanceText(canonical?.reference || canonical?.orNumber),
+      amount: canonical
+        ? Math.max(Number(canonical?.amount || 0), 0)
+        : payment.amount,
+      customerName: payment.customerName || remittanceText(canonical?.customerName || canonical?.payer),
+      paymentMethod: payment.paymentMethod || remittanceText(canonical?.paymentMethod),
+      collectionDate: payment.collectionDate || remittanceBatchDate(canonical || payment),
+      recordedAt: payment.recordedAt || canonical?.recordedAt || null,
+      status: normalizeCollectorPaymentStatus(
+        canonical ? canonical.status : (payment.status || COLLECTOR_PAYMENT_PENDING_STATUS)
+      )
+    };
+  });
+}
+
+async function hydrateRemittanceRecord(record = {}) {
+  const payments = await loadCanonicalRemittancePayments(record);
+  return {
+    ...record,
+    payments,
+    paymentSummary: remittancePaymentSummary(payments)
+  };
+}
+
+async function hydrateRemittanceRecords(records = []) {
+  return Promise.all((Array.isArray(records) ? records : []).map(hydrateRemittanceRecord));
+}
+
+async function upsertAutomaticRemittanceBatch(paymentEntry = {}, options = {}) {
+  if (normalizeKind(paymentEntry?.kind || paymentEntry?.type) !== 'payment'
+      || String(paymentEntry?.direction || 'credit').trim().toLowerCase() !== 'credit') {
+    return null;
+  }
+  const payment = normalizeRemittancePayment({
+    ...paymentEntry,
+    paymentEntryId: paymentEntry?.id || paymentEntry?.paymentEntryId,
+    accountNumber: options.accountNumber || paymentEntry?.accountNumber,
+    customerName: options.customerName || paymentEntry?.customerName
+  });
+  if (!payment.paymentEntryId || !payment.accountNumber || payment.amount <= 0) return null;
+  const collectorId = remittanceText(options.collectorId || paymentEntry?.recordedBy?.id || paymentEntry?.recordedByUserId);
+  if (!collectorId) return null;
+  const collectionDate = remittanceBatchDate(paymentEntry);
+  const branchId = options.branchId || null;
+  const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+  const records = Array.isArray(payload?.records) ? payload.records : [];
+  let record = records.find((item) => (
+    item?.autoBatch === true
+    && remittanceStatus(item?.status) === 'pending'
+    && remittanceText(item?.collectorId) === collectorId
+    && remittanceText(item?.branchId || '') === remittanceText(branchId || '')
+    && remittanceBatchDate(item) === collectionDate
+  ));
+  const now = new Date().toISOString();
+  if (!record) {
+    const collectorName = remittanceText(options.collectorName || paymentEntry?.recordedBy?.name
+      || paymentEntry?.recordedBy?.username || 'Collector');
+    const actor = {
+      id: collectorId,
+      username: remittanceText(options.collectorUsername || paymentEntry?.recordedBy?.username),
+      name: collectorName,
+      role: 'Collector',
+      branchId
+    };
+    record = {
+      id: `remit-${collectorId}-${collectionDate}-${Date.now()}`,
+      collectorId,
+      collectorName,
+      branchId,
+      collectionDate,
+      status: 'pending',
+      autoBatch: true,
+      payments: [],
+      totalAmount: 0,
+      submittedAt: now,
+      updatedAt: now,
+      submittedBy: actor,
+      reviewedAt: null,
+      reviewedBy: null,
+      adminNote: ''
+    };
+    records.unshift(record);
+  }
+  const existingKeys = new Set((Array.isArray(record.payments) ? record.payments : []).map(remittancePaymentKey));
+  if (!existingKeys.has(remittancePaymentKey(payment))) {
+    record.payments = [...(Array.isArray(record.payments) ? record.payments : []), payment];
+  }
+  record.totalAmount = Number(record.payments
+    .reduce((sum, item) => sum + Math.max(Number(item?.amount || 0), 0), 0)
+    .toFixed(2));
+  record.updatedAt = now;
+  await writeJson(STORE_KEYS.remittances, { records, updatedAt: now });
+  return record;
 }
 
 function normalizeCollectorPaymentStatus(value) {
@@ -1619,12 +1833,14 @@ router.get('/reprint', async (req, res, next) => {
 router.get('/remittances', async (req, res, next) => {
   try {
     const actor = getRemittanceActor(req);
+    if (!req.collector) getApprovalActor(req);
     const payload = await readJson(STORE_KEYS.remittances, { records: [] });
     const records = Array.isArray(payload?.records) ? payload.records : [];
-    const scoped = req.collector
-      ? records.filter((record) => remittanceText(record.collectorId) === actor.id)
-      : records;
-    res.json({ ok: true, records: scoped });
+    const scoped = records.filter((record) => {
+      if (req.collector && remittanceText(record.collectorId) !== actor.id) return false;
+      return !actor.branchId || !record?.branchId || remittanceText(record.branchId) === remittanceText(actor.branchId);
+    });
+    res.json({ ok: true, records: await hydrateRemittanceRecords(scoped) });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to load remittances.'));
   }
@@ -1648,13 +1864,26 @@ router.post('/remittances', async (req, res, next) => {
       return next(createError(400, 'At least one payment is required for remittance.'));
     }
 
-    const computedTotal = payments.reduce((sum, item) => sum + Math.max(Number(item.amount || 0), 0), 0);
+    const hydratedSubmission = await hydrateRemittanceRecord({
+      branchId: actor.branchId,
+      payments
+    });
+    const ineligiblePayment = hydratedSubmission.payments.find((payment) => (
+      payment?.canonicalFound !== true
+      || normalizeCollectorPaymentStatus(payment?.status) !== COLLECTOR_PAYMENT_APPROVED_STATUS
+    ));
+    if (ineligiblePayment) {
+      return next(createError(409, 'Only approved collector payments can be submitted for remittance.'));
+    }
+
+    const approvedPayments = hydratedSubmission.payments;
+    const computedTotal = approvedPayments.reduce((sum, item) => sum + Math.max(Number(item.amount || 0), 0), 0);
     const requestedTotal = Number(req.body?.totalAmount);
     const totalAmount = Number((Number.isFinite(requestedTotal) && requestedTotal > 0 ? requestedTotal : computedTotal).toFixed(2));
     const payload = await readJson(STORE_KEYS.remittances, { records: [] });
     const records = Array.isArray(payload?.records) ? payload.records : [];
     const paymentKeys = new Set(
-      payments.map((item) => remittanceText(item.paymentEntryId || item.reference)).filter(Boolean)
+      approvedPayments.map((item) => remittanceText(item.paymentEntryId || item.reference)).filter(Boolean)
     );
     const duplicatePending = records.some((record) => {
       const status = remittanceText(record.status || 'pending').toLowerCase();
@@ -1675,7 +1904,7 @@ router.post('/remittances', async (req, res, next) => {
       collectorName: actor.name || actor.username || 'Collector',
       branchId: actor.branchId,
       status: 'pending',
-      payments,
+      payments: approvedPayments,
       totalAmount,
       submittedAt,
       submittedBy: actor,
@@ -1694,20 +1923,82 @@ router.post('/remittances', async (req, res, next) => {
 // POST /api/collector/payments/remittances/:id/confirm
 router.post('/remittances/:id/confirm', async (req, res, next) => {
   try {
-    if (req.collector) {
-      return next(createError(403, 'Admin access required to confirm remittance.'));
-    }
+    const admin = getApprovalActor(req);
     const payload = await readJson(STORE_KEYS.remittances, { records: [] });
     const records = Array.isArray(payload?.records) ? payload.records : [];
     const record = records.find((item) => remittanceText(item.id) === remittanceText(req.params.id));
     if (!record) return next(createError(404, 'Remittance not found.'));
+    if (admin?.branchId && record?.branchId && remittanceText(admin.branchId) !== remittanceText(record.branchId)) {
+      return next(createError(404, 'Remittance not found.'));
+    }
+    if (remittanceStatus(record.status) === 'remitted') {
+      return res.json({
+        ok: true,
+        replayed: true,
+        record: await hydrateRemittanceRecord(record),
+        paymentApproval: { approved: 0, alreadyApproved: 0, rejected: 0, pending: 0, errors: [] }
+      });
+    }
+    if (remittanceStatus(record.status) === 'rejected') {
+      return next(createError(409, 'Rejected remittance must be resubmitted before confirmation.'));
+    }
+
+    const reviewedRecord = await hydrateRemittanceRecord(record);
+    const paymentApproval = {
+      approved: 0,
+      alreadyApproved: 0,
+      rejected: 0,
+      pending: 0,
+      errors: []
+    };
+    for (const payment of reviewedRecord.payments) {
+      if (payment?.canonicalFound !== true) {
+        paymentApproval.pending += 1;
+        paymentApproval.errors.push({
+          id: remittanceText(payment?.paymentEntryId),
+          error: 'Canonical payment entry was not found.'
+        });
+        continue;
+      }
+      const status = normalizeCollectorPaymentStatus(payment?.status);
+      if (status === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+        paymentApproval.alreadyApproved += 1;
+        continue;
+      }
+      if (status === COLLECTOR_PAYMENT_REJECTED_STATUS) {
+        paymentApproval.rejected += 1;
+        continue;
+      }
+      paymentApproval.pending += 1;
+    }
+
+    if (reviewedRecord.paymentSummary.pending > 0 || paymentApproval.errors.length) {
+      return next(createError(409, 'Complete Customer Payment Approval before confirming this cash remittance.'));
+    }
+    if (reviewedRecord.paymentSummary.approved < 1) {
+      return next(createError(409, 'Remittance contains no approved payments to confirm.'));
+    }
+
     const reviewer = getRemittanceActor(req);
+    const reviewedAt = new Date().toISOString();
+    if (!Number.isFinite(Number(record.originalTotalAmount))) {
+      record.originalTotalAmount = Number(record.totalAmount || reviewedRecord.paymentSummary.totalAmount || 0);
+    }
     record.status = 'remitted';
-    record.reviewedAt = new Date().toISOString();
+    record.payments = reviewedRecord.payments;
+    record.totalAmount = reviewedRecord.paymentSummary.approvedAmount;
+    record.rejectedTotalAmount = reviewedRecord.paymentSummary.rejectedAmount;
+    record.reviewedAt = reviewedAt;
     record.reviewedBy = reviewer;
     record.adminNote = remittanceText(req.body?.adminNote || req.body?.note);
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: new Date().toISOString() });
-    res.json({ ok: true, record });
+    record.updatedAt = reviewedAt;
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: reviewedAt });
+    res.json({
+      ok: true,
+      replayed: false,
+      record: await hydrateRemittanceRecord(record),
+      paymentApproval
+    });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to confirm remittance.'));
   }
@@ -1716,20 +2007,33 @@ router.post('/remittances/:id/confirm', async (req, res, next) => {
 // POST /api/collector/payments/remittances/:id/reject
 router.post('/remittances/:id/reject', async (req, res, next) => {
   try {
-    if (req.collector) {
-      return next(createError(403, 'Admin access required to reject remittance.'));
-    }
+    const admin = getApprovalActor(req);
     const payload = await readJson(STORE_KEYS.remittances, { records: [] });
     const records = Array.isArray(payload?.records) ? payload.records : [];
     const record = records.find((item) => remittanceText(item.id) === remittanceText(req.params.id));
     if (!record) return next(createError(404, 'Remittance not found.'));
+    if (admin?.branchId && record?.branchId && remittanceText(admin.branchId) !== remittanceText(record.branchId)) {
+      return next(createError(404, 'Remittance not found.'));
+    }
+    const reason = sanitizeCollectorPaymentDecisionReason(
+      req.body?.adminNote || req.body?.note || req.body?.reason,
+      true
+    );
+    if (remittanceStatus(record.status) === 'remitted') {
+      return next(createError(409, 'Confirmed remittance cannot be rejected.'));
+    }
+    if (remittanceStatus(record.status) === 'rejected') {
+      return res.json({ ok: true, replayed: true, record: await hydrateRemittanceRecord(record) });
+    }
     const reviewer = getRemittanceActor(req);
+    const reviewedAt = new Date().toISOString();
     record.status = 'rejected';
-    record.reviewedAt = new Date().toISOString();
+    record.reviewedAt = reviewedAt;
     record.reviewedBy = reviewer;
-    record.adminNote = remittanceText(req.body?.adminNote || req.body?.note);
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: new Date().toISOString() });
-    res.json({ ok: true, record });
+    record.adminNote = reason;
+    record.updatedAt = reviewedAt;
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: reviewedAt });
+    res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to reject remittance.'));
   }
@@ -1984,6 +2288,14 @@ router.post('/:accountNumber', async (req, res, next) => {
         replayed = true;
       }
       if (!replayed) triggerBranchServiceRefresh(branchId, 'collector-payments');
+      await upsertAutomaticRemittanceBatch(storedPayment, {
+        accountNumber,
+        customerName: resolveCustomerDisplayName(customer, accountNumber),
+        collectorId: collectorAccount.id,
+        collectorUsername: collectorAccount.username,
+        collectorName: collectorAccount.name || collectorAccount.username,
+        branchId
+      });
 
       const receiptHistory = await readPaymentHistoryForReceipt(branchId, accountNumber);
       const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
@@ -2096,6 +2408,14 @@ router.post('/:accountNumber', async (req, res, next) => {
       if (!collectorPaymentEntriesMatch(existingWithAccount, newEntry, accountNumber)) {
         return next(createError(409, `Reference already exists with different payment details: ${normalizedReference}`));
       }
+      await upsertAutomaticRemittanceBatch(duplicateEntry, {
+        accountNumber: duplicateAccountNumber,
+        customerName: resolveCustomerDisplayName(customer, duplicateAccountNumber),
+        collectorId: collectorAccount.id,
+        collectorUsername: collectorAccount.username,
+        collectorName: collectorAccount.name || collectorAccount.username,
+        branchId: collectorAccount.branchId || customer?.branchId || null
+      });
       const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
         customer,
         duplicateHistory,
@@ -2144,6 +2464,14 @@ router.post('/:accountNumber', async (req, res, next) => {
     }
 
     await writeJson(STORE_KEYS.payments, payments);
+    await upsertAutomaticRemittanceBatch(newEntry, {
+      accountNumber,
+      customerName: resolveCustomerDisplayName(customer, accountNumber),
+      collectorId: collectorAccount.id,
+      collectorUsername: collectorAccount.username,
+      collectorName: collectorAccount.name || collectorAccount.username,
+      branchId: collectorAccount.branchId || customer?.branchId || null
+    });
     triggerBranchServiceRefresh(collectorAccount.branchId || customer?.branchId || null, 'collector-payments');
     const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
       customer,

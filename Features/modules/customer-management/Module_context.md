@@ -42,6 +42,8 @@ Customers uses a compact Tabler-style header, four-item filtered summary strip, 
 
 Coverage Table uses a centered 1,000px compact Tabler workspace for its header, filtered four-item summary strip, inline client/sort/page-size controls, combined five-column desktop table, footer, and responsive coverage cards. Visible router cells show only the readable router label; the full technical router ID remains available as a tooltip. Its compact Add/Edit modal explicitly declares a non-full-width Tabler size, stays viewport-centered at a 640px maximum, and uses an explicit close control, inline validation, submit locking, and desktop two-column/mobile single-column fields. Counts are derived from the existing coverage and customer reads; CRUD, MikroTik linking, API contracts, and Network-owned coverage-map behavior are unchanged.
 
+Referrals uses a centered compact Tabler workspace with a single four-item KPI strip, slim search/status/source controls, a six-column ledger, ten-record client-side pagination, status-aware inline Tabler action buttons, a read-only details modal, and responsive record cards below tablet width. Desktop actions use compact icons with tooltips; mobile cards show their labels and wrap as needed. View, Edit, Approve, Set Apply Month, Referred Account, Referrer Billing, and Cancel route directly through the existing workflows. Referrer source and account metadata, Admin approval audit, selected/automatic apply month, locked discount, queued carryover state, and all existing referral rules remain available without changing APIs or Billing allocation.
+
 Customers and Customer Draft Queue modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons; the formerly empty Customer view close button now uses the same markup.
 
 ## Data and dependencies
@@ -72,9 +74,11 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - The focused check verifies valid decimal/Google Maps coordinate normalization, invalid Map Pin rejection, and the Customers form validation contract.
 - The focused check also verifies correction-record normalization plus the warning-review button, modal, retry API call, and responsive modal styling contract.
 - Referral-focused checks verify immediate Admin-approved eligibility, locked amounts, optional Admin-selected earliest application months, unlimited FIFO queuing, the two-per-month cap, month-to-month carryover, and reversal requeue behavior.
+- Referral-page validation covers JavaScript syntax, static ID uniqueness, balanced HTML/CSS, compact KPI/filter/six-column table hooks, fixed ten-record pagination, View/Actions/detail-modal wiring, responsive cards, and unchanged referral API endpoints.
 - `npm run refactor:phase4` runs structural, core, Admin, Customer Management, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public application/address/coverage resources, protected-page redirects, and unauthenticated Customer Management API denial.
+- 2026-08-09 Referrals compact-layout validation covered JavaScript syntax, resolved HTML/JavaScript ID bindings, unique static IDs, balanced HTML/CSS, six-column and ten-record pagination contracts, conditional inline action rendering and direct handler wiring, details-modal wiring, responsive labeled action/card styles, `git diff --check`, `npm run refactor:customer-management`, and the full `npm test` Phase 12 gate. Interactive browser review remained unavailable because no browser instance was connected.
 
 ## Known risks and follow-up
 
@@ -86,6 +90,8 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 
 ## Latest meaningful changes
 
+- 2026-08-09: Removed the Referral Actions modal and placed status-aware View, Edit, Approve, Set Apply Month, Referred Account, Referrer Billing, and Cancel controls directly in each record. Desktop uses compact Tabler icons with tooltips; mobile cards show labeled wrapping buttons.
+- 2026-08-09: Reorganized Referrals into a centered compact Tabler workspace with one segmented KPI strip, slim filters, a six-column ledger, ten-record pagination, a compact details modal, and responsive mobile cards. Referral registry APIs, Admin approval, selected apply months, unlimited FIFO queuing, and two-per-month Billing carryover remain unchanged.
 - 2026-08-09: Reorganized Coverage Table into a centered 1,000px compact Tabler workspace with filtered coverage/client/router summaries, inline controls, tighter column widths and rows, combined activity dates, readable router labels with technical IDs in tooltips, a five-column desktop table, responsive area cards, and a compact Add/Edit modal with visible inline validation and duplicate-submit protection. The modal explicitly overrides the shared coverage-token full-width inference and remains centered at 640px instead of stretching behind the sidebar. Coverage CRUD, MikroTik links, APIs, and Network coverage maps remain unchanged.
 - 2026-08-09: Reorganized Customers into a compact single-page Tabler layout with a filtered summary strip, Billing type and clear-filter controls, an eight-column desktop table, canonical backend balances, explicit View actions, and responsive customer cards. Customer CRUD/detail workflows, Billing calculations, and Temp remain unchanged.
 - 2026-08-08: Backend Map Pin normalization now accepts legacy DMS values in addition to decimals and Google Maps URLs, converting all accepted formats to the same six-decimal coordinate pair used by Technician Job Map.

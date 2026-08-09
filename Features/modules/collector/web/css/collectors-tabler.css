@@ -2883,3 +2883,271 @@ body.theme-dark .collector-priority-client-picker,
         justify-content: flex-start !important;
     }
 }
+
+/* Compact density for the one-page Collector Operations workspace. */
+body.layout-fluid-vertical .collectors-page--compact {
+    gap: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-page-heading {
+    gap: .625rem;
+    padding: 0;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-page-heading .page-title {
+    margin: .0625rem 0;
+    font-size: 1.125rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-page-heading .text-secondary {
+    font-size: .6875rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-page-actions,
+body.layout-fluid-vertical .collectors-page--compact .collectors-primary-column,
+body.layout-fluid-vertical .collectors-page--compact .collectors-side-column,
+body.layout-fluid-vertical .collectors-page--compact .collectors-dashboard-grid {
+    gap: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-side-column {
+    top: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-kpi-card {
+    gap: .375rem;
+    padding: .375rem .625rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-kpi-card .avatar {
+    width: 1.625rem;
+    height: 1.625rem;
+    font-size: .8125rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-kpi-value strong {
+    font-size: .875rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-section-heading {
+    gap: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-section-heading .avatar {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    font-size: .875rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-approval-panel,
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-panel,
+body.layout-fluid-vertical .collectors-page--compact .collectors-payments-card .collector-approval-panel {
+    gap: .375rem;
+    padding: .625rem !important;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-panel__header {
+    margin-bottom: .125rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-approval-panel__header,
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-header {
+    gap: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-header {
+    padding: .625rem !important;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-approval-panel__header h2,
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-heading .card-title {
+    font-size: .8125rem !important;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-approval-panel__header p,
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-heading .text-secondary {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: .6875rem;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .btn.btn-sm {
+    min-height: 1.75rem;
+    padding: .1875rem .5rem;
+    font-size: .6875rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .btn.btn-sm.btn-icon {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    padding: 0;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .badge {
+    padding: .1875rem .375rem;
+    font-size: .625rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-table-wrapper {
+    max-height: 25rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-table thead th,
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-table td,
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-table th,
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-table td {
+    padding: .3125rem .375rem !important;
+    font-size: .6875rem !important;
+    line-height: 1.2;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-cell-meta,
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-history-label {
+    font-size: .625rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-priority-pagination,
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-pagination {
+    min-height: 1.75rem;
+    margin-top: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-summary {
+    gap: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-summary-item {
+    gap: .375rem;
+    padding: .375rem .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-summary-item .avatar {
+    width: 1.625rem;
+    height: 1.625rem;
+    font-size: .8125rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-summary-item strong {
+    font-size: .875rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-table-wrapper {
+    max-height: 28rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-payment-filter-panel {
+    padding: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-payments-card .collector-approval-groups {
+    gap: .3125rem;
+    padding: .3125rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-payments-card .collector-approval-group-card__header,
+body.layout-fluid-vertical .collectors-page--compact .collectors-payments-card .collector-approval-payment-item {
+    padding: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-remittance-panel,
+body.layout-fluid-vertical .collectors-page--compact .collector-remittance-list {
+    gap: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-remittance-list {
+    max-height: 22rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collector-remittance-record {
+    gap: .375rem;
+    padding: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-toolbar {
+    padding: .375rem .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-list-wrapper {
+    max-height: clamp(18rem, calc(100vh - 17rem), 30rem);
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-list {
+    gap: .375rem;
+    padding: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-item {
+    gap: .375rem;
+    padding: .5rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-metric {
+    gap: .125rem;
+    padding: .375rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-areas {
+    gap: .25rem;
+}
+
+body.layout-fluid-vertical .collectors-page--compact .empty-state {
+    min-height: 6rem;
+    padding: .75rem !important;
+}
+
+@media (max-width: 1100px) {
+    body.layout-fluid-vertical .collectors-page--compact .collectors-side-column {
+        position: static;
+    }
+}
+
+@media (max-width: 767.98px) {
+    body.layout-fluid-vertical .collectors-page--compact {
+        gap: .625rem;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-page-heading {
+        gap: .5rem;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-page-actions .btn,
+    body.layout-fluid-vertical .collectors-page--compact .collector-priority-header-actions .btn:not(.btn-icon),
+    body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-header-actions .btn:not(.btn-icon),
+    body.layout-fluid-vertical .collectors-page--compact .collector-assignment-header-actions .btn:not(.btn-icon) {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-priority-table-wrapper,
+    body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-table-wrapper,
+    body.layout-fluid-vertical .collectors-page--compact .collector-remittance-list,
+    body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-list-wrapper {
+        max-height: none;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-priority-table-wrapper {
+        overflow: visible;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-table-wrapper {
+        overflow-x: hidden;
+        overflow-y: visible;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-priority-table tr,
+    body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-row {
+        gap: .375rem .5rem;
+        padding: .5rem;
+    }
+
+    body.layout-fluid-vertical .collectors-page--compact .collector-priority-table td,
+    body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-row > td {
+        padding: .1875rem 0 !important;
+    }
+}

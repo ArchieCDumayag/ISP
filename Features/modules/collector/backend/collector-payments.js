@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const createError = require('http-errors');
 const { loadAccounts } = require('../../admin/backend/accounts-store');
@@ -27,6 +28,30 @@ const MONTH_YEAR_PATTERN = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|
 const COLLECTOR_PAYMENT_PENDING_STATUS = 'pending_approval';
 const COLLECTOR_PAYMENT_APPROVED_STATUS = 'approved';
 const COLLECTOR_PAYMENT_REJECTED_STATUS = 'rejected';
+const COLLECTOR_PAYMENT_DECISION_REASON_MAX_LENGTH = 500;
+const COLLECTOR_CLIENT_PAYMENT_ID_MAX_LENGTH = 96;
+const COLLECTOR_PAYMENT_REVIEW_TABLE = 'collector_payment_reviews';
+
+const COLLECTOR_PAYMENT_REVIEW_DDL = `
+CREATE TABLE IF NOT EXISTS collector_payment_reviews (
+  payment_entry_id VARCHAR(64) NOT NULL PRIMARY KEY,
+  branch_id VARCHAR(64) NOT NULL,
+  account_number VARCHAR(20) NOT NULL,
+  decision_status VARCHAR(30) NOT NULL,
+  decision_reason VARCHAR(500) NULL,
+  reviewed_at DATETIME NOT NULL,
+  reviewed_by_user_id VARCHAR(32) NULL,
+  reviewed_by_username VARCHAR(100) NULL,
+  reviewed_by_name VARCHAR(100) NULL,
+  reviewed_by_role VARCHAR(30) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_collector_payment_reviews_branch_status (branch_id, decision_status),
+  KEY idx_collector_payment_reviews_account (account_number)
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+`;
+
+let collectorPaymentReviewTableReady = false;
 
 const STORE_KEYS = {
   payments: 'payments',
@@ -34,6 +59,47 @@ const STORE_KEYS = {
   collectors: 'collectors',
   remittances: 'collector_remittances'
 };
+
+function sanitizeCollectorClientPaymentId(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.length > COLLECTOR_CLIENT_PAYMENT_ID_MAX_LENGTH) {
+    throw createError(400, `Client payment ID must be at most ${COLLECTOR_CLIENT_PAYMENT_ID_MAX_LENGTH} characters.`);
+  }
+  return trimmed;
+}
+
+function sanitizeCollectorPaymentDecisionReason(value, required = false) {
+  const trimmed = String(value || '').trim();
+  if (trimmed.length > COLLECTOR_PAYMENT_DECISION_REASON_MAX_LENGTH) {
+    throw createError(400, `Decision reason must be at most ${COLLECTOR_PAYMENT_DECISION_REASON_MAX_LENGTH} characters.`);
+  }
+  if (required && !trimmed) {
+    throw createError(400, 'Rejection reason is required.');
+  }
+  return trimmed;
+}
+
+function buildCollectorPaymentEntryId(prefix, branchId, collectorId, accountNumber, clientPaymentId = '') {
+  if (clientPaymentId) {
+    const digest = crypto.createHash('sha256')
+      .update([branchId, collectorId, accountNumber, clientPaymentId].map((value) => String(value || '').trim()).join('|'))
+      .digest('hex')
+      .slice(0, 40);
+    return `${prefix}-${digest}`;
+  }
+  const safeAccount = String(accountNumber || '').trim().replace(/[^a-z0-9_-]/gi, '').slice(0, 20) || 'account';
+  return `${prefix}-${safeAccount}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`.slice(0, 64);
+}
+
+function buildCollectorPaymentFingerprint(accountNumber, reference, kind, amount) {
+  return [
+    String(accountNumber || '').trim().toLowerCase(),
+    String(reference || '').trim().toLowerCase(),
+    normalizeKind(kind),
+    Math.abs(Number(amount) || 0).toFixed(2)
+  ].join('|');
+}
 
 const remittanceText = (value) => String(value || '').trim();
 
@@ -82,7 +148,7 @@ function resolvePairedPrepaidChargeFingerprint(accountNumber, paymentEntry = {})
   const reference = String(paymentEntry.reference || paymentEntry.orNumber || '').trim();
   const amount = Math.abs(Number(paymentEntry.amount) || 0);
   if (!accountNumber || !reference || amount <= 0) return '';
-  return `${accountNumber}|${reference}|charge|${amount.toFixed(2)}`;
+  return buildCollectorPaymentFingerprint(accountNumber, reference, 'charge', amount);
 }
 
 function resolveApprovalCustomerName(customer = {}, accountNumber = '') {
@@ -111,8 +177,131 @@ function mapCollectorPaymentApprovalItem(entry = {}, customer = {}, accountNumbe
     collectorId: String(recordedBy.id || entry.recordedByUserId || '').trim(),
     collectorName: String(recordedBy.name || entry.recordedByName || recordedBy.username || entry.recordedByUsername || 'Collector').trim(),
     collectorUsername: String(recordedBy.username || entry.recordedByUsername || '').trim(),
-    status: entry.status || COLLECTOR_PAYMENT_PENDING_STATUS
+    status: entry.status || COLLECTOR_PAYMENT_PENDING_STATUS,
+    reviewedAt: entry.reviewedAt || entry.reviewed_at || null,
+    reviewedBy: entry.reviewedBy || null,
+    decisionReason: entry.decisionReason || entry.decision_reason || ''
   };
+}
+
+function buildCollectorPaymentReview(actor = {}, status, reason = '') {
+  return {
+    status,
+    decisionReason: reason,
+    reviewedAt: new Date().toISOString(),
+    reviewedBy: {
+      id: String(actor?.id || '').trim(),
+      username: String(actor?.username || '').trim(),
+      name: String(actor?.name || actor?.username || 'Admin').trim(),
+      role: 'Admin'
+    }
+  };
+}
+
+async function ensureCollectorPaymentReviewTable() {
+  if (collectorPaymentReviewTableReady) return;
+  await query(COLLECTOR_PAYMENT_REVIEW_DDL);
+  collectorPaymentReviewTableReady = true;
+}
+
+async function writeRelationalCollectorPaymentReview(connection, review, entryId, branchId, accountNumber) {
+  await connection.query(
+    `INSERT INTO ${COLLECTOR_PAYMENT_REVIEW_TABLE} (
+       payment_entry_id,
+       branch_id,
+       account_number,
+       decision_status,
+       decision_reason,
+       reviewed_at,
+       reviewed_by_user_id,
+       reviewed_by_username,
+       reviewed_by_name,
+       reviewed_by_role
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       decision_status = VALUES(decision_status),
+       decision_reason = VALUES(decision_reason),
+       reviewed_at = VALUES(reviewed_at),
+       reviewed_by_user_id = VALUES(reviewed_by_user_id),
+       reviewed_by_username = VALUES(reviewed_by_username),
+       reviewed_by_name = VALUES(reviewed_by_name),
+       reviewed_by_role = VALUES(reviewed_by_role),
+       updated_at = CURRENT_TIMESTAMP`,
+    [
+      entryId,
+      String(branchId),
+      String(accountNumber),
+      review.status,
+      review.decisionReason || null,
+      toMysqlDateTime(review.reviewedAt),
+      review.reviewedBy.id || null,
+      review.reviewedBy.username || null,
+      review.reviewedBy.name || null,
+      review.reviewedBy.role
+    ]
+  );
+}
+
+function collectorPaymentEntriesMatch(existing = {}, requested = {}, accountNumber = '') {
+  const existingAccount = String(existing.accountNumber || accountNumber || '').trim().toLowerCase();
+  const requestedAccount = String(requested.accountNumber || accountNumber || '').trim().toLowerCase();
+  const existingCollector = String(existing?.recordedBy?.id || existing.recordedByUserId || '').trim();
+  const requestedCollector = String(requested?.recordedBy?.id || requested.recordedByUserId || '').trim();
+  const existingMethod = String(existing.paymentMethod || existing.payment_method || '').trim().toLowerCase();
+  const requestedMethod = String(requested.paymentMethod || requested.payment_method || '').trim().toLowerCase();
+  const existingDate = toPaymentDateOnly(existing.date || existing.recordedAt);
+  const requestedDate = toPaymentDateOnly(requested.date || requested.recordedAt);
+  return existingAccount === requestedAccount
+    && String(existing.reference || existing.orNumber || '').trim().toLowerCase()
+      === String(requested.reference || requested.orNumber || '').trim().toLowerCase()
+    && normalizeKind(existing.kind || existing.type) === normalizeKind(requested.kind || requested.type)
+    && Math.abs(Math.abs(Number(existing.amount) || 0) - Math.abs(Number(requested.amount) || 0)) < 0.0001
+    && (!existingCollector || !requestedCollector || existingCollector === requestedCollector)
+    && existingMethod === requestedMethod
+    && existingDate === requestedDate;
+}
+
+async function findRelationalCollectorPaymentSubmission(executor, branchId, accountNumber, requestedEntry) {
+  const runQuery = executor && typeof executor.query === 'function'
+    ? executor.query.bind(executor)
+    : query;
+  const [rows] = await runQuery(
+    `SELECT
+       id,
+       account_number AS accountNumber,
+       amount,
+       date,
+       kind,
+       direction,
+       reference,
+       or_number AS orNumber,
+       description,
+       type,
+       recorded_at AS recordedAt,
+       recorded_by_user_id AS recordedByUserId,
+       recorded_by_username AS recordedByUsername,
+       recorded_by_name AS recordedByName,
+       recorded_by_role AS recordedByRole,
+       payer,
+       status,
+       payment_method AS paymentMethod,
+       fingerprint,
+       xendit_id AS xenditId
+     FROM payment_entries
+     WHERE branch_id = ?
+       AND account_number = ?
+       AND (id = ? OR LOWER(COALESCE(reference, '')) = LOWER(?))
+     ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, recorded_at DESC, id DESC
+     LIMIT 2`,
+    [branchId, String(accountNumber), requestedEntry.id, requestedEntry.reference, requestedEntry.id]
+  );
+  const matches = (rows || []).map(mapReceiptPaymentRow);
+  const exact = matches.find((entry) => collectorPaymentEntriesMatch(entry, requestedEntry, accountNumber));
+  if (exact) return exact;
+  if (matches.length) {
+    throw createError(409, `Reference already exists with different payment details: ${requestedEntry.reference}`);
+  }
+  return null;
 }
 
 function getRemittanceActor(req) {
@@ -1112,63 +1301,92 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
   const entryId = String(rawEntryId || '').trim();
   if (!entryId) throw createError(400, 'Payment entry ID is required.');
   const branchId = actor?.branchId || null;
+  const decisionReason = sanitizeCollectorPaymentDecisionReason(
+    req.body?.reason || req.body?.decisionReason || req.body?.note,
+    nextStatus === COLLECTOR_PAYMENT_REJECTED_STATUS
+  );
+  const review = buildCollectorPaymentReview(actor, nextStatus, decisionReason);
 
   if (await isRelationalReady()) {
     if (!branchId) {
       throw createError(400, 'Branch assignment missing for this admin account.');
     }
-    const [rows] = await query(
-      `SELECT
-         id,
-         account_number AS accountNumber,
-         amount,
-         date,
-         kind,
-         direction,
-         reference,
-         or_number AS orNumber,
-         description,
-         type,
-         recorded_at AS recordedAt,
-         recorded_by_user_id AS recordedByUserId,
-         recorded_by_username AS recordedByUsername,
-         recorded_by_name AS recordedByName,
-         recorded_by_role AS recordedByRole,
-         payer,
-         status,
-         payment_method AS paymentMethod,
-         fingerprint,
-         xendit_id AS xenditId
-       FROM payment_entries
-       WHERE branch_id = ?
-         AND id = ?
-       LIMIT 1`,
-      [branchId, entryId]
-    );
-    const row = (rows || [])[0] || null;
-    if (!row) throw createError(404, 'Pending collector payment was not found.');
-    const targetEntry = mapReceiptPaymentRow(row);
-    if (!isCollectorCreditApprovalEntry(targetEntry)) {
-      throw createError(409, 'Collector payment is not pending approval.');
-    }
+    await ensureCollectorPaymentReviewTable();
+    let targetEntry = null;
+    let targetAccountNumber = '';
+    await withTransaction(async (connection) => {
+      const [rows] = await connection.query(
+        `SELECT
+           id,
+           account_number AS accountNumber,
+           amount,
+           date,
+           kind,
+           direction,
+           reference,
+           or_number AS orNumber,
+           description,
+           type,
+           recorded_at AS recordedAt,
+           recorded_by_user_id AS recordedByUserId,
+           recorded_by_username AS recordedByUsername,
+           recorded_by_name AS recordedByName,
+           recorded_by_role AS recordedByRole,
+           payer,
+           status,
+           payment_method AS paymentMethod,
+           fingerprint,
+           xendit_id AS xenditId
+         FROM payment_entries
+         WHERE branch_id = ?
+           AND id = ?
+         LIMIT 1
+         FOR UPDATE`,
+        [branchId, entryId]
+      );
+      const row = (rows || [])[0] || null;
+      if (!row) throw createError(404, 'Pending collector payment was not found.');
+      targetEntry = mapReceiptPaymentRow(row);
+      targetAccountNumber = String(row.accountNumber || '').trim();
+      if (!isCollectorCreditApprovalEntry(targetEntry)) {
+        throw createError(409, 'Collector payment is not pending approval.');
+      }
 
-    const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(row.accountNumber, targetEntry);
-    const params = [nextStatus, branchId, entryId];
-    let pairedClause = '';
-    if (pairedFingerprint) {
-      pairedClause = ' OR (account_number = ? AND fingerprint = ? AND LOWER(COALESCE(status, \'\')) = ?)';
-      params.push(row.accountNumber, pairedFingerprint, COLLECTOR_PAYMENT_PENDING_STATUS);
-    }
-    await query(
-      `UPDATE payment_entries
-       SET status = ?
-       WHERE branch_id = ?
-         AND (id = ?${pairedClause})`,
-      params
-    );
+      const [updateResult] = await connection.query(
+        `UPDATE payment_entries
+         SET status = ?
+         WHERE branch_id = ?
+           AND id = ?
+           AND LOWER(COALESCE(status, '')) = ?`,
+        [nextStatus, branchId, entryId, COLLECTOR_PAYMENT_PENDING_STATUS]
+      );
+      if (Number(updateResult?.affectedRows || 0) !== 1) {
+        throw createError(409, 'Collector payment is not pending approval.');
+      }
+
+      const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccountNumber, targetEntry);
+      if (pairedFingerprint) {
+        await connection.query(
+          `UPDATE payment_entries
+           SET status = ?
+           WHERE branch_id = ?
+             AND account_number = ?
+             AND fingerprint = ?
+             AND LOWER(COALESCE(status, '')) = ?`,
+          [nextStatus, branchId, targetAccountNumber, pairedFingerprint, COLLECTOR_PAYMENT_PENDING_STATUS]
+        );
+      }
+      await writeRelationalCollectorPaymentReview(
+        connection,
+        review,
+        entryId,
+        branchId,
+        targetAccountNumber
+      );
+    });
     triggerBranchServiceRefresh(branchId, `collector-payment-${nextStatus}`);
     return {
-      record: mapCollectorPaymentApprovalItem({ ...targetEntry, status: nextStatus }, {}, row.accountNumber)
+      record: mapCollectorPaymentApprovalItem({ ...targetEntry, ...review }, {}, targetAccountNumber)
     };
   }
 
@@ -1204,12 +1422,12 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
     throw createError(409, 'Collector payment is not pending approval.');
   }
 
-  targetEntry.status = nextStatus;
+  Object.assign(targetEntry, review);
   const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccount, targetEntry);
   targetHistory.forEach((entry) => {
     if (entry === targetEntry) return;
     if (isPairedPrepaidChargeEntry(entry, targetEntry, pairedFingerprint)) {
-      entry.status = nextStatus;
+      Object.assign(entry, review, { reviewedBy: { ...review.reviewedBy } });
     }
   });
   await writeJson(STORE_KEYS.payments, payments);
@@ -1560,8 +1778,8 @@ router.post('/approvals/:entryId/reject', async (req, res, next) => {
 });
 
 // POST /api/collector/payments/:accountNumber
-// body for admin auth: { collectorId, amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod? }
-// body for collector token auth: { amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod? }
+// body for admin auth: { collectorId, amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod?, clientPaymentId? }
+// body for collector token auth: { amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod?, clientPaymentId? }
 router.post('/:accountNumber', async (req, res, next) => {
   try {
     const { accountNumber } = req.params;
@@ -1578,6 +1796,9 @@ router.post('/:accountNumber', async (req, res, next) => {
       paymentType = null,
       type = null,
       method = null,
+      clientPaymentId = null,
+      localId = null,
+      idempotencyKey = null,
     } = req.body || {};
 
     const authCollectorId = req.collector?.id ? String(req.collector.id) : '';
@@ -1616,6 +1837,14 @@ router.post('/:accountNumber', async (req, res, next) => {
         : '';
     } catch (paymentMethodError) {
       return next(paymentMethodError);
+    }
+    let normalizedClientPaymentId;
+    try {
+      normalizedClientPaymentId = sanitizeCollectorClientPaymentId(
+        clientPaymentId || localId || idempotencyKey
+      );
+    } catch (clientPaymentIdError) {
+      return next(clientPaymentIdError);
     }
 
     if (await isRelationalReady()) {
@@ -1679,9 +1908,8 @@ router.post('/:accountNumber', async (req, res, next) => {
         role: 'Collector',
       };
 
-      const entryStamp = Date.now();
       const newEntry = {
-        id: `pay-${accountNumber}-${entryStamp}`,
+        id: buildCollectorPaymentEntryId('pay', branchId, effectiveCollectorId, accountNumber, normalizedClientPaymentId),
         amount: numericAmount,
         date,
         kind,
@@ -1695,11 +1923,13 @@ router.post('/:accountNumber', async (req, res, next) => {
         status: COLLECTOR_PAYMENT_PENDING_STATUS,
         paymentMethod: normalizedPaymentMethod || undefined,
         typeOfPayment: normalizedTypeOfPayment,
+        clientPaymentId: normalizedClientPaymentId || undefined,
+        fingerprint: buildCollectorPaymentFingerprint(accountNumber, normalizedReference, kind, numericAmount),
       };
 
       const shouldAutoCharge = isPrepaid && kind === 'payment';
       const chargeEntry = shouldAutoCharge ? {
-        id: `charge-${accountNumber}-${entryStamp}`,
+        id: buildCollectorPaymentEntryId('charge', branchId, effectiveCollectorId, accountNumber, normalizedClientPaymentId),
         amount: numericAmount,
         date,
         kind: 'charge',
@@ -1713,28 +1943,61 @@ router.post('/:accountNumber', async (req, res, next) => {
         status: COLLECTOR_PAYMENT_PENDING_STATUS,
         paymentMethod: normalizedPaymentMethod || undefined,
         typeOfPayment: 'debit',
+        fingerprint: buildCollectorPaymentFingerprint(accountNumber, normalizedReference, 'charge', numericAmount),
       } : null;
 
-      const historyBeforeInsert = await readPaymentHistoryForReceipt(branchId, accountNumber);
-      const receiptHistory = [...historyBeforeInsert, newEntry, ...(chargeEntry ? [chargeEntry] : [])];
+      let storedPayment = null;
+      let replayed = false;
+      try {
+        await withTransaction(async (connection) => {
+          storedPayment = await findRelationalCollectorPaymentSubmission(
+            connection,
+            branchId,
+            accountNumber,
+            newEntry
+          );
+          if (storedPayment) {
+            replayed = true;
+            return;
+          }
+          await assignEntryNumbers(connection, newEntry);
+          await assertEntryNumbersAvailable(connection, branchId, newEntry);
+          await insertPaymentEntry(newEntry, branchId, accountNumber, connection);
+          if (chargeEntry) {
+            await assignEntryNumbers(connection, chargeEntry);
+            await assertEntryNumbersAvailable(connection, branchId, chargeEntry);
+            await insertPaymentEntry(chargeEntry, branchId, accountNumber, connection);
+          }
+          storedPayment = newEntry;
+        });
+      } catch (error) {
+        const status = Number(error?.status || error?.statusCode || 0);
+        if (status !== 409) throw error;
+        const duplicate = await findRelationalCollectorPaymentSubmission(
+          null,
+          branchId,
+          accountNumber,
+          newEntry
+        );
+        if (!duplicate) throw error;
+        storedPayment = duplicate;
+        replayed = true;
+      }
+      if (!replayed) triggerBranchServiceRefresh(branchId, 'collector-payments');
 
-      await withTransaction(async (connection) => {
-        await assignEntryNumbers(connection, newEntry);
-        await assertEntryNumbersAvailable(connection, branchId, newEntry);
-        await insertPaymentEntry(newEntry, branchId, accountNumber, connection);
-        if (chargeEntry) {
-          await assignEntryNumbers(connection, chargeEntry);
-          await assertEntryNumbersAvailable(connection, branchId, chargeEntry);
-          await insertPaymentEntry(chargeEntry, branchId, accountNumber, connection);
-        }
-      });
-      triggerBranchServiceRefresh(branchId, 'collector-payments');
-
-      const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(customer, receiptHistory, newEntry, branchId);
-      return res.status(201).json({
-        ...newEntry,
+      const receiptHistory = await readPaymentHistoryForReceipt(branchId, accountNumber);
+      const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
+        customer,
+        receiptHistory,
+        storedPayment,
+        branchId
+      );
+      return res.status(replayed ? 200 : 201).json({
+        ...storedPayment,
         ...receiptPayload,
-        id: newEntry.id,
+        id: storedPayment.id,
+        created: !replayed,
+        replayed,
       });
     }
 
@@ -1782,9 +2045,15 @@ router.post('/:accountNumber', async (req, res, next) => {
       role: 'Collector',
     };
 
-    const entryStamp = Date.now();
     const newEntry = {
-      id: `pay-${accountNumber}-${entryStamp}`,
+      id: buildCollectorPaymentEntryId(
+        'pay',
+        collectorAccount.branchId || customer?.branchId || '',
+        effectiveCollectorId,
+        accountNumber,
+        normalizedClientPaymentId
+      ),
+      accountNumber: String(accountNumber),
       amount: numericAmount,
       date,
       kind,
@@ -1798,28 +2067,59 @@ router.post('/:accountNumber', async (req, res, next) => {
       status: COLLECTOR_PAYMENT_PENDING_STATUS,
       paymentMethod: normalizedPaymentMethod || undefined,
       typeOfPayment: normalizedTypeOfPayment,
+      clientPaymentId: normalizedClientPaymentId || undefined,
+      fingerprint: buildCollectorPaymentFingerprint(accountNumber, normalizedReference, kind, numericAmount),
     };
-    const paymentFingerprint = `${accountNumber}|${normalizedReference}|${kind}|${Math.abs(numericAmount).toFixed(2)}`;
     const normalizedReferenceKey = String(normalizedReference || '').trim().toLowerCase();
-    const duplicateEntry = Object.values(payments || {}).some((bucket) => {
+    let duplicateEntry = null;
+    let duplicateAccountNumber = '';
+    let duplicateHistory = [];
+    Object.entries(payments || {}).some(([candidateAccountNumber, bucket]) => {
       const history = Array.isArray(bucket?.history) ? bucket.history : [];
-      return history.some((entry) => {
+      const match = history.find((entry) => {
         const entryReference = String(entry?.reference || entry?.orNumber || '').trim().toLowerCase();
-        const entryFingerprint = String(entry?.fingerprint || '').trim();
+        const entryFingerprint = String(entry?.fingerprint || '').trim().toLowerCase();
         return (
+          String(entry?.id || '').trim() === newEntry.id ||
           (normalizedReferenceKey && entryReference === normalizedReferenceKey) ||
-          (entryFingerprint && entryFingerprint === paymentFingerprint)
+          (entryFingerprint && entryFingerprint === newEntry.fingerprint)
         );
       });
+      if (!match) return false;
+      duplicateEntry = match;
+      duplicateAccountNumber = String(candidateAccountNumber);
+      duplicateHistory = history;
+      return true;
     });
     if (duplicateEntry) {
-      return next(createError(409, `Reference already exists: ${normalizedReference}`));
+      const existingWithAccount = { ...duplicateEntry, accountNumber: duplicateAccountNumber };
+      if (!collectorPaymentEntriesMatch(existingWithAccount, newEntry, accountNumber)) {
+        return next(createError(409, `Reference already exists with different payment details: ${normalizedReference}`));
+      }
+      const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
+        customer,
+        duplicateHistory,
+        duplicateEntry,
+        collectorAccount.branchId || customer?.branchId || null
+      );
+      return res.status(200).json({
+        ...duplicateEntry,
+        ...receiptPayload,
+        id: duplicateEntry.id,
+        created: false,
+        replayed: true,
+      });
     }
-    newEntry.fingerprint = paymentFingerprint;
 
     const shouldAutoCharge = isPrepaid && kind === 'payment';
     const chargeEntry = shouldAutoCharge ? {
-      id: `charge-${accountNumber}-${entryStamp}`,
+      id: buildCollectorPaymentEntryId(
+        'charge',
+        collectorAccount.branchId || customer?.branchId || '',
+        effectiveCollectorId,
+        accountNumber,
+        normalizedClientPaymentId
+      ),
       amount: numericAmount,
       date,
       kind: 'charge',
@@ -1833,7 +2133,7 @@ router.post('/:accountNumber', async (req, res, next) => {
       status: COLLECTOR_PAYMENT_PENDING_STATUS,
       paymentMethod: normalizedPaymentMethod || undefined,
       typeOfPayment: 'debit',
-      fingerprint: `${accountNumber}|${normalizedReference}|charge|${Math.abs(numericAmount).toFixed(2)}`,
+      fingerprint: buildCollectorPaymentFingerprint(accountNumber, normalizedReference, 'charge', numericAmount),
     } : null;
 
     payments[accountNumber].history = payments[accountNumber].history || [];
@@ -1844,6 +2144,7 @@ router.post('/:accountNumber', async (req, res, next) => {
     }
 
     await writeJson(STORE_KEYS.payments, payments);
+    triggerBranchServiceRefresh(collectorAccount.branchId || customer?.branchId || null, 'collector-payments');
     const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
       customer,
       payments[accountNumber].history,
@@ -1854,6 +2155,8 @@ router.post('/:accountNumber', async (req, res, next) => {
       ...newEntry,
       ...receiptPayload,
       id: newEntry.id,
+      created: true,
+      replayed: false,
     });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to record payment'));

@@ -105,6 +105,7 @@
 }
 
 .finance-status.is-posted,
+.finance-status.is-approved,
 .finance-status.is-paid {
     background: rgba(34, 197, 94, 0.12);
     color: #15803d;
@@ -120,6 +121,26 @@
 .finance-status.is-processed {
     background: rgba(37, 99, 235, 0.14);
     color: #1d4ed8;
+}
+
+.finance-status.is-rejected {
+    background: rgba(220, 38, 38, 0.12);
+    color: #b91c1c;
+}
+
+.finance-cell-stack {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.finance-cell-subtitle {
+    max-width: 260px;
+    color: #64748b;
+    font-size: 0.76rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
 }
 
 .finance-actions {
@@ -982,6 +1003,10 @@ body.theme-dark .finance-modal__footer {
 
 body.theme-dark .finance-modal__title {
     color: #e2e8f0;
+}
+
+body.theme-dark .finance-cell-subtitle {
+    color: #94a3b8;
 }
 
 body.theme-dark .finance-form-grid label {

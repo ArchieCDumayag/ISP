@@ -11,6 +11,7 @@ const router = express.Router();
 const STORE_KEY = 'collector_followups';
 const ACTIVE_STATUS = 'Rescheduled';
 const HISTORY_STATUS = 'Schedule History';
+const PARTIAL_PAYMENT_FOLLOW_UP_TYPE = 'partial_payment';
 const MAX_RECORDS = 10000;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 let mutationQueue = Promise.resolve();
@@ -22,6 +23,42 @@ const cleanText = (value, maxLength = 0) => {
 
 const normalizeBranchId = (value) => cleanText(value, 80);
 const normalizeAccountNumber = (value) => cleanText(value, 120);
+
+function normalizeMoney(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
+}
+
+function normalizeFollowUpType(body = {}) {
+  const explicit = cleanText(body.followUpType || body.scheduleType || body.source, 80).toLowerCase();
+  if (['partial_payment', 'partial-payment', 'partial payment'].includes(explicit)) {
+    return PARTIAL_PAYMENT_FOLLOW_UP_TYPE;
+  }
+  const result = cleanText(body.result, 160).toLowerCase();
+  const hasPaymentLink = cleanText(body.paymentEntryId || body.paymentReference, 180);
+  return result === 'partial payment' && hasPaymentLink
+    ? PARTIAL_PAYMENT_FOLLOW_UP_TYPE
+    : 'collection_follow_up';
+}
+
+function isPartialPaymentFollowUp(record = {}) {
+  return normalizeFollowUpType(record) === PARTIAL_PAYMENT_FOLLOW_UP_TYPE;
+}
+
+function appendRecordAudit(record, action, actor = {}, changes = {}) {
+  const history = Array.isArray(record.auditHistory) ? record.auditHistory : [];
+  history.push({
+    action: cleanText(action, 80),
+    at: new Date().toISOString(),
+    actorId: cleanText(actor.id, 120),
+    actorName: cleanText(actor.name || actor.username, 200),
+    actorUsername: cleanText(actor.username, 160),
+    actorRole: actor.isCollector ? 'Collector' : 'Admin',
+    changes
+  });
+  record.auditHistory = history.slice(-100);
+}
 
 function normalizeDate(value) {
   const normalized = cleanText(value, 10);
@@ -251,6 +288,127 @@ async function loadAdminScheduleTarget(req, accountNumber, requestedCollectorId)
   return { customer, branchId, actor: collector, admin };
 }
 
+function validatePartialPaymentEntry(entry = {}, accountNumber, collector) {
+  const direction = cleanText(entry.direction).toLowerCase();
+  const kind = cleanText(entry.kind || entry.type).toLowerCase();
+  const recordedBy = entry.recordedBy || {};
+  const recordedById = cleanText(recordedBy.id || entry.recordedByUserId, 120);
+  const recordedByRole = cleanText(recordedBy.role || entry.recordedByRole, 40).toLowerCase();
+  const status = cleanText(entry.status, 40).toLowerCase();
+  const amountPaid = normalizeMoney(entry.amount);
+  if (normalizeAccountNumber(entry.accountNumber || accountNumber) !== accountNumber) {
+    throw createError(409, 'The linked payment belongs to a different customer.');
+  }
+  if (direction && direction !== 'credit') {
+    throw createError(409, 'The linked entry is not a collector payment.');
+  }
+  if (['charge', 'debit', 'bill'].includes(kind)) {
+    throw createError(409, 'The linked entry is not a collector payment.');
+  }
+  if (recordedByRole && recordedByRole !== 'collector') {
+    throw createError(409, 'The linked payment was not submitted by a collector.');
+  }
+  if (recordedById && recordedById !== collector.id) {
+    throw createError(403, 'The linked payment was submitted by a different collector.');
+  }
+  if (['rejected', 'void', 'voided', 'cancelled', 'canceled'].includes(status)) {
+    throw createError(409, 'A rejected or void payment cannot create a collection follow-up.');
+  }
+  if (!amountPaid || amountPaid <= 0) {
+    throw createError(409, 'The linked payment amount is invalid.');
+  }
+  return amountPaid;
+}
+
+async function resolvePartialPaymentLink(req, accountNumber, branchId, collector) {
+  const body = req.body || {};
+  if (normalizeFollowUpType(body) !== PARTIAL_PAYMENT_FOLLOW_UP_TYPE) return null;
+  if (!collector?.isCollector) {
+    throw createError(403, 'Partial-payment follow-ups must originate from the Collector app.');
+  }
+  const requestedPaymentEntryId = cleanText(body.paymentEntryId, 180);
+  const requestedReference = cleanText(body.paymentReference || body.reference, 80);
+  const remainingBalance = normalizeMoney(body.remainingBalance);
+  const requestedAmountPaid = normalizeMoney(body.amountPaid);
+  if (!requestedPaymentEntryId && !requestedReference) {
+    throw createError(400, 'paymentEntryId or paymentReference is required for a partial-payment follow-up.');
+  }
+  if (!remainingBalance || remainingBalance <= 0) {
+    throw createError(400, 'remainingBalance must be greater than zero for a partial-payment follow-up.');
+  }
+
+  let paymentEntry = null;
+  if (await isRelationalReady()) {
+    if (!branchId) throw createError(400, 'Branch assignment missing for the linked payment.');
+    const identityClauses = [];
+    const params = [branchId, accountNumber];
+    if (requestedPaymentEntryId) {
+      identityClauses.push('id = ?');
+      params.push(requestedPaymentEntryId);
+    }
+    if (requestedReference) {
+      identityClauses.push('LOWER(COALESCE(reference, \'\')) = LOWER(?)');
+      params.push(requestedReference);
+    }
+    const [rows] = await query(
+      `SELECT
+         id,
+         account_number AS accountNumber,
+         amount,
+         date,
+         kind,
+         direction,
+         reference,
+         or_number AS orNumber,
+         recorded_at AS recordedAt,
+         recorded_by_user_id AS recordedByUserId,
+         recorded_by_username AS recordedByUsername,
+         recorded_by_name AS recordedByName,
+         recorded_by_role AS recordedByRole,
+         status,
+         payment_method AS paymentMethod
+       FROM payment_entries
+       WHERE branch_id = ?
+         AND account_number = ?
+         AND (${identityClauses.join(' OR ')})
+       ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, recorded_at DESC, id DESC
+       LIMIT 1`,
+      [...params, requestedPaymentEntryId || '']
+    );
+    paymentEntry = Array.isArray(rows) && rows.length ? rows[0] : null;
+  } else {
+    const payments = await readJson('payments', {});
+    const history = Array.isArray(payments?.[accountNumber]?.history)
+      ? payments[accountNumber].history
+      : [];
+    paymentEntry = history.find((entry) => {
+      const entryId = cleanText(entry?.id, 180);
+      const reference = cleanText(entry?.reference || entry?.orNumber, 80).toLowerCase();
+      return (requestedPaymentEntryId && entryId === requestedPaymentEntryId)
+        || (requestedReference && reference === requestedReference.toLowerCase());
+    }) || null;
+  }
+  if (!paymentEntry) {
+    throw createError(409, 'The linked collector payment has not synchronized to the server yet. Sync payments first, then retry follow-ups.');
+  }
+
+  const amountPaid = validatePartialPaymentEntry(
+    { ...paymentEntry, accountNumber: paymentEntry.accountNumber || accountNumber },
+    accountNumber,
+    collector
+  );
+  if (requestedAmountPaid !== null && Math.abs(requestedAmountPaid - amountPaid) > 0.009) {
+    throw createError(409, 'The follow-up amount does not match the linked collector payment.');
+  }
+  return {
+    paymentEntryId: cleanText(paymentEntry.id, 180),
+    paymentReference: cleanText(paymentEntry.reference || paymentEntry.orNumber || requestedReference, 80),
+    paymentStatusAtScheduling: cleanText(paymentEntry.status || 'pending_approval', 40),
+    amountPaid,
+    remainingBalance
+  };
+}
+
 function mutateRecords(mutator) {
   const operation = mutationQueue
     .catch(() => {})
@@ -269,24 +427,30 @@ function mutateRecords(mutator) {
   return operation;
 }
 
-function buildRecord(req, customer, branchId, collector, creator = collector) {
+function buildRecord(req, customer, branchId, collector, creator = collector, paymentLink = null) {
   const body = req.body || {};
   const accountNumber = normalizeAccountNumber(body.accountNumber);
   const rescheduledDate = normalizeDate(body.rescheduledDate);
-  const result = cleanText(body.result, 160);
-  const notes = cleanText(body.notes, 1200);
+  const followUpType = paymentLink
+    ? PARTIAL_PAYMENT_FOLLOW_UP_TYPE
+    : (creator.isCollector ? normalizeFollowUpType(body) : 'collection_follow_up');
+  const partialPayment = followUpType === PARTIAL_PAYMENT_FOLLOW_UP_TYPE;
+  const collectorNote = cleanText(body.collectorNote || body.followUpNote || (partialPayment ? body.notes : ''), 1200);
+  const result = partialPayment ? 'Partial payment' : cleanText(body.result, 160);
+  const notes = partialPayment ? collectorNote : cleanText(body.notes, 1200);
   const preferredTime = cleanText(body.preferredTime, 80);
   const clientRecordId = cleanText(body.clientRecordId || body.id, 160);
   if (!accountNumber) throw createError(400, 'accountNumber is required.');
   if (!rescheduledDate) throw createError(400, 'A valid rescheduledDate in yyyy-MM-dd format is required.');
   if (!result) throw createError(400, 'Visit result is required.');
-  if (!notes) throw createError(400, 'Reason or notes are required.');
+  if (partialPayment && !preferredTime) throw createError(400, 'Preferred time is required for a partial-payment follow-up.');
+  if (!partialPayment && !notes) throw createError(400, 'Reason or notes are required.');
 
   const now = new Date().toISOString();
-  const source = creator.isCollector ? 'collector' : 'admin';
-  return {
+  const createdVia = creator.isCollector ? 'collector' : 'admin';
+  const record = {
     id: `followup-${crypto.randomUUID()}`,
-    clientRecordId: clientRecordId || `${source}-${crypto.randomUUID()}`,
+    clientRecordId: clientRecordId || `${createdVia}-${crypto.randomUUID()}`,
     branchId: normalizeBranchId(branchId),
     accountNumber,
     customerName: customerName(customer, accountNumber),
@@ -298,7 +462,15 @@ function buildRecord(req, customer, branchId, collector, creator = collector) {
     rescheduledDate,
     preferredTime,
     notes,
-    source,
+    collectorNote: partialPayment ? collectorNote : '',
+    followUpType,
+    source: partialPayment ? PARTIAL_PAYMENT_FOLLOW_UP_TYPE : createdVia,
+    createdVia,
+    paymentEntryId: paymentLink?.paymentEntryId || '',
+    paymentReference: paymentLink?.paymentReference || '',
+    paymentStatusAtScheduling: paymentLink?.paymentStatusAtScheduling || '',
+    amountPaid: paymentLink?.amountPaid ?? null,
+    remainingBalance: paymentLink?.remainingBalance ?? null,
     createdById: creator.id,
     createdByName: creator.name,
     createdByUsername: creator.username,
@@ -309,8 +481,16 @@ function buildRecord(req, customer, branchId, collector, creator = collector) {
     syncedAt: now,
     updatedAt: now,
     archivedAt: null,
-    archivedBy: null
+    archivedBy: null,
+    auditHistory: []
   };
+  appendRecordAudit(record, 'created', creator, {
+    rescheduledDate,
+    preferredTime,
+    collectorNote: partialPayment ? collectorNote : undefined,
+    paymentEntryId: paymentLink?.paymentEntryId || undefined
+  });
+  return record;
 }
 
 // GET /api/collector/payments/reschedules
@@ -375,7 +555,10 @@ router.post('/', async (req, res, next) => {
       : await loadAdminScheduleTarget(req, accountNumber, req.body?.collectorId);
     const { customer, branchId, actor: collector } = target;
     const creator = requestActor.isCollector ? collector : target.admin;
-    const incoming = buildRecord(req, customer, branchId, collector, creator);
+    const paymentLink = requestActor.isCollector
+      ? await resolvePartialPaymentLink(req, accountNumber, branchId, collector)
+      : null;
+    const incoming = buildRecord(req, customer, branchId, collector, creator, paymentLink);
     const saved = await mutateRecords(async (records) => {
       const duplicate = creator.isCollector
         ? records.find((record) => (
@@ -396,6 +579,10 @@ router.post('/', async (req, res, next) => {
         record.archivedAt = archivedAt;
         record.archivedBy = creator.name;
         record.updatedAt = archivedAt;
+        appendRecordAudit(record, 'archived', creator, {
+          historyType: record.historyType,
+          replacementId: incoming.id
+        });
       });
       records.unshift(incoming);
       return { record: incoming, created: true };
@@ -428,23 +615,53 @@ async function updateAdminSchedule(req, res, next) {
         throw createError(400, 'Collector cannot be changed after a schedule is created.');
       }
 
+      const partialPayment = isPartialPaymentFollowUp(record);
       const rescheduledDate = normalizeDate(req.body?.rescheduledDate ?? record.rescheduledDate);
-      const result = cleanText(req.body?.result ?? record.result, 160);
-      const notes = cleanText(req.body?.notes ?? record.notes, 1200);
+      const result = partialPayment
+        ? 'Partial payment'
+        : cleanText(req.body?.result ?? record.result, 160);
+      const collectorNote = partialPayment
+        ? cleanText(
+          req.body?.collectorNote
+            ?? req.body?.followUpNote
+            ?? req.body?.notes
+            ?? record.collectorNote
+            ?? record.notes,
+          1200
+        )
+        : '';
+      const notes = partialPayment
+        ? collectorNote
+        : cleanText(req.body?.notes ?? record.notes, 1200);
       const preferredTime = cleanText(req.body?.preferredTime ?? record.preferredTime, 80);
       if (!rescheduledDate) throw createError(400, 'A valid rescheduledDate in yyyy-MM-dd format is required.');
       if (!result) throw createError(400, 'Follow-up reason is required.');
-      if (!notes) throw createError(400, 'Reason or notes are required.');
+      if (partialPayment && !preferredTime) throw createError(400, 'Preferred time is required for a partial-payment follow-up.');
+      if (!partialPayment && !notes) throw createError(400, 'Reason or notes are required.');
 
       const updatedAt = new Date().toISOString();
+      const changes = {};
+      if (record.rescheduledDate !== rescheduledDate) {
+        changes.rescheduledDate = { from: record.rescheduledDate || '', to: rescheduledDate };
+      }
+      if (record.preferredTime !== preferredTime) {
+        changes.preferredTime = { from: record.preferredTime || '', to: preferredTime };
+      }
+      if (record.result !== result) changes.result = { from: record.result || '', to: result };
+      if (record.notes !== notes) {
+        changes[partialPayment ? 'collectorNote' : 'notes'] = { from: record.notes || '', to: notes };
+      }
       record.rescheduledDate = rescheduledDate;
       record.preferredTime = preferredTime;
       record.result = result;
       record.notes = notes;
+      if (partialPayment) record.collectorNote = collectorNote;
       record.updatedAt = updatedAt;
       record.updatedById = admin.id;
       record.updatedByName = admin.name;
       record.updatedByUsername = admin.username;
+      record.updatedByRole = 'Admin';
+      appendRecordAudit(record, 'updated', admin, changes);
       return record;
     });
     res.json({ ok: true, record: updated });
@@ -483,6 +700,7 @@ router.delete('/:id', async (req, res, next) => {
       record.deletedByName = admin.name;
       record.deletedByUsername = admin.username;
       record.updatedAt = deletedAt;
+      appendRecordAudit(record, 'deleted', admin, { historyType: 'Deleted' });
       return { record, changed: true };
     });
     res.json({ ok: true, deleted: true, ...deleted });
@@ -511,6 +729,7 @@ router.post('/resolve/:accountNumber', async (req, res, next) => {
         record.archivedAt = archivedAt;
         record.archivedBy = actor.name;
         record.updatedAt = archivedAt;
+        appendRecordAudit(record, 'completed', actor, { historyType: 'Paid' });
         count += 1;
       });
       return count;
@@ -525,6 +744,8 @@ module.exports = router;
 module.exports._test = {
   ACTIVE_STATUS,
   HISTORY_STATUS,
+  PARTIAL_PAYMENT_FOLLOW_UP_TYPE,
   isActiveRecord,
+  isPartialPaymentFollowUp,
   normalizeDate
 };

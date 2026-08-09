@@ -6,13 +6,52 @@
   const collectorApprovalCount = document.getElementById('collectorApprovalCount');
   const collectorApprovalTotal = document.getElementById('collectorApprovalTotal');
   const collectorApprovalsEmptyState = document.getElementById('collectorApprovalsEmptyState');
+  const collectorApprovalRefresh = document.getElementById('collectorApprovalRefresh');
+  const collectorApprovalFiltersToggle = document.getElementById('collectorApprovalFiltersToggle');
+  const collectorApprovalFiltersPanel = document.getElementById('collectorApprovalFiltersPanel');
+  const collectorApprovalSearch = document.getElementById('collectorApprovalSearch');
+  const collectorApprovalCollectorFilter = document.getElementById('collectorApprovalCollectorFilter');
+  const collectorApprovalDateFilter = document.getElementById('collectorApprovalDateFilter');
+  const collectorApprovalClearFilters = document.getElementById('collectorApprovalClearFilters');
+  const collectorApprovalSummaryAmount = document.getElementById('collectorApprovalSummaryAmount');
+  const collectorApprovalSummaryPayments = document.getElementById('collectorApprovalSummaryPayments');
+  const collectorApprovalSummaryCollectors = document.getElementById('collectorApprovalSummaryCollectors');
+  const collectorApprovalSummaryOldest = document.getElementById('collectorApprovalSummaryOldest');
+  const collectorApprovalSelection = document.getElementById('collectorApprovalSelection');
+  const collectorApprovalSelectionCount = document.getElementById('collectorApprovalSelectionCount');
+  const collectorApprovalApproveSelected = document.getElementById('collectorApprovalApproveSelected');
+  const collectorApprovalPagination = document.getElementById('collectorApprovalPagination');
+  const collectorApprovalPageSummary = document.getElementById('collectorApprovalPageSummary');
+  const collectorApprovalPageIndicator = document.getElementById('collectorApprovalPageIndicator');
+  const collectorApprovalPreviousPage = document.getElementById('collectorApprovalPreviousPage');
+  const collectorApprovalNextPage = document.getElementById('collectorApprovalNextPage');
+  const collectorPaymentRejectModal = document.getElementById('collectorPaymentRejectModal');
+  const collectorPaymentRejectForm = document.getElementById('collectorPaymentRejectForm');
+  const collectorPaymentRejectEntryId = document.getElementById('collectorPaymentRejectEntryId');
+  const collectorPaymentRejectSummary = document.getElementById('collectorPaymentRejectSummary');
+  const collectorPaymentRejectReason = document.getElementById('collectorPaymentRejectReason');
+  const collectorPaymentRejectMessage = document.getElementById('collectorPaymentRejectMessage');
+  const collectorPaymentRejectSubmit = document.getElementById('collectorPaymentRejectSubmit');
+  const closeCollectorPaymentRejectModal = document.getElementById('closeCollectorPaymentRejectModal');
+  const cancelCollectorPaymentRejectModal = document.getElementById('cancelCollectorPaymentRejectModal');
   const collectorRescheduleList = document.getElementById('collectorRescheduleList');
   const collectorRescheduleCount = document.getElementById('collectorRescheduleCount');
   const collectorReschedulesEmptyState = document.getElementById('collectorReschedulesEmptyState');
+  const collectorRescheduleSearch = document.getElementById('collectorRescheduleSearch');
   const collectorRescheduleCollectorFilter = document.getElementById('collectorRescheduleCollectorFilter');
   const collectorRescheduleStatusFilter = document.getElementById('collectorRescheduleStatusFilter');
+  const collectorRescheduleDateFilter = document.getElementById('collectorRescheduleDateFilter');
+  const collectorRescheduleClearFilters = document.getElementById('collectorRescheduleClearFilters');
   const collectorRescheduleRefresh = document.getElementById('collectorRescheduleRefresh');
   const collectorRescheduleCreate = document.getElementById('collectorRescheduleCreate');
+  const collectorRescheduleOverdueCount = document.getElementById('collectorRescheduleOverdueCount');
+  const collectorRescheduleTodayCount = document.getElementById('collectorRescheduleTodayCount');
+  const collectorRescheduleUpcomingCount = document.getElementById('collectorRescheduleUpcomingCount');
+  const collectorReschedulePagination = document.getElementById('collectorReschedulePagination');
+  const collectorReschedulePageSummary = document.getElementById('collectorReschedulePageSummary');
+  const collectorReschedulePageIndicator = document.getElementById('collectorReschedulePageIndicator');
+  const collectorReschedulePreviousPage = document.getElementById('collectorReschedulePreviousPage');
+  const collectorRescheduleNextPage = document.getElementById('collectorRescheduleNextPage');
   const collectorScheduleModal = document.getElementById('collectorScheduleModal');
   const collectorScheduleForm = document.getElementById('collectorScheduleForm');
   const collectorScheduleModalTitle = document.getElementById('collectorScheduleModalTitle');
@@ -23,21 +62,33 @@
   const collectorScheduleDate = document.getElementById('collectorScheduleDate');
   const collectorScheduleTime = document.getElementById('collectorScheduleTime');
   const collectorScheduleResult = document.getElementById('collectorScheduleResult');
+  const collectorScheduleResultLabel = document.getElementById('collectorScheduleResultLabel');
   const collectorScheduleNotes = document.getElementById('collectorScheduleNotes');
+  const collectorScheduleNotesLabel = document.getElementById('collectorScheduleNotesLabel');
+  const collectorScheduleNotesHint = document.getElementById('collectorScheduleNotesHint');
+  const collectorSchedulePaymentDetails = document.getElementById('collectorSchedulePaymentDetails');
+  const collectorSchedulePaymentReference = document.getElementById('collectorSchedulePaymentReference');
+  const collectorScheduleAmountPaid = document.getElementById('collectorScheduleAmountPaid');
+  const collectorScheduleRemainingBalance = document.getElementById('collectorScheduleRemainingBalance');
+  const collectorSchedulePaymentStatus = document.getElementById('collectorSchedulePaymentStatus');
+  const collectorScheduleAuditSummary = document.getElementById('collectorScheduleAuditSummary');
   const collectorScheduleMessage = document.getElementById('collectorScheduleMessage');
   const collectorScheduleSave = document.getElementById('collectorScheduleSave');
+  const collectorScheduleCancelLabel = document.getElementById('collectorScheduleCancelLabel');
   const closeCollectorScheduleModal = document.getElementById('closeCollectorScheduleModal');
   const cancelCollectorScheduleModal = document.getElementById('cancelCollectorScheduleModal');
   const assignmentList = document.getElementById('assignmentList');
   const assignmentCount = document.getElementById('assignmentCount');
+  const assignmentSearchWrap = document.getElementById('assignmentSearchWrap');
+  const assignmentSearch = document.getElementById('assignmentSearch');
+  const assignmentSearchClear = document.getElementById('assignmentSearchClear');
   const monthlySummary = document.getElementById('monthlySummary');
   const assignmentsEmptyState = document.getElementById('assignmentsEmptyState');
-  const assignmentsFooter = document.getElementById('assignmentsFooter');
-  const assignmentsSummary = document.getElementById('assignmentsSummary');
   const collectorStatsCollectors = document.getElementById('collectorStatsCollectors');
   const collectorStatsAreas = document.getElementById('collectorStatsAreas');
   const collectorStatsCollected = document.getElementById('collectorStatsCollected');
-  const assignmentsFooterCollected = document.getElementById('assignmentsFooterCollected');
+  const collectorStatsPending = document.getElementById('collectorStatsPending');
+  const collectorStatsReschedules = document.getElementById('collectorStatsReschedules');
   const assignmentModal = document.getElementById('assignmentModal');
   const assignmentForm = document.getElementById('assignmentForm');
   const modalCollectorSelect = document.getElementById('modalCollectorSelect');
@@ -76,7 +127,15 @@
   let areaTotalsCache = {};
   let areaUnpaidCache = {};
   let collectorApprovalRecords = [];
+  let collectorPaymentRejectTrigger = null;
+  const collectorApprovalSelectedIds = new Set();
+  const collectorApprovalCollapsedGroups = new Set();
+  let collectorApprovalPage = 1;
+  const collectorApprovalPageSize = 5;
   let collectorRescheduleRecords = [];
+  let collectorReschedulePage = 1;
+  const collectorReschedulePageSize = 10;
+  let collectorScheduleViewMode = false;
   let areaStatsPromise = null;
   let collectorAreaReportCache = {};
   let areaReportCache = {};
@@ -135,7 +194,6 @@
     if (collectorStatsCollectors) collectorStatsCollectors.textContent = String(safeCollectorCount);
     if (collectorStatsAreas) collectorStatsAreas.textContent = String(safeAssignedAreaTotal);
     if (collectorStatsCollected) collectorStatsCollected.textContent = `PHP ${fmtMoney(safeCollectedTotal)}`;
-    if (assignmentsFooterCollected) assignmentsFooterCollected.textContent = `PHP ${fmtMoney(safeCollectedTotal)}`;
   }
 
   function normalizeAreaKey(area) {
@@ -442,8 +500,11 @@
   }
 
   function setApprovalCount(count) {
-    if (!collectorApprovalCount) return;
-    collectorApprovalCount.textContent = count === 1 ? '1 pending' : `${count} pending`;
+    const safeCount = Math.max(Number(count) || 0, 0);
+    if (collectorApprovalCount) {
+      collectorApprovalCount.textContent = safeCount === 1 ? '1 pending' : `${safeCount} pending`;
+    }
+    if (collectorStatsPending) collectorStatsPending.textContent = String(safeCount);
   }
 
   function updateCollectorApprovalBatchState(records = []) {
@@ -466,6 +527,66 @@
     return String(record?.collectorName || record?.collectorUsername || 'Collector').trim() || 'Collector';
   }
 
+  function getCollectorApprovalTime(record = {}) {
+    const time = new Date(record?.recordedAt || record?.date || '').getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function collectorApprovalDateKey(value) {
+    const raw = String(value || '').trim();
+    const directMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (directMatch) return directMatch[1];
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function getCollectorApprovalAge(record = {}) {
+    const time = getCollectorApprovalTime(record);
+    if (!time) return { days: null, isOld: false, label: '—' };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const recorded = new Date(time);
+    recorded.setHours(0, 0, 0, 0);
+    const days = Math.max(0, Math.floor((today.getTime() - recorded.getTime()) / 86400000));
+    return {
+      days,
+      isOld: days >= 2,
+      label: days === 0 ? 'Today' : (days === 1 ? '1 day' : `${days} days`),
+    };
+  }
+
+  function populateCollectorApprovalFilter(records = []) {
+    if (!collectorApprovalCollectorFilter) return;
+    const previous = collectorApprovalCollectorFilter.value;
+    const options = new Map();
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      options.set(getCollectorApprovalGroupKey(record), getCollectorApprovalGroupName(record));
+    });
+    collectorApprovalCollectorFilter.innerHTML = '<option value="">All collectors</option>';
+    [...options.entries()]
+      .sort((left, right) => left[1].localeCompare(right[1], undefined, { sensitivity: 'base', numeric: true }))
+      .forEach(([key, name]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = name;
+        collectorApprovalCollectorFilter.appendChild(option);
+      });
+    collectorApprovalCollectorFilter.value = options.has(previous) ? previous : '';
+  }
+
+  function updateCollectorApprovalSelectionState() {
+    const count = collectorApprovalSelectedIds.size;
+    if (collectorApprovalSelection) collectorApprovalSelection.hidden = count === 0;
+    if (collectorApprovalSelectionCount) {
+      collectorApprovalSelectionCount.textContent = count === 1 ? '1 selected' : `${count} selected`;
+    }
+    if (collectorApprovalApproveSelected) collectorApprovalApproveSelected.disabled = count === 0;
+  }
+
   function buildCollectorApprovalGroups(records = []) {
     const byKey = new Map();
     (Array.isArray(records) ? records : []).forEach((record) => {
@@ -475,16 +596,16 @@
         name: getCollectorApprovalGroupName(record),
         records: [],
         total: 0,
-        latestTime: 0,
+        oldestTime: Number.POSITIVE_INFINITY,
       };
-      const time = new Date(record?.recordedAt || record?.date || '').getTime();
+      const time = getCollectorApprovalTime(record);
       existing.records.push(record);
       existing.total += Math.abs(Number(record?.amount) || 0);
-      if (Number.isFinite(time)) existing.latestTime = Math.max(existing.latestTime, time);
+      if (time) existing.oldestTime = Math.min(existing.oldestTime, time);
       byKey.set(key, existing);
     });
     return [...byKey.values()].sort((left, right) => {
-      if (right.latestTime !== left.latestTime) return right.latestTime - left.latestTime;
+      if (left.oldestTime !== right.oldestTime) return left.oldestTime - right.oldestTime;
       return left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true });
     });
   }
@@ -517,83 +638,170 @@
     const rows = Array.isArray(records) ? records : [];
     collectorApprovalRecords = rows;
     updateCollectorApprovalBatchState(rows);
+    const validIds = new Set(rows.map((record) => String(record?.id || '').trim()).filter(Boolean));
+    [...collectorApprovalSelectedIds].forEach((id) => {
+      if (!validIds.has(id)) collectorApprovalSelectedIds.delete(id);
+    });
+    updateCollectorApprovalSelectionState();
+    populateCollectorApprovalFilter(rows);
     if (!collectorApprovalList) return;
     collectorApprovalList.innerHTML = '';
     if (!rows.length) {
-      if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'flex';
+      if (collectorApprovalSummaryAmount) collectorApprovalSummaryAmount.textContent = 'PHP 0.00';
+      if (collectorApprovalSummaryPayments) collectorApprovalSummaryPayments.textContent = '0';
+      if (collectorApprovalSummaryCollectors) collectorApprovalSummaryCollectors.textContent = '0';
+      if (collectorApprovalSummaryOldest) collectorApprovalSummaryOldest.textContent = '—';
+      if (collectorApprovalsEmptyState) {
+        collectorApprovalsEmptyState.style.display = 'flex';
+        const emptyCopy = collectorApprovalsEmptyState.querySelector('p');
+        if (emptyCopy) emptyCopy.textContent = 'No pending collector payments.';
+      }
+      if (collectorApprovalPagination) collectorApprovalPagination.hidden = true;
+      return;
+    }
+
+    const searchQuery = String(collectorApprovalSearch?.value || '').trim().toLowerCase();
+    const collectorKey = String(collectorApprovalCollectorFilter?.value || '').trim();
+    const dateKey = String(collectorApprovalDateFilter?.value || '').trim();
+    const filteredRows = rows
+      .filter((record) => {
+        if (collectorKey && getCollectorApprovalGroupKey(record) !== collectorKey) return false;
+        if (dateKey && collectorApprovalDateKey(record?.recordedAt || record?.date) !== dateKey) return false;
+        if (!searchQuery) return true;
+        return [
+          record?.customerName,
+          record?.accountNumber,
+          record?.reference,
+          record?.area,
+          record?.paymentMethod,
+          getCollectorApprovalGroupName(record),
+        ].some((value) => String(value || '').toLowerCase().includes(searchQuery));
+      })
+      .sort((left, right) => {
+        const leftTime = getCollectorApprovalTime(left) || Number.POSITIVE_INFINITY;
+        const rightTime = getCollectorApprovalTime(right) || Number.POSITIVE_INFINITY;
+        return leftTime - rightTime;
+      });
+
+    const filteredTotal = filteredRows.reduce((sum, record) => sum + Math.abs(Number(record?.amount) || 0), 0);
+    const filteredCollectors = new Set(filteredRows.map(getCollectorApprovalGroupKey));
+    const oldestRecord = filteredRows.find((record) => getCollectorApprovalTime(record));
+    if (collectorApprovalSummaryAmount) collectorApprovalSummaryAmount.textContent = `PHP ${fmtMoney(filteredTotal)}`;
+    if (collectorApprovalSummaryPayments) collectorApprovalSummaryPayments.textContent = String(filteredRows.length);
+    if (collectorApprovalSummaryCollectors) collectorApprovalSummaryCollectors.textContent = String(filteredCollectors.size);
+    if (collectorApprovalSummaryOldest) collectorApprovalSummaryOldest.textContent = oldestRecord ? getCollectorApprovalAge(oldestRecord).label : '—';
+
+    if (!filteredRows.length) {
+      if (collectorApprovalsEmptyState) {
+        collectorApprovalsEmptyState.style.display = 'flex';
+        const emptyCopy = collectorApprovalsEmptyState.querySelector('p');
+        if (emptyCopy) emptyCopy.textContent = 'No pending payments match these filters.';
+      }
+      if (collectorApprovalPagination) collectorApprovalPagination.hidden = true;
       return;
     }
     if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'none';
-    buildCollectorApprovalGroups(rows).forEach((group) => {
-      const groupRow = document.createElement('tr');
-      groupRow.className = 'collector-approval-group-row';
-      groupRow.innerHTML = `
-        <td colspan="5">
-          <div class="collector-approval-group">
-            <div class="collector-approval-group__copy">
+
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / collectorApprovalPageSize));
+    collectorApprovalPage = Math.min(Math.max(1, collectorApprovalPage), totalPages);
+    const startIndex = (collectorApprovalPage - 1) * collectorApprovalPageSize;
+    const pageRows = filteredRows.slice(startIndex, startIndex + collectorApprovalPageSize);
+    if (collectorApprovalPagination) collectorApprovalPagination.hidden = false;
+    if (collectorApprovalPageSummary) {
+      collectorApprovalPageSummary.textContent = `Showing ${startIndex + 1}-${startIndex + pageRows.length} of ${filteredRows.length}`;
+    }
+    if (collectorApprovalPageIndicator) collectorApprovalPageIndicator.textContent = `Page ${collectorApprovalPage} of ${totalPages}`;
+    if (collectorApprovalPreviousPage) collectorApprovalPreviousPage.disabled = collectorApprovalPage <= 1;
+    if (collectorApprovalNextPage) collectorApprovalNextPage.disabled = collectorApprovalPage >= totalPages;
+
+    const allApprovalGroupsByKey = new Map(buildCollectorApprovalGroups(rows).map((group) => [group.key, group]));
+    buildCollectorApprovalGroups(pageRows).forEach((group) => {
+      const fullGroup = allApprovalGroupsByKey.get(group.key) || group;
+      const shownCopy = group.records.length < fullGroup.records.length ? ` - ${group.records.length} shown` : '';
+      const collapsed = collectorApprovalCollapsedGroups.has(group.key);
+      const groupCard = document.createElement('article');
+      groupCard.className = 'collector-approval-group-card';
+      groupCard.setAttribute('role', 'listitem');
+      groupCard.innerHTML = `
+        <div class="collector-approval-group-card__header">
+          <button type="button" class="collector-approval-group-toggle" data-collector-approval-toggle="${escapeHtml(group.key)}" aria-expanded="${collapsed ? 'false' : 'true'}">
+            <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-user-dollar"></i></span>
+            <span class="collector-approval-group__copy">
               <strong>${escapeHtml(group.name)}</strong>
-              <span>${group.records.length} pending - PHP ${fmtMoney(group.total)}</span>
-            </div>
-            <button type="button" class="btn btn-success btn-sm" data-collector-approval-collector-action="approve" data-collector-key="${escapeHtml(group.key)}">
-              <i class="ti ti-checks" aria-hidden="true"></i>
-              <span>Approve Collector</span>
-            </button>
-          </div>
-        </td>
+              <span>${fullGroup.records.length} pending - PHP ${escapeHtml(fmtMoney(fullGroup.total))}${escapeHtml(shownCopy)}</span>
+            </span>
+            <i class="ti ti-chevron-${collapsed ? 'down' : 'up'} collector-approval-group-chevron" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="btn btn-success btn-sm" data-collector-approval-collector-action="approve" data-collector-key="${escapeHtml(group.key)}" title="Approve all ${fullGroup.records.length} pending payments for ${escapeHtml(group.name)}">
+            <i class="ti ti-checks" aria-hidden="true"></i>
+            <span>Approve All</span>
+          </button>
+        </div>
+        <div class="collector-approval-group-card__body"${collapsed ? ' hidden' : ''}></div>
       `;
-      collectorApprovalList.appendChild(groupRow);
+      const groupBody = groupCard.querySelector('.collector-approval-group-card__body');
       group.records.forEach((record) => {
-        const tr = document.createElement('tr');
-        tr.className = 'collector-approval-payment-row';
+        const paymentItem = document.createElement('div');
+        const age = getCollectorApprovalAge(record);
+        paymentItem.className = `collector-approval-payment-item${age.isOld ? ' is-old' : ''}`;
         const id = String(record?.id || '').trim();
         const clientName = record?.customerName || record?.accountNumber || 'Client';
         const accountNumber = String(record?.accountNumber || '').trim();
         const area = String(record?.area || '').trim();
-        const reference = String(record?.reference || '').trim();
-        const paymentMethod = String(record?.paymentMethod || '').trim();
+        const ageBadge = age.isOld
+          ? `<span class="badge bg-warning-lt text-warning">${escapeHtml(age.label)} pending</span>`
+          : '';
 
-        tr.innerHTML = `
-          <td>
-            <div class="collector-approval-copy">
-              <strong>${escapeHtml(formatCollectorPaymentDate(record?.recordedAt || record?.date))}</strong>
-            </div>
-          </td>
-          <td>
-            <div class="collector-approval-copy">
-              <strong>${escapeHtml(clientName)}</strong>
-              <span>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</span>
-            </div>
-          </td>
-          <td class="text-end collector-approval-amount">PHP ${fmtMoney(record?.amount)}</td>
-          <td>
-            <div class="collector-approval-copy">
-              <strong>${escapeHtml(reference || 'No reference')}</strong>
-              <span>${escapeHtml(paymentMethod || 'Payment')}</span>
-            </div>
-          </td>
-          <td class="text-center">
-            <div class="btn-list justify-content-center">
-              <button type="button" class="btn btn-outline-danger btn-sm btn-icon" title="Reject payment" aria-label="Reject payment" data-collector-approval-action="reject" data-entry-id="${escapeHtml(id)}">
+        paymentItem.innerHTML = `
+          <label class="collector-approval-payment-select" title="Select ${escapeHtml(clientName)}">
+            <input class="form-check-input" type="checkbox" data-collector-approval-select="${escapeHtml(id)}" aria-label="Select payment from ${escapeHtml(clientName)}"${collectorApprovalSelectedIds.has(id) ? ' checked' : ''}${id ? '' : ' disabled'}>
+          </label>
+          <div class="collector-approval-payment-field collector-approval-payment-client">
+            <span>Client</span>
+            <strong>${escapeHtml(clientName)}</strong>
+            <small>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</small>
+          </div>
+          <div class="collector-approval-payment-field collector-approval-payment-date">
+            <span>Date</span>
+            <strong>${escapeHtml(formatCollectorPaymentDate(record?.recordedAt || record?.date))}</strong>
+            ${ageBadge}
+          </div>
+          <div class="collector-approval-payment-field collector-approval-payment-amount">
+            <span>Amount</span>
+            <strong>PHP ${escapeHtml(fmtMoney(record?.amount))}</strong>
+          </div>
+          <details class="collector-approval-action-menu">
+            <summary class="btn btn-ghost-secondary btn-sm btn-icon" title="Payment actions" aria-label="Actions for payment from ${escapeHtml(clientName)}">
+              <i class="ti ti-dots-vertical" aria-hidden="true"></i>
+            </summary>
+            <div class="collector-approval-action-menu__dropdown">
+              <button type="button" class="dropdown-item text-danger" data-collector-approval-action="reject" data-entry-id="${escapeHtml(id)}">
                 <i class="ti ti-x" aria-hidden="true"></i>
+                <span>Reject Payment</span>
               </button>
             </div>
-          </td>
+          </details>
         `;
-        collectorApprovalList.appendChild(tr);
+        groupBody?.appendChild(paymentItem);
       });
+      collectorApprovalList.appendChild(groupCard);
     });
   }
 
   function renderCollectorApprovalNotice(message, tone = 'danger') {
     collectorApprovalRecords = [];
+    collectorApprovalSelectedIds.clear();
     updateCollectorApprovalBatchState([]);
+    updateCollectorApprovalSelectionState();
+    populateCollectorApprovalFilter([]);
     if (!collectorApprovalList) return;
     const className = tone === 'muted' ? 'text-secondary' : 'text-danger';
-    collectorApprovalList.innerHTML = `
-      <tr>
-        <td colspan="5" class="text-center ${className} py-3">${escapeHtml(message)}</td>
-      </tr>
-    `;
+    collectorApprovalList.innerHTML = `<div class="text-center ${className} py-3">${escapeHtml(message)}</div>`;
+    if (collectorApprovalSummaryAmount) collectorApprovalSummaryAmount.textContent = 'PHP 0.00';
+    if (collectorApprovalSummaryPayments) collectorApprovalSummaryPayments.textContent = '0';
+    if (collectorApprovalSummaryCollectors) collectorApprovalSummaryCollectors.textContent = '0';
+    if (collectorApprovalSummaryOldest) collectorApprovalSummaryOldest.textContent = '—';
+    if (collectorApprovalPagination) collectorApprovalPagination.hidden = true;
     if (collectorApprovalsEmptyState) collectorApprovalsEmptyState.style.display = 'none';
   }
 
@@ -606,6 +814,7 @@
 
   async function loadCollectorApprovals() {
     if (!collectorApprovalList) return;
+    if (collectorApprovalRefresh) collectorApprovalRefresh.disabled = true;
     try {
       const res = await fetch('/api/collector/payments/approvals', { credentials: 'include', cache: 'no-store' });
       const payload = await res.json().catch(() => ({}));
@@ -620,11 +829,26 @@
       const status = Number(err?.status || 0);
       const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
       renderCollectorApprovalNotice(err?.message || 'Failed to load pending collector payments.', tone);
+    } finally {
+      if (collectorApprovalRefresh) collectorApprovalRefresh.disabled = false;
     }
   }
 
   function isActiveCollectorReschedule(record = {}) {
     return String(record?.status || '').trim().toLowerCase() === 'rescheduled';
+  }
+
+  function isPartialPaymentCollectorReschedule(record = {}) {
+    const type = String(record?.followUpType || record?.source || '').trim().toLowerCase();
+    return ['partial_payment', 'partial-payment', 'partial payment'].includes(type)
+      || String(record?.result || '').trim().toLowerCase() === 'partial payment';
+  }
+
+  function collectorSchedulePaymentStatusLabel(record = {}) {
+    const status = String(record?.paymentStatusAtScheduling || '').trim().toLowerCase();
+    if (status === 'approved') return 'Approved';
+    if (status === 'rejected') return 'Rejected';
+    return 'Pending approval';
   }
 
   function getCollectorRescheduleName(record = {}) {
@@ -663,17 +887,60 @@
     return String(record?.historyType || record?.status || 'History').trim() || 'History';
   }
 
+  function collectorRescheduleUrgency(record = {}) {
+    if (!isActiveCollectorReschedule(record)) return '';
+    const scheduleDate = String(record?.rescheduledDate || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) return '';
+    const today = collectorScheduleToday();
+    if (scheduleDate < today) return 'overdue';
+    if (scheduleDate === today) return 'today';
+    return 'upcoming';
+  }
+
   function renderCollectorReschedules() {
     if (!collectorRescheduleList) return;
+    const searchQuery = String(collectorRescheduleSearch?.value || '').trim().toLowerCase();
     const collectorId = String(collectorRescheduleCollectorFilter?.value || '').trim();
     const status = String(collectorRescheduleStatusFilter?.value || 'active').trim().toLowerCase();
-    const rows = collectorRescheduleRecords.filter((record) => {
-      if (collectorId && String(record?.collectorId || '').trim() !== collectorId) return false;
-      if (status === 'all') return true;
-      return status === 'active' ? isActiveCollectorReschedule(record) : !isActiveCollectorReschedule(record);
-    });
+    const scheduleDateFilter = String(collectorRescheduleDateFilter?.value || '').trim();
+    const rows = collectorRescheduleRecords
+      .filter((record) => {
+        if (collectorId && String(record?.collectorId || '').trim() !== collectorId) return false;
+        if (scheduleDateFilter && String(record?.rescheduledDate || '').trim().slice(0, 10) !== scheduleDateFilter) return false;
+        if (status !== 'all' && (status === 'active') !== isActiveCollectorReschedule(record)) return false;
+        if (!searchQuery) return true;
+        const searchText = [
+          record?.customerName,
+          record?.accountNumber,
+          record?.area,
+          getCollectorRescheduleName(record),
+          record?.result,
+          record?.notes,
+          record?.collectorNote,
+          record?.paymentReference
+        ].map((value) => String(value || '').trim()).join(' ').toLowerCase();
+        return searchText.includes(searchQuery);
+      })
+      .sort((left, right) => {
+        const leftActive = isActiveCollectorReschedule(left);
+        const rightActive = isActiveCollectorReschedule(right);
+        if (leftActive !== rightActive) return leftActive ? -1 : 1;
+        const leftDate = String(left?.rescheduledDate || '').slice(0, 10);
+        const rightDate = String(right?.rescheduledDate || '').slice(0, 10);
+        return leftActive ? leftDate.localeCompare(rightDate) : rightDate.localeCompare(leftDate);
+      });
 
     const activeCount = rows.filter(isActiveCollectorReschedule).length;
+    const allActiveCount = collectorRescheduleRecords.filter(isActiveCollectorReschedule).length;
+    const priorityCounts = rows.reduce((counts, record) => {
+      const urgency = collectorRescheduleUrgency(record);
+      if (urgency && Object.prototype.hasOwnProperty.call(counts, urgency)) counts[urgency] += 1;
+      return counts;
+    }, { overdue: 0, today: 0, upcoming: 0 });
+    if (collectorRescheduleOverdueCount) collectorRescheduleOverdueCount.textContent = String(priorityCounts.overdue);
+    if (collectorRescheduleTodayCount) collectorRescheduleTodayCount.textContent = String(priorityCounts.today);
+    if (collectorRescheduleUpcomingCount) collectorRescheduleUpcomingCount.textContent = String(priorityCounts.upcoming);
+    if (collectorStatsReschedules) collectorStatsReschedules.textContent = String(allActiveCount);
     if (collectorRescheduleCount) {
       collectorRescheduleCount.textContent = status === 'active'
         ? `${activeCount} active`
@@ -682,60 +949,108 @@
     collectorRescheduleList.innerHTML = '';
     if (!rows.length) {
       if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'flex';
+      if (collectorReschedulePagination) collectorReschedulePagination.hidden = true;
       return;
     }
     if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'none';
 
-    rows.forEach((record) => {
+    const totalPages = Math.max(1, Math.ceil(rows.length / collectorReschedulePageSize));
+    collectorReschedulePage = Math.min(Math.max(1, collectorReschedulePage), totalPages);
+    const startIndex = (collectorReschedulePage - 1) * collectorReschedulePageSize;
+    const pageRows = rows.slice(startIndex, startIndex + collectorReschedulePageSize);
+    if (collectorReschedulePagination) collectorReschedulePagination.hidden = false;
+    if (collectorReschedulePageSummary) {
+      collectorReschedulePageSummary.textContent = `Showing ${startIndex + 1}-${startIndex + pageRows.length} of ${rows.length}`;
+    }
+    if (collectorReschedulePageIndicator) {
+      collectorReschedulePageIndicator.textContent = `Page ${collectorReschedulePage} of ${totalPages}`;
+    }
+    if (collectorReschedulePreviousPage) collectorReschedulePreviousPage.disabled = collectorReschedulePage <= 1;
+    if (collectorRescheduleNextPage) collectorRescheduleNextPage.disabled = collectorReschedulePage >= totalPages;
+
+    pageRows.forEach((record) => {
       const active = isActiveCollectorReschedule(record);
+      const urgency = collectorRescheduleUrgency(record);
       const tr = document.createElement('tr');
+      tr.className = ['collector-reschedule-row', urgency ? `is-${urgency}` : '', active ? '' : 'is-history'].filter(Boolean).join(' ');
+      if (urgency) tr.setAttribute('data-schedule-priority', urgency);
       const accountNumber = String(record?.accountNumber || '').trim();
       const area = String(record?.area || '').trim();
       const scheduleDate = formatCollectorPaymentDate(record?.rescheduledDate);
       const preferredTime = String(record?.preferredTime || '').trim();
       const result = String(record?.result || '').trim();
-      const notes = String(record?.notes || '').trim();
+      const partialPayment = isPartialPaymentCollectorReschedule(record);
+      const notes = String(partialPayment ? (record?.collectorNote ?? record?.notes) : record?.notes).trim();
+      const amountPaid = Math.abs(Number(record?.amountPaid) || 0);
+      const remainingBalance = Math.abs(Number(record?.remainingBalance) || 0);
+      const paymentReference = String(record?.paymentReference || '').trim();
       const statusLabel = collectorRescheduleStatusLabel(record);
+      const customerName = String(record?.customerName || accountNumber || 'Client').trim();
+      const collectorName = getCollectorRescheduleName(record);
+      const accountMeta = [accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account';
+      const urgencyBadge = urgency === 'overdue'
+        ? '<span class="badge bg-danger-lt text-danger">Overdue</span>'
+        : urgency === 'today'
+          ? '<span class="badge bg-warning-lt text-warning">Today</span>'
+          : urgency === 'upcoming'
+            ? '<span class="badge bg-azure-lt text-azure">Upcoming</span>'
+            : '';
       const recordId = String(record?.id || '').trim();
-      const actions = active && recordId
+      const actions = recordId
         ? `
-          <div class="btn-list flex-nowrap justify-content-center">
-            <button class="btn btn-outline-primary btn-sm btn-icon" type="button" data-collector-reschedule-action="edit" data-record-id="${escapeHtml(recordId)}" title="Edit schedule" aria-label="Edit schedule">
-              <i class="ti ti-edit" aria-hidden="true"></i>
+          <div class="btn-list flex-nowrap justify-content-center collector-reschedule-actions">
+            <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-collector-reschedule-action="view" data-record-id="${escapeHtml(recordId)}" title="View follow-up" aria-label="View follow-up">
+              <i class="ti ti-eye" aria-hidden="true"></i>
             </button>
-            <button class="btn btn-outline-danger btn-sm btn-icon" type="button" data-collector-reschedule-action="delete" data-record-id="${escapeHtml(recordId)}" title="Delete schedule" aria-label="Delete schedule">
-              <i class="ti ti-trash" aria-hidden="true"></i>
-            </button>
+            ${active ? `
+              <button class="btn btn-outline-primary btn-sm btn-icon" type="button" data-collector-reschedule-action="edit" data-record-id="${escapeHtml(recordId)}" title="Edit follow-up" aria-label="Edit follow-up">
+                <i class="ti ti-edit" aria-hidden="true"></i>
+              </button>
+              <button class="btn btn-outline-danger btn-sm btn-icon" type="button" data-collector-reschedule-action="delete" data-record-id="${escapeHtml(recordId)}" title="Delete follow-up" aria-label="Delete follow-up">
+                <i class="ti ti-trash" aria-hidden="true"></i>
+              </button>
+            ` : ''}
           </div>
         `
         : '<span class="text-secondary">&mdash;</span>';
+      const detailTitle = partialPayment
+        ? `Partial payment${amountPaid ? ` · PHP ${fmtMoney(amountPaid)} paid` : ''}`
+        : (result || 'Collection follow-up');
+      const detailText = partialPayment
+        ? [
+          remainingBalance ? `Remaining PHP ${fmtMoney(remainingBalance)}` : '',
+          paymentReference ? `Ref ${paymentReference}` : '',
+          notes || 'No optional note'
+        ].filter(Boolean).join(' · ')
+        : (notes || 'No notes');
       tr.innerHTML = `
-        <td>
+        <td data-label="Schedule">
           <div class="collector-approval-copy">
             <strong>${escapeHtml(scheduleDate)}</strong>
             <span>${escapeHtml(preferredTime || 'Any time')}</span>
           </div>
         </td>
-        <td>
+        <td data-label="Client">
           <div class="collector-approval-copy">
-            <strong>${escapeHtml(record?.customerName || accountNumber || 'Client')}</strong>
-            <span>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</span>
+            <strong title="${escapeHtml(customerName)}">${escapeHtml(customerName)}</strong>
+            <span title="${escapeHtml(accountMeta)}">${escapeHtml(accountMeta)}</span>
+            <span class="collector-reschedule-compact-meta" title="${escapeHtml(notes)}">${escapeHtml([collectorName, result || 'Collection follow-up'].filter(Boolean).join(' - '))}</span>
           </div>
         </td>
-        <td>
+        <td data-label="Collector">
           <div class="collector-approval-copy">
-            <strong>${escapeHtml(getCollectorRescheduleName(record))}</strong>
+            <strong title="${escapeHtml(collectorName)}">${escapeHtml(collectorName)}</strong>
             <span>${escapeHtml(formatCollectorPaymentDate(record?.createdAt))}</span>
           </div>
         </td>
-        <td>
+        <td data-label="Follow-up details">
           <div class="collector-approval-copy collector-reschedule-details">
-            <strong>${escapeHtml(result || 'Collection follow-up')}</strong>
-            <span title="${escapeHtml(notes)}">${escapeHtml(notes || 'No notes')}</span>
+            <strong title="${escapeHtml(detailTitle)}">${escapeHtml(detailTitle)}</strong>
+            <span title="${escapeHtml(detailText)}">${escapeHtml(detailText)}</span>
           </div>
         </td>
-        <td><span class="badge ${active ? 'bg-warning-lt text-warning' : 'bg-secondary-lt text-secondary'}">${escapeHtml(statusLabel)}</span></td>
-        <td class="text-center">${actions}</td>
+        <td data-label="Status"><div class="collector-reschedule-status">${partialPayment ? '<span class="badge bg-warning-lt text-warning">Partial</span>' : ''}<span class="badge ${active ? 'bg-primary-lt text-primary' : 'bg-secondary-lt text-secondary'}">${escapeHtml(statusLabel)}</span>${urgencyBadge}</div></td>
+        <td class="text-center" data-label="Actions">${actions}</td>
       `;
       collectorRescheduleList.appendChild(tr);
     });
@@ -746,8 +1061,13 @@
     populateCollectorRescheduleFilter();
     if (!collectorRescheduleList) return;
     const className = tone === 'muted' ? 'text-secondary' : 'text-danger';
-    collectorRescheduleList.innerHTML = `<tr><td colspan="6" class="text-center ${className} py-3">${escapeHtml(message)}</td></tr>`;
+    collectorRescheduleList.innerHTML = `<tr class="collector-reschedule-notice"><td colspan="6" class="text-center ${className} py-3">${escapeHtml(message)}</td></tr>`;
     if (collectorRescheduleCount) collectorRescheduleCount.textContent = 'Unavailable';
+    if (collectorRescheduleOverdueCount) collectorRescheduleOverdueCount.textContent = '0';
+    if (collectorRescheduleTodayCount) collectorRescheduleTodayCount.textContent = '0';
+    if (collectorRescheduleUpcomingCount) collectorRescheduleUpcomingCount.textContent = '0';
+    if (collectorReschedulePagination) collectorReschedulePagination.hidden = true;
+    if (collectorStatsReschedules) collectorStatsReschedules.textContent = '—';
     if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'none';
   }
 
@@ -863,24 +1183,81 @@
     }
   }
 
-  async function openCollectorScheduleModal(record = null) {
+  function renderCollectorSchedulePaymentDetails(record = null) {
+    const partialPayment = isPartialPaymentCollectorReschedule(record || {});
+    if (collectorSchedulePaymentDetails) collectorSchedulePaymentDetails.hidden = !partialPayment;
+    if (!partialPayment || !record) return;
+    if (collectorSchedulePaymentReference) {
+      collectorSchedulePaymentReference.textContent = String(record.paymentReference || record.paymentEntryId || 'Not available');
+    }
+    if (collectorScheduleAmountPaid) collectorScheduleAmountPaid.textContent = `PHP ${fmtMoney(record.amountPaid)}`;
+    if (collectorScheduleRemainingBalance) collectorScheduleRemainingBalance.textContent = `PHP ${fmtMoney(record.remainingBalance)}`;
+    if (collectorSchedulePaymentStatus) collectorSchedulePaymentStatus.textContent = collectorSchedulePaymentStatusLabel(record);
+    if (collectorScheduleAuditSummary) {
+      const creator = String(record.createdByName || record.collectorName || 'Collector app').trim();
+      const createdAt = formatCollectorPaymentDate(record.createdAt);
+      const updatedBy = String(record.updatedByName || '').trim();
+      const updatedAt = updatedBy ? formatCollectorPaymentDate(record.updatedAt) : '';
+      collectorScheduleAuditSummary.textContent = [
+        `${creator} · ${createdAt}`,
+        updatedBy ? `Last edited by ${updatedBy}${updatedAt ? ` · ${updatedAt}` : ''}` : ''
+      ].filter(Boolean).join(' · ');
+    }
+  }
+
+  async function openCollectorScheduleModal(record = null, options = {}) {
     if (!collectorScheduleModal || !collectorScheduleForm) return;
     collectorScheduleForm.reset();
     const editing = Boolean(record?.id);
+    const partialPayment = isPartialPaymentCollectorReschedule(record || {});
+    collectorScheduleViewMode = Boolean(options.viewOnly && editing);
     if (collectorScheduleRecordId) collectorScheduleRecordId.value = editing ? String(record.id) : '';
-    if (collectorScheduleModalTitle) collectorScheduleModalTitle.textContent = editing ? 'Edit Collector Schedule' : 'Create Collector Schedule';
+    if (collectorScheduleModalTitle) {
+      collectorScheduleModalTitle.textContent = collectorScheduleViewMode
+        ? 'Follow-up Details'
+        : editing
+          ? (partialPayment ? 'Edit Partial-Payment Follow-up' : 'Edit Collector Schedule')
+          : 'Create Collector Schedule';
+    }
     if (collectorScheduleModalSubtitle) {
-      collectorScheduleModalSubtitle.textContent = editing
-        ? 'Changes appear on the assigned collector device after the next Sync.'
+      collectorScheduleModalSubtitle.textContent = collectorScheduleViewMode
+        ? 'Review the schedule, linked payment snapshot, and latest audit information.'
+        : editing
+          ? 'Changes appear on the assigned collector device after the next Sync.'
         : 'Assign a client follow-up that will appear after the collector taps Sync in Android.';
     }
     if (collectorScheduleDate) collectorScheduleDate.value = editing ? String(record.rescheduledDate || '').slice(0, 10) : collectorScheduleToday();
     if (collectorScheduleTime) collectorScheduleTime.value = editing ? String(record.preferredTime || '') : '';
     if (collectorScheduleResult) collectorScheduleResult.value = editing ? String(record.result || '') : 'Collection follow-up';
-    if (collectorScheduleNotes) collectorScheduleNotes.value = editing ? String(record.notes || '') : '';
+    if (collectorScheduleNotes) {
+      collectorScheduleNotes.value = editing
+        ? String(partialPayment ? (record.collectorNote ?? record.notes ?? '') : (record.notes || ''))
+        : '';
+      collectorScheduleNotes.required = !partialPayment && !collectorScheduleViewMode;
+      collectorScheduleNotes.disabled = collectorScheduleViewMode;
+      collectorScheduleNotes.placeholder = partialPayment
+        ? 'Optional note from the collector or Admin'
+        : 'Add the information the collector needs for this visit.';
+    }
+    if (collectorScheduleNotesLabel) collectorScheduleNotesLabel.textContent = partialPayment ? 'Optional note' : 'Instructions or notes';
+    if (collectorScheduleNotesHint) {
+      collectorScheduleNotesHint.textContent = partialPayment
+        ? 'Optional. Admin changes synchronize to the Collector app.'
+        : 'Required for Admin-created collection schedules.';
+    }
+    if (collectorScheduleResultLabel) collectorScheduleResultLabel.textContent = partialPayment ? 'Follow-up type' : 'Follow-up reason';
+    if (collectorScheduleDate) collectorScheduleDate.disabled = collectorScheduleViewMode;
+    if (collectorScheduleTime) {
+      collectorScheduleTime.disabled = collectorScheduleViewMode;
+      collectorScheduleTime.required = partialPayment && !collectorScheduleViewMode;
+    }
+    if (collectorScheduleResult) collectorScheduleResult.disabled = collectorScheduleViewMode || partialPayment;
+    if (collectorScheduleSave) collectorScheduleSave.hidden = collectorScheduleViewMode;
+    if (collectorScheduleCancelLabel) collectorScheduleCancelLabel.textContent = collectorScheduleViewMode ? 'Close' : 'Cancel';
+    renderCollectorSchedulePaymentDetails(record);
     if (collectorScheduleCustomer) collectorScheduleCustomer.disabled = true;
     if (collectorScheduleCollector) collectorScheduleCollector.disabled = true;
-    setCollectorScheduleMessage('Loading clients and assignments...');
+    setCollectorScheduleMessage(collectorScheduleViewMode ? '' : 'Loading clients and assignments...');
     collectorScheduleModal.classList.add('show');
     collectorScheduleModal.setAttribute('aria-hidden', 'false');
 
@@ -891,11 +1268,15 @@
       ]);
       const accountNumber = editing ? String(record.accountNumber || '').trim() : '';
       populateCollectorScheduleCustomers(accountNumber, record);
-      if (collectorScheduleCustomer) collectorScheduleCustomer.disabled = editing;
+      if (collectorScheduleCustomer) collectorScheduleCustomer.disabled = editing || collectorScheduleViewMode;
       populateCollectorScheduleCollectors(editing ? String(record.collectorId || '').trim() : '', record);
       if (editing && collectorScheduleCollector) collectorScheduleCollector.disabled = true;
-      if (!editing) setCollectorScheduleMessage('Select a client to see collectors assigned to its area.');
-      setTimeout(() => collectorScheduleCustomer?.focus(), 50);
+      if (!editing && !collectorScheduleViewMode) setCollectorScheduleMessage('Select a client to see collectors assigned to its area.');
+      setTimeout(() => {
+        if (collectorScheduleViewMode) closeCollectorScheduleModal?.focus();
+        else if (editing) collectorScheduleDate?.focus();
+        else collectorScheduleCustomer?.focus();
+      }, 50);
     } catch (error) {
       setCollectorScheduleMessage(error?.message || 'Unable to load clients and collectors.', 'danger');
     }
@@ -905,19 +1286,30 @@
     if (!collectorScheduleModal) return;
     collectorScheduleModal.classList.remove('show');
     collectorScheduleModal.setAttribute('aria-hidden', 'true');
+    collectorScheduleViewMode = false;
+    if (collectorScheduleSave) collectorScheduleSave.hidden = false;
+    if (collectorScheduleCancelLabel) collectorScheduleCancelLabel.textContent = 'Cancel';
+    if (collectorSchedulePaymentDetails) collectorSchedulePaymentDetails.hidden = true;
     setCollectorScheduleMessage('');
   }
 
   async function saveCollectorSchedule() {
+    if (collectorScheduleViewMode) return;
     if (!collectorScheduleForm?.reportValidity()) return;
     const recordId = String(collectorScheduleRecordId?.value || '').trim();
+    const existingRecord = collectorRescheduleRecords.find((record) => String(record?.id || '').trim() === recordId) || null;
+    const partialPayment = isPartialPaymentCollectorReschedule(existingRecord || {});
     const payload = {
       accountNumber: String(collectorScheduleCustomer?.value || '').trim(),
       collectorId: String(collectorScheduleCollector?.value || '').trim(),
       rescheduledDate: String(collectorScheduleDate?.value || '').trim(),
       preferredTime: String(collectorScheduleTime?.value || '').trim(),
-      result: String(collectorScheduleResult?.value || '').trim(),
-      notes: String(collectorScheduleNotes?.value || '').trim()
+      result: partialPayment ? 'Partial payment' : String(collectorScheduleResult?.value || '').trim(),
+      notes: String(collectorScheduleNotes?.value || '').trim(),
+      ...(partialPayment ? {
+        followUpType: 'partial_payment',
+        collectorNote: String(collectorScheduleNotes?.value || '').trim()
+      } : {})
     };
     if (!payload.collectorId) {
       setCollectorScheduleMessage('Select a collector assigned to this client area.', 'danger');
@@ -1029,15 +1421,111 @@
     }
   }
 
-  async function reviewCollectorPayment(entryId, action, triggerBtn = null) {
+  async function approveSelectedCollectorPayments(triggerBtn = null) {
+    const rows = collectorApprovalRecords.filter((record) => {
+      const id = String(record?.id || '').trim();
+      return id && collectorApprovalSelectedIds.has(id);
+    });
+    if (!rows.length) {
+      collectorApprovalSelectedIds.clear();
+      updateCollectorApprovalSelectionState();
+      toast('Select at least one pending payment.', 'danger');
+      return;
+    }
+    const total = rows.reduce((sum, record) => sum + Math.abs(Number(record?.amount) || 0), 0);
+    const visibleRows = rows.slice(0, 10).map(formatCollectorApprovalBatchLine);
+    const remaining = rows.length - visibleRows.length;
+    const message = [
+      `Approve ${rows.length} selected pending payment${rows.length === 1 ? '' : 's'}?`,
+      '',
+      'Paid Client - Amount - Reference',
+      ...visibleRows,
+      ...(remaining > 0 ? [`+${remaining} more payment${remaining === 1 ? '' : 's'}`] : []),
+      '',
+      `Total: PHP ${fmtMoney(total)}`,
+    ].join('\n');
+    const confirmed = window.appConfirm
+      ? await window.appConfirm(message, {
+        title: 'Approve Selected Payments',
+        okText: 'Approve Selected',
+        type: 'success',
+      })
+      : window.confirm(message);
+    if (!confirmed) return;
+    if (triggerBtn) triggerBtn.disabled = true;
+    try {
+      const res = await fetch('/api/collector/payments/approvals/approve-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ entryIds: rows.map((record) => String(record.id).trim()) }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload?.error || 'Failed to approve selected collector payments.');
+      }
+      const approvedCount = Number(payload?.approved || (Array.isArray(payload?.records) ? payload.records.length : 0));
+      const skippedCount = Number(payload?.skipped || 0);
+      collectorApprovalSelectedIds.clear();
+      updateCollectorApprovalSelectionState();
+      toast(
+        approvedCount
+          ? `Approved ${approvedCount} selected payment${approvedCount === 1 ? '' : 's'}.${skippedCount ? ` ${skippedCount} skipped.` : ''}`
+          : 'No selected collector payments were approved.',
+        approvedCount ? 'ok' : 'danger'
+      );
+      await Promise.all([
+        loadCollectorApprovals(),
+        loadAssignmentsAndReport(),
+      ]);
+    } catch (err) {
+      toast(err?.message || 'Failed to approve selected collector payments.', 'danger');
+      if (triggerBtn) triggerBtn.disabled = false;
+    }
+  }
+
+  function setCollectorPaymentRejectMessage(message = '', tone = '') {
+    if (!collectorPaymentRejectMessage) return;
+    collectorPaymentRejectMessage.textContent = message;
+    collectorPaymentRejectMessage.className = `modal-message${tone ? ` text-${tone}` : ''}`;
+  }
+
+  function openCollectorPaymentRejectDialog(entryId, triggerBtn = null) {
+    const safeEntryId = String(entryId || '').trim();
+    if (!safeEntryId || !collectorPaymentRejectModal || !collectorPaymentRejectForm) return;
+    const record = collectorApprovalRecords.find((item) => String(item?.id || '').trim() === safeEntryId);
+    collectorPaymentRejectForm.reset();
+    if (collectorPaymentRejectEntryId) collectorPaymentRejectEntryId.value = safeEntryId;
+    if (collectorPaymentRejectSummary) {
+      const clientName = String(record?.customerName || record?.accountNumber || 'Client').trim();
+      const reference = String(record?.reference || 'No reference').trim();
+      collectorPaymentRejectSummary.textContent = `${clientName} · PHP ${fmtMoney(record?.amount)} · ${reference}`;
+    }
+    collectorPaymentRejectTrigger = triggerBtn;
+    setCollectorPaymentRejectMessage('');
+    collectorPaymentRejectModal.classList.add('show');
+    collectorPaymentRejectModal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => collectorPaymentRejectReason?.focus(), 50);
+  }
+
+  function closeCollectorPaymentRejectDialog() {
+    if (!collectorPaymentRejectModal) return;
+    collectorPaymentRejectModal.classList.remove('show');
+    collectorPaymentRejectModal.setAttribute('aria-hidden', 'true');
+    collectorPaymentRejectForm?.reset();
+    if (collectorPaymentRejectEntryId) collectorPaymentRejectEntryId.value = '';
+    if (collectorPaymentRejectSubmit) collectorPaymentRejectSubmit.disabled = false;
+    setCollectorPaymentRejectMessage('');
+    collectorPaymentRejectTrigger?.focus?.();
+    collectorPaymentRejectTrigger = null;
+  }
+
+  async function submitCollectorPaymentDecision(entryId, action, options = {}) {
     const safeEntryId = String(entryId || '').trim();
     const safeAction = String(action || '').trim().toLowerCase();
-    if (!safeEntryId || !['approve', 'reject'].includes(safeAction)) return;
-    const actionLabel = safeAction === 'approve' ? 'Approve' : 'Reject';
-    const confirmed = window.appConfirm
-      ? await window.appConfirm(`${actionLabel} this collector payment?`, { title: `${actionLabel} Payment` })
-      : window.confirm(`${actionLabel} this collector payment?`);
-    if (!confirmed) return;
+    const triggerBtn = options.triggerBtn || null;
+    if (!safeEntryId || !['approve', 'reject'].includes(safeAction)) return false;
     if (triggerBtn) triggerBtn.disabled = true;
     try {
       const res = await fetch(`/api/collector/payments/approvals/${encodeURIComponent(safeEntryId)}/${safeAction}`, {
@@ -1045,6 +1533,7 @@
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         cache: 'no-store',
+        body: JSON.stringify(safeAction === 'reject' ? { reason: String(options.reason || '').trim() } : {}),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || payload.ok === false) {
@@ -1055,10 +1544,35 @@
         loadCollectorApprovals(),
         loadAssignmentsAndReport(),
       ]);
+      return true;
     } catch (err) {
-      toast(err?.message || `Failed to ${safeAction} collector payment.`, 'danger');
+      if (safeAction === 'reject' && collectorPaymentRejectModal?.classList.contains('show')) {
+        setCollectorPaymentRejectMessage(err?.message || 'Failed to reject collector payment.', 'danger');
+      } else {
+        toast(err?.message || `Failed to ${safeAction} collector payment.`, 'danger');
+      }
       if (triggerBtn) triggerBtn.disabled = false;
+      return false;
     }
+  }
+
+  async function reviewCollectorPayment(entryId, action, triggerBtn = null) {
+    const safeEntryId = String(entryId || '').trim();
+    const safeAction = String(action || '').trim().toLowerCase();
+    if (!safeEntryId || !['approve', 'reject'].includes(safeAction)) return;
+    if (safeAction === 'reject') {
+      openCollectorPaymentRejectDialog(safeEntryId, triggerBtn);
+      return;
+    }
+    const confirmed = window.appConfirm
+      ? await window.appConfirm('Approve this collector payment and post it to the official billing record?', {
+        title: 'Approve Payment',
+        okText: 'Approve Payment',
+        type: 'success'
+      })
+      : window.confirm('Approve this collector payment and post it to the official billing record?');
+    if (!confirmed) return;
+    await submitCollectorPaymentDecision(safeEntryId, 'approve', { triggerBtn });
   }
 
   function hasAccountRole(account, role) {
@@ -1439,112 +1953,113 @@
     if (!assignmentList) return;
     assignmentList.innerHTML = '';
 
-    const collectors = getDisplayCollectors();
+    const allCollectors = getDisplayCollectors();
     const collectorAreaMap = buildCollectorAreaMap();
     const monthKey = loadReport.currentMonthKey || getCurrentMonthKey();
+    let searchQuery = String(assignmentSearch?.value || '').trim().toLowerCase();
 
-    if (!collectors.length) {
-      updateAssignmentSummaryStats(0, 0, 0);
+    if (assignmentSearchWrap) assignmentSearchWrap.hidden = allCollectors.length <= 5;
+    if (allCollectors.length <= 5 && searchQuery && assignmentSearch) {
+      assignmentSearch.value = '';
+      searchQuery = '';
+    }
+    if (assignmentSearchClear) assignmentSearchClear.hidden = !searchQuery;
+
+    const collectors = searchQuery
+      ? allCollectors.filter((collector) => {
+          const collectorId = getCollectorId(collector);
+          const searchText = [
+            collectorId,
+            getCollectorName(collectorId),
+            ...(collectorAreaMap[collectorId] || [])
+          ].join(' ').toLowerCase();
+          return searchText.includes(searchQuery);
+        })
+      : allCollectors;
+
+    const overallTotals = allCollectors.reduce((totals, collector) => {
+      const collectorId = getCollectorId(collector);
+      const areas = collectorAreaMap[collectorId] || [];
+      totals.areas += areas.length;
+      totals.collected += getCollectorMonthTotal(collectorId, areas, monthKey);
+      return totals;
+    }, { areas: 0, collected: 0 });
+    updateAssignmentSummaryStats(allCollectors.length, overallTotals.areas, overallTotals.collected);
+
+    if (!allCollectors.length) {
       if (assignmentsEmptyState) {
         assignmentsEmptyState.style.display = 'flex';
         const emptyCopy = assignmentsEmptyState.querySelector('p');
         if (emptyCopy) emptyCopy.textContent = 'No collector accounts yet.';
       }
-      if (assignmentsFooter) assignmentsFooter.style.display = 'none';
       if (assignmentCount) assignmentCount.textContent = '0 collectors';
       return;
     }
 
-    if (assignmentsEmptyState) assignmentsEmptyState.style.display = 'none';
+    if (!collectors.length) {
+      if (assignmentsEmptyState) {
+        assignmentsEmptyState.style.display = 'flex';
+        const emptyCopy = assignmentsEmptyState.querySelector('p');
+        if (emptyCopy) emptyCopy.textContent = 'No collectors match this search.';
+      }
+      if (assignmentCount) assignmentCount.textContent = `0 of ${allCollectors.length}`;
+      return;
+    }
 
-    let assignedAreaTotal = 0;
-    let collectedTotal = 0;
+    if (assignmentsEmptyState) assignmentsEmptyState.style.display = 'none';
 
     collectors.forEach((collector, index) => {
       const collectorId = getCollectorId(collector);
       if (!collectorId) return;
       const areas = collectorAreaMap[collectorId] || [];
       const currentTotal = getCollectorMonthTotal(collectorId, areas, monthKey);
+      const collectorName = getCollectorName(collectorId);
+      const visibleAreas = areas.slice(0, 3);
+      const remainingAreaCount = Math.max(0, areas.length - visibleAreas.length);
+      const areaBadges = areas.length
+        ? `${visibleAreas.map((area) => `<span class="badge bg-primary-lt text-primary">${escapeHtml(area)}</span>`).join('')}${remainingAreaCount ? `<span class="badge bg-secondary-lt text-secondary">+${remainingAreaCount} more</span>` : ''}`
+        : '<span class="badge bg-warning-lt text-warning"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Unassigned</span>';
 
-      assignedAreaTotal += areas.length;
-      collectedTotal += currentTotal;
-
-      const tr = document.createElement('tr');
-      tr.className = 'collector-summary-row';
-      tr.tabIndex = 0;
-      tr.setAttribute('role', 'button');
-      tr.setAttribute('aria-haspopup', 'dialog');
-      tr.setAttribute('aria-label', `View assigned areas for ${getCollectorName(collectorId)}`);
-      tr.setAttribute('data-assign-action', 'view-collector-areas');
-      tr.setAttribute('data-collector-id', collectorId);
-
-      const collectorTd = document.createElement('td');
-      const toggleBtn = document.createElement('button');
-      toggleBtn.type = 'button';
-      toggleBtn.className = 'btn btn-link btn-sm px-0 collector-row-trigger';
-      toggleBtn.setAttribute('aria-haspopup', 'dialog');
-      toggleBtn.tabIndex = -1;
-
-      const avatar = document.createElement('span');
-      avatar.className = `avatar avatar-sm bg-primary-lt text-primary collector-avatar collector-avatar--tone-${(index % 4) + 1}`;
-      avatar.setAttribute('aria-hidden', 'true');
-      avatar.textContent = getCollectorInitials(collectorId);
-
-      const nameWrap = document.createElement('span');
-      nameWrap.className = 'collector-row-copy';
-      const name = document.createElement('span');
-      name.className = 'collector-row-name';
-      name.textContent = getCollectorName(collectorId);
-      const meta = document.createElement('span');
-      meta.className = 'collector-row-meta';
-      meta.textContent = `ID ${collectorId}`;
-      nameWrap.append(name, meta);
-      toggleBtn.append(avatar, nameWrap);
-      collectorTd.appendChild(toggleBtn);
-
-      const areaTd = document.createElement('td');
-      areaTd.className = 'col-clients';
-      const areaPill = document.createElement('span');
-      areaPill.className = areas.length
-        ? 'badge bg-primary-lt text-primary collector-area-pill'
-        : 'badge bg-secondary-lt text-secondary collector-area-pill is-empty';
-      areaPill.textContent = areaCountLabel(areas.length);
-      areaTd.appendChild(areaPill);
-
-      const totalTd = document.createElement('td');
-      totalTd.className = 'col-balance collector-month-total';
-      if (!currentTotal) totalTd.classList.add('is-zero');
-      totalTd.textContent = `PHP ${fmtMoney(currentTotal)}`;
-
-      const actionTd = document.createElement('td');
-      actionTd.className = 'text-center col-actions';
-      const actionsWrap = document.createElement('div');
-      actionsWrap.className = 'btn-list justify-content-center flex-nowrap';
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'btn btn-icon btn-sm btn-ghost-secondary';
-      editBtn.innerHTML = '<i class="ti ti-edit"></i>';
-      editBtn.title = `Edit ${getCollectorName(collectorId)}`;
-      editBtn.setAttribute('data-assign-action', 'edit-collector');
-      editBtn.setAttribute('data-collector-id', collectorId);
-      actionsWrap.appendChild(editBtn);
-      actionTd.appendChild(actionsWrap);
-
-      tr.append(collectorTd, areaTd, totalTd, actionTd);
-      assignmentList.appendChild(tr);
+      const card = document.createElement('article');
+      card.className = `collector-assignment-item${areas.length ? '' : ' is-unassigned'}`;
+      card.setAttribute('role', 'listitem');
+      card.innerHTML = `
+        <div class="collector-assignment-item__header">
+          <div class="collector-assignment-identity">
+            <span class="avatar avatar-sm bg-primary-lt text-primary collector-avatar collector-avatar--tone-${(index % 4) + 1}" aria-hidden="true">${escapeHtml(getCollectorInitials(collectorId))}</span>
+            <span class="collector-assignment-identity__copy">
+              <strong>${escapeHtml(collectorName)}</strong>
+              <small>ID ${escapeHtml(collectorId)}</small>
+            </span>
+          </div>
+          <button class="btn btn-icon btn-sm btn-ghost-secondary" type="button" data-assign-action="edit-collector" data-collector-id="${escapeHtml(collectorId)}" title="Edit ${escapeHtml(collectorName)}" aria-label="Edit ${escapeHtml(collectorName)}">
+            <i class="ti ti-edit" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="collector-assignment-metrics">
+          <div class="collector-assignment-metric">
+            <span>Assigned Areas</span>
+            <strong>${escapeHtml(areaCountLabel(areas.length))}</strong>
+          </div>
+          <div class="collector-assignment-metric">
+            <span>Collected This Month</span>
+            <strong class="${currentTotal ? 'text-success' : 'text-secondary'}">PHP ${escapeHtml(fmtMoney(currentTotal))}</strong>
+          </div>
+        </div>
+        <div class="collector-assignment-areas" aria-label="Assigned areas">${areaBadges}</div>
+        <button class="btn btn-outline-primary btn-sm w-100 collector-assignment-view" type="button" data-assign-action="view-collector-areas" data-collector-id="${escapeHtml(collectorId)}" aria-haspopup="dialog">
+          <i class="ti ti-eye" aria-hidden="true"></i>
+          <span>View Details</span>
+        </button>
+      `;
+      assignmentList.appendChild(card);
     });
 
     if (assignmentCount) {
-      assignmentCount.textContent = collectors.length === 1 ? '1 collector' : `${collectors.length} collectors`;
+      assignmentCount.textContent = searchQuery
+        ? `${collectors.length} of ${allCollectors.length}`
+        : (collectors.length === 1 ? '1 collector' : `${collectors.length} collectors`);
     }
-    if (assignmentsFooter) {
-      assignmentsFooter.style.display = 'flex';
-      if (assignmentsSummary) {
-        const collectorLabel = collectors.length === 1 ? '1 collector' : `${collectors.length} collectors`;
-        assignmentsSummary.textContent = `${collectorLabel} - ${areaCountLabel(assignedAreaTotal)} assigned`;
-      }
-    }
-    updateAssignmentSummaryStats(collectors.length, assignedAreaTotal, collectedTotal);
   }
 
   function formatMonthLabel(key) {
@@ -2085,10 +2600,103 @@
       });
   });
 
-  collectorRescheduleCollectorFilter?.addEventListener('change', renderCollectorReschedules);
-  collectorRescheduleStatusFilter?.addEventListener('change', renderCollectorReschedules);
-  collectorRescheduleRefresh?.addEventListener('click', () => loadCollectorReschedules().catch(() => {}));
+  const resetCollectorApprovalPageAndRender = () => {
+    collectorApprovalPage = 1;
+    renderCollectorApprovals(collectorApprovalRecords);
+  };
+  collectorApprovalFiltersToggle?.addEventListener('click', () => {
+    if (!collectorApprovalFiltersPanel) return;
+    const willOpen = collectorApprovalFiltersPanel.hidden;
+    collectorApprovalFiltersPanel.hidden = !willOpen;
+    collectorApprovalFiltersToggle.setAttribute('aria-expanded', String(willOpen));
+    collectorApprovalFiltersToggle.setAttribute('aria-label', willOpen ? 'Hide payment filters' : 'Show payment filters');
+    collectorApprovalFiltersToggle.title = willOpen ? 'Hide payment filters' : 'Show payment filters';
+    collectorApprovalFiltersToggle.querySelector('.ti')?.classList.toggle('ti-filter-off', willOpen);
+    collectorApprovalFiltersToggle.querySelector('.ti')?.classList.toggle('ti-filter', !willOpen);
+    if (willOpen) collectorApprovalSearch?.focus();
+  });
+  collectorApprovalSearch?.addEventListener('input', resetCollectorApprovalPageAndRender);
+  collectorApprovalCollectorFilter?.addEventListener('change', resetCollectorApprovalPageAndRender);
+  collectorApprovalDateFilter?.addEventListener('change', resetCollectorApprovalPageAndRender);
+  collectorApprovalClearFilters?.addEventListener('click', () => {
+    if (collectorApprovalSearch) collectorApprovalSearch.value = '';
+    if (collectorApprovalCollectorFilter) collectorApprovalCollectorFilter.value = '';
+    if (collectorApprovalDateFilter) collectorApprovalDateFilter.value = '';
+    resetCollectorApprovalPageAndRender();
+    collectorApprovalSearch?.focus();
+  });
+  collectorApprovalRefresh?.addEventListener('click', () => {
+    collectorApprovalPage = 1;
+    loadCollectorApprovals().catch(() => {});
+  });
+  collectorApprovalPreviousPage?.addEventListener('click', () => {
+    if (collectorApprovalPage <= 1) return;
+    collectorApprovalPage -= 1;
+    renderCollectorApprovals(collectorApprovalRecords);
+  });
+  collectorApprovalNextPage?.addEventListener('click', () => {
+    collectorApprovalPage += 1;
+    renderCollectorApprovals(collectorApprovalRecords);
+  });
+  collectorApprovalApproveSelected?.addEventListener('click', () => {
+    approveSelectedCollectorPayments(collectorApprovalApproveSelected).catch(() => {});
+  });
+  closeCollectorPaymentRejectModal?.addEventListener('click', closeCollectorPaymentRejectDialog);
+  cancelCollectorPaymentRejectModal?.addEventListener('click', closeCollectorPaymentRejectDialog);
+  collectorPaymentRejectForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!collectorPaymentRejectForm.reportValidity()) return;
+    const entryId = String(collectorPaymentRejectEntryId?.value || '').trim();
+    const reason = String(collectorPaymentRejectReason?.value || '').trim();
+    if (!reason) {
+      setCollectorPaymentRejectMessage('Rejection reason is required.', 'danger');
+      collectorPaymentRejectReason?.focus();
+      return;
+    }
+    const rejected = await submitCollectorPaymentDecision(entryId, 'reject', {
+      reason,
+      triggerBtn: collectorPaymentRejectSubmit
+    });
+    if (rejected) closeCollectorPaymentRejectDialog();
+  });
+
+  const resetCollectorReschedulePageAndRender = () => {
+    collectorReschedulePage = 1;
+    renderCollectorReschedules();
+  };
+  collectorRescheduleSearch?.addEventListener('input', resetCollectorReschedulePageAndRender);
+  collectorRescheduleCollectorFilter?.addEventListener('change', resetCollectorReschedulePageAndRender);
+  collectorRescheduleStatusFilter?.addEventListener('change', resetCollectorReschedulePageAndRender);
+  collectorRescheduleDateFilter?.addEventListener('change', resetCollectorReschedulePageAndRender);
+  collectorRescheduleClearFilters?.addEventListener('click', () => {
+    if (collectorRescheduleSearch) collectorRescheduleSearch.value = '';
+    if (collectorRescheduleCollectorFilter) collectorRescheduleCollectorFilter.value = '';
+    if (collectorRescheduleStatusFilter) collectorRescheduleStatusFilter.value = 'active';
+    if (collectorRescheduleDateFilter) collectorRescheduleDateFilter.value = '';
+    resetCollectorReschedulePageAndRender();
+    collectorRescheduleSearch?.focus();
+  });
+  collectorRescheduleRefresh?.addEventListener('click', () => {
+    collectorReschedulePage = 1;
+    loadCollectorReschedules().catch(() => {});
+  });
+  collectorReschedulePreviousPage?.addEventListener('click', () => {
+    if (collectorReschedulePage <= 1) return;
+    collectorReschedulePage -= 1;
+    renderCollectorReschedules();
+  });
+  collectorRescheduleNextPage?.addEventListener('click', () => {
+    collectorReschedulePage += 1;
+    renderCollectorReschedules();
+  });
   collectorRescheduleCreate?.addEventListener('click', () => openCollectorScheduleModal().catch(() => {}));
+  assignmentSearch?.addEventListener('input', () => renderAssignments().catch(() => {}));
+  assignmentSearchClear?.addEventListener('click', () => {
+    if (!assignmentSearch) return;
+    assignmentSearch.value = '';
+    assignmentSearch.focus();
+    renderAssignments().catch(() => {});
+  });
   collectorScheduleCustomer?.addEventListener('change', () => populateCollectorScheduleCollectors());
   closeCollectorScheduleModal?.addEventListener('click', closeCollectorScheduleEditor);
   cancelCollectorScheduleModal?.addEventListener('click', closeCollectorScheduleEditor);
@@ -2107,11 +2715,22 @@
       const action = scheduleActionButton.getAttribute('data-collector-reschedule-action') || '';
       const record = collectorRescheduleRecords.find((item) => String(item?.id || '') === recordId);
       if (!record) return;
-      if (action === 'edit') {
+      if (action === 'view') {
+        openCollectorScheduleModal(record, { viewOnly: true }).catch(() => {});
+      } else if (action === 'edit') {
         openCollectorScheduleModal(record).catch(() => {});
       } else if (action === 'delete') {
         deleteCollectorSchedule(record, scheduleActionButton).catch(() => {});
       }
+      return;
+    }
+
+    const collectorApprovalToggle = event.target.closest('[data-collector-approval-toggle]');
+    if (collectorApprovalToggle) {
+      const collectorKey = collectorApprovalToggle.getAttribute('data-collector-approval-toggle') || '';
+      if (collectorApprovalCollapsedGroups.has(collectorKey)) collectorApprovalCollapsedGroups.delete(collectorKey);
+      else collectorApprovalCollapsedGroups.add(collectorKey);
+      renderCollectorApprovals(collectorApprovalRecords);
       return;
     }
 
@@ -2127,6 +2746,16 @@
     const entryId = approvalBtn.getAttribute('data-entry-id') || '';
     const action = approvalBtn.getAttribute('data-collector-approval-action') || '';
     reviewCollectorPayment(entryId, action, approvalBtn).catch(() => {});
+  });
+
+  document.addEventListener('change', (event) => {
+    const selectionInput = event.target.closest('[data-collector-approval-select]');
+    if (!selectionInput) return;
+    const entryId = String(selectionInput.getAttribute('data-collector-approval-select') || '').trim();
+    if (!entryId) return;
+    if (selectionInput.checked) collectorApprovalSelectedIds.add(entryId);
+    else collectorApprovalSelectedIds.delete(entryId);
+    updateCollectorApprovalSelectionState();
   });
 
   // Delegate delete/remove actions similar to Plans page: confirm then remove
@@ -2151,14 +2780,6 @@
       // call the same removeAssignment flow used elsewhere
       removeAssignment(area, collectorId, actionBtn).catch(() => {});
     }
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    const row = event.target.closest('tr.collector-summary-row[data-assign-action="view-collector-areas"]');
-    if (!row || event.target.closest('button, a, input, select, textarea')) return;
-    event.preventDefault();
-    openCollectorAreasModal(row.getAttribute('data-collector-id') || '');
   });
 
   loadAreas().catch(() => {});

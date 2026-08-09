@@ -327,12 +327,157 @@ async function ensureJobsJobNumbering() {
   }
 }
 
+async function ensureTechnicianDispatchSchema() {
+  const columns = [
+    ['appointment_end', 'ALTER TABLE jobs ADD COLUMN appointment_end DATETIME NULL AFTER schedule'],
+    ['sla_due_at', 'ALTER TABLE jobs ADD COLUMN sla_due_at DATETIME NULL AFTER appointment_end'],
+    ['workflow_status', "ALTER TABLE jobs ADD COLUMN workflow_status VARCHAR(30) NOT NULL DEFAULT 'unassigned' AFTER status"],
+    ['customer_account_number', 'ALTER TABLE jobs ADD COLUMN customer_account_number VARCHAR(20) NULL AFTER description'],
+    ['customer_name', 'ALTER TABLE jobs ADD COLUMN customer_name VARCHAR(200) NULL AFTER customer_account_number'],
+    ['customer_phone', 'ALTER TABLE jobs ADD COLUMN customer_phone VARCHAR(50) NULL AFTER customer_name'],
+    ['service_address', 'ALTER TABLE jobs ADD COLUMN service_address VARCHAR(500) NULL AFTER customer_phone'],
+    ['latitude', 'ALTER TABLE jobs ADD COLUMN latitude DECIMAL(10, 7) NULL AFTER service_address'],
+    ['longitude', 'ALTER TABLE jobs ADD COLUMN longitude DECIMAL(10, 7) NULL AFTER latitude'],
+    ['plan_name', 'ALTER TABLE jobs ADD COLUMN plan_name VARCHAR(120) NULL AFTER longitude'],
+    ['dispatch_payload_json', 'ALTER TABLE jobs ADD COLUMN dispatch_payload_json LONGTEXT NULL AFTER plan_name'],
+    ['record_version', 'ALTER TABLE jobs ADD COLUMN record_version INT NOT NULL DEFAULT 1 AFTER dispatch_payload_json']
+  ];
+
+  for (const [name, ddl] of columns) {
+    const [rows] = await query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'jobs'
+         AND column_name = ?
+       LIMIT 1`,
+      [name]
+    );
+    if (rows && rows.length) continue;
+    await query(ddl);
+    console.log(`Added jobs.${name} column.`);
+  }
+
+  await query(
+    `UPDATE jobs
+     SET workflow_status = CASE
+       WHEN LOWER(TRIM(COALESCE(workflow_status, ''))) IN (
+         'unassigned', 'assigned', 'accepted', 'traveling', 'on_site', 'completed',
+         'failed', 'rescheduled', 'needs_team', 'rejected', 'cancelled'
+       ) THEN LOWER(TRIM(workflow_status))
+       WHEN LOWER(TRIM(COALESCE(status, ''))) IN ('done', 'closed', 'resolved', 'completed') THEN 'completed'
+       WHEN LOWER(TRIM(COALESCE(status, ''))) IN ('in-progress', 'in_progress') THEN 'accepted'
+       WHEN TRIM(COALESCE(technician, '')) <> ''
+         AND LOWER(TRIM(COALESCE(technician, ''))) NOT IN ('unassigned', 'pending assignment') THEN 'assigned'
+       ELSE 'unassigned'
+     END,
+     record_version = CASE WHEN record_version IS NULL OR record_version < 1 THEN 1 ELSE record_version END`
+  );
+
+  const indexes = [
+    ['idx_jobs_branch_workflow', 'ALTER TABLE jobs ADD KEY idx_jobs_branch_workflow (branch_id, workflow_status, schedule)'],
+    ['idx_jobs_branch_technician', 'ALTER TABLE jobs ADD KEY idx_jobs_branch_technician (branch_id, technician, workflow_status)'],
+    ['idx_jobs_customer_account', 'ALTER TABLE jobs ADD KEY idx_jobs_customer_account (customer_account_number)']
+  ];
+  for (const [name, ddl] of indexes) {
+    const [rows] = await query(
+      `SELECT 1
+       FROM information_schema.statistics
+       WHERE table_schema = DATABASE()
+         AND table_name = 'jobs'
+         AND index_name = ?
+       LIMIT 1`,
+      [name]
+    );
+    if (rows && rows.length) continue;
+    await query(ddl);
+    console.log(`Added jobs ${name} index.`);
+  }
+}
+
+async function ensureFinanceExpenseColumns() {
+  const [payeeRows] = await query(
+    `SELECT character_maximum_length AS max_length
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'finance_expenses'
+       AND column_name = 'payee'
+     LIMIT 1`
+  );
+  if (payeeRows?.length && Number(payeeRows[0].max_length || 0) < 160) {
+    await query('ALTER TABLE finance_expenses MODIFY COLUMN payee VARCHAR(160) NULL');
+    console.log('Expanded finance_expenses.payee to 160 characters.');
+  }
+
+  const columns = [
+    ['vendor', 'ALTER TABLE finance_expenses ADD COLUMN vendor VARCHAR(160) NULL AFTER payee'],
+    ['payment_method', "ALTER TABLE finance_expenses ADD COLUMN payment_method VARCHAR(30) NOT NULL DEFAULT 'other' AFTER amount"],
+    ['reference_number', 'ALTER TABLE finance_expenses ADD COLUMN reference_number VARCHAR(120) NULL AFTER payment_method'],
+    ['receipt_url', 'ALTER TABLE finance_expenses ADD COLUMN receipt_url VARCHAR(500) NULL AFTER reference_number'],
+    ['receipt_name', 'ALTER TABLE finance_expenses ADD COLUMN receipt_name VARCHAR(180) NULL AFTER receipt_url'],
+    ['status', "ALTER TABLE finance_expenses ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT 'paid' AFTER receipt_name"],
+    ['approved_at', 'ALTER TABLE finance_expenses ADD COLUMN approved_at DATETIME NULL AFTER updated_at'],
+    ['updated_by_user_id', 'ALTER TABLE finance_expenses ADD COLUMN updated_by_user_id VARCHAR(32) NULL AFTER created_by_name'],
+    ['updated_by_username', 'ALTER TABLE finance_expenses ADD COLUMN updated_by_username VARCHAR(100) NULL AFTER updated_by_user_id'],
+    ['updated_by_name', 'ALTER TABLE finance_expenses ADD COLUMN updated_by_name VARCHAR(120) NULL AFTER updated_by_username'],
+    ['approved_by_user_id', 'ALTER TABLE finance_expenses ADD COLUMN approved_by_user_id VARCHAR(32) NULL AFTER updated_by_name'],
+    ['approved_by_username', 'ALTER TABLE finance_expenses ADD COLUMN approved_by_username VARCHAR(100) NULL AFTER approved_by_user_id'],
+    ['approved_by_name', 'ALTER TABLE finance_expenses ADD COLUMN approved_by_name VARCHAR(120) NULL AFTER approved_by_username']
+  ];
+
+  for (const [name, ddl] of columns) {
+    const [rows] = await query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'finance_expenses'
+         AND column_name = ?
+       LIMIT 1`,
+      [name]
+    );
+    if (rows && rows.length) continue;
+    await query(ddl);
+    console.log(`Added finance_expenses.${name} column.`);
+  }
+
+  await query(
+    `UPDATE finance_expenses
+     SET vendor = COALESCE(NULLIF(TRIM(vendor), ''), NULLIF(TRIM(payee), '')),
+         payee = COALESCE(NULLIF(TRIM(payee), ''), NULLIF(TRIM(vendor), '')),
+         payment_method = CASE
+           WHEN LOWER(TRIM(COALESCE(payment_method, ''))) IN ('cash', 'gcash', 'bank_transfer', 'card', 'check', 'other')
+             THEN LOWER(TRIM(payment_method))
+           ELSE 'other'
+         END,
+         status = CASE
+           WHEN LOWER(TRIM(COALESCE(status, ''))) IN ('draft', 'pending', 'approved', 'paid', 'rejected')
+             THEN LOWER(TRIM(status))
+           ELSE 'paid'
+         END`
+  );
+
+  const [indexRows] = await query(
+    `SELECT 1
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'finance_expenses'
+       AND index_name = 'idx_fin_exp_branch_status'
+     LIMIT 1`
+  );
+  if (!indexRows || !indexRows.length) {
+    await query('ALTER TABLE finance_expenses ADD KEY idx_fin_exp_branch_status (branch_id, status, expense_date)');
+    console.log('Added finance_expenses idx_fin_exp_branch_status index.');
+  }
+}
+
 async function updateSchema() {
   if (!isMysqlEnabled()) {
     throw new Error('MySQL is not configured. Set MYSQL_* env or save config first.');
   }
 
   await runSchema();
+  await ensureTechnicianDispatchSchema();
+  await ensureFinanceExpenseColumns();
   await ensureIntegrationSettingsSecretJsonColumn();
   await ensureCustomersPrepaidExpirationColumn();
   await ensureCustomersActivationDateColumn();

@@ -38,13 +38,37 @@ const stores = {
     name: 'Test Client',
     area: 'North Area',
     branchId: 'branch-1'
+  }, {
+    accountNumber: 'ACC-PARTIAL',
+    name: 'Partial Payment Client',
+    area: 'North Area',
+    branchId: 'branch-1'
   }],
   collectors: {
     assignments: {
       'North Area': ['collector-1']
     }
   },
-  collector_followups: { records: [] }
+  collector_followups: { records: [] },
+  payments: {
+    'ACC-PARTIAL': {
+      history: [{
+        id: 'pay-partial-1',
+        amount: 400,
+        date: '2026-08-09',
+        kind: 'payment',
+        direction: 'credit',
+        reference: 'PARTIAL-REF-1',
+        status: 'pending_approval',
+        recordedBy: {
+          id: 'collector-1',
+          username: 'collector.one',
+          name: 'Collector One',
+          role: 'Collector'
+        }
+      }]
+    }
+  }
 };
 let relationalReady = false;
 
@@ -223,6 +247,107 @@ async function run() {
     });
     assert.equal(tombstoneAfterDelete.body.records.length, 1);
     assert.equal(tombstoneAfterDelete.body.records[0].historyType, 'Deleted');
+
+    const invalidPartialBalance = await request('', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector' },
+      body: JSON.stringify({
+        clientRecordId: 'partial-followup-invalid-balance',
+        accountNumber: 'ACC-PARTIAL',
+        followUpType: 'partial_payment',
+        paymentEntryId: 'pay-partial-1',
+        amountPaid: 400,
+        remainingBalance: -600,
+        rescheduledDate: '2026-08-11',
+        preferredTime: '3:00 PM'
+      })
+    });
+    assert.equal(invalidPartialBalance.status, 400);
+
+    const mismatchedPartialAmount = await request('', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector' },
+      body: JSON.stringify({
+        clientRecordId: 'partial-followup-invalid-amount',
+        accountNumber: 'ACC-PARTIAL',
+        followUpType: 'partial_payment',
+        paymentEntryId: 'pay-partial-1',
+        amountPaid: 500,
+        remainingBalance: 500,
+        rescheduledDate: '2026-08-11',
+        preferredTime: '3:00 PM'
+      })
+    });
+    assert.equal(mismatchedPartialAmount.status, 409);
+
+    const partialCreate = await request('', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector' },
+      body: JSON.stringify({
+        clientRecordId: 'partial-followup-local-1',
+        accountNumber: 'ACC-PARTIAL',
+        followUpType: 'partial_payment',
+        paymentEntryId: 'pay-partial-1',
+        paymentReference: 'PARTIAL-REF-1',
+        amountPaid: 400,
+        remainingBalance: 600,
+        rescheduledDate: '2026-08-11',
+        preferredTime: '3:00 PM',
+        collectorNote: 'Customer requested an afternoon visit.',
+        result: 'Partial payment',
+        createdAt: '2026-08-09T10:00:00+08:00'
+      })
+    });
+    assert.equal(partialCreate.status, 201);
+    assert.equal(partialCreate.body.record.followUpType, 'partial_payment');
+    assert.equal(partialCreate.body.record.source, 'partial_payment');
+    assert.equal(partialCreate.body.record.paymentEntryId, 'pay-partial-1');
+    assert.equal(partialCreate.body.record.amountPaid, 400);
+    assert.equal(partialCreate.body.record.remainingBalance, 600);
+    assert.equal(partialCreate.body.record.collectorNote, 'Customer requested an afternoon visit.');
+    assert.equal(partialCreate.body.record.auditHistory[0].action, 'created');
+    const partialRecordId = partialCreate.body.record.id;
+
+    const partialDuplicate = await request('', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector' },
+      body: JSON.stringify({
+        clientRecordId: 'partial-followup-local-1',
+        accountNumber: 'ACC-PARTIAL',
+        followUpType: 'partial_payment',
+        paymentEntryId: 'pay-partial-1',
+        paymentReference: 'PARTIAL-REF-1',
+        amountPaid: 400,
+        remainingBalance: 600,
+        rescheduledDate: '2026-08-11',
+        preferredTime: '3:00 PM',
+        collectorNote: 'Customer requested an afternoon visit.'
+      })
+    });
+    assert.equal(partialDuplicate.status, 200);
+    assert.equal(partialDuplicate.body.created, false);
+    assert.equal(partialDuplicate.body.record.id, partialRecordId);
+
+    const partialEdit = await request(`/${encodeURIComponent(partialRecordId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        rescheduledDate: '2026-08-13',
+        preferredTime: '5:00 PM',
+        collectorNote: ''
+      })
+    });
+    assert.equal(partialEdit.status, 200);
+    assert.equal(partialEdit.body.record.rescheduledDate, '2026-08-13');
+    assert.equal(partialEdit.body.record.preferredTime, '5:00 PM');
+    assert.equal(partialEdit.body.record.collectorNote, '');
+    assert.equal(partialEdit.body.record.notes, '');
+    assert.equal(partialEdit.body.record.paymentEntryId, 'pay-partial-1');
+    assert.equal(partialEdit.body.record.auditHistory.at(-1).action, 'updated');
+
+    const partialDelete = await request(`/${encodeURIComponent(partialRecordId)}`, { method: 'DELETE' });
+    assert.equal(partialDelete.status, 200);
+    assert.equal(partialDelete.body.record.historyType, 'Deleted');
+    assert.equal(partialDelete.body.record.auditHistory.at(-1).action, 'deleted');
 
     relationalReady = true;
     const relationalCreate = await request('', {

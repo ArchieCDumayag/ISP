@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customers.css?v=3.1">
+    <link rel="stylesheet" href="css/customers.css?v=3.2">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
@@ -29,30 +29,49 @@
     <div class="app-main">
         <div id="topbar"></div>
         <main class="page customers-page">
-        <section class="page-header">
+        <section class="page-header customer-page-header">
             <div class="page-title">
                 <p class="eyebrow">Customer Management</p>
                 <h1>Customers</h1>
-                <p class="subtitle">Create delightful customer journeys with a polished billing workspace.</p>
+                <p class="subtitle">Manage subscribers, plans, service areas, and account status.</p>
             </div>
             <div class="header-actions">
-                <button class="ghost-btn import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import clients</button>
+                <button class="ghost-btn import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import</button>
                 <button class="ghost-btn import-warning-review-btn" id="importWarningReviewBtn" type="button" hidden>
                     <i class="ti ti-alert-triangle" aria-hidden="true"></i>
                     Review import warnings
                     <span class="import-warning-review-count" id="importWarningReviewCount">0</span>
                 </button>
-                <button class="ghost-btn export-clients-btn" id="exportClientsBtn" type="button"><i class="ti ti-file-export" aria-hidden="true"></i> Export clients</button>
+                <button class="ghost-btn export-clients-btn" id="exportClientsBtn" type="button"><i class="ti ti-file-export" aria-hidden="true"></i> Export</button>
                 <input type="file" class="import-clients-input" id="importClientsFile" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Import clients Excel file">
-                <button class="add-btn" id="openModalBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add customer</button> 
+                <button class="add-btn" id="openModalBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
             </div>
         </section>
 
+        <section class="card customer-kpi-grid" aria-label="Filtered customer summary">
+            <article class="customer-kpi-item">
+                <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-users"></i></span>
+                <div><span>Customers</span><strong id="customerStatsTotal">0</strong></div>
+            </article>
+            <article class="customer-kpi-item">
+                <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-user-check"></i></span>
+                <div><span>Active</span><strong id="customerStatsActive">0</strong></div>
+            </article>
+            <article class="customer-kpi-item">
+                <span class="avatar bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-cash"></i></span>
+                <div><span>Outstanding</span><strong id="customerStatsBalance">&#8369;0</strong></div>
+            </article>
+            <article class="customer-kpi-item">
+                <span class="avatar bg-azure-lt text-azure" aria-hidden="true"><i class="ti ti-map-pin"></i></span>
+                <div><span>Service Areas</span><strong id="customerStatsAreas">0</strong></div>
+            </article>
+        </section>
+
         <section class="section-frame">
-            <div class="section-toolbar">
+            <div class="section-toolbar customer-compact-toolbar">
                 <div class="search-field">
                     <i class="ti ti-search" aria-hidden="true"></i>
-                    <input type="search" placeholder="Search by name, account #, or plan" aria-label="Search customers">
+                    <input type="search" id="customerSearch" placeholder="Search name or account" aria-label="Search customers">
                 </div>
                 <div class="filter-chips" role="radiogroup" aria-label="Status filters">
                     <button class="chip active" role="radio" aria-checked="true">All</button>
@@ -65,6 +84,16 @@
                         <div class="select-wrapper">
                             <select id="filterPlan" name="filterPlan">
                                 <option value="">All plans</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="page-size-control toolbar-filter-control toolbar-filter-control--billing">
+                        <label for="customerBillingTypeFilter">Billing</label>
+                        <div class="select-wrapper">
+                            <select id="customerBillingTypeFilter" name="customerBillingTypeFilter">
+                                <option value="">All types</option>
+                                <option value="prepaid">Prepaid</option>
+                                <option value="postpaid">Postpaid</option>
                             </select>
                         </div>
                     </div>
@@ -95,8 +124,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-                <div class="toolbar-actions">
                     <div class="page-size-control">
                         <label for="customersSortSelect">Sort</label>
                         <div class="select-wrapper">
@@ -120,6 +147,12 @@
                             </select>
                         </div>
                     </div>
+                </div>
+                <div class="toolbar-actions customer-toolbar-actions">
+                    <button class="ghost-btn customer-clear-filters" id="customerClearFilters" type="button" title="Clear customer filters">
+                        <i class="ti ti-filter-off" aria-hidden="true"></i>
+                        <span>Clear</span>
+                    </button>
                     <button class="ghost-btn ghost-btn--danger" id="deleteSelectedCustomersBtn" type="button" disabled>
                         <i class="ti ti-archive" aria-hidden="true"></i> Archive selected
                     </button>
@@ -132,11 +165,10 @@
                         <col class="col-select">
                         <col class="col-account">
                         <col class="col-subscriber">
+                        <col class="col-area">
                         <col class="col-plan">
-                        <col class="col-billing">
-                        <col class="col-contact">
-                        <col class="col-address">
-                        <col class="col-remarks">
+                        <col class="col-balance">
+                        <col class="col-status">
                         <col class="col-actions">
                     </colgroup>
                     <thead>
@@ -145,12 +177,11 @@
                                 <input type="checkbox" id="selectAllCustomers" aria-label="Select all customers on this page">
                             </th>
                             <th class="account-col">Account #</th>
-                            <th>Subscriber</th>
+                            <th>Customer</th>
+                            <th>Area</th>
                             <th class="plan-col">Plan</th>
-                            <th>Billing Cycle</th>
-                            <th>Contact</th>
-                            <th>Address</th>
-                            <th>Remarks</th>
+                            <th class="balance-col">Balance</th>
+                            <th class="status-col">Status</th>
                             <th class="actions-col">Actions</th>
                         </tr>
                     </thead>
@@ -1147,6 +1178,12 @@
             const statusSwitchHint = document.getElementById('statusSwitchHint');
             const filterPlanSelect = document.getElementById('filterPlan');
             const filterAreaSelect = document.getElementById('filterArea');
+            const customerBillingTypeFilter = document.getElementById('customerBillingTypeFilter');
+            const customerClearFilters = document.getElementById('customerClearFilters');
+            const customerStatsTotal = document.getElementById('customerStatsTotal');
+            const customerStatsActive = document.getElementById('customerStatsActive');
+            const customerStatsBalance = document.getElementById('customerStatsBalance');
+            const customerStatsAreas = document.getElementById('customerStatsAreas');
             const pppoeRouterSelect = document.getElementById('pppoeRouter');
             const contactNumberInput = document.getElementById('contactNumber');
             const pppoeRouterField = document.getElementById('pppoeRouterField');
@@ -6139,6 +6176,25 @@
             if (filterAreaSelect) {
                 filterAreaSelect.addEventListener('change', () => applyFilters());
             }
+            if (customerBillingTypeFilter) {
+                customerBillingTypeFilter.addEventListener('change', () => applyFilters());
+            }
+            customerClearFilters?.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                if (filterPlanSelect) filterPlanSelect.value = '';
+                if (customerBillingTypeFilter) customerBillingTypeFilter.value = '';
+                if (filterAreaSelect) {
+                    setMultiSelectValues(filterAreaSelect, []);
+                    areaFilterPicker?.sync();
+                    areaFilterPicker?.close();
+                }
+                filterChipsContainer?.querySelectorAll('.chip').forEach((chip, index) => {
+                    chip.classList.toggle('active', index === 0);
+                    chip.setAttribute('aria-checked', index === 0 ? 'true' : 'false');
+                });
+                applyFilters();
+                searchInput?.focus();
+            });
 
             // Announce that this page is ready for global search
             document.dispatchEvent(new CustomEvent('page:search-ready', {
@@ -6167,11 +6223,34 @@
                 });
             }
 
+            const getCustomerCanonicalBalance = (customer = {}) => {
+                const accountNumber = String(customer?.accountNumber || customer?.id || '').trim();
+                const billingSummary = getPaymentRecord(accountNumber)?.billingSummary;
+                if (Number(billingSummary?.version) < 2 || billingSummary?.available !== true) return null;
+                const balance = Number(billingSummary?.endingBalance);
+                return Number.isFinite(balance) ? balance : null;
+            };
+
+            const updateCustomerSummary = (customers = []) => {
+                const records = Array.isArray(customers) ? customers : [];
+                const activeCount = records.filter((customer) => resolveCustomerStatusValue(customer, 'active') === 'active').length;
+                const serviceAreas = new Set(records.map((customer) => String(customer?.area || '').trim()).filter(Boolean));
+                const outstanding = records.reduce((sum, customer) => {
+                    const balance = getCustomerCanonicalBalance(customer);
+                    return balance !== null && balance > 0 ? sum + balance : sum;
+                }, 0);
+                if (customerStatsTotal) customerStatsTotal.textContent = String(records.length);
+                if (customerStatsActive) customerStatsActive.textContent = String(activeCount);
+                if (customerStatsBalance) customerStatsBalance.textContent = paymentRecordsLoaded ? formatPeso(outstanding) : '—';
+                if (customerStatsAreas) customerStatsAreas.textContent = String(serviceAreas.size);
+            };
+
             function applyFilters() {
                 const searchQuery = (searchInput?.value || '').trim().toLowerCase();
                 const activeStatusFilter = filterChipsContainer?.querySelector('.chip.active')?.textContent.trim().toLowerCase() || 'all';
                 const planFilter = String(filterPlanSelect?.value || '').trim();
                 const normalizedPlanFilter = normalizePlanName(planFilter);
+                const billingTypeFilter = String(customerBillingTypeFilter?.value || '').trim().toLowerCase();
                 const selectedAreas = getMultiSelectValues(filterAreaSelect);
                 const totalAreaOptions = Array.from(filterAreaSelect?.options || [])
                     .map((option) => String(option.value || '').trim())
@@ -6206,6 +6285,9 @@
                         const comparablePlanName = matchedPlan?.name || customer?.planName || '';
                         return normalizePlanName(comparablePlanName) === normalizedPlanFilter;
                     });
+                }
+                if (billingTypeFilter) {
+                    results = results.filter((customer) => resolveCustomerPlanCategory(customer) === billingTypeFilter);
                 }
                 if (areaFilterSet.size) {
                     results = results.filter((customer) => areaFilterSet.has(String(customer.area || '').trim().toLowerCase()));
@@ -6264,6 +6346,7 @@
                 }
 
                 filteredCustomersState = results;
+                updateCustomerSummary(results);
                 customersPagination.page = 1;
                 renderCustomersPage();
             }
@@ -6373,6 +6456,19 @@
                     const editBtn = event.target.closest('.edit-customer');
                     const deleteBtn = event.target.closest('.delete-customer');
                     const wifiBtn = event.target.closest('.wifi-customer');
+                    const viewBtn = event.target.closest('.view-customer');
+
+                    if (viewBtn) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const customer = getCustomerFromTableRow(viewBtn.closest('tr'));
+                        if (!customer) {
+                            showToast('Unable to load customer details.');
+                            return;
+                        }
+                        openViewModal({ ...customer });
+                        return;
+                    }
 
                     if (wifiBtn) {
                         event.preventDefault();
@@ -6446,7 +6542,7 @@
                         return;
                     }
 
-                    const row = event.target.closest('tr[data-customer-data]');
+                    const row = event.target.closest('tr[data-account-number]');
                     if (!row) return;
                     if (event.target.closest('.row-actions') || event.target.closest('.select-col')) return;
                     try {
@@ -6654,6 +6750,17 @@
                     setCustomerSubmitState(false);
                     return;
                 }
+                const rawCustomerMapPin = String(formData.get('mapPin') || '').trim();
+                const parsedCustomerMapPin = rawCustomerMapPin ? parseCoordinateValue(rawCustomerMapPin) : null;
+                if (rawCustomerMapPin && !parsedCustomerMapPin) {
+                    showToast('Map Pin must contain valid latitude and longitude, for example 14.5995, 120.9842.');
+                    mapPinInput?.focus();
+                    setCustomerSubmitState(false);
+                    return;
+                }
+                const normalizedCustomerMapPin = parsedCustomerMapPin
+                    ? formatCoordinatePair(parsedCustomerMapPin.lat, parsedCustomerMapPin.lng)
+                    : '';
                 const selectedReferralCustomer = referralSourceType === 'customer'
                     ? findReferralCustomer(referralCustomerAccountNumber)
                     : null;
@@ -6683,7 +6790,7 @@
                     municipality: selectedMunicipalityLabel,
                     province: selectedProvinceLabel,
                     area: formData.get('area'),
-                    mapPin: formData.get('mapPin'),
+                    mapPin: normalizedCustomerMapPin,
                     napId: selectedNapId,
                     napPort: selectedNapPort ? String(selectedNapPort) : '',
                     opticalInfo,
@@ -7037,7 +7144,7 @@
                 const activeSortFilter = String(customersSortSelect?.value || DEFAULT_SORT_FILTER).trim();
 
                 if (!customers || customers.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding: 40px;">No customers found.</td></tr>';
+                    tableBody.innerHTML = '<tr class="customer-empty-row"><td colspan="8">No customers found.</td></tr>';
                     updateSelectionUi();
                     return;
                 }
@@ -7069,34 +7176,6 @@
                         const complimentaryActive = complimentaryAccount.active === true;
                         const isSelected = selectedCustomerIds.has(accountNumber);
                         
-                        const address = [customer.street, customer.barangay, customer.municipality, customer.province].filter(Boolean).join(', ');
-                        const rawMapPin = String(
-                            customer.mapPin
-                            || customer.map_pin
-                            || customer.coordinates
-                            || customer.coordinate
-                            || ''
-                        ).trim();
-                        const parsedMapPin = parseCoordinateValue(rawMapPin);
-                        const hasConfiguredCoordinates = Boolean(parsedMapPin);
-                        const coordinatesUrl = hasConfiguredCoordinates
-                            ? `https://maps.google.com/?q=${encodeURIComponent(rawMapPin)}`
-                            : '';
-                        const coordinatesIndicator = hasConfiguredCoordinates
-                            ? `
-                                <a
-                                    class="coordinates-indicator coordinates-indicator--configured"
-                                    href="${coordinatesUrl}"
-                                    target="_blank"
-                                    rel="noopener"
-                                    title="Coordinates configured: ${escapeHtml(rawMapPin)}"
-                                    aria-label="Coordinates configured for ${escapeHtml(canonicalFullName)}"
-                                >
-                                    <i class="ti ti-circle-check-filled" aria-hidden="true"></i>
-                                    <span>Coordinates configured</span>
-                                </a>
-                            `
-                            : '';
                         const normalizedStatus = resolveCustomerStatusValue(customer, 'active');
                         const statusClass = normalizedStatus === 'active'
                             ? 'success'
@@ -7104,41 +7183,19 @@
                         const statusLabel = normalizedStatus === 'active'
                             ? 'Active'
                             : (normalizedStatus === 'disabled' ? 'Disabled' : 'Inactive');
-
-                    let billingCycleDisplay = 'Not set';
-                    let billingCycleMeta = 'No cycle recorded';
-                    const planCategory = resolveCustomerPlanCategory(customer);
-
-                    if (complimentaryActive) {
-                        const currentPeriod = complimentaryAccount.currentPeriod || {};
-                        billingCycleDisplay = `Complimentary from ${formatBillingCycleLabel(currentPeriod.effectiveMonth)}`;
-                        billingCycleMeta = complimentaryAccount.nextBillableCycleDate
-                            ? `Billing resumes ${formatViewDate(complimentaryAccount.nextBillableCycleDate)}`
-                            : 'No end month';
-                    } else if (planCategory === 'prepaid') {
-                        const prepaidCycle = resolvePrepaidCycleDisplay(customer);
-                        billingCycleDisplay = prepaidCycle.display;
-                        billingCycleMeta = prepaidCycle.meta;
-                    } else {
-                        const canonicalPostpaidCycle = resolveCanonicalCycleDisplay(customer, 'postpaid');
-                        if (canonicalPostpaidCycle) {
-                            billingCycleDisplay = canonicalPostpaidCycle.display;
-                            billingCycleMeta = canonicalPostpaidCycle.meta;
-                        } else {
-                            billingCycleDisplay = 'Billing unavailable';
-                            billingCycleMeta = 'Canonical backend result required';
-                        }
-                    }
-
-                    const customerDataString = JSON.stringify({
-                        id: accountNumber,
-                        name: canonicalFullName,
-                        firstName: firstName,
-                        lastName: lastName,
-                        pppoeUsername: customer.pppoeUsername || '',
-                        pppoePassword: customer.pppoePassword || '',
-                        ...customer
-                    });
+                        const areaName = String(customer?.area || '').trim() || 'Unassigned';
+                        const areaMeta = [customer?.barangay, customer?.municipality].map((value) => String(value || '').trim()).filter(Boolean).join(', ') || 'No location details';
+                        const mobileNumber = String(customer?.mobileRaw || customer?.contactNumber || customer?.mobile || '').trim() || 'No phone';
+                        const canonicalBalance = getCustomerCanonicalBalance(customer);
+                        const balanceClass = canonicalBalance === null
+                            ? 'is-unavailable'
+                            : (canonicalBalance > 0 ? 'is-due' : (canonicalBalance < 0 ? 'is-advance' : 'is-paid'));
+                        const balanceDisplay = canonicalBalance === null
+                            ? 'Unavailable'
+                            : formatPeso(Math.abs(canonicalBalance));
+                        const balanceMeta = canonicalBalance === null
+                            ? 'Billing data required'
+                            : (canonicalBalance > 0 ? 'Outstanding' : (canonicalBalance < 0 ? 'Advance' : 'Paid'));
 
                     // Find matching plan object (if plans were loaded) to enrich the display
                     const matchedPlan = findCatalogPlan({ planId: customer.planId, planName: customer.planName }) || undefined;
@@ -7156,9 +7213,8 @@
                     return `
                         <tr
                             class="${normalizedStatus === 'active' ? 'row-status-active' : 'row-status-inactive'}"
-                            data-account-number="${accountNumber}"
-                            data-customer-data='${customerDataString}'>
-                            <td class="select-col">
+                            data-account-number="${accountNumber}">
+                            <td class="select-col" data-label="Select">
                                 <input
                                     type="checkbox"
                                     class="row-select-checkbox"
@@ -7167,7 +7223,7 @@
                                     ${isSelected ? 'checked' : ''}
                                 >
                             </td>
-                            <td class="account-col">
+                            <td class="account-col" data-label="Account">
                                 <span class="account-tag-wrap">
                                     <span class="account-tag">${accountNumber}</span>
                                     <button
@@ -7182,39 +7238,40 @@
                                     </button>
                                 </span>
                             </td>
-                            <td>
+                            <td class="customer-col" data-label="Customer">
                                 <div class="subscriber">
                                     <span class="avatar">${displayInitials}</span>
                                     <div>
-                                        <p class="subscriber-name">${displayName}</p>
-                                        <p class="subscriber-meta">Joined ${customer.since || 'Unknown'} &middot; <span class="status-pill status-pill--indicator ${statusClass}" title="${escapeHtml(statusLabel)}" aria-label="${escapeHtml(statusLabel)}"></span>${complimentaryActive ? ' <span class="badge bg-azure-lt text-azure">COMPLIMENTARY</span>' : ''}</p>
+                                        <p class="subscriber-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</p>
+                                        <p class="subscriber-meta" title="${escapeHtml(mobileNumber)}">${escapeHtml(mobileNumber)}${complimentaryActive ? ' <span class="badge bg-azure-lt text-azure">COMPLIMENTARY</span>' : ''}</p>
                                     </div>
                                 </div>
                             </td>
-                            <td class="plan-col">
-                                <div class="${planPillClass}">${customer.planName}</div>
+                            <td class="area-col" data-label="Area">
+                                <div class="customer-area-copy">
+                                    <strong title="${escapeHtml(areaName)}">${escapeHtml(areaName)}</strong>
+                                    <small title="${escapeHtml(areaMeta)}">${escapeHtml(areaMeta)}</small>
+                                </div>
+                            </td>
+                            <td class="plan-col" data-label="Plan">
+                                <div class="${planPillClass}" title="${escapeHtml(customer.planName || 'No plan')}">${escapeHtml(customer.planName || 'No plan')}</div>
                                 <p class="plan-meta">${planMetaText}</p>
                             </td>
-                            <td>
-                                <p class="cycle">${billingCycleDisplay}</p>
-                                <p class="cycle muted">${billingCycleMeta}</p> 
+                            <td class="balance-col" data-label="Balance">
+                                <div class="customer-balance ${balanceClass}">
+                                    <strong>${escapeHtml(balanceDisplay)}</strong>
+                                    <small>${escapeHtml(balanceMeta)}</small>
+                                </div>
                             </td>
-                            <td>
-                                <p class="contact-line"><i class="ti ti-device-mobile" aria-hidden="true"></i> ${customer.mobileRaw}</p>
-                                <p class="contact-line"><i class="ti ti-mail" aria-hidden="true"></i> ${customer.email}</p>
+                            <td class="status-col" data-label="Status">
+                                <span class="status-pill customer-status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
                             </td>
-                            <td>
-                                <p class="address">${address || 'No address set'}</p>
-                                ${coordinatesIndicator}
-                            </td>
-                            <td>
-                                <span class="note">${customer.remarks || ''}</span>
-                            </td>
-                            <td class="actions-col">
+                            <td class="actions-col" data-label="Actions">
                                 <div class="row-actions">
-                                    <button class="ghost-icon wifi-customer" data-customer-id="${accountNumber}" data-customer-name="${canonicalFullName}" aria-label="Change WiFi for ${canonicalFullName}" title="Change WiFi name and password"><i class="ti ti-wifi" aria-hidden="true"></i></button>
-                                    <button class="ghost-icon edit-customer" data-customer-id="${accountNumber}" data-customer-name="${canonicalFullName}" aria-label="Edit ${canonicalFullName}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
-                                    <button class="ghost-icon danger delete-customer" data-customer-id="${accountNumber}" data-customer-name="${canonicalFullName}" aria-label="Archive ${canonicalFullName}" title="Archive customer"><i class="ti ti-archive" aria-hidden="true"></i></button>
+                                    <button class="ghost-icon view-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="View ${escapeHtml(canonicalFullName)}" title="View customer details"><i class="ti ti-eye" aria-hidden="true"></i></button>
+                                    <button class="ghost-icon wifi-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Change WiFi for ${escapeHtml(canonicalFullName)}" title="Change WiFi name and password"><i class="ti ti-wifi" aria-hidden="true"></i></button>
+                                    <button class="ghost-icon edit-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Edit ${escapeHtml(canonicalFullName)}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+                                    <button class="ghost-icon danger delete-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Archive ${escapeHtml(canonicalFullName)}" title="Archive customer"><i class="ti ti-archive" aria-hidden="true"></i></button>
                                 </div>
                             </td>
                         </tr>
@@ -7230,7 +7287,7 @@
                 updateSelectionUi();
                 } catch (error) {
                     console.error('Error in renderCustomers:', error);
-                    tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding: 40px; color: red;">Error loading customers. Please refresh the page.</td></tr>';
+                    tableBody.innerHTML = '<tr class="customer-empty-row"><td colspan="8" class="text-danger">Error loading customers. Please refresh the page.</td></tr>';
                     updateSelectionUi();
                 }
             }
@@ -7310,8 +7367,9 @@
                     }
                 } catch (error) {
                     console.error('Failed to load customers:', error);
-                    tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: red; padding: 40px;">Error loading customer data. Please ensure the server is running.</td></tr>`;
+                    tableBody.innerHTML = '<tr class="customer-empty-row"><td colspan="8" class="text-danger">Error loading customer data. Please ensure the server is running.</td></tr>';
                     filteredCustomersState = [];
+                    updateCustomerSummary([]);
                     customersPagination.page = 1;
                     updateCustomersFooter(0, 0, 0, 1);
                     updateSelectionUi();

@@ -108,6 +108,11 @@ console.log('PASS Customer Management centralized referral workflow contract');
 
 const customerRouter = backend.load('customers');
 assert.strictEqual(typeof customerRouter.normalizeImportedClientCorrectionRecord, 'function');
+assert.strictEqual(typeof customerRouter.normalizeCustomerMapPin, 'function');
+assert.strictEqual(customerRouter.normalizeCustomerMapPin('14.5995, 120.9842'), '14.599500, 120.984200');
+assert.strictEqual(customerRouter.normalizeCustomerMapPin('https://maps.google.com/?q=14.5995,120.9842'), '14.599500, 120.984200');
+assert.strictEqual(customerRouter.normalizeCustomerMapPin(`17°58'6.21"N121°45'30.43"E`), '17.968392, 121.758453');
+assert.throws(() => customerRouter.normalizeCustomerMapPin('not a coordinate'), /valid latitude and longitude/);
 const normalizedImportCorrection = customerRouter.normalizeImportedClientCorrectionRecord({
   rowNumber: 360,
   accountNumber: 100000360,
@@ -130,6 +135,8 @@ assert(customersPageSource.includes('id="importWarningReviewBtn"'));
 assert(customersPageSource.includes('id="importWarningModal"'));
 assert(customersPageSource.includes("fetch('/api/customers/import-client-corrections'"));
 assert(customersPageSource.includes('renderImportWarningRows(warningRecords)'));
+assert(customersPageSource.includes("const parsedCustomerMapPin = rawCustomerMapPin ? parseCoordinateValue(rawCustomerMapPin) : null;"));
+assert(customersPageSource.includes('mapPin: normalizedCustomerMapPin'));
 assert(customersCssSource.includes('.import-warning-modal .modal-content'));
 assert(customersCssSource.includes('.import-warning-review-btn[hidden]'));
 console.log('PASS CLIENTS LIST import warning review and correction UI contract');
@@ -141,6 +148,9 @@ assert(serverSource.includes("customerManagementBackend.load('customers')"));
 assert(serverSource.includes("customerManagementBackend.load('customerDraftSubmissions')"));
 assert(serverSource.includes("customerManagementBackend.load('customerFullJsonImport')"));
 assert(serverSource.includes('const jsonResult = await importCustomerFullJsonData({ branchId, tables });'));
+assert(serverSource.includes('workflow_status = VALUES(workflow_status)'));
+assert(serverSource.includes('dispatch_payload_json = VALUES(dispatch_payload_json)'));
+assert(serverSource.includes('record_version = VALUES(record_version)'));
 assert(serverSource.includes("readJson('tickets', [])"));
 assert(serverSource.includes("readJson('jobs', [])"));
 assert(serverSource.includes("readJson('sms_messages', [])"));

@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/coverage-tabler.css?v=1.5">
+    <link rel="stylesheet" href="css/coverage-tabler.css?v=2.0">
 </head>
 <body class="layout-fluid layout-fluid-vertical">
   <div class="app-shell tabler-fluid-vertical">
@@ -18,25 +18,52 @@
     <div class="app-main page-wrapper">
       <div id="topbar"></div>
 
-      <main class="page coverage-page">
-        <section class="page-header">
+      <main class="page coverage-page coverage-index-page">
+        <section class="page-header coverage-page-header">
           <div class="page-title">
             <p class="eyebrow">Service Area Management</p>
             <h1>Coverage Table</h1>
-            <p class="subtitle">Manage service coverage areas in table view.</p>
+            <p class="subtitle">Manage service areas, linked routers, and covered customers.</p>
           </div>
           <div class="header-actions">
             <button class="btn btn-primary btn-sm" id="openModalBtn" type="button"><i class="ti ti-map-pin" aria-hidden="true"></i> Add Coverage Area</button>
           </div>
         </section>
 
-        <section class="card coverage-card">
+        <section class="card coverage-summary-strip" aria-label="Filtered coverage summary">
+          <article class="coverage-summary-item">
+            <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-map-2"></i></span>
+            <div><span>Coverage Areas</span><strong id="coverageMetricTotal">0</strong></div>
+          </article>
+          <article class="coverage-summary-item">
+            <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-map-check"></i></span>
+            <div><span>With Clients</span><strong id="coverageMetricWithClients">0</strong></div>
+          </article>
+          <article class="coverage-summary-item">
+            <span class="avatar bg-azure-lt text-azure" aria-hidden="true"><i class="ti ti-users"></i></span>
+            <div><span>Covered Clients</span><strong id="coverageMetricCustomers">0</strong></div>
+          </article>
+          <article class="coverage-summary-item">
+            <span class="avatar bg-purple-lt text-purple" aria-hidden="true"><i class="ti ti-router"></i></span>
+            <div><span>Router Links</span><strong id="coverageMetricLinked">0</strong></div>
+          </article>
+        </section>
+
+        <section class="card coverage-card coverage-list-card">
           <div class="card-header coverage-toolbar">
             <div class="input-icon coverage-search">
               <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
               <input class="form-control form-control-sm" id="searchCoverage" type="search" placeholder="Search area, code, or router" aria-label="Search coverage">
             </div>
             <div class="coverage-toolbar-actions">
+              <div class="coverage-control">
+                <label class="form-label" for="filterClients">Clients</label>
+                <select class="form-select form-select-sm" id="filterClients" name="filterClients">
+                  <option value="">All areas</option>
+                  <option value="withClients">With clients</option>
+                  <option value="withoutClients">No clients</option>
+                </select>
+              </div>
               <div class="coverage-control">
                 <label class="form-label" for="coverageSortSelect">Sort</label>
                 <select class="form-select form-select-sm" id="coverageSortSelect" name="coverageSortSelect">
@@ -54,7 +81,7 @@
                   <option value="100">100</option>
                 </select>
               </div>
-              <button class="btn btn-outline-secondary btn-sm" id="filterBtn" type="button"><i class="ti ti-filter" aria-hidden="true"></i> Filter</button>
+              <button class="btn btn-outline-secondary btn-sm coverage-clear-btn" id="coverageClearFilters" type="button" title="Clear coverage filters"><i class="ti ti-filter-off" aria-hidden="true"></i> Clear</button>
             </div>
           </div>
 
@@ -62,12 +89,10 @@
             <table class="table table-vcenter table-sm coverage-table">
               <thead>
                 <tr>
-                  <th class="coverage-id-col text-center">ID</th>
-                  <th class="coverage-area-col">Area Name</th>
+                  <th class="coverage-area-col">Coverage Area</th>
                   <th class="coverage-router-col text-center">MikroTik Link</th>
-                  <th class="coverage-date-col text-center">Created</th>
-                  <th class="coverage-date-col text-center">Updated</th>
-                  <th class="coverage-clients-col text-center">Total Clients</th>
+                  <th class="coverage-clients-col text-center">Clients</th>
+                  <th class="coverage-date-col text-center">Activity</th>
                   <th class="actions-col text-center">Actions</th>
                 </tr>
               </thead>
@@ -91,64 +116,44 @@
     </div>
   </div>
 
-  <div id="coverageModal" class="modal tabler-form-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true">
-    <div class="modal-dialog">
+  <div id="coverageModal" class="modal tabler-form-modal coverage-editor-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalSubtitle" aria-hidden="true" data-tabler-modal-size="lg">
+    <div class="modal-dialog modal-dialog-centered coverage-editor-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <div>
-            <h2 class="modal-title" id="modalTitle">Add Coverage Area</h2>
-            <p class="modal-subtitle">Register a serviceable location</p>
+          <div class="coverage-modal-heading">
+            <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-map-pin-plus"></i></span>
+            <div>
+              <p class="coverage-modal-eyebrow">Coverage setup</p>
+              <h2 class="modal-title" id="modalTitle">Add Coverage Area</h2>
+              <p class="modal-subtitle" id="modalSubtitle">Register a serviceable location and optional router link.</p>
+            </div>
           </div>
-          <button class="btn-close" id="closeModalBtn" type="button" aria-label="Close"></button>
+          <button class="btn btn-icon btn-outline-secondary close-modal coverage-modal-close" id="closeModalBtn" type="button" aria-label="Close coverage editor" title="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
         <form id="coverageForm" class="tabler-modal-form" autocomplete="off">
           <div class="modal-body">
+            <div class="alert alert-danger coverage-form-alert" id="coverageFormAlert" role="alert" aria-live="assertive" hidden>
+              <i class="ti ti-alert-circle" aria-hidden="true"></i>
+              <span id="coverageFormAlertText"></span>
+            </div>
             <div class="form-grid">
-              <div class="form-field">
-                <label class="form-label" for="coverageAreaName">Area Name</label>
-                <input class="form-control" id="coverageAreaName" type="text" name="name" required>
+              <div class="form-field coverage-form-field">
+                <label class="form-label" for="coverageAreaName">Area Name <span class="text-danger" aria-hidden="true">*</span></label>
+                <input class="form-control" id="coverageAreaName" type="text" name="name" maxlength="120" required aria-describedby="coverageAreaNameHint">
+                <div class="form-hint" id="coverageAreaNameHint">Use a unique service-area name.</div>
               </div>
-              <div class="form-field">
+              <div class="form-field coverage-form-field">
                 <label class="form-label" for="coverageMikrotikLink">MikroTik Link</label>
-                <select class="form-select" name="mikrotikId" id="coverageMikrotikLink">
+                <select class="form-select" name="mikrotikId" id="coverageMikrotikLink" aria-describedby="coverageMikrotikHint">
                   <option value="">No MikroTik link</option>
                 </select>
+                <div class="form-hint" id="coverageMikrotikHint">Optional router used for this area's subscribers.</div>
               </div>
             </div>
           </div>
           <div class="modal-footer form-actions">
-            <button type="button" class="btn btn-link btn-sm" id="cancelBtn">Cancel</button>
-            <button type="submit" class="btn btn-primary btn-sm"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <div id="filterModal" class="modal tabler-form-modal" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle" aria-hidden="true">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-content">
-        <div class="modal-header">
-          <div>
-            <h2 class="modal-title" id="filterModalTitle">Filter Coverage</h2>
-            <p class="modal-subtitle">Filter coverage areas in the table view.</p>
-          </div>
-          <button class="btn-close" id="closeFilterModalBtn" type="button" aria-label="Close"></button>
-        </div>
-        <form id="filterForm" class="tabler-modal-form" autocomplete="off">
-          <div class="modal-body">
-            <div class="form-field">
-              <label class="form-label" for="filterClients">Filter by Clients</label>
-              <select class="form-select" id="filterClients" name="filterClients">
-                  <option value="">All Areas</option>
-                  <option value="withClients">With Clients</option>
-                  <option value="withoutClients">No Clients</option>
-                </select>
-            </div>
-          </div>
-          <div class="modal-footer form-actions">
-            <button type="button" class="btn btn-link btn-sm" id="resetFiltersBtn">Reset Filters</button>
-            <button type="submit" class="btn btn-primary btn-sm"><i class="ti ti-check" aria-hidden="true"></i> Apply Filters</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelBtn">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm" id="coverageSubmitBtn"><i class="ti ti-device-floppy" aria-hidden="true"></i> Save Area</button>
           </div>
         </form>
       </div>
@@ -165,15 +170,20 @@
       const emptyState = document.getElementById('emptyState');
       const emptyStateMessage = emptyState?.querySelector('p');
       const searchInput = document.getElementById('searchCoverage');
-      const filterBtn = document.getElementById('filterBtn');
-      const filterModal = document.getElementById('filterModal');
-      const filterForm = document.getElementById('filterForm');
       const filterClientsSelect = document.getElementById('filterClients');
       const coverageSortSelect = document.getElementById('coverageSortSelect');
       const coveragePageSizeSelect = document.getElementById('coveragePageSizeSelect');
-      const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+      const coverageClearFilters = document.getElementById('coverageClearFilters');
+      const coverageMetricTotal = document.getElementById('coverageMetricTotal');
+      const coverageMetricWithClients = document.getElementById('coverageMetricWithClients');
+      const coverageMetricCustomers = document.getElementById('coverageMetricCustomers');
+      const coverageMetricLinked = document.getElementById('coverageMetricLinked');
       const modal = document.getElementById('coverageModal');
       const form = document.getElementById('coverageForm');
+      const areaNameInput = document.getElementById('coverageAreaName');
+      const modalSubtitle = document.getElementById('modalSubtitle');
+      const coverageFormAlert = document.getElementById('coverageFormAlert');
+      const coverageFormAlertText = document.getElementById('coverageFormAlertText');
       const routerLinkSelect = document.getElementById('coverageMikrotikLink');
       const routerLinkField = routerLinkSelect?.closest('.form-field') || null;
       const coverageFooter = document.getElementById('coverageFooter');
@@ -187,6 +197,7 @@
       let defaultMikrotikRouterId = '';
       let mikrotikEnabled = false;
       let editId = null;
+      let saveInFlight = false;
       const coveragePagination = {
         page: 1,
         pageSize: Number(coveragePageSizeSelect?.value || 10)
@@ -342,12 +353,41 @@
         return coverageData.some((area) => area.id !== excludeId && normalizeName(area.name) === normalized);
       };
 
+      const clearCoverageFormError = () => {
+        if (coverageFormAlert) coverageFormAlert.hidden = true;
+        if (coverageFormAlertText) coverageFormAlertText.textContent = '';
+        areaNameInput?.classList.remove('is-invalid');
+        areaNameInput?.removeAttribute('aria-invalid');
+      };
+
+      const showCoverageFormError = (message, options = {}) => {
+        const text = String(message || 'Unable to save coverage area.').trim();
+        if (coverageFormAlertText) coverageFormAlertText.textContent = text;
+        if (coverageFormAlert) coverageFormAlert.hidden = false;
+        if (options?.field === 'name') {
+          areaNameInput?.classList.add('is-invalid');
+          areaNameInput?.setAttribute('aria-invalid', 'true');
+        }
+        if (options?.focus !== false) areaNameInput?.focus();
+      };
+
       const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, {
         sensitivity: 'base',
         numeric: true
       });
 
       const getAreaClientCount = (row) => customerCountsByArea.get(normalizeName(row?.name || '')) || 0;
+
+      const updateCoverageSummary = (rows = []) => {
+        const records = Array.isArray(rows) ? rows : [];
+        const withClients = records.filter((row) => getAreaClientCount(row) > 0).length;
+        const coveredClients = records.reduce((sum, row) => sum + getAreaClientCount(row), 0);
+        const linkedRouters = records.filter((row) => normalizeRouterId(row?.mikrotikId)).length;
+        if (coverageMetricTotal) coverageMetricTotal.textContent = String(records.length);
+        if (coverageMetricWithClients) coverageMetricWithClients.textContent = String(withClients);
+        if (coverageMetricCustomers) coverageMetricCustomers.textContent = String(coveredClients);
+        if (coverageMetricLinked) coverageMetricLinked.textContent = mikrotikEnabled ? String(linkedRouters) : '—';
+      };
 
       const hasActiveFilters = () => Boolean(
         String(searchInput?.value || '').trim()
@@ -424,6 +464,7 @@
 
       const renderTable = () => {
         const rows = filteredRows();
+        updateCoverageSummary(rows);
         const total = rows.length;
         const pageSize = Math.max(1, Number(coveragePagination.pageSize) || 10);
         const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -444,30 +485,29 @@
           const safeRouterMeta = escapeHtml(routerId || 'Generate follows selected/default router');
           const routerCell = mikrotikEnabled
             ? `
-              <td class="text-center">
-                <div class="coverage-router-link">
+              <td class="coverage-router-data text-center" data-label="MikroTik">
+                <div class="coverage-router-link" title="${safeRouterMeta}">
                   <span class="badge ${routerId ? 'bg-success-lt text-success' : 'bg-secondary-lt text-secondary'}">${safeRouterLabel}</span>
-                  <span class="text-secondary small">${safeRouterMeta}</span>
                 </div>
               </td>`
             : '';
           return `
             <tr data-id="${row.id}">
-              <td class="text-center"><span class="badge bg-secondary-lt text-secondary">${safeId}</span></td>
-              <td class="coverage-area-data">
+              <td class="coverage-area-data" data-label="Coverage Area">
                 <div class="coverage-area-cell">
                   <span class="avatar avatar-sm bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-map-pin" aria-hidden="true"></i></span>
                   <span class="d-flex flex-column">
                     <span class="fw-semibold">${safeName}</span>
-                    <span class="text-secondary small">${safeAreaCode}</span>
+                    <span class="text-secondary small">#${safeId} &middot; ${safeAreaCode}</span>
                   </span>
                 </div>
               </td>
               ${routerCell}
-              <td class="text-center text-secondary">${escapeHtml(formatDateOnly(row.created))}</td>
-              <td class="text-center text-secondary">${escapeHtml(formatDateOnly(row.updated))}</td>
-              <td class="text-center"><span class="badge ${totalClients > 0 ? 'bg-primary-lt text-primary' : 'bg-secondary-lt text-secondary'}">${escapeHtml(totalClients)}</span></td>
-              <td class="text-center">
+              <td class="coverage-clients-data text-center" data-label="Clients"><span class="badge ${totalClients > 0 ? 'bg-primary-lt text-primary' : 'bg-secondary-lt text-secondary'}">${escapeHtml(totalClients)}</span></td>
+              <td class="coverage-activity-data text-center" data-label="Activity">
+                <span class="coverage-activity"><strong>${escapeHtml(formatDateOnly(row.updated))}</strong><small>Created ${escapeHtml(formatDateOnly(row.created))}</small></span>
+              </td>
+              <td class="coverage-actions-data text-center" data-label="Actions">
                 <div class="btn-list flex-nowrap justify-content-center">
                   <button class="btn btn-icon btn-sm btn-ghost-secondary" data-action="edit" title="Edit" aria-label="Edit ${safeName}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
                   <button class="btn btn-icon btn-sm btn-outline-danger" data-action="delete" title="Delete" aria-label="Delete ${safeName}"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -507,8 +547,14 @@
         modal.classList.add('show');
         modal.setAttribute('aria-hidden', 'false');
         form.reset();
+        clearCoverageFormError();
         editId = null;
         document.getElementById('modalTitle').textContent = record ? 'Edit Coverage Area' : 'Add Coverage Area';
+        if (modalSubtitle) {
+          modalSubtitle.textContent = record
+            ? 'Update the service-area name or its linked router.'
+            : 'Register a serviceable location and optional router link.';
+        }
         refreshRouterLinkOptions(record?.mikrotikId || '');
         if (record) {
           form.name.value = record.name || '';
@@ -523,24 +569,13 @@
       const closeModal = () => {
         modal.classList.remove('show');
         modal.setAttribute('aria-hidden', 'true');
+        clearCoverageFormError();
         editId = null;
-      };
-
-      const openFilterModal = () => {
-        filterModal?.classList.add('show');
-        filterModal?.setAttribute('aria-hidden', 'false');
-      };
-
-      const closeFilterModal = () => {
-        filterModal?.classList.remove('show');
-        filterModal?.setAttribute('aria-hidden', 'true');
       };
 
       const handleSubmit = async (event) => {
         event.preventDefault();
-
-        const unlock = window.withSubmitLock ? window.withSubmitLock(form, { label: 'Saving...' }) : null;
-        if (window.withSubmitLock && !unlock) return;
+        clearCoverageFormError();
 
         const fd = new FormData(form);
         const currentId = editId == null ? null : Number(editId);
@@ -553,15 +588,18 @@
           : normalizeRouterId(currentRecord?.mikrotikId || '');
 
         if (!rawName) {
-          alert('Area name is required.');
-          if (unlock) unlock();
+          showCoverageFormError('Area name is required.', { field: 'name' });
           return;
         }
         if (hasDuplicateName(rawName, currentId)) {
-          alert('Area name already exists. Please choose a different name.');
-          if (unlock) unlock();
+          showCoverageFormError('Area name already exists. Please choose a different name.', { field: 'name' });
           return;
         }
+        if (saveInFlight) return;
+
+        const unlock = window.withSubmitLock ? window.withSubmitLock(form, { label: 'Saving...' }) : null;
+        if (window.withSubmitLock && !unlock) return;
+        saveInFlight = true;
 
         const payload = {
           name: rawName,
@@ -582,8 +620,9 @@
           closeModal();
           await loadData();
         } catch (error) {
-          alert(error.message || 'Failed to save coverage area.');
+          showCoverageFormError(error.message || 'Failed to save coverage area.', { focus: false });
         } finally {
+          saveInFlight = false;
           if (unlock) unlock();
         }
       };
@@ -617,18 +656,17 @@
         coveragePagination.page = 1;
         renderTable();
       });
-      filterBtn?.addEventListener('click', openFilterModal);
-      filterForm?.addEventListener('submit', (event) => {
-        event.preventDefault();
+      filterClientsSelect?.addEventListener('change', () => {
         coveragePagination.page = 1;
         renderTable();
-        closeFilterModal();
       });
-      resetFiltersBtn?.addEventListener('click', () => {
-        filterForm?.reset();
+      coverageClearFilters?.addEventListener('click', () => {
+        if (searchInput) searchInput.value = '';
+        if (filterClientsSelect) filterClientsSelect.value = '';
+        if (coverageSortSelect) coverageSortSelect.value = '';
         coveragePagination.page = 1;
         renderTable();
-        closeFilterModal();
+        searchInput?.focus();
       });
       coveragePrev?.addEventListener('click', () => {
         if (coveragePagination.page <= 1) return;
@@ -639,22 +677,10 @@
         coveragePagination.page += 1;
         renderTable();
       });
-      document.getElementById('closeFilterModalBtn')?.addEventListener('click', closeFilterModal);
       document.getElementById('openModalBtn')?.addEventListener('click', () => openModal());
       document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
       document.getElementById('cancelBtn')?.addEventListener('click', closeModal);
-      modal?.addEventListener('click', (event) => {
-        if (event.target === modal) closeModal();
-      });
-      filterModal?.addEventListener('click', (event) => {
-        if (event.target === filterModal) closeFilterModal();
-      });
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-          if (filterModal?.classList.contains('show')) closeFilterModal();
-          if (modal?.classList.contains('show')) closeModal();
-        }
-      });
+      areaNameInput?.addEventListener('input', clearCoverageFormError);
       form?.addEventListener('submit', handleSubmit);
 
       tbody?.addEventListener('click', (event) => {

@@ -1,6 +1,6 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-08-09
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -8,6 +8,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Create, view, update, search, import, archive, restore, and delete customer records.
 - Review CLIENTS LIST import warnings in an editable modal and retry only corrected skipped rows without re-importing successful records.
 - Manage account numbers, identity/contact details, service addresses, coordinates, plan/service metadata, PPPoE linkage, status, and billing dates.
+- Normalize and validate optional decimal, Google Maps URL, or DMS customer Map Pins on browser and backend create/update paths so downstream Technician and Network maps receive a valid decimal latitude/longitude pair or no coordinate.
 - Accept public applications and place them into the customer draft review workflow.
 - Maintain coverage areas and public Philippine address lookup flows.
 - Create, edit, approve, cancel, and track customer/agent referrals through a centralized audited registry.
@@ -37,6 +38,10 @@ The eight former root backend shims were retired in Phase 11. Existing API prefi
 
 Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/js/apply-now.js`, `/coverage.css`, and `/coverage.js`. Shared shell/vendor assets fall through to `public/`. Network-owned coverage-map pages continue consuming `/coverage.css` through the module web mount.
 
+Customers uses a compact Tabler-style header, four-item filtered summary strip, consolidated filters, a reduced eight-column desktop table, and responsive customer cards on narrow screens. The existing row/detail-modal workflow remains available through row selection and the explicit View action.
+
+Coverage Table uses a centered 1,000px compact Tabler workspace for its header, filtered four-item summary strip, inline client/sort/page-size controls, combined five-column desktop table, footer, and responsive coverage cards. Visible router cells show only the readable router label; the full technical router ID remains available as a tooltip. Its compact Add/Edit modal explicitly declares a non-full-width Tabler size, stays viewport-centered at a 640px maximum, and uses an explicit close control, inline validation, submit locking, and desktop two-column/mobile single-column fields. Counts are derived from the existing coverage and customer reads; CRUD, MikroTik linking, API contracts, and Network-owned coverage-map behavior are unchanged.
+
 Customers and Customer Draft Queue modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons; the formerly empty Customer view close button now uses the same markup.
 
 ## Data and dependencies
@@ -50,17 +55,21 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
 - Referral relationships are registered once per referred account. New and edited records return to Pending. Admin approval immediately locks the proposed discount and places a customer referral in the unlimited FIFO Billing queue; the referred customer's first payment is not required. The optional registry `applyFromMonth` is an Admin-controlled current/future earliest month, with blank meaning next available. Approved records without an active application may be rescheduled with a required reason; an active application must be reversed first. Applied referrals cannot be cancelled, and records with billing-application history cannot be edited, preserving their audit chain. Legacy customer referral fields remain readable but are materialized into the registry when approved.
 - `updateCustomerRecord` accepts an internal `planChangeEffectiveAt` option for Billing-owned effective plan changes. A future timestamp preserves the active subscriber plan and writes the canonical scheduled plan/profile snapshot; a current/past change updates the subscriber plan and resolves/synchronizes the router-specific PPPoE profile immediately. The existing Billing scheduler applies due snapshots and retries when MikroTik synchronization cannot complete.
-- The Customers table loads Billing payment records before rendering cycle state and requires backend `billingSummary` version 2 for prepaid/postpaid cycle dates, status, and reactivation balance checks. It displays Billing unavailable rather than calculating from stored customer dates or balances; postpaid generation remains month-end only.
+- The Customers page loads Billing payment records before rendering canonical balance and cycle state and requires backend `billingSummary` version 2 for balances, prepaid/postpaid cycle dates, status, and reactivation balance checks. The compact table and Outstanding summary display backend results only; they show Billing unavailable rather than calculating from stored customer dates or balances. Postpaid generation remains month-end only.
 - When Billing marks an account Complimentary for the current month, the Customers table shows the canonical Complimentary badge and free-period/resume information from `/api/payment-records`; it does not change the customer-owned plan or historical subscriber data.
 - The shared `/api/import/customers-full` route delegates JSON-mode restoration to this module for plans, customers, payment history, tickets, jobs, SMS messages, SMS automation runs, and PON state/connections. Records are upserted by stable IDs, exact duplicate rows are collapsed, conflicting rows sharing an identity are rejected before writes, and payment fingerprint/Xendit identities cannot be reused under a different payment ID. Duplicate totals are returned to the shared UI. Unrelated data and other-branch customers are preserved, PON topology is restored before its connections, and empty-sheet `note: No records` placeholders are ignored.
 - `POST /api/customers/import-clients` now returns `warningRecords` with the skipped row, editable source record, affected fields, and issue details. `POST /api/customers/import-client-corrections` validates and retries at most 100 corrected rows in the current Admin branch, using the same create/update and plan-resolution path as the original import.
 - Network owns MikroTik, PPPoE, PON, GenieACS, and coverage-map consumers.
 - Technician consumes customer draft, archive, customer, and coverage contracts.
+- Technician dispatch snapshots use the canonical normalized customer `mapPin`; Admin may override the snapshot location on an individual work order without changing customer coordinates.
 - Customer App consumes customer sessions, identity, FCM tokens, and notification contracts.
 
 ## Verification contract
 
 - `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, the referral store/registry workflow, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
+- Customer-page validation covers inline-script syntax, static ID uniqueness, balanced CSS, compact summary/filter/table hooks, and the responsive card breakpoint without changing customer or Billing APIs.
+- Coverage-page validation covers inline-script syntax, static ID uniqueness, balanced page-scoped CSS, compact summary/filter/table hooks, responsive coverage cards, the explicit-close Add/Edit modal with inline errors and submit locking, and the unchanged `/api/coverage` and `/api/customers` reads.
+- The focused check verifies valid decimal/Google Maps coordinate normalization, invalid Map Pin rejection, and the Customers form validation contract.
 - The focused check also verifies correction-record normalization plus the warning-review button, modal, retry API call, and responsive modal styling contract.
 - Referral-focused checks verify immediate Admin-approved eligibility, locked amounts, optional Admin-selected earliest application months, unlimited FIFO queuing, the two-per-month cap, month-to-month carryover, and reversal requeue behavior.
 - `npm run refactor:phase4` runs structural, core, Admin, Customer Management, security, and isolated HTTP checks.
@@ -77,6 +86,10 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 
 ## Latest meaningful changes
 
+- 2026-08-09: Reorganized Coverage Table into a centered 1,000px compact Tabler workspace with filtered coverage/client/router summaries, inline controls, tighter column widths and rows, combined activity dates, readable router labels with technical IDs in tooltips, a five-column desktop table, responsive area cards, and a compact Add/Edit modal with visible inline validation and duplicate-submit protection. The modal explicitly overrides the shared coverage-token full-width inference and remains centered at 640px instead of stretching behind the sidebar. Coverage CRUD, MikroTik links, APIs, and Network coverage maps remain unchanged.
+- 2026-08-09: Reorganized Customers into a compact single-page Tabler layout with a filtered summary strip, Billing type and clear-filter controls, an eight-column desktop table, canonical backend balances, explicit View actions, and responsive customer cards. Customer CRUD/detail workflows, Billing calculations, and Temp remain unchanged.
+- 2026-08-08: Backend Map Pin normalization now accepts legacy DMS values in addition to decimals and Google Maps URLs, converting all accepted formats to the same six-decimal coordinate pair used by Technician Job Map.
+- 2026-08-08: Customer create/update now normalizes decimal or Google Maps coordinates to a canonical six-decimal Map Pin and rejects invalid non-empty values in both the Customers form and backend, preventing silent Technician Job Map omissions.
 - 2026-08-07: Customers now displays Billing-owned Complimentary status and its effective/resume cycle from the canonical payment record while preserving the subscriber's actual plan and history. Billing owns the policy; postpaid timing and Temp remain unchanged.
 - 2026-08-07: Added an optional Admin-selected **Apply From Month** at referral approval and a reasoned reschedule action for approved referrals without an active application. Blank means next available; past months are rejected, scheduled records remain queued until their earliest month, the two-per-month cap still carries overflow forward, and active applications must be reversed before rescheduling.
 - 2026-08-07: Removed the referred-client payment requirement. Admin approval now locks and immediately queues each customer referral; unlimited queued records are ordered oldest approval first for Billing's automatic two-per-month carryover.

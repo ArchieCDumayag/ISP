@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/finance.css?v=1.7">
+    <link rel="stylesheet" href="css/finance.css?v=1.8">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -45,20 +45,21 @@
                                 <tr>
                                     <th>Date</th>
                                     <th>Category</th>
-                                    <th>Payee</th>
-                                    <th>Description</th>
+                                    <th>Vendor / Payee</th>
+                                    <th>Payment</th>
+                                    <th>Status</th>
                                     <th>Amount</th>
                                     <th class="text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="expensesTableBody">
                                 <tr>
-                                    <td colspan="6" class="finance-empty">Loading expenses...</td>
+                                    <td colspan="7" class="finance-empty">Loading expenses...</td>
                                 </tr>
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <th colspan="4" class="finance-total-label">Total Expenses</th>
+                                    <th colspan="5" class="finance-total-label">Total Expenses</th>
                                     <th id="expensesTableTotal" class="amount">PHP 0.00</th>
                                     <th class="text-center">-</th>
                                 </tr>
@@ -98,15 +99,54 @@
                         </div>
                         <div class="form-field">
                             <label for="expenseCategory">Category</label>
-                            <input id="expenseCategory" name="category" type="text" required>
+                            <input id="expenseCategory" name="category" type="text" list="expenseCategoryOptions" required>
+                            <datalist id="expenseCategoryOptions">
+                                <option value="Internet / Bandwidth"></option>
+                                <option value="Equipment"></option>
+                                <option value="Repairs and Maintenance"></option>
+                                <option value="Utilities"></option>
+                                <option value="Transportation"></option>
+                                <option value="Office Supplies"></option>
+                                <option value="Permits and Fees"></option>
+                                <option value="Other"></option>
+                            </datalist>
                         </div>
                         <div class="form-field">
-                            <label for="expensePayee">Payee</label>
-                            <input id="expensePayee" name="payee" type="text">
+                            <label for="expenseVendor">Vendor / Payee</label>
+                            <input id="expenseVendor" name="vendor" type="text" required>
                         </div>
                         <div class="form-field">
                             <label for="expenseAmount">Amount</label>
                             <input id="expenseAmount" name="amount" type="number" min="0.01" step="0.01" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="expensePaymentMethod">Payment Method</label>
+                            <select id="expensePaymentMethod" name="paymentMethod" required>
+                                <option value="cash">Cash</option>
+                                <option value="gcash">GCash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="card">Card</option>
+                                <option value="check">Check</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label for="expenseReferenceNumber">Reference Number</label>
+                            <input id="expenseReferenceNumber" name="referenceNumber" type="text">
+                        </div>
+                        <div class="form-field">
+                            <label for="expenseStatus">Status</label>
+                            <select id="expenseStatus" name="status" required>
+                                <option value="draft">Draft</option>
+                                <option value="pending">Pending Approval</option>
+                                <option value="approved">Approved</option>
+                                <option value="paid" selected>Paid</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div class="form-field span-2">
+                            <label for="expenseReceiptUrl">Receipt Link or File Path</label>
+                            <input id="expenseReceiptUrl" name="receiptUrl" type="text" placeholder="Optional receipt URL or stored file path">
                         </div>
                         <div class="form-field span-2">
                             <label for="expenseDescription">Description</label>
@@ -145,7 +185,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/expenses.js?v=1.5"></script>
+    <script src="js/expenses.js?v=1.6"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

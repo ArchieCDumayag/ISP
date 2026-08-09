@@ -22,8 +22,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const entryIdInput = document.getElementById('expenseEntryId');
     const dateInput = document.getElementById('expenseDate');
     const categoryInput = document.getElementById('expenseCategory');
-    const payeeInput = document.getElementById('expensePayee');
+    const vendorInput = document.getElementById('expenseVendor');
     const amountInput = document.getElementById('expenseAmount');
+    const paymentMethodInput = document.getElementById('expensePaymentMethod');
+    const referenceNumberInput = document.getElementById('expenseReferenceNumber');
+    const statusInput = document.getElementById('expenseStatus');
+    const receiptUrlInput = document.getElementById('expenseReceiptUrl');
     const descriptionInput = document.getElementById('expenseDescription');
 
     const state = {
@@ -49,6 +53,26 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#39;');
 
     const formatCurrency = (value) => pesoFormatter.format(Number(value) || 0);
+
+    const labelFromCode = (value) => String(value || '')
+        .trim()
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+    const statusLabel = (value) => value === 'pending' ? 'Pending Approval' : labelFromCode(value || 'paid');
+
+    const statusBadge = (value) => {
+        const status = String(value || 'paid').trim().toLowerCase();
+        return `<span class="finance-status is-${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>`;
+    };
+
+    const receiptNameFromUrl = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const withoutQuery = raw.split(/[?#]/, 1)[0];
+        const parts = withoutQuery.split(/[\\/]/);
+        return parts[parts.length - 1] || '';
+    };
 
     const formatDate = (value) => {
         const raw = String(value || '').trim();
@@ -134,8 +158,19 @@ document.addEventListener('DOMContentLoaded', () => {
             <tr>
                 <td>${escapeHtml(formatDate(item.date))}</td>
                 <td>${escapeHtml(item.category || '-')}</td>
-                <td>${escapeHtml(item.payee || '-')}</td>
-                <td>${escapeHtml(item.description || '-')}</td>
+                <td>
+                    <span class="finance-cell-stack">
+                        <strong>${escapeHtml(item.vendor || item.payee || '-')}</strong>
+                        ${item.description ? `<span class="finance-cell-subtitle">${escapeHtml(item.description)}</span>` : ''}
+                    </span>
+                </td>
+                <td>
+                    <span class="finance-cell-stack">
+                        <span>${escapeHtml(labelFromCode(item.paymentMethod || 'other'))}</span>
+                        ${item.referenceNumber ? `<span class="finance-cell-subtitle">Ref: ${escapeHtml(item.referenceNumber)}</span>` : ''}
+                    </span>
+                </td>
+                <td>${statusBadge(item.status)}</td>
                 <td class="amount">${escapeHtml(formatCurrency(item.amount))}</td>
             </tr>
         `).join('');
@@ -154,8 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <tr>
                                 <th>Date</th>
                                 <th>Category</th>
-                                <th>Payee</th>
-                                <th>Description</th>
+                                <th>Vendor / Payee</th>
+                                <th>Payment</th>
+                                <th>Status</th>
                                 <th>Amount</th>
                             </tr>
                         </thead>
@@ -164,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th colspan="4" class="finance-total-label">Total for ${escapeHtml(group.label)}</th>
+                                <th colspan="5" class="finance-total-label">Total for ${escapeHtml(group.label)}</th>
                                 <th class="amount">${escapeHtml(formatCurrency(group.total))}</th>
                             </tr>
                         </tfoot>
@@ -226,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateDeleteAllButton();
         if (!state.filtered.length) {
             setTableTotal(0);
-            tableBody.innerHTML = '<tr><td colspan="6" class="finance-empty">No expense entries found for this month.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="7" class="finance-empty">No expense entries found for this month.</td></tr>';
             return;
         }
 
@@ -236,8 +272,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr>
                     <td>${escapeHtml(formatDate(item.date))}</td>
                     <td>${escapeHtml(item.category || '')}</td>
-                    <td>${escapeHtml(item.payee || '-')}</td>
-                    <td>${escapeHtml(item.description || '-')}</td>
+                    <td>
+                        <span class="finance-cell-stack">
+                            <strong>${escapeHtml(item.vendor || item.payee || '-')}</strong>
+                            ${item.description ? `<span class="finance-cell-subtitle">${escapeHtml(item.description)}</span>` : ''}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="finance-cell-stack">
+                            <span>${escapeHtml(labelFromCode(item.paymentMethod || 'other'))}</span>
+                            ${item.referenceNumber ? `<span class="finance-cell-subtitle">Ref: ${escapeHtml(item.referenceNumber)}</span>` : ''}
+                        </span>
+                    </td>
+                    <td>${statusBadge(item.status)}</td>
                     <td class="amount">${escapeHtml(formatCurrency(item.amount))}</td>
                     <td class="text-center">
                         <div class="finance-actions">
@@ -281,8 +328,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const haystack = [
                 item.date,
                 item.category,
+                item.vendor,
                 item.payee,
                 item.description,
+                item.paymentMethod,
+                item.referenceNumber,
+                item.status,
                 amountText
             ].join(' ').toLowerCase();
             return haystack.includes(query);
@@ -310,13 +361,19 @@ document.addEventListener('DOMContentLoaded', () => {
             form.reset();
             entryIdInput.value = '';
             dateInput.value = todayIso;
+            paymentMethodInput.value = 'cash';
+            statusInput.value = 'paid';
         } else {
             modalTitle.textContent = 'Edit Expense';
             entryIdInput.value = entry.id || '';
             dateInput.value = String(entry.date || '').slice(0, 10);
             categoryInput.value = entry.category || '';
-            payeeInput.value = entry.payee || '';
+            vendorInput.value = entry.vendor || entry.payee || '';
             amountInput.value = Number(entry.amount || 0).toFixed(2);
+            paymentMethodInput.value = entry.paymentMethod || 'other';
+            referenceNumberInput.value = entry.referenceNumber || '';
+            statusInput.value = entry.status || 'paid';
+            receiptUrlInput.value = entry.receiptUrl || '';
             descriptionInput.value = entry.description || '';
         }
         modal.classList.add('show');
@@ -335,15 +392,21 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         const entryId = String(entryIdInput.value || '').trim();
 
+        const receiptUrl = String(receiptUrlInput.value || '').trim();
         const payload = {
             date: dateInput.value,
             category: categoryInput.value,
-            payee: payeeInput.value,
+            vendor: vendorInput.value,
             amount: Number(amountInput.value),
+            paymentMethod: paymentMethodInput.value,
+            referenceNumber: referenceNumberInput.value,
+            receiptUrl,
+            receiptName: receiptNameFromUrl(receiptUrl),
+            status: statusInput.value,
             description: descriptionInput.value
         };
 
-        if (!payload.date || !payload.category || !Number.isFinite(payload.amount)) {
+        if (!payload.date || !payload.category || !payload.vendor || !Number.isFinite(payload.amount)) {
             notify('Please complete the required fields.', 'warning');
             return;
         }
@@ -477,7 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadExpenses().catch((error) => {
         notify(error.message || 'Unable to load expenses.', 'error');
         setTableTotal(0);
-        tableBody.innerHTML = '<tr><td colspan="6" class="finance-empty">Unable to load expenses.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="7" class="finance-empty">Unable to load expenses.</td></tr>';
         if (historyList) {
             historyList.innerHTML = '<p class="finance-empty">Unable to load expense history.</p>';
         }

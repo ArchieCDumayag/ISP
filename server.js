@@ -7398,22 +7398,59 @@ app.post(
 
                 const createdAt = toMysqlDateTime(pickRowValue(row, ['created_at', 'createdAt'])) || nowDateTime;
                 const updatedAt = toMysqlDateTime(pickRowValue(row, ['updated_at', 'updatedAt'])) || createdAt;
+                const importedTechnician = toNullableString(pickRowValue(row, ['technician']));
+                const importedStatus = toNullableString(pickRowValue(row, ['status'])) || 'scheduled';
+                const workflowInput = toNonEmptyString(pickRowValue(row, ['workflow_status', 'workflowStatus']))
+                    .toLowerCase()
+                    .replace(/[\s-]+/g, '_');
+                const validWorkflowStatuses = new Set([
+                    'unassigned', 'assigned', 'accepted', 'traveling', 'on_site', 'completed',
+                    'failed', 'rescheduled', 'needs_team', 'rejected', 'cancelled'
+                ]);
+                const importedWorkflowStatus = validWorkflowStatuses.has(workflowInput)
+                    ? workflowInput
+                    : ['done', 'closed', 'resolved', 'completed'].includes(importedStatus.toLowerCase())
+                        ? 'completed'
+                        : importedTechnician ? 'assigned' : 'unassigned';
+                const rawDispatchPayload = pickRowValue(row, ['dispatch_payload_json', 'dispatchPayloadJson', 'dispatchPayload']);
+                const dispatchPayloadJson = rawDispatchPayload && typeof rawDispatchPayload === 'object'
+                    ? JSON.stringify(rawDispatchPayload)
+                    : toNullableString(rawDispatchPayload);
+                const recordVersion = Math.max(
+                    1,
+                    Math.trunc(toNullableNumber(pickRowValue(row, ['record_version', 'version'])) || 1)
+                );
 
                 await connection.query(
                     `INSERT INTO jobs (
-                        id, branch_id, type, technician, priority, schedule, status, done_at, notes, description,
+                        id, branch_id, type, technician, priority, schedule, appointment_end, sla_due_at,
+                        status, workflow_status, done_at, notes, description,
+                        customer_account_number, customer_name, customer_phone, service_address,
+                        latitude, longitude, plan_name, dispatch_payload_json, record_version,
                         created_at, updated_at, ticket_id, ticket_number, ticket_subject, origin
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE
                         branch_id = VALUES(branch_id),
                         type = VALUES(type),
                         technician = VALUES(technician),
                         priority = VALUES(priority),
                         schedule = VALUES(schedule),
+                        appointment_end = VALUES(appointment_end),
+                        sla_due_at = VALUES(sla_due_at),
                         status = VALUES(status),
+                        workflow_status = VALUES(workflow_status),
                         done_at = VALUES(done_at),
                         notes = VALUES(notes),
                         description = VALUES(description),
+                        customer_account_number = VALUES(customer_account_number),
+                        customer_name = VALUES(customer_name),
+                        customer_phone = VALUES(customer_phone),
+                        service_address = VALUES(service_address),
+                        latitude = VALUES(latitude),
+                        longitude = VALUES(longitude),
+                        plan_name = VALUES(plan_name),
+                        dispatch_payload_json = VALUES(dispatch_payload_json),
+                        record_version = VALUES(record_version),
                         created_at = VALUES(created_at),
                         updated_at = VALUES(updated_at),
                         ticket_id = VALUES(ticket_id),
@@ -7424,13 +7461,25 @@ app.post(
                         jobId,
                         branchId,
                         toNullableString(pickRowValue(row, ['type'])),
-                        toNullableString(pickRowValue(row, ['technician'])),
+                        importedTechnician,
                         toNullableString(pickRowValue(row, ['priority'])),
-                        toMysqlDateTime(pickRowValue(row, ['schedule'])),
-                        toNullableString(pickRowValue(row, ['status'])),
+                        toMysqlDateTime(pickRowValue(row, ['schedule', 'appointment_start', 'appointmentStart'])),
+                        toMysqlDateTime(pickRowValue(row, ['appointment_end', 'appointmentEnd'])),
+                        toMysqlDateTime(pickRowValue(row, ['sla_due_at', 'slaDueAt'])),
+                        importedStatus,
+                        importedWorkflowStatus,
                         toMysqlDateTime(pickRowValue(row, ['done_at', 'doneAt'])),
                         toNullableString(pickRowValue(row, ['notes'])),
                         toNullableString(pickRowValue(row, ['description'])),
+                        toNullableString(pickRowValue(row, ['customer_account_number', 'customerAccountNumber', 'account_number', 'accountNumber'])),
+                        toNullableString(pickRowValue(row, ['customer_name', 'customerName'])),
+                        toNullableString(pickRowValue(row, ['customer_phone', 'customerPhone', 'contact'])),
+                        toNullableString(pickRowValue(row, ['service_address', 'serviceAddress', 'address'])),
+                        toNullableNumber(pickRowValue(row, ['latitude'])),
+                        toNullableNumber(pickRowValue(row, ['longitude'])),
+                        toNullableString(pickRowValue(row, ['plan_name', 'planName'])),
+                        dispatchPayloadJson,
+                        recordVersion,
                         createdAt,
                         updatedAt,
                         safeTicketId,

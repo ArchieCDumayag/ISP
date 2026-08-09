@@ -1,171 +1,436 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    
-    <title>Technicians - Archie Point To Point Pisonet</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Technician Dispatch - THRE3J Internet</title>
   <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
-    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="styles.css?v=2.9">
-  <link rel="stylesheet" href="css/technicians.css?v=1.0">
-    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+  <link rel="stylesheet" href="css/technicians.css?v=3.3">
+  <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
   <script src="theme-init.js?v=2.6"></script>
 </head>
-<body>
-  <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+  <div class="app-shell tabler-fluid-vertical">
     <div id="sidebar"></div>
-    <div class="app-main">
+    <div class="app-main page-wrapper">
       <div id="topbar"></div>
       <main class="page technician-page">
-        <section class="page-header">
-          <div class="page-title">
-            <p class="eyebrow">Field Operations</p>
-            <h1>Technician</h1>
-            <p class="subtitle">Assign jobs, track workloads, and confirm customer requests from the app.</p>
+        <header class="page-header d-print-none" aria-labelledby="technicianPageTitle">
+          <div class="row g-2 align-items-center w-100">
+            <div class="col">
+              <div class="page-pretitle">Field Operations</div>
+              <h1 class="page-title" id="technicianPageTitle">Technician Dispatch</h1>
+              <p class="text-secondary mb-0">Dispatch work, monitor SLA deadlines, and review field completion records.</p>
+            </div>
+            <div class="col-auto ms-auto d-print-none">
+              <div class="btn-list">
+                <a class="btn btn-outline-secondary" href="tickets.html">
+                  <i class="ti ti-ticket" aria-hidden="true"></i>
+                  <span class="d-none d-sm-inline">Support Tickets</span>
+                </a>
+                <a class="btn btn-outline-secondary" href="/api/jobs/export.csv" download>
+                  <i class="ti ti-file-export" aria-hidden="true"></i>
+                  <span class="d-none d-sm-inline">Export</span>
+                </a>
+                <button class="btn btn-primary" id="openJobModal" type="button">
+                  <i class="ti ti-plus" aria-hidden="true"></i>
+                  New Work Order
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="header-actions">
-            <button class="add-btn" id="openJobModal"><i class="ti ti-plus" aria-hidden="true"></i> Add Job</button>
+        </header>
+
+        <section class="row row-deck row-cards mt-0 mb-3" aria-label="Dispatch summary">
+          <div class="col-sm-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-blue-lt text-blue"><i class="ti ti-clipboard-list"></i></span></div>
+                  <div class="col">
+                    <div class="h2 mb-0" id="metricActive">0</div>
+                    <div class="text-secondary">Active jobs</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="col-sm-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-yellow-lt text-yellow"><i class="ti ti-user-question"></i></span></div>
+                  <div class="col">
+                    <div class="h2 mb-0" id="metricUnassigned">0</div>
+                    <div class="text-secondary">Unassigned</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="col-sm-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-red-lt text-red"><i class="ti ti-clock-exclamation"></i></span></div>
+                  <div class="col">
+                    <div class="h2 mb-0" id="metricOverdue">0</div>
+                    <div class="text-secondary">SLA overdue</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="col-sm-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-green-lt text-green"><i class="ti ti-user-check"></i></span></div>
+                  <div class="col">
+                    <div class="h2 mb-0" id="metricAvailable">0</div>
+                    <div class="text-secondary">Available technicians</div>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
         </section>
 
-        <section class="section-frame elevated">
-          <header class="section-heading">
-            <div class="toolbar-actions">
-              <div class="page-size-control">
-                <label for="jobPageSize">Show</label>
-                <div class="select-wrapper">
-                  <select id="jobPageSize" name="jobPageSize">
-                    <option value="5">5</option>
-                    <option value="10" selected>10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                  </select>
+        <section class="row row-cards align-items-start">
+          <div class="col-12 col-xl-8">
+            <article class="card technician-work-orders-card">
+              <div class="card-header">
+                <div>
+                  <div class="subheader">Live Queue</div>
+                  <h2 class="card-title">Work Orders</h2>
+                </div>
+                <div class="card-actions">
+                  <button class="btn btn-icon btn-ghost-secondary" type="button" id="refreshDispatchBtn" title="Refresh" aria-label="Refresh dispatch data">
+                    <i class="ti ti-refresh"></i>
+                  </button>
                 </div>
               </div>
-              <div class="filter-chips" role="radiogroup" aria-label="Job status filter">
-                <button class="chip active" data-job-filter="all" aria-checked="true">All</button>
-                <button class="chip" data-job-filter="scheduled" aria-checked="false">Scheduled</button>
-                <button class="chip" data-job-filter="in-progress" aria-checked="false">In Progress</button>
+
+              <div class="card-body border-bottom py-3">
+                <div class="row g-2">
+                  <div class="col-12 col-lg-5">
+                    <label class="visually-hidden" for="jobSearch">Search work orders</label>
+                    <div class="input-icon">
+                      <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                      <input class="form-control" id="jobSearch" type="search" placeholder="Search customer, account, job or technician" autocomplete="off">
+                    </div>
+                  </div>
+                  <div class="col-6 col-md-4 col-lg">
+                    <label class="visually-hidden" for="jobStatusFilter">Status</label>
+                    <select class="form-select" id="jobStatusFilter" aria-label="Filter by status">
+                      <option value="open" selected>Open jobs</option>
+                      <option value="all">All statuses</option>
+                      <option value="unassigned">Unassigned</option>
+                      <option value="assigned">Assigned</option>
+                      <option value="accepted">Accepted</option>
+                      <option value="traveling">Traveling</option>
+                      <option value="on_site">On Site</option>
+                      <option value="completed">Completed</option>
+                      <option value="failed">Failed</option>
+                      <option value="rescheduled">Rescheduled</option>
+                      <option value="needs_team">Needs Team</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                  <div class="col-6 col-md-4 col-lg">
+                    <label class="visually-hidden" for="jobTechnicianFilter">Technician</label>
+                    <select class="form-select" id="jobTechnicianFilter" aria-label="Filter by technician">
+                      <option value="">All technicians</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-4 col-lg">
+                    <label class="visually-hidden" for="jobPriorityFilter">Priority</label>
+                    <select class="form-select" id="jobPriorityFilter" aria-label="Filter by priority">
+                      <option value="">All priorities</option>
+                      <option value="emergency">Emergency</option>
+                      <option value="urgent">Urgent</option>
+                      <option value="high">High</option>
+                      <option value="normal">Normal</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-vcenter table-hover card-table text-nowrap technician-table mb-0" aria-label="Technician dispatch work orders">
+                  <thead>
+                    <tr>
+                      <th>Work Order</th>
+                      <th>Customer</th>
+                      <th>Technician</th>
+                      <th>Appointment</th>
+                      <th>Priority / SLA</th>
+                      <th>Status</th>
+                      <th class="text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="jobTableBody">
+                    <tr><td colspan="7" class="text-center text-secondary py-5">Loading work orders...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <footer class="card-footer d-flex align-items-center flex-wrap gap-2">
+                <p class="m-0 text-secondary" id="jobFooterSummary">No work orders</p>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                  <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="jobPrevPage" aria-label="Previous page" disabled><i class="ti ti-chevron-left"></i></button>
+                  <span class="text-secondary" id="jobPageInfo">Page 1 of 1</span>
+                  <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="jobNextPage" aria-label="Next page" disabled><i class="ti ti-chevron-right"></i></button>
+                </div>
+              </footer>
+            </article>
+          </div>
+
+          <aside class="col-12 col-xl-4">
+            <div class="row row-cards">
+              <div class="col-12">
+                <article class="card">
+                  <div class="card-header">
+                    <div>
+                      <div class="subheader">Capacity</div>
+                      <h2 class="card-title">Technician Workload</h2>
+                    </div>
+                  </div>
+                  <div id="technicianWorkloadList" class="list-group list-group-flush">
+                    <div class="list-group-item text-center text-secondary py-4">Loading technicians...</div>
+                  </div>
+                </article>
+              </div>
+
+              <div class="col-12">
+                <article class="card">
+                  <div class="card-header">
+                    <div>
+                      <div class="subheader">Locations</div>
+                      <h2 class="card-title">Job Map</h2>
+                    </div>
+                    <div class="card-actions"><span class="badge bg-blue-lt text-blue" id="jobMapCount">0 pins</span></div>
+                  </div>
+                  <div class="card-body border-bottom py-2 technician-map-toolbar">
+                    <div class="d-flex align-items-center flex-wrap gap-3">
+                      <label class="form-check form-switch mb-0">
+                        <input class="form-check-input" id="jobMapShowJobs" type="checkbox" checked>
+                        <span class="form-check-label">Work Orders</span>
+                      </label>
+                      <label class="form-check form-switch mb-0">
+                        <input class="form-check-input" id="jobMapShowNaps" type="checkbox" checked>
+                        <span class="form-check-label">Used NAPs</span>
+                      </label>
+                      <label class="form-check form-switch mb-0">
+                        <input class="form-check-input" id="jobMapShowLinks" type="checkbox" checked>
+                        <span class="form-check-label">Work Order Links</span>
+                      </label>
+                      <button class="btn btn-outline-secondary btn-sm ms-auto" id="jobMapFitLayers" type="button">
+                        <i class="ti ti-arrows-maximize" aria-hidden="true"></i> Fit layers
+                      </button>
+                    </div>
+                    <div class="form-hint mt-2" id="jobMapNetworkSummary">Loading work-order routes and used NAP ports...</div>
+                    <div class="technician-map-legend mt-2" aria-label="Job Map legend">
+                      <span class="badge bg-blue-lt text-blue"><i class="ti ti-map-pin me-1" aria-hidden="true"></i>Job</span>
+                      <span class="badge bg-purple-lt text-purple"><i class="ti ti-network me-1" aria-hidden="true"></i>Used NAP</span>
+                      <span class="badge bg-green-lt text-green">Assigned link</span>
+                      <span class="badge bg-orange-lt text-orange">Nearest fallback</span>
+                    </div>
+                  </div>
+                  <div class="technician-map-shell">
+                    <div id="dispatchMap" class="technician-map" aria-label="Map of scheduled technician jobs"></div>
+                    <div id="dispatchMapEmpty" class="technician-map-empty card" role="status" hidden>
+                      <div class="empty p-4">
+                        <div class="empty-icon"><span class="avatar avatar-lg bg-secondary-lt text-secondary"><i class="ti ti-map-pin-off"></i></span></div>
+                        <p class="empty-title" id="dispatchMapEmptyTitle">No job locations yet</p>
+                        <p class="empty-subtitle text-secondary" id="dispatchMapEmptyCopy">Add a valid Map Pin to an open work order.</p>
+                        <div class="empty-action"><button type="button" class="btn btn-primary btn-sm" id="dispatchMapEmptyAction">Add job location</button></div>
+                      </div>
+                    </div>
+                  </div>
+                  <footer class="card-footer d-flex align-items-center gap-2" id="dispatchMapFooter" hidden>
+                    <span class="text-secondary small" id="jobMapMissingCount">0 open jobs missing GPS</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" id="jobMapReviewMissing">Review</button>
+                  </footer>
+                </article>
               </div>
             </div>
-          </header>
-          <div class="table-wrapper tech-table-wrapper">
-            <table class="settings-table tech-table" aria-label="Technician jobs">
-              <thead>
-              <tr>
-                  <th>#</th>
-                  <th>Job Number</th>
-                  <th>Job</th>
-                  <th>Technician</th>
-                  <th>Schedule</th>
-                  <th>Description</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="jobTableBody">
-                <tr><td colspan="8" style="text-align:center; padding:14px;">No jobs yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-footer" id="jobsFooter">
-            <div class="footer-summary" id="jobFooterSummary">No jobs to display</div>
-            <div class="footer-controls">
-              <button type="button" class="footer-btn" id="jobPrevPage" aria-label="Previous page" disabled><</button>
-              <span class="footer-page-info" id="jobPageInfo">Page 1 of 1</span>
-              <button type="button" class="footer-btn" id="jobNextPage" aria-label="Next page" disabled>></button>
-            </div>
-          </div>
+          </aside>
         </section>
       </main>
     </div>
   </div>
 
-  <div class="toast" id="techToast" role="status" aria-live="polite"></div>
-
-  <div class="modal-overlay" id="jobModal" aria-hidden="true">
-    <div class="modal-container">
-      <header class="modal-header">
-        <div>
-          <p class="section-eyebrow" id="jobModalEyebrow">New Job</p>
-          <h3 id="jobModalTitle">Add and assign a job</h3>
-        </div>
-        <button type="button" class="modal-close" id="jobModalClose" aria-label="Close job modal">&times;</button>
-      </header>
-      <form id="jobModalForm" class="job-form">
-        <div class="form-grid">
-          <div class="form-field">
-            <label for="jobType">Job type</label>
-            <select id="jobType" name="type" required>
-              <option value="">Select type</option>
-              <option value="install" selected>Install</option>
-              <option value="repair">Repair</option>
-              <option value="relocate">Relocate</option>
-              <option value="fibre-break">Fibre break</option>
-              <option value="mainline-maintenance">Mainline maintenance</option>
-              <option value="disconnect">Disconnect</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="jobTech">Technician</label>
-            <select id="jobTech" name="technician" required>
-              <option value="">Select technician</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="jobSchedule">Schedule</label>
-            <input type="date" id="jobSchedule" name="schedule" required>
-          </div>
-          <div class="form-field full-row">
-            <label for="jobNotes">Description</label>
-            <textarea id="jobNotes" name="notes" rows="3"></textarea>
-          </div>
-        </div>
-        <footer class="modal-footer">
-          <button type="button" class="ghost-btn" id="jobModalCancel">Cancel</button>
-          <button type="submit" class="primary-btn" id="jobModalSubmit"><i class="ti ti-send" aria-hidden="true"></i> Assign Job</button>
-        </footer>
-      </form>
+  <div class="toast-container technician-toast-container position-fixed top-0 end-0 p-3">
+    <div class="toast" id="techToast" role="status" aria-live="polite" aria-atomic="true">
+      <div class="toast-body" id="techToastBody"></div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="assignJobModal" aria-hidden="true">
-    <div class="modal-container modal-compact">
-      <header class="modal-header">
-        <div>
-          <p class="section-eyebrow">Assignment</p>
-          <h3>Assign technician</h3>
-          <p class="field-hint" id="assignJobLabel">Job</p>
-        </div>
-        <button type="button" class="modal-close" id="assignJobModalClose" aria-label="Close assignment modal">&times;</button>
-      </header>
-      <form id="assignJobModalForm" class="job-form">
-        <div class="form-grid">
-          <div class="form-field full-row">
-            <label for="assignJobTechnician">Technician</label>
-            <select id="assignJobTechnician" name="technician">
-              <option value="">Unassigned</option>
-            </select>
+  <div class="modal modal-blur fade technician-modal" id="jobModal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <div class="page-pretitle" id="jobModalEyebrow">New Work Order</div>
+            <h2 class="modal-title" id="jobModalTitle">Create dispatch work</h2>
           </div>
+          <button type="button" class="btn-close" id="jobModalClose" aria-label="Close work order form"></button>
         </div>
-        <footer class="modal-footer">
-          <button type="button" class="ghost-btn" id="assignJobModalCancel">Cancel</button>
-          <button type="submit" class="primary-btn"><i class="ti ti-user-check" aria-hidden="true"></i> Save</button>
-        </footer>
-      </form>
+        <form id="jobModalForm">
+          <div class="modal-body">
+            <input type="hidden" id="jobEntryId">
+
+            <div class="subheader mb-3"><i class="ti ti-user me-1" aria-hidden="true"></i> Customer and assignment</div>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="jobCustomer">Customer</label>
+                <select class="form-select" id="jobCustomer" name="customerAccountNumber">
+                  <option value="">No linked customer</option>
+                </select>
+                <div id="jobCustomerHint" class="form-hint">Choose a customer to copy account, contact, plan, address, and GPS details.</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label required" for="jobType">Work type</label>
+                <select class="form-select" id="jobType" name="type" required>
+                  <option value="repair">Repair</option>
+                  <option value="install">Installation</option>
+                  <option value="relocate">Relocation</option>
+                  <option value="fibre-break">Fiber Break</option>
+                  <option value="mainline-maintenance">Mainline Maintenance</option>
+                  <option value="disconnect">Disconnection</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label required" for="jobPriority">Priority</label>
+                <select class="form-select" id="jobPriority" name="priority" required>
+                  <option value="low">Low</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="emergency">Emergency</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="jobTech">Assigned technician</label>
+                <select class="form-select" id="jobTech" name="technician"><option value="">Leave unassigned</option></select>
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="jobMapPin">Job Map Pin</label>
+                <div class="input-icon">
+                  <span class="input-icon-addon"><i class="ti ti-map-pin" aria-hidden="true"></i></span>
+                  <input class="form-control" id="jobMapPin" name="mapPin" type="text" inputmode="decimal" placeholder="14.5995, 120.9842" autocomplete="off">
+                </div>
+                <div id="jobMapPinHint" class="form-hint">Automatically copied from the selected customer. Decimal and DMS coordinates are accepted.</div>
+              </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="subheader mb-3"><i class="ti ti-calendar-time me-1" aria-hidden="true"></i> Appointment and SLA</div>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label required" for="jobAppointmentStart">Start</label>
+                <input class="form-control" type="datetime-local" id="jobAppointmentStart" name="appointmentStart" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="jobAppointmentEnd">End</label>
+                <input class="form-control" type="datetime-local" id="jobAppointmentEnd" name="appointmentEnd">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="jobSlaDue">SLA deadline</label>
+                <input class="form-control" type="datetime-local" id="jobSlaDue" name="slaDueAt">
+              </div>
+            </div>
+
+            <hr class="my-4">
+            <div class="subheader mb-3"><i class="ti ti-clipboard-text me-1" aria-hidden="true"></i> Instructions and expected materials</div>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label required" for="jobDescription">Reported problem or installation instructions</label>
+                <textarea class="form-control" id="jobDescription" name="description" rows="4" required></textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="jobEquipment">Equipment</label>
+                <textarea class="form-control" id="jobEquipment" name="equipment" rows="4" placeholder="One item per line, optionally: item | qty | unit | serial"></textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="jobMaterials">Materials</label>
+                <textarea class="form-control" id="jobMaterials" name="materials" rows="4" placeholder="Fiber cable | 50 | meter&#10;SC/APC connector | 2 | piece"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary" id="jobModalCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="jobModalSubmit"><i class="ti ti-device-floppy"></i> Save Work Order</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal modal-blur fade technician-modal" id="jobDetailsModal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <div class="page-pretitle" id="jobDetailsEyebrow">Work Order</div>
+            <h2 class="modal-title" id="jobDetailsTitle">Job details</h2>
+          </div>
+          <button type="button" class="btn-close" id="jobDetailsClose" aria-label="Close job details"></button>
+        </div>
+        <div class="modal-body">
+          <div id="jobDetailsSummary"></div>
+
+          <div class="card bg-blue-lt border-blue my-4">
+            <div class="card-body">
+              <div class="row g-3 align-items-end">
+                <div class="col-12 col-md">
+                  <label class="form-label" for="jobDetailsStatus">Admin status override</label>
+                  <select class="form-select" id="jobDetailsStatus">
+                    <option value="unassigned">Unassigned</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="traveling">Traveling</option>
+                    <option value="on_site">On Site</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                    <option value="rescheduled">Rescheduled</option>
+                    <option value="needs_team">Needs Team</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <div class="form-hint">Every change is recorded in the audit timeline.</div>
+                </div>
+                <div class="col-12 col-md-auto"><button class="btn btn-primary w-100" type="button" id="jobDetailsUpdateStatus">Update Status</button></div>
+              </div>
+            </div>
+          </div>
+
+          <section aria-labelledby="jobAuditTitle">
+            <div class="subheader mb-3" id="jobAuditTitle"><i class="ti ti-history me-1" aria-hidden="true"></i> Audit timeline</div>
+            <div id="jobEventTimeline" class="list-group list-group-flush border rounded">
+              <div class="list-group-item text-center text-secondary py-4">Loading history...</div>
+            </div>
+          </section>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-danger me-auto" id="jobDetailsDelete"><i class="ti ti-trash"></i> Delete</button>
+          <button type="button" class="btn btn-outline-secondary" id="jobDetailsLocation"><i class="ti ti-map-pin"></i> Edit Location</button>
+          <button type="button" class="btn btn-outline-secondary" id="jobDetailsEdit"><i class="ti ti-edit"></i> Edit Work Order</button>
+          <button type="button" class="btn btn-primary" id="jobDetailsDone">Close</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script src="layout.js?v=3.9"></script>
-  <script src="js/technicians.js?v=1.3"></script>
-    <script src="vendor/tabler/js/tabler.min.js"></script>
-    <script src="js/tabler-enhance.js?v=2.2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/technicians.js?v=3.4"></script>
+  <script src="vendor/tabler/js/tabler.min.js"></script>
+  <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>
-
-
-
-
-
-

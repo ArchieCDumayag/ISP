@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.1">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.11">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -20,189 +20,279 @@
             <div id="topbar"></div>
             <main class="page collectors-page">
                 <header class="collector-page-heading" aria-labelledby="collectorWorkspaceTitle">
-                    <div class="page-pretitle">Collections</div>
-                    <h1 class="page-title" id="collectorWorkspaceTitle">Collector Operations</h1>
-                    <p class="text-secondary mb-0">Manage area coverage, payment approvals, and client follow-up schedules in one page.</p>
+                    <div>
+                        <div class="page-pretitle">Collections</div>
+                        <h1 class="page-title" id="collectorWorkspaceTitle">Collector Operations</h1>
+                        <p class="text-secondary mb-0">Manage assignments, payment approvals, and client follow-ups from one workspace.</p>
+                    </div>
+                    <div class="collector-page-actions">
+                        <a class="btn btn-outline-secondary btn-sm" href="collectors-history.html">
+                            <i class="ti ti-history" aria-hidden="true"></i>
+                            <span>Collection History</span>
+                        </a>
+                    </div>
                 </header>
 
-                <div class="collectors-dashboard-grid">
-                <section class="card collector-assignment-shell collectors-board collectors-section-card collectors-assignment-card" aria-labelledby="collectorAssignmentTitle">
-                    <div class="card-status-top bg-primary"></div>
-                    <div class="card-header collector-assignment-header collector-section-header">
-                        <div class="collector-section-heading">
-                            <span class="avatar avatar-sm bg-primary-lt text-primary" aria-hidden="true">
-                                <i class="ti ti-map-pin"></i>
-                            </span>
-                            <div class="collector-assignment-heading">
-                                <h2 class="card-title" id="collectorAssignmentTitle">Collector Area Assignment</h2>
-                                <p class="text-secondary mb-0">Manage collector coverage and monthly collection performance.</p>
+                <section class="card collectors-kpi-grid" aria-label="Collector operations summary">
+                    <article class="collectors-kpi-card">
+                        <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-users"></i></span>
+                        <div class="collectors-kpi-copy">
+                            <span class="subheader">Collector Coverage</span>
+                            <div class="collectors-kpi-value">
+                                <strong id="collectorStatsCollectors">0</strong>
+                                <small><span id="collectorStatsAreas">0</span> areas</small>
                             </div>
                         </div>
-                        <button class="btn btn-primary btn-sm collector-assign-btn" type="button" id="newAssignmentBtn">
-                            <i class="ti ti-plus" aria-hidden="true"></i>
-                            <span>Assign Areas</span>
-                        </button>
-                    </div>
-
-                    <div class="card-body collector-assignment-stats" aria-label="Collector assignment summary">
-                        <article class="collector-stat-card collector-stat-card--collectors">
-                            <span class="collector-stat-card__icon" aria-hidden="true">
-                                <i class="ti ti-users" aria-hidden="true"></i>
-                            </span>
-                            <div class="collector-stat-card__body">
-                                <span>Collectors</span>
-                                <strong id="collectorStatsCollectors">0</strong>
-                            </div>
-                        </article>
-                        <article class="collector-stat-card collector-stat-card--areas">
-                            <span class="collector-stat-card__icon" aria-hidden="true">
-                                <i class="ti ti-map-pin" aria-hidden="true"></i>
-                            </span>
-                            <div class="collector-stat-card__body">
-                                <span>Assigned Areas</span>
-                                <strong id="collectorStatsAreas">0</strong>
-                            </div>
-                        </article>
-                        <article class="collector-stat-card collector-stat-card--month">
-                            <span class="collector-stat-card__icon" aria-hidden="true">
-                                <i class="ti ti-chart-line" aria-hidden="true"></i>
-                            </span>
-                            <div class="collector-stat-card__body">
-                                <span>This Month</span>
+                    </article>
+                    <article class="collectors-kpi-card">
+                        <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-chart-line"></i></span>
+                        <div class="collectors-kpi-copy">
+                            <span class="subheader">Collected This Month</span>
+                            <div class="collectors-kpi-value">
                                 <strong id="collectorStatsCollected">PHP 0.00</strong>
                             </div>
-                        </article>
-                    </div>
-
-                    <div id="assignMessage" class="assignment-toast"></div>
-
-                    <div class="table-responsive assignment-table-wrapper">
-                        <table class="table table-vcenter table-sm collectors-table collector-assignment-table">
-                            <thead>
-                                <tr>
-                                    <th>Collector</th>
-                                    <th class="col-clients">Assigned Areas</th>
-                                    <th class="col-balance">Current Month Collected</th>
-                                    <th class="col-actions text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="assignmentList"></tbody>
-                        </table>
-                        <div class="empty-state p-3" id="assignmentsEmptyState" style="display:none;">
-                            <i class="ti ti-map" aria-hidden="true"></i>
-                            <p>No areas assigned yet.</p>
                         </div>
-                        <div class="card-footer assignment-footer" id="assignmentsFooter" style="display:none;">
-                            <div class="footer-summary assignment-footer__summary" id="assignmentsSummary">No assignments to display</div>
-                            <div class="footer-controls assignment-footer__controls">
-                                <span class="assignment-footer__collected">
-                                    <strong id="assignmentsFooterCollected">PHP 0.00</strong>
-                                    <span>collected this month</span>
-                                </span>
-                                <span class="assignment-footer__separator" aria-hidden="true"></span>
-                                <span class="assignment-footer__live">
-                                    <span class="assignment-footer__live-dot" aria-hidden="true"></span>
-                                    Live data
-                                </span>
+                    </article>
+                    <article class="collectors-kpi-card">
+                        <span class="avatar bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-clock-dollar"></i></span>
+                        <div class="collectors-kpi-copy">
+                            <span class="subheader">Pending Payments</span>
+                            <div class="collectors-kpi-value">
+                                <strong id="collectorStatsPending">0</strong>
                             </div>
                         </div>
-                    </div>
+                    </article>
+                    <article class="collectors-kpi-card">
+                        <span class="avatar bg-azure-lt text-azure" aria-hidden="true"><i class="ti ti-calendar-event"></i></span>
+                        <div class="collectors-kpi-copy">
+                            <span class="subheader">Active Reschedules</span>
+                            <div class="collectors-kpi-value">
+                                <strong id="collectorStatsReschedules">0</strong>
+                            </div>
+                        </div>
+                    </article>
                 </section>
 
-                <section class="card collectors-board collectors-section-card collectors-reschedule-card" aria-labelledby="collectorRescheduleTitle">
-                    <div class="card-status-top bg-azure"></div>
-                    <div class="collector-approval-panel collector-reschedule-panel">
-                        <div class="collector-approval-panel__header collector-reschedule-panel__header">
-                            <div class="collector-section-heading">
-                                <span class="avatar avatar-sm bg-azure-lt text-azure" aria-hidden="true">
-                                    <i class="ti ti-calendar-event"></i>
-                                </span>
-                                <div>
-                                    <h2 id="collectorRescheduleTitle">Rescheduled Clients</h2>
-                                    <p>Follow-up schedules uploaded by collectors from the Android app.</p>
+                <div class="collectors-dashboard-grid">
+                    <div class="collectors-primary-column">
+                        <section class="card collectors-board collectors-section-card collectors-reschedule-card" aria-labelledby="collectorRescheduleTitle">
+                            <div class="card-status-top bg-azure"></div>
+                            <div class="collector-approval-panel collector-reschedule-panel">
+                                <div class="collector-approval-panel__header collector-reschedule-panel__header">
+                                    <div class="collector-section-heading">
+                                        <span class="avatar avatar-sm bg-azure-lt text-azure" aria-hidden="true"><i class="ti ti-calendar-event"></i></span>
+                                        <div>
+                                            <h2 id="collectorRescheduleTitle">Rescheduled Clients</h2>
+                                            <p>Android and Admin-created follow-up schedules.</p>
+                                        </div>
+                                    </div>
+                                    <div class="collector-reschedule-header-actions">
+                                        <span class="badge bg-primary-lt text-primary" id="collectorRescheduleCount">0 active</span>
+                                        <button class="btn btn-primary btn-sm" type="button" id="collectorRescheduleCreate">
+                                            <i class="ti ti-calendar-plus" aria-hidden="true"></i>
+                                            <span>Create Schedule</span>
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorRescheduleRefresh" title="Refresh rescheduled clients" aria-label="Refresh rescheduled clients">
+                                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="collector-reschedule-filters">
+                                    <label class="collector-filter-control collector-filter-control--search" for="collectorRescheduleSearch">
+                                        <span>Search</span>
+                                        <span class="input-icon">
+                                            <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                                            <input class="form-control form-control-sm" type="search" id="collectorRescheduleSearch" placeholder="Client or account" autocomplete="off">
+                                        </span>
+                                    </label>
+                                    <label class="collector-filter-control" for="collectorRescheduleCollectorFilter">
+                                        <span>Collector</span>
+                                        <select class="form-select form-select-sm" id="collectorRescheduleCollectorFilter">
+                                            <option value="">All collectors</option>
+                                        </select>
+                                    </label>
+                                    <label class="collector-filter-control" for="collectorRescheduleStatusFilter">
+                                        <span>Status</span>
+                                        <select class="form-select form-select-sm" id="collectorRescheduleStatusFilter">
+                                            <option value="active">Active schedules</option>
+                                            <option value="history">Schedule history</option>
+                                            <option value="all">All schedules</option>
+                                        </select>
+                                    </label>
+                                    <label class="collector-filter-control" for="collectorRescheduleDateFilter">
+                                        <span>Schedule date</span>
+                                        <input class="form-control form-control-sm" type="date" id="collectorRescheduleDateFilter">
+                                    </label>
+                                    <button class="btn btn-outline-secondary btn-sm collector-reschedule-clear" type="button" id="collectorRescheduleClearFilters">
+                                        <i class="ti ti-filter-off" aria-hidden="true"></i>
+                                        <span>Clear</span>
+                                    </button>
+                                </div>
+                                <div class="collector-reschedule-summary" aria-label="Active schedule priorities">
+                                    <article class="collector-reschedule-summary-item is-overdue">
+                                        <span class="avatar avatar-sm bg-danger-lt text-danger" aria-hidden="true"><i class="ti ti-alert-circle"></i></span>
+                                        <div><strong id="collectorRescheduleOverdueCount">0</strong><span>Overdue</span></div>
+                                    </article>
+                                    <article class="collector-reschedule-summary-item is-today">
+                                        <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-calendar-time"></i></span>
+                                        <div><strong id="collectorRescheduleTodayCount">0</strong><span>Today</span></div>
+                                    </article>
+                                    <article class="collector-reschedule-summary-item is-upcoming">
+                                        <span class="avatar avatar-sm bg-azure-lt text-azure" aria-hidden="true"><i class="ti ti-calendar-forward"></i></span>
+                                        <div><strong id="collectorRescheduleUpcomingCount">0</strong><span>Upcoming</span></div>
+                                    </article>
+                                </div>
+                                <div class="table-responsive collector-approval-table-wrapper collector-reschedule-table-wrapper">
+                                    <table class="table table-vcenter table-sm collectors-table collector-approval-table collector-reschedule-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Schedule</th>
+                                                <th>Client</th>
+                                                <th>Collector</th>
+                                                <th>Follow-up details</th>
+                                                <th>Status</th>
+                                                <th class="text-center">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="collectorRescheduleList"></tbody>
+                                    </table>
+                                    <div class="empty-state p-3" id="collectorReschedulesEmptyState" style="display:none;">
+                                        <i class="ti ti-calendar-off" aria-hidden="true"></i>
+                                        <p>No rescheduled clients match this filter.</p>
+                                    </div>
+                                </div>
+                                <div class="collector-reschedule-pagination" id="collectorReschedulePagination" hidden>
+                                    <span class="text-secondary" id="collectorReschedulePageSummary">No records</span>
+                                    <div class="btn-group" role="group" aria-label="Rescheduled client pages">
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorReschedulePreviousPage" aria-label="Previous page">
+                                            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                                        </button>
+                                        <span class="btn btn-sm disabled" id="collectorReschedulePageIndicator" aria-live="polite">Page 1 of 1</span>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorRescheduleNextPage" aria-label="Next page">
+                                            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="collector-reschedule-filters">
-                                <button class="btn btn-primary btn-sm collector-reschedule-create" type="button" id="collectorRescheduleCreate">
-                                    <i class="ti ti-plus" aria-hidden="true"></i>
-                                    <span>Create Schedule</span>
-                                </button>
-                                <label class="visually-hidden" for="collectorRescheduleCollectorFilter">Collector</label>
-                                <select class="form-select form-select-sm" id="collectorRescheduleCollectorFilter">
-                                    <option value="">All collectors</option>
-                                </select>
-                                <label class="visually-hidden" for="collectorRescheduleStatusFilter">Status</label>
-                                <select class="form-select form-select-sm" id="collectorRescheduleStatusFilter">
-                                    <option value="active">Active schedules</option>
-                                    <option value="history">Schedule history</option>
-                                    <option value="all">All schedules</option>
-                                </select>
-                                <button class="btn btn-outline-primary btn-sm btn-icon" type="button" id="collectorRescheduleRefresh" title="Refresh rescheduled clients" aria-label="Refresh rescheduled clients">
-                                    <i class="ti ti-refresh" aria-hidden="true"></i>
-                                </button>
-                                <span class="badge bg-primary-lt text-primary" id="collectorRescheduleCount">0 active</span>
-                            </div>
-                        </div>
-                        <div class="table-responsive collector-approval-table-wrapper collector-reschedule-table-wrapper">
-                            <table class="table table-vcenter table-sm collectors-table collector-approval-table collector-reschedule-table">
-                                <thead>
-                                    <tr>
-                                        <th>Schedule</th>
-                                        <th>Client</th>
-                                        <th>Collector</th>
-                                        <th>Follow-up details</th>
-                                        <th>Status</th>
-                                        <th class="text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="collectorRescheduleList"></tbody>
-                            </table>
-                            <div class="empty-state p-3" id="collectorReschedulesEmptyState" style="display:none;">
-                                <i class="ti ti-calendar-off" aria-hidden="true"></i>
-                                <p>No rescheduled clients match this filter.</p>
-                            </div>
-                        </div>
+                        </section>
                     </div>
-                </section>
 
-                <section class="card collectors-board collectors-section-card collectors-payments-card" aria-labelledby="collectorApprovalTitle">
-                    <div class="card-status-top bg-warning"></div>
-                    <div class="collector-approval-panel">
-                        <div class="collector-approval-panel__header">
-                            <div class="collector-section-heading">
-                                <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true">
-                                    <i class="ti ti-cash"></i>
-                                </span>
-                                <div>
-                                    <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
-                                    <p>Admin approval is required before payments count in collector totals.</p>
+                    <aside class="collectors-side-column" aria-label="Payment review and collector assignments">
+                        <section class="card collectors-board collectors-section-card collectors-payments-card" aria-labelledby="collectorApprovalTitle">
+                            <div class="card-status-top bg-warning"></div>
+                            <div class="collector-approval-panel">
+                                <div class="collector-approval-panel__header">
+                                    <div class="collector-section-heading">
+                                        <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-cash"></i></span>
+                                        <div>
+                                            <h2 id="collectorApprovalTitle">Pending Collector Payments</h2>
+                                            <p class="text-secondary mb-0 collector-approval-panel__subtitle">Balances stay unchanged until an Admin approves.</p>
+                                        </div>
+                                    </div>
+                                    <div class="collector-approval-panel__actions">
+                                        <span class="collector-approval-total" id="collectorApprovalTotal">PHP 0.00</span>
+                                        <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalFiltersToggle" aria-expanded="false" aria-controls="collectorApprovalFiltersPanel" title="Show payment filters" aria-label="Show payment filters">
+                                            <i class="ti ti-filter" aria-hidden="true"></i>
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalRefresh" title="Refresh pending payments" aria-label="Refresh pending payments">
+                                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="collector-payment-filter-panel" id="collectorApprovalFiltersPanel" hidden>
+                                    <div class="collector-payment-filters">
+                                        <label class="collector-filter-control collector-filter-control--search" for="collectorApprovalSearch">
+                                            <span>Search</span>
+                                            <span class="input-icon">
+                                                <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                                                <input class="form-control form-control-sm" type="search" id="collectorApprovalSearch" placeholder="Client or reference" autocomplete="off">
+                                            </span>
+                                        </label>
+                                        <label class="collector-filter-control" for="collectorApprovalCollectorFilter">
+                                            <span>Collector</span>
+                                            <select class="form-select form-select-sm" id="collectorApprovalCollectorFilter">
+                                                <option value="">All collectors</option>
+                                            </select>
+                                        </label>
+                                        <label class="collector-filter-control" for="collectorApprovalDateFilter">
+                                            <span>Payment date</span>
+                                            <input class="form-control form-control-sm" type="date" id="collectorApprovalDateFilter">
+                                        </label>
+                                        <button class="btn btn-outline-secondary btn-sm collector-payment-clear" type="button" id="collectorApprovalClearFilters">
+                                            <i class="ti ti-filter-off" aria-hidden="true"></i>
+                                            <span>Clear</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="collector-payment-selection" id="collectorApprovalSelection" hidden>
+                                    <span id="collectorApprovalSelectionCount">0 selected</span>
+                                    <button class="btn btn-success btn-sm" type="button" id="collectorApprovalApproveSelected">
+                                        <i class="ti ti-checks" aria-hidden="true"></i>
+                                        <span>Approve Selected</span>
+                                    </button>
+                                </div>
+                                <div class="collector-approval-groups-wrapper">
+                                    <div class="collector-approval-groups" id="collectorApprovalList" role="list" aria-live="polite"></div>
+                                    <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
+                                        <i class="ti ti-circle-check" aria-hidden="true"></i>
+                                        <p>No pending collector payments.</p>
+                                    </div>
+                                </div>
+                                <div class="collector-payment-pagination" id="collectorApprovalPagination" hidden>
+                                    <span class="text-secondary" id="collectorApprovalPageSummary">No payments</span>
+                                    <div class="btn-group" role="group" aria-label="Pending payment pages">
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalPreviousPage" aria-label="Previous page">
+                                            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                                        </button>
+                                        <span class="btn btn-sm disabled" id="collectorApprovalPageIndicator" aria-live="polite">Page 1 of 1</span>
+                                        <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorApprovalNextPage" aria-label="Next page">
+                                            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="collector-approval-panel__actions">
-                                <span class="collector-approval-total" id="collectorApprovalTotal">PHP 0.00</span>
-                                <span class="badge bg-warning-lt text-warning" id="collectorApprovalCount">0 pending</span>
+                        </section>
+
+                        <section class="card collector-assignment-shell collectors-board collectors-section-card collectors-assignment-card" aria-labelledby="collectorAssignmentTitle">
+                            <div class="card-status-top bg-primary"></div>
+                            <div class="card-header collector-assignment-header collector-section-header">
+                                <div class="collector-section-heading">
+                                    <span class="avatar avatar-sm bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-user-check"></i></span>
+                                    <div class="collector-assignment-heading">
+                                        <h2 class="card-title" id="collectorAssignmentTitle">Collector Assignment</h2>
+                                        <p class="text-secondary mb-0">Review assigned areas and monthly performance.</p>
+                                    </div>
+                                </div>
+                                <div class="collector-assignment-header-actions">
+                                    <span class="badge bg-primary-lt text-primary" id="assignmentCount">0 collectors</span>
+                                    <button class="btn btn-primary btn-sm" type="button" id="newAssignmentBtn">
+                                        <i class="ti ti-map-plus" aria-hidden="true"></i>
+                                        <span>Assign Areas</span>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                        <div class="table-responsive collector-approval-table-wrapper">
-                            <table class="table table-vcenter table-sm collectors-table collector-approval-table">
-                                <thead>
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Paid Client</th>
-                                        <th class="text-end">Amount</th>
-                                        <th>Reference</th>
-                                        <th class="text-center">Reject</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="collectorApprovalList"></tbody>
-                            </table>
-                            <div class="empty-state p-3" id="collectorApprovalsEmptyState" style="display:none;">
-                                <i class="ti ti-circle-check" aria-hidden="true"></i>
-                                <p>No pending collector payments.</p>
+
+                            <div class="collector-assignment-toolbar" id="assignmentSearchWrap" hidden>
+                                <label class="input-icon w-100" for="assignmentSearch">
+                                    <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                                    <input class="form-control form-control-sm" type="search" id="assignmentSearch" placeholder="Search collector or area" autocomplete="off">
+                                </label>
+                                <button class="btn btn-sm btn-icon btn-ghost-secondary" type="button" id="assignmentSearchClear" title="Clear collector search" aria-label="Clear collector search" hidden>
+                                    <i class="ti ti-x" aria-hidden="true"></i>
+                                </button>
                             </div>
-                        </div>
-                    </div>
-                </section>
+
+                            <div id="assignMessage" class="assignment-toast"></div>
+                            <div class="collector-assignment-list-wrapper">
+                                <div class="collector-assignment-list" id="assignmentList" role="list" aria-live="polite"></div>
+                                <div class="empty-state p-3" id="assignmentsEmptyState" style="display:none;">
+                                    <i class="ti ti-map" aria-hidden="true"></i>
+                                    <p>No areas assigned yet.</p>
+                                </div>
+                            </div>
+                        </section>
+                    </aside>
                 </div>
             </main>
         </div>
@@ -222,6 +312,22 @@
                 <form class="collector-schedule-form tabler-modal-form" id="collectorScheduleForm">
                     <div class="modal-body collector-schedule-modal__body">
                         <input type="hidden" id="collectorScheduleRecordId" name="recordId">
+                        <section class="collector-schedule-payment-details" id="collectorSchedulePaymentDetails" aria-labelledby="collectorSchedulePaymentDetailsTitle" hidden>
+                            <div class="collector-schedule-payment-details__header">
+                                <span class="avatar avatar-sm bg-warning-lt text-warning" aria-hidden="true"><i class="ti ti-receipt"></i></span>
+                                <div>
+                                    <h3 id="collectorSchedulePaymentDetailsTitle">Partial-payment follow-up</h3>
+                                    <p>Linked to the Collector app payment submission.</p>
+                                </div>
+                            </div>
+                            <div class="collector-schedule-payment-details__grid">
+                                <div><span>Payment reference</span><strong id="collectorSchedulePaymentReference">&mdash;</strong></div>
+                                <div><span>Amount paid</span><strong id="collectorScheduleAmountPaid">PHP 0.00</strong></div>
+                                <div><span>Remaining balance</span><strong class="text-danger" id="collectorScheduleRemainingBalance">PHP 0.00</strong></div>
+                                <div><span>Payment status</span><strong id="collectorSchedulePaymentStatus">Pending approval</strong></div>
+                                <div class="collector-schedule-payment-details__wide"><span>Created from</span><strong id="collectorScheduleAuditSummary">Collector app</strong></div>
+                            </div>
+                        </section>
                         <div class="row g-3">
                             <div class="col-12 col-md-7">
                                 <label class="form-label" for="collectorScheduleCustomer">Client</label>
@@ -244,18 +350,19 @@
                                 <input class="form-control" type="text" id="collectorScheduleTime" name="preferredTime" maxlength="80" placeholder="Example: 9:00 AM or afternoon">
                             </div>
                             <div class="col-12">
-                                <label class="form-label" for="collectorScheduleResult">Follow-up reason</label>
+                                <label class="form-label" id="collectorScheduleResultLabel" for="collectorScheduleResult">Follow-up reason</label>
                                 <input class="form-control" type="text" id="collectorScheduleResult" name="result" maxlength="160" placeholder="Example: Promised payment follow-up" required>
                             </div>
                             <div class="col-12">
-                                <label class="form-label" for="collectorScheduleNotes">Instructions or notes</label>
+                                <label class="form-label" id="collectorScheduleNotesLabel" for="collectorScheduleNotes">Instructions or notes</label>
                                 <textarea class="form-control" id="collectorScheduleNotes" name="notes" rows="4" maxlength="1200" placeholder="Add the information the collector needs for this visit." required></textarea>
+                                <div class="form-hint" id="collectorScheduleNotesHint">Required for Admin-created collection schedules.</div>
                             </div>
                         </div>
                         <div class="modal-message" id="collectorScheduleMessage" role="status" aria-live="polite"></div>
                     </div>
                     <div class="modal-footer collector-schedule-modal__actions">
-                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorScheduleModal">Cancel</button>
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorScheduleModal"><span id="collectorScheduleCancelLabel">Cancel</span></button>
                         <button type="submit" class="btn btn-primary btn-sm" id="collectorScheduleSave">
                             <i class="ti ti-device-floppy" aria-hidden="true"></i>
                             <span>Save Schedule</span>
@@ -350,8 +457,42 @@
         </div>
     </div>
 
+    <!-- Collector Payment Rejection Modal -->
+    <div id="collectorPaymentRejectModal" class="modal modal-blur tabler-form-modal collector-payment-reject-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="collectorPaymentRejectTitle">
+        <div class="modal-dialog modal-sm modal-dialog-centered collector-payment-reject-modal__dialog">
+            <div class="modal-content collector-payment-reject-modal__content">
+                <div class="modal-header collector-payment-reject-modal__header">
+                    <div>
+                        <h2 class="modal-title" id="collectorPaymentRejectTitle">Reject Collector Payment</h2>
+                        <p class="modal-subtitle mb-0">The balance will remain unchanged and the reason will be retained in the audit record.</p>
+                    </div>
+                    <button class="btn btn-icon btn-outline-secondary close-modal" type="button" id="closeCollectorPaymentRejectModal" aria-label="Close rejection dialog">
+                        <i class="ti ti-x" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <form id="collectorPaymentRejectForm">
+                    <div class="modal-body collector-payment-reject-modal__body">
+                        <input type="hidden" id="collectorPaymentRejectEntryId">
+                        <div class="alert alert-danger collector-payment-reject-summary" id="collectorPaymentRejectSummary" role="status"></div>
+                        <label class="form-label" for="collectorPaymentRejectReason">Rejection reason</label>
+                        <textarea class="form-control" id="collectorPaymentRejectReason" rows="4" maxlength="500" placeholder="Example: Reference could not be verified" required></textarea>
+                        <div class="form-hint">Required. This reason is saved with the Admin reviewer and decision time.</div>
+                        <div class="modal-message" id="collectorPaymentRejectMessage" role="status" aria-live="polite"></div>
+                    </div>
+                    <div class="modal-footer collector-payment-reject-modal__actions">
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorPaymentRejectModal">Cancel</button>
+                        <button type="submit" class="btn btn-danger btn-sm" id="collectorPaymentRejectSubmit">
+                            <i class="ti ti-x" aria-hidden="true"></i>
+                            <span>Reject Payment</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=2.9"></script>
+    <script src="js/collectors-page.js?v=3.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

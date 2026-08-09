@@ -4808,6 +4808,73 @@ const applyNormalizedCustomerMobileFields = (target, source = {}, { fallback = '
     return normalizedMobile;
 };
 
+const normalizeCustomerMapPin = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const normalized = (() => {
+        try {
+            return decodeURIComponent(raw.replace(/\+/g, ' '));
+        } catch {
+            return raw;
+        }
+    })();
+    const isValidPair = (latitude, longitude) => (
+        Number.isFinite(latitude)
+        && latitude >= -90
+        && latitude <= 90
+        && Number.isFinite(longitude)
+        && longitude >= -180
+        && longitude <= 180
+    );
+    let latitude = null;
+    let longitude = null;
+    const decimalMatch = normalized.match(/(?:@|[?&](?:q|query|ll)=)?(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)/i);
+    if (decimalMatch) {
+        latitude = Number(decimalMatch[1]);
+        longitude = Number(decimalMatch[2]);
+    } else {
+        const normalizedDms = normalized
+            .replace(/[\u00BA\u02DA]/g, '\u00B0')
+            .replace(/[\u2032\u2019]/g, "'")
+            .replace(/[\u2033\u201C\u201D]/g, '"')
+            .replace(/,/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const parseDmsSegment = (segment) => {
+            const text = String(segment || '').trim().toUpperCase();
+            const hemisphere = text.match(/[NSEW]/)?.[0] || '';
+            const numericParts = text.replace(/[NSEW]/g, ' ').match(/-?\d+(?:\.\d+)?/g) || [];
+            if (!hemisphere || !numericParts.length) return null;
+            const degrees = Number(numericParts[0]);
+            const minutes = Number(numericParts[1] || 0);
+            const seconds = Number(numericParts[2] || 0);
+            if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+            if (minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) return null;
+            let decimal = Math.abs(degrees) + (minutes / 60) + (seconds / 3600);
+            if (hemisphere === 'S' || hemisphere === 'W') decimal *= -1;
+            return { value: decimal, hemisphere };
+        };
+        const segments = normalizedDms.match(/(?:[NSEW][^NSEW]+|[^NSEW]+[NSEW])/gi) || [];
+        const parsedSegments = segments.map(parseDmsSegment).filter(Boolean);
+        latitude = parsedSegments.find((entry) => ['N', 'S'].includes(entry.hemisphere))?.value ?? null;
+        longitude = parsedSegments.find((entry) => ['E', 'W'].includes(entry.hemisphere))?.value ?? null;
+    }
+    if (!isValidPair(latitude, longitude)) {
+        throw createError(400, 'Map Pin must contain a valid latitude and longitude, for example 14.5995, 120.9842.');
+    }
+    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+};
+
+const applyNormalizedCustomerMapPin = (target, source = {}) => {
+    const mapPinKeys = ['mapPin', 'map_pin', 'coordinates', 'coordinate'];
+    const selectedKey = mapPinKeys.find((key) => Object.prototype.hasOwnProperty.call(source || {}, key));
+    if (!selectedKey) return undefined;
+    const normalizedMapPin = normalizeCustomerMapPin(source[selectedKey]);
+    target.mapPin = normalizedMapPin || null;
+    mapPinKeys.filter((key) => key !== 'mapPin').forEach((key) => delete target[key]);
+    return normalizedMapPin;
+};
+
 const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'customers-create', allowPastBillingDates = false } = {}) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
@@ -4841,6 +4908,7 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
     delete incomingBody.opticalInfo;
     delete incomingBody.opticalPower;
     applyNormalizedCustomerMobileFields(incomingBody, payload);
+    applyNormalizedCustomerMapPin(incomingBody, payload);
     const hasIncomingNapAssignment = Object.prototype.hasOwnProperty.call(payload || {}, 'napId')
         || Object.prototype.hasOwnProperty.call(payload || {}, 'napPort')
         || Object.prototype.hasOwnProperty.call(payload || {}, 'opticalInfo')
@@ -5033,6 +5101,7 @@ const updateCustomerRecord = async (
     applyNormalizedCustomerMobileFields(incomingBody, payload, {
         fallback: existing.mobileRaw || existing.mobile || ''
     });
+    applyNormalizedCustomerMapPin(incomingBody, payload);
     const hasIncomingNapAssignment = Object.prototype.hasOwnProperty.call(payload || {}, 'napId')
         || Object.prototype.hasOwnProperty.call(payload || {}, 'napPort')
         || Object.prototype.hasOwnProperty.call(payload || {}, 'opticalInfo')
@@ -6612,3 +6681,4 @@ module.exports.sanitizeCustomerForAdmin = sanitizeCustomerForAdmin;
 module.exports.resolveStoredAccountPrefixId = resolveStoredAccountPrefixId;
 module.exports.generateAccountNumber = generateAccountNumber;
 module.exports.normalizeImportedClientCorrectionRecord = normalizeImportedClientCorrectionRecord;
+module.exports.normalizeCustomerMapPin = normalizeCustomerMapPin;

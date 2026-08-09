@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    
+
     <title>Collector History - Archie Point To Point Pisonet</title>
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.3">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-history-tabler.css?v=1.0">
+    <link rel="stylesheet" href="css/collectors-history-tabler.css?v=2.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -19,57 +19,164 @@
         <div class="app-main page-wrapper">
             <div id="topbar"></div>
             <main class="page collectors-history-page">
-                <section class="card collection-history-shell" aria-labelledby="collectionHistoryTitle">
-                    <div class="card-header collection-history-top">
-                        <div class="collection-history-title">
-                            <span class="avatar avatar-sm bg-primary-lt text-primary collection-history-title__icon" aria-hidden="true">
-                                <i class="ti ti-chart-line" aria-hidden="true"></i>
-                            </span>
-                            <div>
-                                <h1 class="card-title" id="collectionHistoryTitle">Collection history</h1>
-                                <p class="text-secondary mb-0">Track collection performance by month and collector.</p>
+                <header class="collection-history-page-header" aria-labelledby="collectionHistoryTitle">
+                    <div>
+                        <div class="page-pretitle">Collections</div>
+                        <h1 class="page-title" id="collectionHistoryTitle">Collection History</h1>
+                        <p class="text-secondary mb-0">Review approved collector performance by period, collector, and service area.</p>
+                    </div>
+                    <div class="collection-history-page-actions">
+                        <a class="btn btn-outline-secondary btn-sm" href="collectors.html">
+                            <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                            <span>Collector Operations</span>
+                        </a>
+                        <button class="btn btn-outline-primary btn-sm" type="button" id="historyExportCsv">
+                            <i class="ti ti-file-spreadsheet" aria-hidden="true"></i>
+                            <span>Export CSV</span>
+                        </button>
+                        <button class="btn btn-primary btn-sm" type="button" id="historyPrint">
+                            <i class="ti ti-printer" aria-hidden="true"></i>
+                            <span>Print Report</span>
+                        </button>
+                    </div>
+                </header>
+
+                <section class="card collection-history-kpi-grid" aria-label="Collection history summary">
+                    <article class="collection-history-kpi-card">
+                        <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-cash-banknote"></i></span>
+                        <div class="collection-history-kpi-copy">
+                            <span class="subheader">Total Collected</span>
+                            <div class="collection-history-kpi-value">
+                                <strong id="historyTotalCollected">PHP 0.00</strong>
+                                <small id="historyTotalScope">All months</small>
                             </div>
                         </div>
-                    </div>
+                    </article>
+                    <article class="collection-history-kpi-card">
+                        <span class="avatar bg-blue-lt text-blue" aria-hidden="true"><i class="ti ti-receipt"></i></span>
+                        <div class="collection-history-kpi-copy">
+                            <span class="subheader">Approved Payments</span>
+                            <div class="collection-history-kpi-value">
+                                <strong id="historyPaymentCount">0</strong>
+                            </div>
+                        </div>
+                    </article>
+                    <article class="collection-history-kpi-card">
+                        <span class="avatar bg-purple-lt text-purple" aria-hidden="true"><i class="ti ti-users"></i></span>
+                        <div class="collection-history-kpi-copy">
+                            <span class="subheader">Collectors</span>
+                            <div class="collection-history-kpi-value">
+                                <strong id="historyCollectorCount">0</strong>
+                            </div>
+                        </div>
+                    </article>
+                    <article class="collection-history-kpi-card">
+                        <span class="avatar bg-azure-lt text-azure" aria-hidden="true"><i class="ti ti-chart-arrows-vertical"></i></span>
+                        <div class="collection-history-kpi-copy">
+                            <span class="subheader">Average Payment</span>
+                            <div class="collection-history-kpi-value">
+                                <strong id="historyAveragePayment">PHP 0.00</strong>
+                            </div>
+                        </div>
+                    </article>
+                </section>
 
-                    <div class="card-body collection-history-controls">
-                        <div class="collection-history-filter">
-                            <label class="form-label" for="monthFilter">Month</label>
-                            <div class="input-icon collection-history-select">
-                                <span class="input-icon-addon">
-                                    <i class="ti ti-calendar" aria-hidden="true"></i>
-                                </span>
+                <section class="card collection-history-filter-card" aria-labelledby="historyFiltersTitle">
+                    <div class="card-header">
+                        <div>
+                            <h2 class="card-title" id="historyFiltersTitle">Report Filters</h2>
+                            <p class="text-secondary mb-0">Narrow the report without changing stored records.</p>
+                        </div>
+                        <span class="badge bg-green-lt text-green"><i class="ti ti-circle-check me-1" aria-hidden="true"></i>Approved only</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="collection-history-filter-grid">
+                            <div>
+                                <label class="form-label" for="monthFilter">Collection period</label>
                                 <select class="form-select form-select-sm" id="monthFilter">
                                     <option value="">All months</option>
                                 </select>
                             </div>
+                            <div>
+                                <label class="form-label" for="collectorFilter">Collector</label>
+                                <select class="form-select form-select-sm" id="collectorFilter">
+                                    <option value="">All collectors</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" for="areaFilter">Service area</label>
+                                <select class="form-select form-select-sm" id="areaFilter">
+                                    <option value="">All areas</option>
+                                </select>
+                            </div>
+                            <div class="collection-history-search-field">
+                                <label class="form-label" for="historySearch">Search</label>
+                                <div class="input-icon">
+                                    <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                                    <input class="form-control form-control-sm" id="historySearch" type="search" placeholder="Collector, month, or area" autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="collection-history-clear-field">
+                                <button class="btn btn-outline-secondary btn-sm" type="button" id="historyClearFilters">
+                                    <i class="ti ti-filter-off" aria-hidden="true"></i>
+                                    <span>Clear Filters</span>
+                                </button>
+                            </div>
                         </div>
+                    </div>
+                </section>
+
+                <section class="card collection-history-shell" aria-labelledby="collectionHistoryTableTitle">
+                    <div class="card-header collection-history-table-header">
+                        <div>
+                            <h2 class="card-title" id="collectionHistoryTableTitle">Approved Collection Records</h2>
+                            <p class="text-secondary mb-0">Select a collector row to review its area breakdown.</p>
+                        </div>
+                        <span class="badge bg-primary-lt text-primary" id="historyTableBadge">0 records</span>
                     </div>
 
                     <div class="table-responsive collection-history-table-wrap" id="historyTableWrapper">
-                        <table class="table table-vcenter table-sm collection-history-table">
+                        <table class="table table-vcenter table-hover collection-history-table">
                             <thead>
                                 <tr>
-                                    <th><i class="ti ti-calendar" aria-hidden="true"></i> Collection Period</th>
-                                    <th><i class="ti ti-user" aria-hidden="true"></i> Collector</th>
-                                    <th><i class="ti ti-credit-card" aria-hidden="true"></i> Total Collected</th>
+                                    <th>
+                                        <button class="collection-history-sort" type="button" data-history-sort="month">Period <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
+                                    </th>
+                                    <th>
+                                        <button class="collection-history-sort" type="button" data-history-sort="collectorName">Collector <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
+                                    </th>
+                                    <th>Service Areas</th>
+                                    <th class="text-end">
+                                        <button class="collection-history-sort justify-content-end" type="button" data-history-sort="payments">Payments <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
+                                    </th>
+                                    <th>Status</th>
+                                    <th class="text-end">
+                                        <button class="collection-history-sort justify-content-end" type="button" data-history-sort="amount">Total Collected <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody id="historyTableBody">
                                 <tr>
-                                    <td colspan="3" class="collection-history-empty">Loading...</td>
+                                    <td colspan="6" class="collection-history-empty">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
-                        <div class="card-footer collection-history-footer">
-                            <div class="collection-history-record-count">
-                                <span class="collection-history-info-icon" aria-hidden="true"><i class="ti ti-info-circle" aria-hidden="true"></i></span>
-                                <span id="historySummary">Loading history...</span>
-                            </div>
-                            <div class="collection-history-live">
-                                <span>Live data</span>
-                                <span class="collection-history-live-dot" aria-hidden="true"></span>
-                            </div>
+                    </div>
+                    <div class="card-footer collection-history-footer">
+                        <div class="collection-history-record-count">
+                            <span class="collection-history-info-icon" aria-hidden="true"><i class="ti ti-info-circle"></i></span>
+                            <span id="historySummary">Loading history...</span>
+                        </div>
+                        <div class="collection-history-pagination">
+                            <label class="visually-hidden" for="historyPageSize">Rows per page</label>
+                            <select class="form-select form-select-sm" id="historyPageSize" title="Rows per page">
+                                <option value="10">10 rows</option>
+                                <option value="20" selected>20 rows</option>
+                                <option value="50">50 rows</option>
+                            </select>
+                            <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="historyPrevPage" aria-label="Previous page"><i class="ti ti-chevron-left"></i></button>
+                            <span id="historyPageLabel">Page 1 of 1</span>
+                            <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="historyNextPage" aria-label="Next page"><i class="ti ti-chevron-right"></i></button>
                         </div>
                     </div>
                 </section>
@@ -79,9 +186,8 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <!-- Modal for per-area breakdown -->
-    <div class="modal modal-blur tabler-form-modal collectors-history-modal" id="historyModal" role="dialog" aria-modal="true" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal modal-blur tabler-form-modal collectors-history-modal" id="historyModal" role="dialog" aria-modal="true" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
@@ -101,9 +207,8 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-history.js?v=1.6"></script>
+    <script src="js/collectors-history.js?v=2.0"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>
-

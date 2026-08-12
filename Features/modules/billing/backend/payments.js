@@ -3783,5 +3783,101 @@ const handleXenditWebhook = async (req, res, next) => {
     }
 };
 
+let approvedProofPaymentQueue = Promise.resolve();
+
+const recordApprovedProofPayment = (payload = {}) => {
+    const operation = approvedProofPaymentQueue.catch(() => {}).then(async () => {
+        if (await isRelationalReady()) {
+            throw createError(500, 'JSON proof payment writer cannot run in relational mode.');
+        }
+
+        const branchId = Number(payload.branchId);
+        const accountNumber = String(payload.accountNumber || '').trim();
+        const submissionId = String(payload.submissionId || '').trim();
+        const amount = Number(payload.amount);
+        const reference = sanitizeReferenceInput(payload.reference);
+        if (!Number.isInteger(branchId) || branchId <= 0) throw createError(400, 'Branch ID is required.');
+        if (!accountNumber) throw createError(400, 'Account number is required.');
+        if (!submissionId) throw createError(400, 'Submission ID is required.');
+        if (!Number.isFinite(amount) || amount <= 0) throw createError(400, 'Amount must be greater than 0.');
+        if (!reference) throw createError(400, 'Reference number is required.');
+
+        const customers = await readCustomers(branchId);
+        const customer = customers.find((item) => String(item?.accountNumber || '') === accountNumber);
+        if (!customer) throw createError(404, 'Customer not found.');
+
+        const payments = await readPayments(branchId);
+        if (!payments[accountNumber]) payments[accountNumber] = { history: [] };
+        const entryId = `proof-${submissionId}`.slice(0, 64);
+        const existingEntry = Object.values(payments).flatMap((record) => (
+            Array.isArray(record?.history) ? record.history : []
+        )).find((entry) => String(entry?.id || '') === entryId);
+        if (existingEntry) return existingEntry;
+
+        const referenceKey = reference.toLowerCase();
+        const duplicate = Object.entries(payments).flatMap(([duplicateAccount, record]) => (
+            (Array.isArray(record?.history) ? record.history : []).map((entry) => ({
+                accountNumber: duplicateAccount,
+                entry
+            }))
+        )).find(({ entry }) => {
+            const candidates = [entry?.reference, entry?.orNumber, entry?.or_number]
+                .map((value) => String(value || '').trim().toLowerCase())
+                .filter(Boolean);
+            return candidates.includes(referenceKey);
+        });
+        if (duplicate) {
+            const duplicateError = createError(409, 'Payment has been recorded');
+            duplicateError.duplicatePayment = {
+                paymentEntryId: duplicate.entry?.id || '',
+                accountNumber: duplicate.accountNumber,
+                customerName: '',
+                amount: Number(duplicate.entry?.amount) || null,
+                date: duplicate.entry?.date || null,
+                reference: duplicate.entry?.reference || '',
+                orNumber: duplicate.entry?.orNumber || duplicate.entry?.or_number || '',
+                recordedAt: duplicate.entry?.recordedAt || null,
+                recordedBy: duplicate.entry?.recordedBy?.name || duplicate.entry?.recordedBy?.username || '',
+                paymentMethod: duplicate.entry?.paymentMethod || '',
+                description: duplicate.entry?.description || ''
+            };
+            throw duplicateError;
+        }
+
+        const amountRounded = Number(amount.toFixed(2));
+        const notes = sanitizeString(payload.notes).slice(0, 220);
+        const entry = {
+            id: entryId,
+            amount: amountRounded,
+            date: toPaymentDateOnly(payload.date) || new Date().toISOString().slice(0, 10),
+            kind: 'payment',
+            type: 'payment',
+            direction: 'credit',
+            reference,
+            description: notes ? `Payment proof approved - ${notes}` : 'Payment proof approved',
+            recordedAt: new Date().toISOString(),
+            recordedBy: {
+                id: String(payload.reviewer?.id || ''),
+                username: payload.reviewer?.username || null,
+                name: payload.reviewer?.name || null,
+                role: payload.reviewer?.role || null
+            },
+            payer: sanitizeString(payload.payer) || accountNumber,
+            status: 'Approved',
+            paymentMethod: 'gcash',
+            fingerprint: `${accountNumber}|${reference}|proof|${amountRounded.toFixed(2)}|${submissionId}`.slice(0, 200)
+        };
+        payments[accountNumber].history.unshift(entry);
+        await writePayments(payments);
+        await applyReenableOnPaid(accountNumber, branchId, payments, entry);
+        await maybeExtendPrepaidExpiryOnPayment(accountNumber, entry, branchId);
+        triggerBranchServiceRefresh(branchId, 'payment-confirmation-approved');
+        return entry;
+    });
+    approvedProofPaymentQueue = operation.catch(() => {});
+    return operation;
+};
+
 module.exports = router;
 module.exports.handleXenditWebhook = handleXenditWebhook;
+module.exports.recordApprovedProofPayment = recordApprovedProofPayment;

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Submit GCash Payment Proof</title>
+    <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="/css/tabler-app.css?v=3.1">
+    <link rel="stylesheet" href="/css/customer-payment-proof.css?v=2.0">
+</head>
+<body class="bg-body-tertiary">
+    <div class="page payment-proof-page">
+        <main class="page-wrapper">
+            <div class="page-body">
+                <div class="container-xl payment-proof-shell">
+                    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+                        <a class="btn btn-outline-secondary" href="/customer-portal.html">
+                            <i class="ti ti-arrow-left me-1" aria-hidden="true"></i>
+                            Back to portal
+                        </a>
+                        <span class="badge bg-yellow-lt text-yellow" id="proofPageAccount">Loading account</span>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row align-items-center g-3">
+                                <div class="col">
+                                    <div class="text-secondary text-uppercase fw-semibold small">GCash payment confirmation</div>
+                                    <h1 class="h2 mb-1">Submit your payment proof</h1>
+                                    <p class="text-secondary mb-0">Your screenshot is supporting evidence only. Payment remains pending until an Admin checks it.</p>
+                                </div>
+                                <div class="col-auto">
+                                    <span class="avatar avatar-lg bg-blue-lt text-blue rounded-circle">
+                                        <i class="ti ti-receipt-2 fs-1" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+                        <i class="ti ti-shield-exclamation fs-2 flex-shrink-0" aria-hidden="true"></i>
+                        <div>
+                            <div class="fw-semibold">Do not submit proof before sending the payment.</div>
+                            <div>Use the exact amount shown below and verify the recipient before confirming in GCash.</div>
+                        </div>
+                    </div>
+
+                    <div id="proofPageAlert" class="alert" role="alert" hidden></div>
+
+                    <div class="row row-cards">
+                        <div class="col-lg-5">
+                            <section class="card h-100" aria-labelledby="merchantDetailsTitle">
+                                <div class="card-header">
+                                    <h2 class="card-title" id="merchantDetailsTitle">Merchant details</h2>
+                                </div>
+                                <div class="card-body">
+                                    <div class="payment-proof-qr mb-4" id="proofQrWrap">
+                                        <img id="proofQrImage" alt="GCash merchant QR code" hidden>
+                                        <div class="empty py-4" id="proofQrEmpty">
+                                            <div class="empty-img">
+                                                <i class="ti ti-qrcode fs-1 text-secondary" aria-hidden="true"></i>
+                                            </div>
+                                            <p class="empty-title">QR code not configured</p>
+                                        </div>
+                                    </div>
+
+                                    <dl class="row mb-0">
+                                        <dt class="col-5 text-secondary">Account name</dt>
+                                        <dd class="col-7 fw-semibold text-end" id="proofMerchantName">-</dd>
+                                        <dt class="col-5 text-secondary">GCash number</dt>
+                                        <dd class="col-7 fw-semibold text-end payment-proof-number" id="proofMerchantNumber">-</dd>
+                                        <dt class="col-5 text-secondary">Exact amount</dt>
+                                        <dd class="col-7 text-end"><span class="fs-2 fw-bold text-blue" id="proofExactAmount">₱0.00</span></dd>
+                                        <dt class="col-5 text-secondary">Due date</dt>
+                                        <dd class="col-7 text-end" id="proofDueDate">-</dd>
+                                    </dl>
+
+                                    <hr>
+                                    <ol class="text-secondary ps-3 mb-0 payment-proof-steps">
+                                        <li>Pay the exact amount to the GCash account above.</li>
+                                        <li>Keep the GCash reference number and screenshot.</li>
+                                        <li>Complete the form and wait for Admin approval.</li>
+                                    </ol>
+                                </div>
+                            </section>
+                        </div>
+
+                        <div class="col-lg-7">
+                            <section class="card" aria-labelledby="proofFormTitle">
+                                <div class="card-header">
+                                    <h2 class="card-title" id="proofFormTitle">Payment information</h2>
+                                </div>
+                                <form id="customerPaymentProofForm" novalidate>
+                                    <div class="card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label required" for="proofReference">GCash reference number</label>
+                                                <input class="form-control" id="proofReference" type="text" maxlength="64" autocomplete="off" placeholder="Enter the reference number" required>
+                                                <div class="form-hint">Use the number shown on the completed GCash transaction.</div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label required" for="proofPaymentDate">Payment date and time</label>
+                                                <input class="form-control" id="proofPaymentDate" type="datetime-local" required>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label" for="proofAmount">Amount paid</label>
+                                                <div class="input-group">
+                                                    <span class="input-group-text">₱</span>
+                                                    <input class="form-control" id="proofAmount" type="text" inputmode="decimal" readonly>
+                                                </div>
+                                                <div class="form-hint">The amount is locked to your current amount due.</div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label required" for="proofScreenshot">GCash screenshot</label>
+                                                <input class="form-control" id="proofScreenshot" type="file" accept="image/jpeg,image/png,image/webp" required>
+                                                <div class="form-hint">JPEG, PNG, or WebP. Maximum size: 4 MB.</div>
+                                            </div>
+                                            <div class="col-12">
+                                                <div class="payment-proof-preview" id="proofPreviewWrap" hidden>
+                                                    <img id="proofPreviewImage" alt="Selected payment screenshot preview">
+                                                    <button class="btn btn-sm btn-outline-danger" id="proofRemoveImage" type="button">
+                                                        <i class="ti ti-trash me-1" aria-hidden="true"></i>
+                                                        Remove image
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="col-12">
+                                                <div class="card bg-blue-lt payment-proof-analysis" id="proofAnalysisPanel" aria-live="polite" hidden>
+                                                    <div class="card-body">
+                                                        <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                                            <div>
+                                                                <div class="fw-semibold">Screenshot analysis</div>
+                                                                <div class="text-secondary small" id="proofAnalysisMessage">Reading GCash details...</div>
+                                                            </div>
+                                                            <span class="badge bg-secondary-lt text-secondary" id="proofAnalysisBadge">Waiting</span>
+                                                        </div>
+                                                        <div class="payment-proof-analysis-grid">
+                                                            <div><span class="text-secondary small d-block">Amount</span><strong id="proofAnalysisAmount">-</strong></div>
+                                                            <div><span class="text-secondary small d-block">Reference</span><strong id="proofAnalysisReference">-</strong></div>
+                                                            <div><span class="text-secondary small d-block">Date &amp; time</span><strong id="proofAnalysisDate">-</strong></div>
+                                                            <div><span class="text-secondary small d-block">Recipient</span><strong id="proofAnalysisRecipient">-</strong></div>
+                                                            <div><span class="text-secondary small d-block">Screenshot status</span><strong id="proofAnalysisStatus">-</strong></div>
+                                                            <div><span class="text-secondary small d-block">Official history</span><strong id="proofAnalysisHistory">-</strong></div>
+                                                            <div><span class="text-secondary small d-block">Analyzer</span><strong id="proofAnalysisSource">-</strong></div>
+                                                        </div>
+                                                        <div class="alert alert-warning mt-3 mb-0" id="proofAnalysisWarnings" hidden></div>
+                                                        <div class="text-secondary small mt-3">
+                                                            Local OCR is used first. If the ISP enables Vision AI, an unclear screenshot may be sent to its configured AI provider for field extraction. OCR, Vision AI, and official-history matching assist the review only; only Admin approval can post your payment.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label" for="proofNotes">Note <span class="text-secondary">(optional)</span></label>
+                                                <textarea class="form-control" id="proofNotes" rows="3" maxlength="500" placeholder="Add information that may help the Admin review this payment"></textarea>
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-check">
+                                                    <input class="form-check-input" id="proofConfirmation" type="checkbox" required>
+                                                    <span class="form-check-label">I confirm that I sent this payment to the merchant account shown above and that the information is accurate.</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer d-flex justify-content-end gap-2">
+                                        <a class="btn btn-outline-secondary" href="/customer-portal.html">Cancel</a>
+                                        <button class="btn btn-primary" id="proofSubmitButton" type="submit">
+                                            <i class="ti ti-upload me-1" aria-hidden="true"></i>
+                                            Submit proof
+                                        </button>
+                                    </div>
+                                </form>
+                            </section>
+                        </div>
+                    </div>
+
+                    <section class="card mt-3" aria-labelledby="proofHistoryTitle">
+                        <div class="card-header">
+                            <div>
+                                <h2 class="card-title" id="proofHistoryTitle">My payment submissions</h2>
+                                <div class="text-secondary small">Track review status and Admin messages.</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn btn-outline-secondary btn-sm" id="proofRefreshButton" type="button">
+                                    <i class="ti ti-refresh me-1" aria-hidden="true"></i>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table">
+                                <thead>
+                                    <tr>
+                                        <th>Submitted</th>
+                                        <th>Reference</th>
+                                        <th>Amount</th>
+                                        <th>Payment date</th>
+                                        <th>Screenshot check</th>
+                                        <th>Status</th>
+                                        <th>Admin message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="proofHistoryBody">
+                                    <tr><td colspan="7" class="text-center text-secondary py-4">Loading submissions...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/vendor/tabler/js/tabler.min.js"></script>
+    <script src="/js/customer-payment-proof.js?v=2.1"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-10
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -12,11 +12,13 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Accept public applications and place them into the customer draft review workflow.
 - Maintain coverage areas and public Philippine address lookup flows.
 - Create, edit, approve, cancel, and track customer/agent referrals through a centralized audited registry.
+- Provide customer-session-scoped GCash proof instructions, exact current balance, local-OCR-first screenshot analysis with an optional configured Vision AI fallback, imported-history matching, submission, and review-history contracts for the Customer App.
 
 ## Canonical runtime layout
 
 - `backend/index.js` is the lazy Customer Management descriptor loaded from `module.json`.
 - `backend/customers.js`: `/api/customers`, customer sessions/helpers, record lifecycle, import, archive orchestration, and cross-domain enrichment.
+- `backend/customers.js` also owns authenticated, `paymentConfirmationQueue`-gated `GET /api/customers/payments/proof/context`, `POST /api/customers/payments/proof/analyze`, and `POST /api/customers/payments/proof`; account identity and amount due are derived server-side from the logged-in customer. Analyze compares extracted fields with the invoice, merchant, and imported official history without changing payment state. Final submission independently analyzes the image and always stays Pending Review.
 - `backend/customer-draft-submissions.js` and `backend/customer-draft-submissions-store.js`: Admin and Technician draft workflows.
 - `backend/customer-archive-store.js`: archive retention, restore, and permanent deletion persistence.
 - `backend/customer-full-json-import.js`: storage-aware merge/persistence for full customer exports when JSON storage is selected.
@@ -65,6 +67,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Technician consumes customer draft, archive, customer, and coverage contracts.
 - Technician dispatch snapshots use the canonical normalized customer `mapPin`; Admin may override the snapshot location on an individual work order without changing customer coordinates.
 - Customer App consumes customer sessions, identity, FCM tokens, and notification contracts.
+- Customer App consumes the customer proof context/analysis/submission contract. The submitted amount must equal the latest canonical amount due, GCash reference and payment date are required, and every accepted screenshot is handed to Billing as Pending Review rather than a payment. Local OCR and optional Vision AI compare extracted fields with the invoice, entered values, configured merchant, and imported official history. The parsed MIME type is carried server-side; browser code cannot select a provider or override analyzer configuration.
 
 ## Verification contract
 
@@ -78,6 +81,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - `npm run refactor:phase4` runs structural, core, Admin, Customer Management, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public application/address/coverage resources, protected-page redirects, and unauthenticated Customer Management API denial.
+- The focused customer proof test covers the authenticated analysis route contract, independent final analysis, normalized OCR fields/checks, imported-history matching, MySQL analysis storage declaration, and the unchanged manual approval boundary.
 - 2026-08-09 Referrals compact-layout validation covered JavaScript syntax, resolved HTML/JavaScript ID bindings, unique static IDs, balanced HTML/CSS, six-column and ten-record pagination contracts, conditional inline action rendering and direct handler wiring, details-modal wiring, responsive labeled action/card styles, `git diff --check`, `npm run refactor:customer-management`, and the full `npm test` Phase 12 gate. Interactive browser review remained unavailable because no browser instance was connected.
 
 ## Known risks and follow-up
@@ -87,9 +91,16 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - `/coverage.css` is shared with Network module pages; preserve its unchanged root URL.
 - Customer file cleanup is destructive by design; never test it against production data.
 - Add authenticated CRUD, draft approval, archive restore/retention, dashboard export/download, and referral ledger integration tests.
+- Screenshot analysis cannot prove receipt of funds; Admin approval must remain separate from customer submission and should ultimately be backed by imported GCash transaction history or a provider API.
+- OCR can be incomplete when GCash changes its receipt layout or an upload is low quality. Those cases remain submit-able and are explicitly marked for manual review instead of failing open.
+- Vision AI is disabled unless the operator configures Billing's environment opt-in. Provider failures degrade to local OCR/manual review and never prevent a customer from submitting evidence or turn the screenshot into confirmed payment.
 
 ## Latest meaningful changes
 
+- 2026-08-11: Removed Android GCash capture matching and reservation from customer proof analysis/submission. Screenshot OCR and optional Vision AI remain advisory, official-history matching remains visible, and every submission stays Pending Review for Admin action.
+- 2026-08-10: Routed customer proof preview and independent final analysis through Billing's local-OCR-first, optional Vision AI evidence analyzer, including the validated image MIME type. Responses expose sanitized analyzer provenance/status while retaining customer-owned identity, server-owned amount due, Pending Review status, and all approval boundaries.
+- 2026-08-10: Added the customer-authenticated screenshot analysis endpoint and independent final-submission OCR pass. Both keep customer identity and invoice amount server-owned, compare extracted GCash details with merchant/history inputs, and only attach sanitized review metadata to a Pending Review proof.
+- 2026-08-10: Added customer-session-only GCash proof context and submission endpoints. They return Admin-owned merchant settings plus the backend-calculated exact balance, prevent cross-account submission and amount changes, require reference/date/image evidence, and create only a Pending Review Billing request.
 - 2026-08-09: Removed the Referral Actions modal and placed status-aware View, Edit, Approve, Set Apply Month, Referred Account, Referrer Billing, and Cancel controls directly in each record. Desktop uses compact Tabler icons with tooltips; mobile cards show labeled wrapping buttons.
 - 2026-08-09: Reorganized Referrals into a centered compact Tabler workspace with one segmented KPI strip, slim filters, a six-column ledger, ten-record pagination, a compact details modal, and responsive mobile cards. Referral registry APIs, Admin approval, selected apply months, unlimited FIFO queuing, and two-per-month Billing carryover remain unchanged.
 - 2026-08-09: Reorganized Coverage Table into a centered 1,000px compact Tabler workspace with filtered coverage/client/router summaries, inline controls, tighter column widths and rows, combined activity dates, readable router labels with technical IDs in tooltips, a five-column desktop table, responsive area cards, and a compact Add/Edit modal with visible inline validation and duplicate-submit protection. The modal explicitly overrides the shared coverage-token full-width inference and remains centered at 640px instead of stretching behind the sidebar. Coverage CRUD, MikroTik links, APIs, and Network coverage maps remain unchanged.

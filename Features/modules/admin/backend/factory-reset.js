@@ -45,6 +45,7 @@ const STORE_RESETTERS = Object.freeze({
   messenger_reminders: () => ({ version: 1, branches: {} }),
   payment_breakdown_adjustments: () => ({}),
   payment_import_unmatched: () => ({}),
+  gcash_transaction_history: () => ({ version: 1, branches: {} }),
   payments: () => ({}),
   plans: () => [],
   'pon-state': () => ({}),

@@ -230,9 +230,12 @@ CREATE TABLE IF NOT EXISTS payment_confirmation_queue (
   reference VARCHAR(64) NULL,
   payment_method VARCHAR(40) NULL,
   notes TEXT NULL,
+  payment_date DATETIME NULL,
   proof_image_url VARCHAR(255) NOT NULL,
   proof_mime VARCHAR(100) NOT NULL,
   proof_original_name VARCHAR(255) NULL,
+  proof_sha256 CHAR(64) NULL,
+  proof_analysis_json LONGTEXT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   reviewed_at DATETIME NULL,
@@ -247,6 +250,7 @@ CREATE TABLE IF NOT EXISTS payment_confirmation_queue (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_pcq_branch_status_submitted (branch_id, status, submitted_at),
   KEY idx_pcq_branch_account (branch_id, account_number),
+  KEY idx_pcq_branch_proof_hash (branch_id, proof_sha256),
   KEY idx_pcq_payment_entry (payment_entry_id),
   CONSTRAINT fk_pcq_branch FOREIGN KEY (branch_id) REFERENCES branches(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

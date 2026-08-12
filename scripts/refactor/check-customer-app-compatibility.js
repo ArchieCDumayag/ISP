@@ -46,6 +46,7 @@ const webFiles = [
   'customer-app-popup-reminder.html',
   'customer-app.html',
   'customer-login.html',
+  'customer-payment-proof.html',
   'customer-portal.html',
   'messenger-reminders.html',
   'privacy-terms.html',
@@ -53,6 +54,7 @@ const webFiles = [
   'sms.js',
   'terms-of-use.html',
   'css/customer-app.css',
+  'css/customer-payment-proof.css',
   'css/customer-portal.css',
   'css/messenger-reminders.css',
   'css/public-pages.css',
@@ -60,6 +62,7 @@ const webFiles = [
   'css/sms.js',
   'js/company-info.js',
   'js/customer-app-popup-reminder.js',
+  'js/customer-payment-proof.js',
   'js/messenger-reminders.js',
   'js/customer-portal-login.js',
   'js/customer-portal.js'
@@ -73,6 +76,23 @@ webFiles.forEach((relativePath) => {
   );
 });
 console.log(`PASS Customer App web root (${webFiles.length} files)`);
+
+const customerPortalSource = fs.readFileSync(path.join(webRoot, 'customer-portal.html'), 'utf8');
+const paymentProofPageSource = fs.readFileSync(path.join(webRoot, 'customer-payment-proof.html'), 'utf8');
+const paymentProofScriptSource = fs.readFileSync(path.join(webRoot, 'js/customer-payment-proof.js'), 'utf8');
+assert(customerPortalSource.includes('href="/customer-payment-proof.html"'));
+assert(paymentProofPageSource.includes('id="customerPaymentProofForm"'));
+assert(paymentProofPageSource.includes('id="proofAnalysisPanel"'));
+assert(paymentProofPageSource.includes('OCR, Vision AI, and official-history matching assist the review only'));
+assert(!paymentProofPageSource.includes('proofAnalysisBridge'));
+assert(!paymentProofScriptSource.includes('bridgeMatch'));
+assert(paymentProofPageSource.includes('Payment remains pending until an Admin checks it.'));
+assert(paymentProofScriptSource.includes("apiJson('/api/customers/payments/proof/context')"));
+assert(paymentProofScriptSource.includes("apiJson('/api/customers/payments/proof/analyze'"));
+assert(paymentProofScriptSource.includes('renderAnalysis(payload.analysis'));
+assert(paymentProofScriptSource.includes("apiJson('/api/customers/payments/proof'"));
+assert(!paymentProofScriptSource.includes('/api/payments'));
+console.log('PASS customer GCash proof submission page and manual-review-only client contract');
 
 const messengerPageSource = fs.readFileSync(path.join(webRoot, 'messenger-reminders.html'), 'utf8');
 const messengerPageScript = fs.readFileSync(path.join(webRoot, 'js/messenger-reminders.js'), 'utf8');

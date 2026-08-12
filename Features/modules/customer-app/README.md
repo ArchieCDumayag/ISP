@@ -6,7 +6,7 @@ Owns customer-facing login/portal/app experiences, popup and push notifications,
 
 - Backend descriptor: `backend/index.js`
 - Backend implementations: customer app/token/inbox/upstream, Firebase push, Messenger bot, semi-automated Messenger reminders, and SMS delivery/scheduler/schema/router files under `backend/`
-- Customer and communication pages: `web/customer-login.html`, `web/customer-portal.html`, `web/customer-app.html`, `web/customer-app-popup-reminder.html`, `web/messenger-reminders.html`, and `web/sms.html`
+- Customer and communication pages: `web/customer-login.html`, `web/customer-portal.html`, `web/customer-payment-proof.html`, `web/customer-app.html`, `web/customer-app-popup-reminder.html`, `web/messenger-reminders.html`, and `web/sms.html`
 - Public pages: `web/privacy-terms.html`, `web/terms-of-use.html`, and `web/company-info.html`
 - Main APIs: `/api/customer-app`, `/api/messenger-reminders`, customer-authenticated `/api/customers/*` routes, `/api/sms`, and `/webhooks/messenger`
 

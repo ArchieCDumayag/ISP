@@ -144,10 +144,14 @@ const accountsJs = fs.readFileSync(path.join(webRoot, 'accounts.js'), 'utf8');
 assert(accountsHtml.includes('id="ip-browser-profile-body"'));
 assert(accountsHtml.includes('id="ipBrowserProfileModal"'));
 assert(accountsHtml.includes('Gateway / assigned IP matches'));
+assert(accountsHtml.includes('id="settings-tab-gcash"'));
+assert(accountsHtml.includes('data-settings-tab-target="gcash"'));
+assert(accountsHtml.includes('id="gcash" class="settings-panel tab-pane fade"'));
+assert(!accountsHtml.includes('id="gcash" class="settings-panel settings-panel--hidden-in-tabs"'));
 assert(accountsJs.includes('const normalizeIpBrowserMatchList = (value) => {'));
 assert(accountsJs.includes('profiles: ipBrowserProfiles.map((profile) => ({'));
 assert(accountsJs.includes("button.dataset.ipBrowserProfileAction === 'remove'"));
-console.log('PASS IP Browser profile editor structure');
+console.log('PASS IP Browser profile editor and visible GCash settings tab structure');
 
 const factoryReset = require(path.join(
   projectRoot,
@@ -156,6 +160,7 @@ const factoryReset = require(path.join(
 assert.strictEqual(factoryReset.CONFIRMATION_PHRASE, 'CLEAR ALL DATA');
 assert.strictEqual(factoryReset.shouldResetStoreKey('customers'), true);
 assert.strictEqual(factoryReset.shouldResetStoreKey('referral_registry'), true);
+assert.strictEqual(factoryReset.shouldResetStoreKey('gcash_transaction_history'), true);
 assert.strictEqual(factoryReset.shouldResetStoreKey('finance_expenses_branch_1'), true);
 assert.strictEqual(factoryReset.shouldResetStoreKey('integrations'), false);
 assert(accountsHtml.includes('id="settings-tab-data-reset"'));
@@ -180,6 +185,10 @@ const memoryStores = {
   referral_registry: {
     version: 1,
     branches: { 1: { records: [{ id: 'referral-1' }] } }
+  },
+  gcash_transaction_history: {
+    version: 1,
+    branches: { 1: { batches: [{ id: 'batch-1' }], transactions: [{ reference: '1234567890123' }] } }
   },
   finance_expenses_branch_1: [{ id: 'expense-1' }],
   sessions: {
@@ -220,6 +229,7 @@ async function verifyFactoryResetContract() {
   assert.deepStrictEqual(memoryStores.customers, [], 'Factory reset must clear customers');
   assert.deepStrictEqual(memoryStores.payments, {}, 'Factory reset must clear payments');
   assert.deepStrictEqual(memoryStores.referral_registry, { version: 1, branches: {} }, 'Factory reset must clear referrals');
+  assert.deepStrictEqual(memoryStores.gcash_transaction_history, { version: 1, branches: {} }, 'Factory reset must clear imported GCash history');
   assert.deepStrictEqual(memoryStores.finance_expenses_branch_1, [], 'Factory reset must clear dynamic Finance stores');
   assert.deepStrictEqual(memoryStores.integrations, { xendit: { enabled: true } }, 'Factory reset must preserve integrations');
   assert.deepStrictEqual(Object.keys(memoryStores.sessions.sessions), ['adminSession'], 'Factory reset must retain only Admin sessions');

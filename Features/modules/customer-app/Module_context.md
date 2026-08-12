@@ -1,6 +1,6 @@
 # Customer App Module Context
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-08-10
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -13,6 +13,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - Handle Messenger verification/messages and provide a local customer upstream stub in development.
 - Prepare a consent-gated Messenger billing reminder queue for manual review and sending by admins or assigned collectors.
 - Present customer-facing privacy, terms, and company information.
+- Let authenticated customers view the configured GCash merchant details and exact current amount due, extract key fields from an uploaded screenshot through local OCR plus an optional ISP-configured Vision AI fallback, see official-history matching, submit evidence, and track its manual review result.
 
 ## Backend and APIs
 
@@ -32,7 +33,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 ## Frontend entry points
 
 - Canonical browser implementations live under `web/`; `messenger-reminders.html` with its owned CSS/JavaScript provides the reviewed queue, filters, consent editor, message preview, Meta Inbox link, and audit actions.
-- Existing customer URLs remain `/customer-login.html`, `/customer-portal.html`, `/customer-app.html`, and `/customer-app-popup-reminder.html` with their existing guards and redirects. `/messenger-reminders.html` and `/messenger-reminders` allow Admin or Collector staff; collectors see only customers in their assigned areas.
+- Existing customer URLs remain `/customer-login.html`, `/customer-portal.html`, `/customer-app.html`, and `/customer-app-popup-reminder.html` with their existing guards and redirects. `/customer-payment-proof.html` is an additional customer-session-protected, `paymentConfirmationQueue`-gated Tabler page linked from the portal. After a screenshot is selected, it displays extracted amount, reference, date/time, recipient, status, official-history result, analyzer source, and warnings, and prefills detected reference/date values. It states that analysis and history matching cannot approve or post a payment. `/messenger-reminders.html` and `/messenger-reminders` allow Admin or Collector staff; collectors see only customers in their assigned areas.
 - SMS remains protected at `/sms.html`; company information, privacy, and terms pages remain public at their existing root and friendly URLs.
 - SMS modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons.
 - Existing CSS/JavaScript URLs, including root `/sms.js`, remain unchanged through module static composition.
@@ -43,6 +44,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - Canonical shared storage, database, relational-readiness, password, role, storage-mode, and project-path imports come from `core/`.
 - Customer Management provides customer identity, credentials, customer sessions, status, and contact records; its customer backend imports FCM/inbox helpers directly from this module.
 - Billing provides balances, payment confirmations, receipts, statements, and quick-payment contracts through unchanged APIs and shared composition.
+- Customer payment proof uses Customer Management's customer-authenticated `/api/customers/payments/proof/context`, `/api/customers/payments/proof/analyze`, and `/api/customers/payments/proof` contracts. The browser cannot set another account, select/configure the AI provider, claim an imported transaction, or directly create a ledger payment; OCR, Vision AI, and history results are advisory and submission status begins as Pending Review.
 - Billing/due SMS scheduler runs and Messenger queue generation honor Billing's canonical Complimentary flag and omit active exempt accounts; custom/non-billing communications remain available.
 - Network provides modem/GenieACS and WiFi operations through Customer Management and shared handlers.
 - Admin provides integration settings, business profile, staff authorization, SMS/email provider configuration, and protected secrets.
@@ -57,11 +59,14 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - Shared customer/modem/payment handlers in `server.js` require Integration Codex coordination.
 - The local upstream stub must not collide with production or be unintentionally enabled in production.
 - Repository-root backend aliases must not be recreated.
+- OCR may return partial or conflicting fields for compressed, cropped, edited, or future GCash layouts. The page must keep those warnings visible and allow Admin manual review without claiming the screenshot is genuine.
+- Vision AI status is displayed as analysis provenance, not as proof of settlement. The customer-facing disclosure must remain whenever external Vision AI processing can be enabled.
 - Add authenticated customer login/authorization, notification persistence, scheduler, provider-adapter, signature, and retry tests before changing behavior.
 
 ## Validation
 
 - `npm run refactor:customer-app` verifies the descriptor, retired root entries, module web files, server wiring, canonical cross-module dependencies, repository-root Firebase paths, routers, pure FCM/inbox/SMS contracts, and Messenger reminder date/identity/link behavior.
+- The Customer App compatibility check verifies the portal link, proof form, OCR and official-history analysis panel, pending-review warning, customer proof APIs, and absence of a direct browser payment-posting call.
 - `npm run refactor:phase10` runs inventory, every module compatibility suite, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged public/legal/customer/SMS pages and assets, customer/admin guards, upstream isolation, and unauthenticated Customer App/SMS denials on ports `3190`/`4190`.
@@ -69,6 +74,10 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 
 ## Latest meaningful changes
 
+- 2026-08-11: Removed captured-app matching and reservation from Screenshot Analysis. The page continues to show official-history matching, extracted reference/date defaults, warnings, and Pending Review status without any payment-posting capability.
+- 2026-08-10: Payment Information now identifies Local OCR, Local OCR + Vision AI, or Vision AI fallback as the analyzer source, displays AI confidence/status when used, and discloses optional external processing. The page still states that screenshot analysis cannot approve a payment.
+- 2026-08-10: Added server-assisted screenshot analysis to the GCash proof page. Selecting an image now shows extracted amount, reference, date/time, recipient, transaction status, history match, and warnings; detected reference/date values assist the form, while every submission still requires Admin approval.
+- 2026-08-10: Added the protected Tabler GCash proof page and portal shortcut. It shows Admin-configured merchant details and the backend-calculated amount due, accepts a GCash reference, payment date, and screenshot, and displays the customer's review history without ever confirming or posting payment in browser code.
 - 2026-08-07: Billing/due SMS automation and Messenger reminder generation now suppress active Billing-owned Complimentary accounts while preserving custom communications and the existing manual Messenger audit workflow.
 - 2026-08-07: Standardized all SMS modal close controls as shared Tabler outline-secondary icon buttons; modal behavior is unchanged.
 - 2026-08-06: Added the semi-automated Messenger Reminder Queue for admins and assigned collectors, with backend-derived billing stages, current-month payment confirmations, deterministic duplicate-resistant keys, Messenger link/consent management, manual review/copy/open workflow, sent/skip/reopen audit history, and no automatic Meta delivery.

@@ -6,6 +6,7 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { getPool, query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
+const { isFeatureEnabled } = require('../../../../core/config/flavor-features');
 const https = require('https');
 const createError = require('http-errors');
 const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter } = require('../../admin/backend/integration-settings');
@@ -19,7 +20,20 @@ const {
     normalizePppoeUsernameKey
 } = require('../../network/backend/pppoe-account-utils');
 const { verifyPassword } = require('../../../../core/security/passwords');
-const { createPaymentConfirmationSubmission } = require('../../billing/backend/payment-confirmation-queue-store');
+const {
+    createPaymentConfirmationSubmission,
+    listPaymentConfirmationSubmissions,
+    parseProofImagePayload
+} = require('../../billing/backend/payment-confirmation-queue-store');
+const {
+    analyzeGcashScreenshotEvidence,
+    buildGcashScreenshotChecks,
+    sanitizeGcashProofAnalysis
+} = require('../../billing/backend/gcash-screenshot-parser');
+const {
+    listGcashTransactionHistory,
+    evaluateGcashTransactionMatch
+} = require('../../billing/backend/gcash-transaction-history-store');
 const {
     getRequestFcmToken,
     registerCustomerFcmToken,
@@ -6346,30 +6360,193 @@ publicRouter.post('/payments/ewallet', async (req, res, next) => {
     }
 });
 
+const toCustomerPaymentProofPayload = (item = {}) => ({
+    id: String(item.id || ''),
+    accountNumber: String(item.accountNumber || ''),
+    amount: item.amount != null ? Number(item.amount) : null,
+    reference: String(item.reviewedReference || item.reference || ''),
+    paymentMethod: String(item.paymentMethod || 'GCash'),
+    paymentDate: item.paymentDate || null,
+    proofUrl: String(item.proofUrl || ''),
+    status: String(item.status || 'pending'),
+    submittedAt: item.submittedAt || null,
+    reviewedAt: item.reviewedAt || null,
+    decisionReason: String(item.decisionReason || ''),
+    paymentEntryId: item.paymentEntryId || null,
+    proofAnalysis: item.proofAnalysis || null
+});
+
+const buildCustomerGcashProofAnalysis = async ({
+    imageBuffer,
+    imageMimeType,
+    branchId,
+    expectedAmount,
+    submittedReference,
+    submittedPaymentDate,
+    merchantNumber,
+    allowExtractedSubmissionDefaults = false
+} = {}) => {
+    const baseAnalysis = await analyzeGcashScreenshotEvidence(imageBuffer, {
+        mimeType: imageMimeType
+    });
+    const checks = buildGcashScreenshotChecks(baseAnalysis, {
+        expectedAmount,
+        submittedReference: submittedReference || (allowExtractedSubmissionDefaults ? baseAnalysis.fields?.reference : ''),
+        submittedPaymentDate: submittedPaymentDate || (allowExtractedSubmissionDefaults ? baseAnalysis.fields?.transactionAt : ''),
+        merchantNumber
+    });
+    const history = await listGcashTransactionHistory({ branchId, all: true });
+    const historyMatch = evaluateGcashTransactionMatch({
+        transactions: history.transactions,
+        reference: baseAnalysis.fields?.reference,
+        amount: baseAnalysis.fields?.amount,
+        paymentDate: baseAnalysis.fields?.transactionAt,
+        merchantNumber
+    });
+    const warnings = Array.isArray(baseAnalysis.warnings) ? baseAnalysis.warnings.slice() : [];
+    if (checks.amountMatchesInvoice === false) warnings.push('The screenshot amount does not match the current invoice amount.');
+    if (checks.referenceMatchesSubmission === false) warnings.push('The screenshot reference does not match the entered reference.');
+    if (checks.dateMatchesSubmission === false) warnings.push('The screenshot date does not match the entered payment date.');
+    if (checks.recipientMatchesMerchant === false) warnings.push('The screenshot recipient does not match the configured GCash merchant number.');
+    if (checks.successfulStatus === false) warnings.push('The screenshot does not show a successful transaction.');
+    if (!historyMatch.matched) warnings.push(historyMatch.message);
+    return sanitizeGcashProofAnalysis({
+        ...baseAnalysis,
+        checks,
+        historyMatch,
+        warnings: Array.from(new Set(warnings.filter(Boolean)))
+    });
+};
+
+const buildFailedGcashProofAnalysis = (message) => sanitizeGcashProofAnalysis({
+    state: 'error',
+    fields: { status: 'unknown' },
+    warnings: [String(message || 'Screenshot OCR could not read this image. Admin will review it manually.')]
+});
+
+// GET /api/customers/payments/proof/context
+// Authenticated customer-only payment instructions, exact amount, and submission history.
+publicRouter.get('/payments/proof/context', async (req, res, next) => {
+    try {
+        if (!isFeatureEnabled('paymentConfirmationQueue')) {
+            return next(createError(404, 'GCash payment proof submission is not enabled.'));
+        }
+        const customer = await getCustomerFromSession(req, res);
+        if (!customer) return next(createError(401, 'Customer login required.'));
+        const branchId = Number(customer.branchId || 0);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            return next(createError(400, 'Customer branch assignment is missing.'));
+        }
+        const accountNumber = String(customer.accountNumber || '').trim();
+        const [portalContext, settings, submissions] = await Promise.all([
+            buildCustomerPortalContext(customer, branchId),
+            loadIntegrationSettings(branchId),
+            listPaymentConfirmationSubmissions({
+                branchId,
+                accountNumber,
+                status: 'all',
+                limit: 100,
+                offset: 0
+            })
+        ]);
+        const gcash = settings?.gcash && typeof settings.gcash === 'object' ? settings.gcash : {};
+        const accountName = sanitizeString(gcash.accountName);
+        const accountNumberValue = sanitizeString(gcash.accountNumber);
+        const qrCodeImageData = sanitizeString(gcash.qrCodeImageData);
+        return res.json({
+            ok: true,
+            customer: {
+                accountNumber,
+                name: buildCustomerDisplayName(customer) || accountNumber,
+                amountDue: Number((Number(portalContext.amountDue) || 0).toFixed(2)),
+                dueDate: portalContext.nextDue || customer.dueDate || null
+            },
+            gcash: {
+                configured: Boolean(accountName && accountNumberValue),
+                accountName,
+                accountNumber: accountNumberValue,
+                qrCodeImageData
+            },
+            submissions: (submissions.items || []).map(toCustomerPaymentProofPayload)
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+// POST /api/customers/payments/proof/analyze
+// Customer-session-only OCR preview. It extracts screenshot fields and compares
+// them with the invoice/merchant/history, but it never creates or approves a payment.
+publicRouter.post('/payments/proof/analyze', async (req, res, next) => {
+    try {
+        if (!isFeatureEnabled('paymentConfirmationQueue')) {
+            return next(createError(404, 'GCash payment proof submission is not enabled.'));
+        }
+        const customer = await getCustomerFromSession(req, res);
+        if (!customer) return next(createError(401, 'Customer login required.'));
+        const branchId = Number(customer.branchId || 0);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            return next(createError(400, 'Customer branch assignment is missing.'));
+        }
+
+        const proofImageData = req.body?.proofImageData || req.body?.imageProof || '';
+        const proofMimeType = req.body?.proofMimeType || req.body?.mimeType || '';
+        const parsedProof = parseProofImagePayload(proofImageData, proofMimeType);
+        const [portalContext, settings] = await Promise.all([
+            buildCustomerPortalContext(customer, branchId),
+            loadIntegrationSettings(branchId)
+        ]);
+        const merchantNumber = sanitizeString(settings?.gcash?.accountNumber);
+        let analysis;
+        try {
+            analysis = await buildCustomerGcashProofAnalysis({
+                imageBuffer: parsedProof.buffer,
+                imageMimeType: parsedProof.mimeType,
+                branchId,
+                expectedAmount: Number(portalContext.amountDue) || 0,
+                submittedReference: req.body?.reference,
+                submittedPaymentDate: req.body?.paymentDate,
+                merchantNumber,
+                allowExtractedSubmissionDefaults: true
+            });
+        } catch (error) {
+            analysis = buildFailedGcashProofAnalysis(
+                error?.status === 504
+                    ? error.message
+                    : 'Screenshot OCR could not read this image. You may still submit it for manual review.'
+            );
+        }
+
+        const message = analysis.historyMatch?.matched
+            ? 'Screenshot details were extracted and found in the imported GCash history. Admin approval is still required.'
+            : (analysis.ai?.used
+                ? 'Vision AI helped read the screenshot. Review the extracted details and submit them for Admin approval.'
+                : (analysis.state === 'complete'
+                    ? 'Screenshot details were extracted. Any warning will be checked by an Admin.'
+                    : 'Only some screenshot details could be extracted. You may correct the fields and submit for manual review.'));
+        return res.json({ ok: true, message, analysis });
+    } catch (error) {
+        return next(error);
+    }
+});
+
 // POST /api/customers/payments/proof
-// body:
-// minimal app payload:
-//   accountNumber (required), amount (required), proofImageData (required), proofMimeType?, proofFileName?
-// optional authenticated payload:
-//   username? | accountNumber?, password?,
-//   amount?, reference?, paymentMethod?, notes?,
-//   proofImageData (required), proofMimeType?, proofFileName?
+// Authenticated customer body: amount, reference, paymentDate, notes?, proofImageData,
+// proofMimeType?, proofFileName?. Every submission remains pending until Admin approval.
 publicRouter.post('/payments/proof', async (req, res, next) => {
     try {
+        if (!isFeatureEnabled('paymentConfirmationQueue')) {
+            return next(createError(404, 'GCash payment proof submission is not enabled.'));
+        }
         const {
-            username,
-            accountNumber,
-            password,
             amount,
             reference,
-            paymentMethod,
+            paymentDate,
             notes,
             proofImageData,
             proofMimeType,
             proofFileName
         } = req.body || {};
-        const accountNumberInput =
-            String(accountNumber || req.body?.account_number || req.body?.accountNo || '').trim();
         const proofImageDataInput =
             proofImageData ||
             req.body?.imageProof ||
@@ -6387,27 +6564,36 @@ publicRouter.post('/payments/proof', async (req, res, next) => {
             req.body?.proofFile ||
             '';
 
-        const customer = await resolveCustomerForPublicPaymentAction({
-            req,
-            username,
-            accountNumber: accountNumberInput,
-            password,
-            allowAccountOnly: true
-        });
+        const customer = await getCustomerFromSession(req, res);
+        if (!customer) return next(createError(401, 'Customer login required.'));
 
         const branchId = Number(customer?.branchId || 0);
         if (!Number.isInteger(branchId) || branchId <= 0) {
             return next(createError(400, 'Customer branch assignment is missing.'));
         }
 
+        const customerAccountNumber = String(customer?.accountNumber || '').trim();
+        if (!customerAccountNumber) {
+            return next(createError(400, 'Account number is required.'));
+        }
+
+        const portalContext = await buildCustomerPortalContext(customer, branchId);
+        const expectedAmount = Number(portalContext.amountDue) || 0;
+        if (expectedAmount <= 0) {
+            return next(createError(400, 'There is no payable balance for this account.'));
+        }
         const amountValue = Number(amount);
         if (!Number.isFinite(amountValue) || amountValue <= 0) {
             return next(createError(400, 'Payment amount is required.'));
         }
-
-        const customerAccountNumber = String(customer?.accountNumber || accountNumberInput || '').trim();
-        if (!customerAccountNumber) {
-            return next(createError(400, 'Account number is required.'));
+        if (Math.abs(amountValue - expectedAmount) > 0.009) {
+            return next(createError(409, 'The amount due has changed. Refresh the page before submitting proof.'));
+        }
+        const referenceValue = String(reference || '').trim();
+        if (!referenceValue) return next(createError(400, 'GCash reference number is required.'));
+        const paymentDateValue = String(paymentDate || '').trim();
+        if (!paymentDateValue || !Number.isFinite(new Date(paymentDateValue).getTime())) {
+            return next(createError(400, 'A valid payment date and time is required.'));
         }
 
         const customerName = String(
@@ -6416,23 +6602,49 @@ publicRouter.post('/payments/proof', async (req, res, next) => {
             ''
         ).trim();
 
+        const parsedProof = parseProofImagePayload(proofImageDataInput, proofMimeTypeInput);
+        const settings = await loadIntegrationSettings(branchId);
+        const merchantNumber = sanitizeString(settings?.gcash?.accountNumber);
+        let proofAnalysis;
+        try {
+            proofAnalysis = await buildCustomerGcashProofAnalysis({
+                imageBuffer: parsedProof.buffer,
+                imageMimeType: parsedProof.mimeType,
+                branchId,
+                expectedAmount,
+                submittedReference: referenceValue,
+                submittedPaymentDate: paymentDateValue,
+                merchantNumber
+            });
+        } catch (error) {
+            proofAnalysis = buildFailedGcashProofAnalysis(
+                error?.status === 504
+                    ? error.message
+                    : 'Screenshot OCR could not read this image. Admin will review it manually.'
+            );
+        }
+
+        const submissionId = `pcq-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
         const submission = await createPaymentConfirmationSubmission({
+            id: submissionId,
             branchId,
             accountNumber: customerAccountNumber,
             customerName,
-            amount: amountValue,
-            reference,
-            paymentMethod,
+            amount: Number(expectedAmount.toFixed(2)),
+            reference: referenceValue,
+            paymentMethod: 'GCash',
+            paymentDate: paymentDateValue,
             notes,
             proofImageData: proofImageDataInput,
             proofMimeType: proofMimeTypeInput,
-            proofFileName: proofFileNameInput
+            proofFileName: proofFileNameInput,
+            proofAnalysis
         });
 
         return res.status(201).json({
             ok: true,
-            message: 'Payment proof submitted and queued for review.',
-            submission
+            message: 'Payment proof submitted. It will remain pending until it is matched to imported official GCash history and approved by an Admin.',
+            submission: toCustomerPaymentProofPayload(submission)
         });
     } catch (error) {
         return next(error);

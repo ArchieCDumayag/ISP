@@ -50,6 +50,12 @@
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="settings-tab-gcash" type="button" role="tab" aria-controls="gcash" aria-selected="false" data-settings-tab-target="gcash">
+                                <i class="ti ti-qrcode" aria-hidden="true"></i>
+                                <span>GCash</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
                             <button class="nav-link" id="settings-tab-xendit" type="button" role="tab" aria-controls="xendit" aria-selected="false" data-settings-tab-target="xendit">
                                 <i class="ti ti-credit-card" aria-hidden="true"></i>
                                 <span>Xendit</span>
@@ -790,7 +796,7 @@
                             </div>
                         </section>
 
-                        <section id="gcash" class="settings-panel settings-panel--hidden-in-tabs" hidden aria-hidden="true">
+                        <section id="gcash" class="settings-panel tab-pane fade" role="tabpanel" aria-labelledby="settings-tab-gcash" tabindex="0">
                             <header class="panel-header">
                                 <div class="integration-heading">
                                     <span class="integration-heading-logo integration-heading-logo--gcash" aria-hidden="true">
@@ -1062,4 +1068,3 @@
 </body>
 
 </html>
-

@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-08-06
+Last reviewed: 2026-08-10
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -32,6 +32,7 @@ The former eleven root backend shims were retired in Phase 11. Existing browser 
 
 - `/login.html` → `web/login.html`
 - `/accounts.html` → `web/accounts.html`
+- The Accounts tab bar exposes GCash as a normal settings panel. Admins can view and edit the merchant account name, number, and QR code without relying on a hidden integration panel.
 - The `Data Reset` section inside `/accounts.html` displays current record/file counts, deletion and preservation scope, an Android offline-data warning, and the guarded reset form.
 - `/flavors.html` → `web/flavors.html`
 - `/setup.html` → `web/setup.html`
@@ -53,16 +54,16 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - Sensitive integration data requires `CONFIG_MASTER_KEY`; production sessions require `SESSION_TOKEN_SECRET`.
 - IP Browser integration settings support up to 100 enabled/disabled router profiles. Each profile stores a label, ordered exact IP/IP:port, IPv4 CIDR, or wildcard match rules, protected username/password data, optional page selectors, and submit delay. Exact host/port matches outrank host matches, which outrank CIDR and wildcard rules; profile order breaks ties.
 - IP Browser profile credentials and usernames are redacted from `/api/integrations` responses and represented only by presence flags. Blank username/password values sent while editing an existing profile preserve the stored secrets. The legacy top-level IP Browser credentials remain the fallback when no profile matches.
-- Factory reset deletes customers, plans, billing/payment history, the centralized referral registry/application audit, collector/technician accounts and assignments, schedules/reminders, tickets/jobs, PON/coverage state, Finance, SMS records/templates/automations, Temp workspace records, activity history, generated backups/cache, legacy record uploads, and payment proof files. It preserves Admin accounts/sessions, branches, business profile, account-number and Customer App/collector settings, integrations, app downloads, MySQL configuration, and source code. A non-secret last-reset audit marker is retained.
+- Factory reset deletes customers, plans, billing/payment history, imported GCash transaction history, the centralized referral registry/application audit, collector/technician accounts and assignments, schedules/reminders, tickets/jobs, PON/coverage state, Finance, SMS records/templates/automations, Temp workspace records, activity history, generated backups/cache, legacy record uploads, and payment proof files. It preserves Admin accounts/sessions, branches, business profile, account-number and Customer App/collector settings, integrations, app downloads, MySQL configuration, and source code. A non-secret last-reset audit marker is retained.
 - JSON reset rewrites known business stores to empty canonical shapes with rollback on store-write failure. MySQL reset deletes business tables and business `app_store` keys in a transaction, retaining only Admin users/sessions and configuration tables/keys. Generated-file cleanup runs after the record transaction and reports any file warnings.
 
 ## Verification contract
 
-- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, ten web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, and profile-editor structure.
+- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, ten web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, profile-editor structure, and the visible GCash tab contract.
 - `npm run refactor:phase3` runs structural, core, Admin, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public Admin files, protected-page redirects, owner-page denial, and unauthenticated API denial.
-- Admin compatibility tests exercise the JSON factory-reset service in memory, including Admin/session/configuration preservation, centralized referral-registry clearing, dynamic Finance-store clearing, audit creation, and UI/API wiring. Smoke coverage requires authentication for reset preview and confirms the new CSS/JavaScript assets are served.
+- Admin compatibility tests exercise the JSON factory-reset service in memory, including Admin/session/configuration preservation, centralized referral-registry and imported GCash-history clearing, dynamic Finance-store clearing, audit creation, and UI/API wiring. Smoke coverage requires authentication for reset preview and confirms the new CSS/JavaScript assets are served.
 - The 2026-08-06 factory-reset change passed syntax checks, read-only live preview, `npm run refactor:admin`, isolated HTTP smoke tests, and the complete `npm test` Phase 12 suite. Local port 3000 serves the new assets and returns `401` for unauthenticated reset preview. In-app visual testing was unavailable because no browser session was connected.
 - The 2026-07-30 IP Browser profile change passed JavaScript syntax checks, HTML structure parsing, `npm run refactor:admin`, and the complete `npm test` Phase 12 suite. Interactive browser-control verification was unavailable in that session.
 
@@ -80,6 +81,8 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 
 ## Latest meaningful changes
 
+- 2026-08-10: Added Billing's `gcash_transaction_history` app-store key to the guarded Clear All Data contract and Admin compatibility coverage; integration settings and merchant details remain preserved.
+- 2026-08-10: Exposed the existing GCash merchant integration as a visible Accounts settings tab, retaining the existing account-name, mobile-number, QR upload, status, validation, and save behavior.
 - 2026-08-07: Added `referral_registry` to the protected project-data reset contract so Clear All Data also removes referral relationships and application audit records across branches.
 - 2026-08-06: Added the Admin Settings Data Reset section and `/api/admin-data-reset`, with live deletion preview, current-password verification, exact confirmation phrase, irreversible acknowledgement, final UI confirmation, concurrency/rate limiting, JSON rollback, transactional MySQL deletion, retained Admin/configuration access, generated-file cleanup, and a non-secret audit marker. Validation never invokes the live reset.
 - 2026-07-30: Added protected multi-router IP Browser profiles with exact IP/port, CIDR, and wildcard matching; Accounts now manages per-profile credentials/selectors/delay while keeping the former global login as the unmatched-device fallback.

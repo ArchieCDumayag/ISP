@@ -2730,6 +2730,7 @@ const PROTECTED_PAGES = new Set([
     'customer-app-popup-reminder.html',
     'messenger-reminders.html',
     'customer-portal.html',
+    'customer-payment-proof.html',
     'accounts.html',
     'temp.html',
     'thermal-print.html',
@@ -2760,6 +2761,7 @@ const FEATURE_PAGE_MAP = Object.freeze({
     'payment-breakdown.html': 'paymentHistory',
     'payment-confirmation-queue.html': 'paymentConfirmationQueue',
     'payment-confirmation-queue-history.html': 'paymentConfirmationQueueHistory',
+    'customer-payment-proof.html': 'paymentConfirmationQueue',
     'pon-management.html': 'ponManagement',
     'genieacs.html': 'genieacs',
     'collectors.html': 'collectors',
@@ -2784,6 +2786,7 @@ const requireFeature = (featureKey) => (req, res, next) => {
 };
 const CUSTOMER_PAGES = new Set([
     'customer-portal.html',
+    'customer-payment-proof.html',
     'billing-statement.html',
     'account-statement.html'
 ]);

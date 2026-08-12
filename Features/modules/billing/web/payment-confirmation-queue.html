@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=3.2">
+    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=3.4">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -44,6 +44,10 @@
                                 </div>
                             </div>
                         </div>
+                        <button type="button" class="btn btn-primary" id="queueImportGcashHistoryBtn">
+                            <i class="ti ti-file-upload" aria-hidden="true"></i>
+                            Import GCash History
+                        </button>
                     </div>
 
                     <div class="table-wrapper queue-table-wrap">
@@ -54,12 +58,13 @@
                                     <th>Submitted (Date &amp; Time)</th>
                                     <th>Amount</th>
                                     <th>Proof (Image)</th>
+                                    <th>Transaction Match</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="queueTableBody">
                                 <tr>
-                                    <td colspan="5" class="queue-empty">Loading requests...</td>
+                                    <td colspan="6" class="queue-empty">Loading requests...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -73,7 +78,77 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="section-frame queue-panel gcash-history-panel" id="queueGcashHistoryPanel" aria-labelledby="queueGcashHistoryTitle">
+                    <div class="gcash-history-heading">
+                        <div>
+                            <h2 id="queueGcashHistoryTitle">Imported GCash Transactions</h2>
+                            <p class="gcash-history-summary" id="queueGcashHistorySummary">Loading imported transaction history...</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary" id="queueGcashHistoryRefreshBtn">
+                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                            Refresh
+                        </button>
+                    </div>
+                    <div class="alert alert-info mb-3" role="note">
+                        These are official statement rows available for matching. They do not create a customer proof request or approve a payment by themselves.
+                    </div>
+                    <div class="table-wrapper queue-table-wrap">
+                        <table class="queue-table gcash-history-table">
+                            <thead>
+                                <tr>
+                                    <th>Date &amp; Time</th>
+                                    <th>Reference</th>
+                                    <th>Sender</th>
+                                    <th>Credit</th>
+                                    <th>Recipient</th>
+                                    <th>Match Use</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueGcashHistoryBody">
+                                <tr>
+                                    <td colspan="6" class="queue-empty">Loading imported transactions...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             </main>
+        </div>
+    </div>
+
+    <div id="queueImportGcashModal" class="modal queue-create-modal" role="dialog" aria-modal="true" aria-labelledby="queueImportGcashModalTitle" aria-hidden="true">
+        <div class="modal-content queue-create-modal__content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="queueImportGcashModalTitle">Import GCash Transaction History</h2>
+                    <p class="modal-subtitle">Upload the password-protected PDF sent by GCash. A history match supports review but never approves a payment automatically.</p>
+                </div>
+                <button class="btn btn-icon btn-outline-secondary close-modal" type="button" data-dismiss="queue-import-gcash-modal" aria-label="Close">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+            </div>
+            <form id="queueImportGcashForm" class="queue-create-form" novalidate>
+                <div class="queue-create-grid">
+                    <div class="form-field queue-create-field--full">
+                        <label for="queueImportGcashFile">GCash Transaction History PDF</label>
+                        <input type="file" id="queueImportGcashFile" accept="application/pdf,.pdf" required>
+                        <small class="text-secondary">Maximum file size: 8 MB.</small>
+                    </div>
+                    <div class="form-field queue-create-field--full">
+                        <label for="queueImportGcashPassword">PDF Password</label>
+                        <input type="password" id="queueImportGcashPassword" maxlength="200" autocomplete="new-password" required>
+                        <small class="text-secondary">Used only to open this upload; it is not saved.</small>
+                    </div>
+                    <div id="queueImportGcashResult" class="alert alert-info queue-create-field--full" role="status" hidden></div>
+                </div>
+                <div class="queue-create-modal__footer">
+                    <button type="button" class="ghost-btn" data-dismiss="queue-import-gcash-modal">Cancel</button>
+                    <button type="submit" class="primary-btn" id="queueImportGcashSubmitBtn">
+                        <i class="ti ti-file-upload" aria-hidden="true"></i> Import History
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -133,9 +208,11 @@
         <div class="modal-content queue-approve-modal__content">
             <div class="modal-header">
                 <div>
-                    <h2 id="queueApproveModalTitle">Approve Payment Proof</h2>
-                    <p class="modal-subtitle">Review the proof, adjust the amount if needed, and enter Ref. # before approving.</p>
+                    <h2 id="queueApproveModalTitle">Approve &amp; Post Payment</h2>
+                    <p class="modal-subtitle">Review the proof, official-history match, and customer allocation. Only this action posts the payment to the ledger. GCash amount and reference cannot be changed during approval.</p>
                     <p class="queue-approve-meta" id="queueApproveMeta"></p>
+                    <div id="queueApproveGcashMatch" class="mt-2" hidden></div>
+                    <div id="queueApproveProofAnalysis" class="mt-2" hidden></div>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary close-modal" type="button" data-dismiss="queue-approve-modal" aria-label="Close">
                     <i class="ti ti-x" aria-hidden="true"></i>
@@ -175,11 +252,21 @@
                     <label for="queueApproveReferenceInput">Ref. #</label>
                     <input type="text" id="queueApproveReferenceInput" maxlength="64" autocomplete="off">
                 </div>
+
+                <label class="form-check mt-3" id="queueApproveAssignmentGroup">
+                    <input class="form-check-input" type="checkbox" id="queueApproveAssignmentConfirmed">
+                    <span class="form-check-label" id="queueApproveAssignmentLabel">
+                        I verified that this transaction belongs to the displayed customer account and bill.
+                    </span>
+                </label>
+                <small class="text-secondary d-block mt-1">
+                    Approval permanently assigns the matched GCash transaction to one customer payment and prevents reuse.
+                </small>
             </div>
             <div class="queue-approve-modal__footer">
                 <button type="button" class="ghost-btn" data-dismiss="queue-approve-modal">Cancel</button>
                 <button type="button" class="primary-btn" id="queueApproveSubmitBtn">
-                    <i class="ti ti-check" aria-hidden="true"></i> Approve
+                    <i class="ti ti-check" aria-hidden="true"></i> Approve &amp; Post
                 </button>
             </div>
         </div>
@@ -236,6 +323,7 @@
             <div class="modal-header">
                 <div>
                     <h2 id="queueRejectEntryModalTitle">Reject Payment Proof</h2>
+                    <p class="modal-subtitle" id="queueRejectEntrySubtitle">Reject this proof without posting a payment.</p>
                     <p class="queue-reject-entry-meta" id="queueRejectEntryMeta"></p>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary close-modal" type="button" data-dismiss="queue-reject-entry-modal" aria-label="Close">
@@ -244,7 +332,7 @@
             </div>
             <div class="queue-reject-entry-modal__body">
                 <div class="form-field queue-reject-entry-field">
-                    <label for="queueRejectReasonInput">Rejection Reason</label>
+                    <label for="queueRejectReasonInput" id="queueRejectReasonLabel">Rejection Reason</label>
                     <textarea id="queueRejectReasonInput" rows="4" maxlength="2000"></textarea>
                 </div>
             </div>
@@ -279,7 +367,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payment-confirmation-queue.js?v=3.9"></script>
+    <script src="payment-confirmation-queue.js?v=4.8"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

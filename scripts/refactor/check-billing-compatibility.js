@@ -196,6 +196,9 @@ assert(serverSource.includes("billingBackend.load('paymentRecords')"));
 assert(serverSource.includes("billingBackend.load('disconnections')"));
 assert(serverSource.includes("billingBackend.load('billingScheduler')"));
 assert(serverSource.includes("billingBackend.load('paymentConfirmations')"));
+assert(!serverSource.includes("billingBackend.load('paymentBridge')"));
+assert(!serverSource.includes("billingBackend.load('gcashGmailImporter')"));
+assert(!serverSource.includes("'/api/payment-bridge'"));
 assert(serverSource.includes('BILLING_WEB_ROOT'));
 assert(serverSource.includes('.map((webRoot) => path.join(webRoot, filename))'));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'quick-payment.html')"));
@@ -208,6 +211,15 @@ const proofStoreSource = fs.readFileSync(
   'utf8'
 );
 assert(proofStoreSource.includes("path.join(PUBLIC_ROOT, 'uploads', ...relativePath.split('/'))"));
+const paymentQueueHtmlSource = fs.readFileSync(path.join(webRoot, 'payment-confirmation-queue.html'), 'utf8');
+const paymentQueueBrowserSource = fs.readFileSync(path.join(webRoot, 'payment-confirmation-queue.js'), 'utf8');
+assert(!fs.existsSync(path.join(projectRoot, 'Features/modules/billing/backend/payment-bridge.js')));
+assert(!fs.existsSync(path.join(projectRoot, 'Features/modules/billing/backend/gcash-notification-bridge-store.js')));
+assert(!fs.existsSync(path.join(projectRoot, 'Features/modules/billing/backend/gcash-gmail-importer.js')));
+assert(!paymentQueueHtmlSource.includes('queueBridgePanel'));
+assert(!paymentQueueHtmlSource.includes('queueGmailPanel'));
+assert(!paymentQueueBrowserSource.includes('/api/payment-bridge'));
+assert(!paymentQueueBrowserSource.includes('/gcash-gmail/'));
 const paymentsSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/billing/backend/payments.js'),
   'utf8'
@@ -278,6 +290,12 @@ execFileSync(process.execPath, [
 ], { stdio: 'inherit' });
 execFileSync(process.execPath, [
   path.join(projectRoot, 'Features/modules/billing/tests/reconnection-settlement.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/customer-payment-proof.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/gcash-transaction-history.test.js')
 ], { stdio: 'inherit' });
 console.log('PASS Billing normalization, plan-profile, and balance helper behavior');
 console.log('BILLING COMPATIBILITY PASSED');

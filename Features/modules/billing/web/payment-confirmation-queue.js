@@ -1,5 +1,8 @@
 ﻿document.addEventListener('DOMContentLoaded', () => {
     const queueTableBody = document.getElementById('queueTableBody');
+    const gcashHistoryBody = document.getElementById('queueGcashHistoryBody');
+    const gcashHistorySummary = document.getElementById('queueGcashHistorySummary');
+    const gcashHistoryRefreshButton = document.getElementById('queueGcashHistoryRefreshBtn');
     const pageSizeSelect = document.getElementById('queuePageSize');
     const footerSummary = document.getElementById('queueTableSummary');
     const footerPageInfo = document.getElementById('queueTablePageInfo');
@@ -25,8 +28,17 @@
     const createProofFileInput = document.getElementById('queueCreateProofFile');
     const createNotesInput = document.getElementById('queueCreateNotes');
     const createSubmitBtn = document.getElementById('queueCreateSubmitBtn');
+    const importGcashButton = document.getElementById('queueImportGcashHistoryBtn');
+    const importGcashModal = document.getElementById('queueImportGcashModal');
+    const importGcashForm = document.getElementById('queueImportGcashForm');
+    const importGcashFileInput = document.getElementById('queueImportGcashFile');
+    const importGcashPasswordInput = document.getElementById('queueImportGcashPassword');
+    const importGcashSubmitButton = document.getElementById('queueImportGcashSubmitBtn');
+    const importGcashResult = document.getElementById('queueImportGcashResult');
     const approveModal = document.getElementById('queueApproveModal');
     const approveMeta = document.getElementById('queueApproveMeta');
+    const approveGcashMatch = document.getElementById('queueApproveGcashMatch');
+    const approveProofAnalysis = document.getElementById('queueApproveProofAnalysis');
     const approveProofViewer = document.getElementById('queueApproveProofViewer');
     const approveProofToolbar = document.getElementById('queueApproveProofToolbar');
     const approveProofLink = document.getElementById('queueApproveProofLink');
@@ -36,6 +48,9 @@
     const approveProofEmpty = document.getElementById('queueApproveProofEmpty');
     const approveAmountInput = document.getElementById('queueApproveAmountInput');
     const approveReferenceInput = document.getElementById('queueApproveReferenceInput');
+    const approveAssignmentGroup = document.getElementById('queueApproveAssignmentGroup');
+    const approveAssignmentConfirmed = document.getElementById('queueApproveAssignmentConfirmed');
+    const approveAssignmentLabel = document.getElementById('queueApproveAssignmentLabel');
     const approveSubmitBtn = document.getElementById('queueApproveSubmitBtn');
     const duplicatePaymentModal = document.getElementById('queueDuplicatePaymentModal');
     const duplicatePaymentMeta = document.getElementById('queueDuplicatePaymentMeta');
@@ -46,7 +61,10 @@
     const duplicateDate = document.getElementById('queueDuplicateDate');
     const duplicateRecordedBy = document.getElementById('queueDuplicateRecordedBy');
     const rejectEntryModal = document.getElementById('queueRejectEntryModal');
+    const rejectEntryTitle = document.getElementById('queueRejectEntryModalTitle');
+    const rejectEntrySubtitle = document.getElementById('queueRejectEntrySubtitle');
     const rejectEntryMeta = document.getElementById('queueRejectEntryMeta');
+    const rejectReasonLabel = document.getElementById('queueRejectReasonLabel');
     const rejectReasonInput = document.getElementById('queueRejectReasonInput');
     const rejectSubmitBtn = document.getElementById('queueRejectSubmitBtn');
     const rejectInfoModal = document.getElementById('queueRejectInfoModal');
@@ -69,6 +87,7 @@
         renderedItems: [],
         activeApprovalId: '',
         activeRejectId: '',
+        activeReviewAction: 'reject',
         activeRejectedId: '',
         approveProofZoom: 1,
         approveProofBaseWidth: 0,
@@ -96,7 +115,9 @@
     const formatDateTime = (value) => {
         const raw = String(value || '').trim();
         if (!raw) return '-';
-        const parsed = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'));
+        const parsed = /^\d{12,}$/.test(raw)
+            ? new Date(Number(raw))
+            : new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'));
         if (Number.isNaN(parsed.getTime())) return raw;
         return parsed.toLocaleString('en-US', {
             year: 'numeric',
@@ -144,6 +165,78 @@
         if (type === 'error') {
             alert(message);
         }
+    };
+
+    const getGcashMatchPresentation = (match) => {
+        const status = String(match?.status || '').trim().toLowerCase();
+        const presentations = {
+            matched: { label: 'Official match', badgeClass: 'bg-green-lt text-green' },
+            reference_not_found: { label: 'Reference not found', badgeClass: 'bg-red-lt text-red' },
+            reference_missing: { label: 'Reference missing', badgeClass: 'bg-red-lt text-red' },
+            amount_mismatch: { label: 'Amount mismatch', badgeClass: 'bg-red-lt text-red' },
+            date_mismatch: { label: 'Date mismatch', badgeClass: 'bg-orange-lt text-orange' },
+            date_missing: { label: 'Date missing', badgeClass: 'bg-orange-lt text-orange' },
+            recipient_mismatch: { label: 'Recipient mismatch', badgeClass: 'bg-red-lt text-red' },
+            recipient_unavailable: { label: 'Recipient unavailable', badgeClass: 'bg-orange-lt text-orange' },
+            merchant_not_configured: { label: 'Merchant not configured', badgeClass: 'bg-orange-lt text-orange' },
+            not_received: { label: 'Not an incoming credit', badgeClass: 'bg-red-lt text-red' },
+            already_assigned: { label: 'Already assigned', badgeClass: 'bg-red-lt text-red' },
+            matched_payer_mismatch: { label: 'Match; verify sender', badgeClass: 'bg-orange-lt text-orange' },
+            matched_payer_unavailable: { label: 'Match; verify owner', badgeClass: 'bg-orange-lt text-orange' }
+        };
+        return presentations[status] || { label: 'Awaiting history import', badgeClass: 'bg-secondary-lt text-secondary' };
+    };
+
+    const renderGcashMatch = (match, { includeMessage = true } = {}) => {
+        const presentation = getGcashMatchPresentation(match);
+        const message = String(match?.message || 'Upload the official GCash Transaction History PDF to validate this reference.').trim();
+        return `<span class="badge ${presentation.badgeClass}">${escapeHtml(presentation.label)}</span>${includeMessage
+            ? `<small class="d-block text-secondary mt-1">${escapeHtml(message)}</small>`
+            : ''}`;
+    };
+
+    const renderTransactionMatches = (item = {}) => `<div>
+        <small class="text-secondary d-block mb-1">Official imported history</small>${renderGcashMatch(item.gcashMatch)}
+    </div>`;
+
+    const renderProofAnalysis = (analysis) => {
+        if (!analysis || typeof analysis !== 'object') return '';
+        const fields = analysis.fields || {};
+        const warnings = Array.isArray(analysis.warnings) ? analysis.warnings.filter(Boolean) : [];
+        const stateLabel = analysis.historyMatch?.matched
+            ? 'Screenshot/history match'
+            : (analysis.state === 'complete' ? 'Details extracted' : 'Manual review needed');
+        const badgeClass = analysis.historyMatch?.matched
+            ? 'bg-green-lt text-green'
+            : (analysis.state === 'complete' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange');
+        const statusLabel = String(fields.status || 'unknown').replace(/_/g, ' ');
+        const ai = analysis.ai || {};
+        const sourceLabel = ai.used
+            ? (analysis.source === 'vision_ai' ? 'Vision AI fallback' : 'Local OCR + Vision AI')
+            : (ai.status === 'failed'
+                ? 'Local OCR; AI unavailable'
+                : (ai.status === 'not_configured' ? 'Local OCR; AI not configured' : 'Local OCR'));
+        const aiLabel = ai.used
+            ? `${ai.provider || 'Vision AI'}${ai.model ? ` / ${ai.model}` : ''}${ai.confidence == null ? '' : ` (${ai.confidence}%)`}`
+            : (ai.reason || 'Not used');
+        return `<div class="alert alert-info mb-0">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <strong>Screenshot analysis</strong>
+                <span class="badge ${badgeClass}">${escapeHtml(stateLabel)}</span>
+            </div>
+            <div class="row g-2 small">
+                <div class="col-6"><span class="text-secondary d-block">Amount</span>${escapeHtml(formatCurrency(fields.amount))}</div>
+                <div class="col-6"><span class="text-secondary d-block">Reference</span>${escapeHtml(fields.reference || '-')}</div>
+                <div class="col-6"><span class="text-secondary d-block">Date</span>${escapeHtml(formatDateTime(fields.transactionAt))}</div>
+                <div class="col-6"><span class="text-secondary d-block">Recipient</span>${escapeHtml(fields.recipient || fields.recipientNumber || '-')}</div>
+                <div class="col-6"><span class="text-secondary d-block">Status</span>${escapeHtml(statusLabel)}</div>
+                <div class="col-6"><span class="text-secondary d-block">Confidence</span>${analysis.confidence == null ? '-' : `${escapeHtml(analysis.confidence)}%`}</div>
+                <div class="col-6"><span class="text-secondary d-block">Analyzer</span>${escapeHtml(sourceLabel)}</div>
+                <div class="col-6"><span class="text-secondary d-block">Vision AI</span>${escapeHtml(aiLabel)}</div>
+            </div>
+            ${warnings.length ? `<div class="text-danger small mt-2">${warnings.map((warning) => escapeHtml(warning)).join('<br>')}</div>` : ''}
+            <small class="d-block text-secondary mt-2">OCR and Vision AI are review assistance only. An official-history match plus explicit Admin approval is required before posting.</small>
+        </div>`;
     };
 
     const getQueueItemById = (id) => state.itemsById.get(String(id || '')) || null;
@@ -245,6 +338,27 @@
         }
     };
 
+    const closeImportGcashModal = () => {
+        if (!importGcashModal) return;
+        importGcashModal.classList.remove('show');
+        importGcashModal.setAttribute('aria-hidden', 'true');
+        importGcashForm?.reset();
+        if (importGcashPasswordInput) importGcashPasswordInput.value = '';
+        if (importGcashResult) {
+            importGcashResult.hidden = true;
+            importGcashResult.textContent = '';
+        }
+        if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-active');
+    };
+
+    const openImportGcashModal = () => {
+        if (!importGcashModal) return;
+        importGcashModal.classList.add('show');
+        importGcashModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-active');
+        window.setTimeout(() => importGcashFileInput?.focus({ preventScroll: true }), 0);
+    };
+
     const openCreateModal = () => {
         if (!createModal) return;
         createModal.classList.add('show');
@@ -262,7 +376,19 @@
         state.activeApprovalId = '';
         if (approveAmountInput) approveAmountInput.value = '';
         if (approveReferenceInput) approveReferenceInput.value = '';
+        if (approveAmountInput) approveAmountInput.readOnly = false;
+        if (approveReferenceInput) approveReferenceInput.readOnly = false;
+        if (approveAssignmentConfirmed) approveAssignmentConfirmed.checked = false;
+        if (approveAssignmentGroup) approveAssignmentGroup.hidden = false;
         if (approveMeta) approveMeta.textContent = '';
+        if (approveGcashMatch) {
+            approveGcashMatch.hidden = true;
+            approveGcashMatch.innerHTML = '';
+        }
+        if (approveProofAnalysis) {
+            approveProofAnalysis.hidden = true;
+            approveProofAnalysis.innerHTML = '';
+        }
         resetApproveProofZoom();
         if (approveProofViewer) approveProofViewer.style.display = '';
         if (approveProofImage) approveProofImage.removeAttribute('src');
@@ -318,8 +444,13 @@
         rejectEntryModal.classList.remove('show');
         rejectEntryModal.setAttribute('aria-hidden', 'true');
         state.activeRejectId = '';
+        state.activeReviewAction = 'reject';
+        if (rejectEntryTitle) rejectEntryTitle.textContent = 'Reject Payment Proof';
+        if (rejectEntrySubtitle) rejectEntrySubtitle.textContent = 'Reject this proof without posting a payment.';
         if (rejectEntryMeta) rejectEntryMeta.textContent = '';
+        if (rejectReasonLabel) rejectReasonLabel.textContent = 'Rejection Reason';
         if (rejectReasonInput) rejectReasonInput.value = '';
+        if (rejectSubmitBtn) rejectSubmitBtn.innerHTML = '<i class="ti ti-x" aria-hidden="true"></i> Reject';
         if (!document.querySelector('.modal.show')) {
             document.body.classList.remove('modal-active');
         }
@@ -345,6 +476,7 @@
         state.activeApprovalId = itemId;
         const customerName = String(item.customerName || '').trim() || 'Unknown customer';
         const accountNumber = String(item.accountNumber || '').trim();
+        const isGcash = String(item.paymentMethod || '').trim().toLowerCase() === 'gcash';
         const resolvedAmount = Number(item.reviewedAmount ?? item.amount);
         const amountLabel = formatCurrency(resolvedAmount);
         if (approveMeta) {
@@ -358,10 +490,30 @@
             approveAmountInput.value = Number.isFinite(resolvedAmount) && resolvedAmount > 0
                 ? resolvedAmount.toFixed(2)
                 : '';
+            approveAmountInput.readOnly = isGcash;
         }
 
         if (approveReferenceInput) {
-            approveReferenceInput.value = String(item.reviewedReference || '').trim();
+            approveReferenceInput.value = String(item.reviewedReference || item.reference || '').trim();
+            approveReferenceInput.readOnly = isGcash;
+        }
+
+        if (approveAssignmentGroup) approveAssignmentGroup.hidden = !isGcash;
+        if (approveAssignmentConfirmed) approveAssignmentConfirmed.checked = false;
+        if (approveAssignmentLabel) {
+            approveAssignmentLabel.textContent = accountNumber
+                ? `I verified that this transaction belongs to ${customerName} (account ${accountNumber}) and this bill.`
+                : 'I verified that this transaction belongs to the displayed customer account and bill.';
+        }
+
+        if (approveGcashMatch) {
+            approveGcashMatch.hidden = !isGcash;
+            approveGcashMatch.innerHTML = isGcash ? renderTransactionMatches(item) : '';
+        }
+        if (approveProofAnalysis) {
+            const hasAnalysis = item.proofAnalysis && typeof item.proofAnalysis === 'object';
+            approveProofAnalysis.hidden = !hasAnalysis;
+            approveProofAnalysis.innerHTML = hasAnalysis ? renderProofAnalysis(item.proofAnalysis) : '';
         }
 
         const proofUrl = String(item.proofUrl || '').trim();
@@ -401,12 +553,30 @@
         }, 0);
     };
 
-    const openRejectEntryModal = (item) => {
+    const openRejectEntryModal = (item, action = 'reject') => {
         if (!rejectEntryModal || !item) return;
         const itemId = String(item.id || '').trim();
         if (!itemId) return;
 
         state.activeRejectId = itemId;
+        state.activeReviewAction = action === 'request-new-proof' ? 'request-new-proof' : 'reject';
+        const requestsNewProof = state.activeReviewAction === 'request-new-proof';
+        if (rejectEntryTitle) {
+            rejectEntryTitle.textContent = requestsNewProof ? 'Request New Payment Proof' : 'Reject Payment Proof';
+        }
+        if (rejectEntrySubtitle) {
+            rejectEntrySubtitle.textContent = requestsNewProof
+                ? 'Tell the customer what must be corrected. No payment will be posted.'
+                : 'Reject this proof without posting a payment.';
+        }
+        if (rejectReasonLabel) {
+            rejectReasonLabel.textContent = requestsNewProof ? 'Instructions for Customer' : 'Rejection Reason';
+        }
+        if (rejectSubmitBtn) {
+            rejectSubmitBtn.innerHTML = requestsNewProof
+                ? '<i class="ti ti-photo-plus" aria-hidden="true"></i> Request New Proof'
+                : '<i class="ti ti-x" aria-hidden="true"></i> Reject';
+        }
         const customerName = String(item.customerName || '').trim() || 'Unknown customer';
         const accountNumber = String(item.accountNumber || '').trim();
         const amountLabel = formatCurrency(Number(item.reviewedAmount ?? item.amount));
@@ -550,7 +720,7 @@
         renderFooter(0, 1, 0, 0);
         queueTableBody.innerHTML = `
             <tr>
-                <td colspan="5" class="queue-empty">${escapeHtml(message || 'Something went wrong.')}</td>
+                <td colspan="6" class="queue-empty">${escapeHtml(message || 'Something went wrong.')}</td>
             </tr>
         `;
     };
@@ -573,7 +743,7 @@
         if (!pageRows.length) {
             queueTableBody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="queue-empty">No requests found for this filter.</td>
+                    <td colspan="6" class="queue-empty">No pending customer proof submissions. Imported GCash transactions are shown below.</td>
                 </tr>
             `;
             return;
@@ -591,12 +761,19 @@
                 : `<span class="queue-empty">No image</span>`;
             const resolvedAmount = Number(item.reviewedAmount ?? item.amount);
             const amountCell = formatCurrency(resolvedAmount);
+            const isGcash = String(item.paymentMethod || '').trim().toLowerCase() === 'gcash';
+            const officialHistoryCell = isGcash
+                ? renderTransactionMatches(item)
+                : '<span class="text-secondary">Not applicable</span>';
 
             const actionCell = (() => {
                 if (isPending) {
                     return `<div class="queue-row-actions">
-                        <button type="button" class="approve-btn queue-icon-btn" data-action="approve" data-id="${escapeHtml(item.id)}" data-row-index="${rowIndex}" title="Approve" aria-label="Approve payment proof">
+                        <button type="button" class="approve-btn queue-icon-btn" data-action="approve" data-id="${escapeHtml(item.id)}" data-row-index="${rowIndex}" title="Approve &amp; Post" aria-label="Approve and post payment proof">
                             <i class="fa-solid fa-check"></i>
+                        </button>
+                        <button type="button" class="request-proof-btn queue-icon-btn" data-action="request-new-proof" data-id="${escapeHtml(item.id)}" data-row-index="${rowIndex}" title="Request New Proof" aria-label="Request a new payment proof">
+                            <i class="ti ti-photo-plus"></i>
                         </button>
                         <button type="button" class="reject-btn queue-icon-btn" data-action="reject" data-id="${escapeHtml(item.id)}" data-row-index="${rowIndex}" title="Reject" aria-label="Reject payment proof">
                             <i class="fa-solid fa-xmark"></i>
@@ -612,7 +789,7 @@
                     </div>`;
                 }
                 return `<div class="queue-action-result approved">
-                    <span class="queue-status approved">Approved</span>
+                    <span class="queue-status approved">Approved &amp; Posted</span>
                 </div>`;
             })();
 
@@ -635,6 +812,7 @@
                     <td>${escapeHtml(formatDateTime(item.submittedAt))}</td>
                     <td class="queue-amount-cell">${escapeHtml(amountCell)}</td>
                     <td>${proofCell}</td>
+                    <td>${officialHistoryCell}</td>
                     <td>${actionCell}</td>
                 </tr>
             `;
@@ -680,6 +858,110 @@
         return data;
     };
 
+    const postGcashHistoryImport = async (file, password) => {
+        const response = await fetch('/api/payment-confirmations/gcash-history/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/pdf',
+                'X-PDF-Password': password,
+                'X-PDF-File-Name': encodeURIComponent(String(file?.name || 'gcash-transaction-history.pdf'))
+            },
+            credentials: 'include',
+            body: file
+        });
+        const rawText = await response.text();
+        let data = {};
+        try {
+            data = rawText ? JSON.parse(rawText) : {};
+        } catch {
+            data = {};
+        }
+        if (!response.ok) {
+            throw new Error(data.error || 'Unable to import the GCash Transaction History PDF.');
+        }
+        return data;
+    };
+
+    const renderGcashHistoryError = (message) => {
+        if (gcashHistorySummary) gcashHistorySummary.textContent = 'Imported history is unavailable.';
+        if (gcashHistoryBody) {
+            gcashHistoryBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="queue-empty">${escapeHtml(message || 'Unable to load imported GCash transactions.')}</td>
+                </tr>
+            `;
+        }
+    };
+
+    const renderGcashHistory = (data = {}) => {
+        const batches = Array.isArray(data.batches) ? data.batches : [];
+        const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+        const totalTransactions = Number(data.totalTransactions) || transactions.length;
+        const latestBatch = batches[0] || null;
+
+        if (gcashHistorySummary) {
+            const parts = [
+                `${totalTransactions} transaction${totalTransactions === 1 ? '' : 's'} from ${batches.length} imported PDF${batches.length === 1 ? '' : 's'}`
+            ];
+            if (latestBatch?.importedAt) parts.push(`Last import: ${formatDateTime(latestBatch.importedAt)}`);
+            if (latestBatch?.fileName) parts.push(String(latestBatch.fileName));
+            gcashHistorySummary.textContent = parts.join(' | ');
+        }
+
+        if (!gcashHistoryBody) return;
+        if (!transactions.length) {
+            gcashHistoryBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="queue-empty">No GCash Transaction History has been imported for this branch.</td>
+                </tr>
+            `;
+            return;
+        }
+
+        gcashHistoryBody.innerHTML = transactions.map((transaction) => {
+            const isReceived = String(transaction.status || '').toLowerCase() === 'received'
+                && Number(transaction.credit) > 0;
+            const assignment = transaction.assignment && typeof transaction.assignment === 'object'
+                ? transaction.assignment
+                : null;
+            const assignmentAccount = String(assignment?.accountNumber || '').trim();
+            const assignmentCustomer = String(assignment?.customerName || '').trim();
+            const matchBadge = assignment
+                ? `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Assigned and posted' : 'Reserved for approval'}</span>
+                   <small class="d-block text-secondary mt-1">${escapeHtml([assignmentCustomer, assignmentAccount ? `Acct: ${assignmentAccount}` : ''].filter(Boolean).join(' | ') || 'Assigned customer')}</small>`
+                : (isReceived
+                    ? '<span class="badge bg-green-lt text-green">Available for matching</span>'
+                    : '<span class="badge bg-secondary-lt text-secondary">Not an incoming credit</span>');
+            return `
+                <tr>
+                    <td>${escapeHtml(formatDateTime(transaction.transactionAt))}</td>
+                    <td class="gcash-history-reference">${escapeHtml(transaction.reference || '-')}</td>
+                    <td>${escapeHtml(transaction.sender || '-')}</td>
+                    <td class="queue-amount-cell">${escapeHtml(formatCurrency(Number(transaction.credit)))}</td>
+                    <td>${escapeHtml(transaction.recipient || '-')}</td>
+                    <td>${matchBadge}</td>
+                </tr>
+            `;
+        }).join('');
+    };
+
+    const fetchGcashHistory = async () => {
+        if (gcashHistoryRefreshButton) gcashHistoryRefreshButton.disabled = true;
+        try {
+            const response = await fetch('/api/payment-confirmations/gcash-history?limit=500', {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Unable to load imported GCash transactions.');
+            renderGcashHistory(data);
+        } catch (error) {
+            renderGcashHistoryError(error.message || 'Unable to load imported GCash transactions.');
+        } finally {
+            if (gcashHistoryRefreshButton) gcashHistoryRefreshButton.disabled = false;
+        }
+    };
+
     const onApprove = async (item) => {
         if (!item) {
             notify('Unable to load payment proof details.', 'error');
@@ -692,6 +974,8 @@
         if (state.loading) return;
         const id = String(state.activeApprovalId || '').trim();
         if (!id) return;
+        const activeItem = getQueueItemById(id);
+        const isGcash = String(activeItem?.paymentMethod || '').trim().toLowerCase() === 'gcash';
         const amount = Number(approveAmountInput?.value);
         const reference = String(approveReferenceInput?.value || '').trim();
         if (!Number.isFinite(amount) || amount <= 0) {
@@ -704,17 +988,23 @@
             approveReferenceInput?.focus();
             return;
         }
+        if (isGcash && !approveAssignmentConfirmed?.checked) {
+            notify('Confirm that this transaction belongs to the displayed customer account before approval.', 'error');
+            approveAssignmentConfirmed?.focus();
+            return;
+        }
 
         if (approveSubmitBtn) approveSubmitBtn.disabled = true;
         setLoadingState(true);
         try {
             await postAction(id, 'approve', {
                 amount: Number(amount.toFixed(2)),
-                reference
+                reference,
+                assignmentConfirmed: isGcash ? true : undefined
             });
             closeApproveModal();
-            notify('Payment proof approved successfully.', 'success');
-            await fetchQueue();
+            notify('Payment approved and posted to the ledger.', 'success');
+            await Promise.all([fetchQueue(), fetchGcashHistory()]);
         } catch (error) {
             if (error?.payload?.code === 'DUPLICATE_PAYMENT_REFERENCE') {
                 closeApproveModal();
@@ -845,8 +1135,10 @@
         const id = String(state.activeRejectId || '').trim();
         if (!id) return;
         const reason = String(rejectReasonInput?.value || '').trim();
+        const action = state.activeReviewAction === 'request-new-proof' ? 'request-new-proof' : 'reject';
+        const requestsNewProof = action === 'request-new-proof';
         if (!reason) {
-            notify('Rejection reason is required.', 'error');
+            notify(requestsNewProof ? 'Instructions for the customer are required.' : 'Rejection reason is required.', 'error');
             rejectReasonInput?.focus();
             return;
         }
@@ -854,12 +1146,12 @@
         if (rejectSubmitBtn) rejectSubmitBtn.disabled = true;
         setLoadingState(true);
         try {
-            await postAction(id, 'reject', { reason });
+            await postAction(id, action, { reason });
             closeRejectEntryModal();
-            notify('Payment proof rejected.', 'success');
+            notify(requestsNewProof ? 'Customer was asked to submit new proof.' : 'Payment proof rejected.', 'success');
             await fetchQueue();
         } catch (error) {
-            notify(error.message || 'Unable to reject payment proof.', 'error');
+            notify(error.message || (requestsNewProof ? 'Unable to request new proof.' : 'Unable to reject payment proof.'), 'error');
         } finally {
             if (rejectSubmitBtn) rejectSubmitBtn.disabled = false;
             setLoadingState(false);
@@ -871,7 +1163,15 @@
             notify('Unable to load payment request details.', 'error');
             return;
         }
-        openRejectEntryModal(item);
+        openRejectEntryModal(item, 'reject');
+    };
+
+    const onRequestNewProof = async (item) => {
+        if (!item) {
+            notify('Unable to load payment request details.', 'error');
+            return;
+        }
+        openRejectEntryModal(item, 'request-new-proof');
     };
 
     const onCreateRequestSubmit = async (event) => {
@@ -945,6 +1245,56 @@
         }
     };
 
+    const onImportGcashSubmit = async (event) => {
+        event.preventDefault();
+        if (state.loading) return;
+        const file = importGcashFileInput?.files?.[0] || null;
+        const password = String(importGcashPasswordInput?.value || '');
+        if (!file) {
+            notify('Select the GCash Transaction History PDF.', 'error');
+            importGcashFileInput?.focus();
+            return;
+        }
+        if (file.size > 8 * 1024 * 1024) {
+            notify('The PDF is too large. Maximum size is 8 MB.', 'error');
+            importGcashFileInput?.focus();
+            return;
+        }
+        if (!password) {
+            notify('Enter the PDF password.', 'error');
+            importGcashPasswordInput?.focus();
+            return;
+        }
+
+        setLoadingState(true);
+        if (importGcashSubmitButton) importGcashSubmitButton.disabled = true;
+        if (importGcashResult) {
+            importGcashResult.className = 'alert alert-info queue-create-field--full';
+            importGcashResult.textContent = 'Reading and validating the official GCash transactions...';
+            importGcashResult.hidden = false;
+        }
+        try {
+            const data = await postGcashHistoryImport(file, password);
+            if (importGcashPasswordInput) importGcashPasswordInput.value = '';
+            const importedCount = Number(data?.batch?.importedCount) || 0;
+            const duplicateCount = Number(data?.duplicateCount) || 0;
+            closeImportGcashModal();
+            notify(`${importedCount} official GCash transaction(s) imported${duplicateCount ? `; ${duplicateCount} existing row(s) skipped` : ''}.`, 'success');
+            await Promise.all([fetchQueue(), fetchGcashHistory()]);
+        } catch (error) {
+            if (importGcashPasswordInput) importGcashPasswordInput.value = '';
+            if (importGcashResult) {
+                importGcashResult.className = 'alert alert-danger queue-create-field--full';
+                importGcashResult.textContent = error.message || 'Unable to import the GCash history.';
+                importGcashResult.hidden = false;
+            }
+            importGcashPasswordInput?.focus();
+        } finally {
+            if (importGcashSubmitButton) importGcashSubmitButton.disabled = false;
+            setLoadingState(false);
+        }
+    };
+
     const onViewRejectReason = (item) => {
         if (!item) {
             notify('Unable to load rejection details.', 'error');
@@ -968,6 +1318,10 @@
         }
         if (action === 'view-reason') {
             onViewRejectReason(item);
+            return;
+        }
+        if (action === 'request-new-proof') {
+            await onRequestNewProof(item);
             return;
         }
         if (action === 'reject') {
@@ -1190,6 +1544,14 @@
 
     createForm?.addEventListener('submit', onCreateRequestSubmit);
 
+    importGcashButton?.addEventListener('click', openImportGcashModal);
+    gcashHistoryRefreshButton?.addEventListener('click', fetchGcashHistory);
+    importGcashForm?.addEventListener('submit', onImportGcashSubmit);
+    importGcashModal?.addEventListener('click', (event) => {
+        const dismissTarget = event.target.closest('[data-dismiss="queue-import-gcash-modal"]');
+        if (dismissTarget) closeImportGcashModal();
+    });
+
     rejectEntryModal?.addEventListener('click', (event) => {
         const dismissTarget = event.target.closest('[data-dismiss="queue-reject-entry-modal"]');
         if (dismissTarget || event.target === rejectEntryModal) {
@@ -1241,5 +1603,5 @@
 
     applyQueueFilters();
     fetchQueue();
+    fetchGcashHistory();
 });
-

@@ -215,9 +215,11 @@ Use one shared working tree and the coordination script. Agents lock exact files
 - Run `npm run refactor:verify` before and after future physical file moves.
 - Run `npm run refactor:smoke` after module wiring, shared routing, or static-delivery changes.
 - The isolated smoke runtime uses ports `3190` and `4190`; normal development remains on `3100` and `4101`.
+- The HTTP smoke child process forces the default isolated feature profile and ignores live `data/flavor-features.json`, `ACTIVE_FLAVOR_NAME`, and inherited `FLAVOR_FEATURES`, so feature-gate assertions are deterministic without changing the operator's enabled pages.
 
 ## Latest integration changes
 
+- 2026-08-12: Isolated the HTTP smoke server from live flavor settings. The suite now clears any active flavor and supplies the default feature profile explicitly, so locally enabled Payment Confirmation Queue pages cannot change the expected default-profile `404` checks.
 - 2026-08-11: Removed Gmail-based GCash history automation and the Android GCash notification bridge from runtime, APIs, queues, proof analysis, and shared composition. Manual official-history PDF import remains the sole record-match source, and only explicit Admin **Approve & Post** can create a ledger payment or restore service.
 - 2026-08-10: Added a disabled-by-default, OpenAI-compatible Vision AI fallback to the three-module GCash proof contract. It runs only after incomplete/low-confidence local OCR, supplements missing fields with provenance and visible warnings, exposes sanitized source/status in customer and Admin review, and cannot bypass imported-history matching, immutable allocation, or explicit Admin approval.
 - 2026-08-10: Added immutable GCash transaction allocation. Imported references now show Available, Reserved, or Assigned and Posted state; GCash approval locks submitted fields, blocks reliable screenshot contradictions, flags sender/customer-mobile mismatch, requires explicit Admin customer/bill confirmation, and records one durable reference-to-submission/account/payment assignment before any ledger or MikroTik effect.

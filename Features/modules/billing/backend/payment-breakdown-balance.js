@@ -798,6 +798,34 @@ const buildPaymentDetails = (entries = []) => {
     .filter((entry) => Math.abs(Number(entry.amount) || 0) > EPSILON);
 };
 
+const applyTrailingPaymentsToLastRow = (rows = [], entries = []) => {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const paymentCredits = (Array.isArray(entries) ? entries : []).filter(isPaymentCredit);
+  const trailingAmount = sumEntries(paymentCredits);
+  if (trailingAmount <= EPSILON) return rows;
+
+  const lastIndex = rows.length - 1;
+  const lastRow = rows[lastIndex];
+  const balanceAfterPayment = roundMoney((Number(lastRow?.balanceAfterPayment) || 0) - trailingAmount);
+  const nextCarryOver = splitBalanceCarryOver(balanceAfterPayment);
+  const paymentDetails = [
+    ...(Array.isArray(lastRow?.paymentDetails) ? lastRow.paymentDetails : []),
+    ...buildPaymentDetails(paymentCredits)
+  ].sort((left, right) => String(left?.date || '').localeCompare(String(right?.date || '')));
+
+  rows[lastIndex] = {
+    ...lastRow,
+    amountPaid: roundMoney((Number(lastRow?.amountPaid) || 0) + trailingAmount),
+    paymentDetails,
+    paymentStatus: balanceAfterPayment <= EPSILON ? 'paid' : 'unpaid',
+    balanceAfterPayment,
+    nextPreviousBalance: nextCarryOver.previousBalance,
+    nextAdvance: nextCarryOver.advance,
+    nextCarryOverType: nextCarryOver.type
+  };
+  return rows;
+};
+
 const applyEntryToBalance = (balance, entry = {}) => {
   const amount = Number(entry.amount) || 0;
   if (entry.direction === 'debit') return roundMoney(balance + amount);
@@ -1767,6 +1795,10 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
     currentMonth = nextParts.month;
     billDate = nextBillDate;
     guard += 1;
+  }
+
+  if (disconnection?.billingPolicy === 'stop' && cursor < entries.length) {
+    applyTrailingPaymentsToLastRow(rows, entries.slice(cursor));
   }
 
   return rows;

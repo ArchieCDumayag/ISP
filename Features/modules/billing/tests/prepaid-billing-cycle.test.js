@@ -142,6 +142,40 @@ const monthlyCharge = (accountNumber, month, amount, recordedAt) => ({
 
 {
   const record = {
+    accountNumber: 'PREPAID-STOPPED-SETTLEMENT',
+    planCategory: 'prepaid',
+    billingCycle: 'Every first of the month',
+    planAmount: 1000,
+    billDate: '2026-01-01',
+    dueDate: '2026-07-01',
+    activationDate: '2026-01-01',
+    disconnection: {
+      status: 'disconnected',
+      disconnectedAt: '2026-07-24T10:07:49.193Z',
+      billingPolicy: 'stop'
+    },
+    history: [
+      payment('january-payment', 1000, '2026-01-02T08:00:00+08:00'),
+      payment('april-payment', 2000, '2026-04-06T08:00:00+08:00'),
+      payment('may-payment', 1000, '2026-05-18T08:00:00+08:00'),
+      payment('post-stop-settlement', 3000, '2026-08-12T06:10:24+08:00')
+    ]
+  };
+  const result = calculatePaymentBreakdownEndingBalance(record);
+  const lastRow = result.rows[result.rows.length - 1];
+  assert.equal(result.rows.length, 7);
+  assert.equal(lastRow.billDate.toISOString().slice(0, 10), '2026-07-01');
+  assert.equal(lastRow.due, 3000);
+  assert.equal(lastRow.amountPaid, 3000);
+  assert.equal(lastRow.paymentStatus, 'paid');
+  assert.equal(lastRow.balanceAfterPayment, 0);
+  assert.equal(lastRow.paymentDetails.length, 1);
+  assert.equal(lastRow.paymentDetails[0].amount, 3000);
+  assert.equal(result.endingBalance, 0);
+}
+
+{
+  const record = {
     accountNumber: 'POSTPAID-1',
     planCategory: 'postpaid',
     billingCycle: 'Every last day of the month',

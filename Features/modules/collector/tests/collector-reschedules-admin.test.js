@@ -45,6 +45,11 @@ const stores = {
     name: 'Partial Payment Client',
     area: 'North Area',
     branchId: 'branch-1'
+  }, {
+    accountNumber: 'ACC-PAID',
+    name: 'Paid Schedule Client',
+    area: 'North Area',
+    branchId: 'branch-1'
   }],
   collectors: {
     assignments: {
@@ -71,6 +76,12 @@ const stores = {
       }]
     }
   }
+};
+const canonicalBalances = {
+  'ACC-100': 1000,
+  'ACC-PARTIAL': 600,
+  'ACC-PAID': 500,
+  'ACC-200': 700
 };
 let relationalReady = false;
 
@@ -114,6 +125,12 @@ replaceModule('../../../../core/data/db-relational', {
 });
 replaceModule('../../admin/backend/accounts-store', {
   loadAccounts: async () => [ADMIN, COLLECTOR, UNASSIGNED_COLLECTOR]
+});
+replaceModule('../../billing/backend/payment-records', {
+  buildPaymentRecordForAccount: async (accountNumber) => ({
+    accountNumber,
+    paymentBreakdownEndingBalance: canonicalBalances[accountNumber] ?? null
+  })
 });
 
 const routerPath = require.resolve('../backend/collector-reschedules');
@@ -250,6 +267,38 @@ async function run() {
     assert.equal(tombstoneAfterDelete.body.records.length, 1);
     assert.equal(tombstoneAfterDelete.body.records[0].historyType, 'Deleted');
 
+    const paidScheduleCreate = await request('', {
+      method: 'POST',
+      body: JSON.stringify({
+        accountNumber: 'ACC-PAID',
+        collectorId: 'collector-1',
+        rescheduledDate: '2026-08-14',
+        result: 'Promised payment',
+        notes: 'Automatically close this schedule after full payment.'
+      })
+    });
+    assert.equal(paidScheduleCreate.status, 201);
+    canonicalBalances['ACC-PAID'] = 0;
+
+    const activeAfterCanonicalPayment = await request('?status=active', {
+      headers: { 'x-test-actor': 'collector' }
+    });
+    assert.equal(activeAfterCanonicalPayment.status, 200);
+    assert.equal(activeAfterCanonicalPayment.body.records.length, 0);
+
+    const paidScheduleHistory = await request('?status=all', {
+      headers: { 'x-test-actor': 'collector' }
+    });
+    const paidRecord = paidScheduleHistory.body.records.find(
+      (record) => record.id === paidScheduleCreate.body.record.id
+    );
+    assert.ok(paidRecord);
+    assert.equal(paidRecord.status, 'Schedule History');
+    assert.equal(paidRecord.historyType, 'Paid');
+    assert.equal(paidRecord.archivedBy, 'System');
+    assert.equal(paidRecord.auditHistory.at(-1).actorRole, 'System');
+    assert.equal(paidRecord.auditHistory.at(-1).changes.endingBalance, 0);
+
     const invalidPartialBalance = await request('', {
       method: 'POST',
       headers: { 'x-test-actor': 'collector' },
@@ -309,6 +358,13 @@ async function run() {
     assert.equal(partialCreate.body.record.collectorNote, 'Customer requested an afternoon visit.');
     assert.equal(partialCreate.body.record.auditHistory[0].action, 'created');
     const partialRecordId = partialCreate.body.record.id;
+
+    const prematureResolve = await request('/resolve/ACC-PARTIAL', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector' },
+      body: '{}'
+    });
+    assert.equal(prematureResolve.status, 409);
 
     const partialDuplicate = await request('', {
       method: 'POST',

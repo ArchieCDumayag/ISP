@@ -24,6 +24,10 @@
                         <div class="page-pretitle">Collections</div>
                         <h1 class="page-title" id="collectorWorkspaceTitle">Collector Operations</h1>
                         <p class="text-secondary mb-0">Manage assignments, payment approvals, and client follow-ups from one workspace.</p>
+                        <p class="text-secondary mb-0" id="collectorAutoRefreshStatus" role="status" aria-live="polite">
+                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                            <span>Auto-refresh every 30 seconds</span>
+                        </p>
                     </div>
                     <div class="collector-page-actions">
                         <a class="btn btn-outline-secondary btn-sm" href="collectors-history.html">
@@ -701,7 +705,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=3.10"></script>
+    <script src="js/collectors-page.js?v=3.11"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

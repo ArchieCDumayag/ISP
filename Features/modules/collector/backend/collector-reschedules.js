@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const createError = require('http-errors');
 const { loadAccounts } = require('../../admin/backend/accounts-store');
+const paymentRecordsRouter = require('../../billing/backend/payment-records');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
@@ -54,7 +55,7 @@ function appendRecordAudit(record, action, actor = {}, changes = {}) {
     actorId: cleanText(actor.id, 120),
     actorName: cleanText(actor.name || actor.username, 200),
     actorUsername: cleanText(actor.username, 160),
-    actorRole: actor.isCollector ? 'Collector' : 'Admin',
+    actorRole: actor.isCollector ? 'Collector' : (actor.isAdmin ? 'Admin' : 'System'),
     changes
   });
   record.auditHistory = history.slice(-100);
@@ -142,6 +143,58 @@ function customerName(customer = {}, accountNumber = '') {
     .filter(Boolean)
     .join(' ');
   return fullName || `Account ${accountNumber}`;
+}
+
+async function readCanonicalBalance(accountNumber, branchId) {
+  try {
+    const record = await paymentRecordsRouter.buildPaymentRecordForAccount(accountNumber, branchId || null);
+    if (!record) return null;
+    return normalizeMoney(record.paymentBreakdownEndingBalance ?? record.endingBalance ?? record.balance);
+  } catch (error) {
+    console.warn(`Unable to reconcile collector schedule ${accountNumber}:`, error?.message || error);
+    return null;
+  }
+}
+
+function archivePaidSchedule(record, balance) {
+  const archivedAt = new Date().toISOString();
+  const system = { name: 'System', isCollector: false, isAdmin: false };
+  record.status = HISTORY_STATUS;
+  record.historyType = 'Paid';
+  record.archivedAt = archivedAt;
+  record.archivedBy = system.name;
+  record.updatedAt = archivedAt;
+  appendRecordAudit(record, 'completed', system, {
+    historyType: 'Paid',
+    endingBalance: balance,
+    source: 'canonical_balance'
+  });
+}
+
+async function reconcilePaidSchedules(records, actor) {
+  const candidates = records.filter((record) => (
+    isActiveRecord(record)
+    && recordMatchesBranch(record, actor.branchId)
+  ));
+  const balances = new Map();
+  await Promise.all(candidates.map(async (record) => {
+    const accountNumber = normalizeAccountNumber(record.accountNumber);
+    const branchId = normalizeBranchId(record.branchId);
+    const key = `${branchId}\u0000${accountNumber}`;
+    if (!accountNumber || balances.has(key)) return;
+    balances.set(key, readCanonicalBalance(accountNumber, branchId));
+  }));
+  await Promise.all([...balances.entries()].map(async ([key, pending]) => {
+    balances.set(key, await pending);
+  }));
+  candidates.forEach((record) => {
+    const accountNumber = normalizeAccountNumber(record.accountNumber);
+    const branchId = normalizeBranchId(record.branchId);
+    const balance = balances.get(`${branchId}\u0000${accountNumber}`);
+    if (balance !== null && balance !== undefined && balance <= 0.009) {
+      archivePaidSchedule(record, balance);
+    }
+  });
 }
 
 async function loadAssignedCustomer(req, accountNumber) {
@@ -497,8 +550,8 @@ function buildRecord(req, customer, branchId, collector, creator = collector, pa
 // Collectors see their own records. Admins see records for their branch and can filter by collector/status/date.
 router.get('/', async (req, res, next) => {
   try {
-    await mutationQueue.catch(() => {});
     const actor = getActor(req);
+    await mutateRecords(async (records) => reconcilePaidSchedules(records, actor));
     const payload = await readJson(STORE_KEY, { records: [] });
     const requestedCollectorId = cleanText(req.query?.collectorId, 120);
     const collectorId = actor.isCollector ? actor.id : requestedCollectorId;
@@ -716,6 +769,13 @@ router.post('/resolve/:accountNumber', async (req, res, next) => {
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
     if (!accountNumber) throw createError(400, 'accountNumber is required.');
     const { branchId, actor } = await loadAssignedCustomer(req, accountNumber);
+    const canonicalBalance = await readCanonicalBalance(accountNumber, branchId);
+    if (canonicalBalance === null) {
+      throw createError(503, 'Could not verify the customer balance. Please sync and try again.');
+    }
+    if (canonicalBalance > 0.009) {
+      throw createError(409, `This schedule is still active because the customer balance is ${canonicalBalance.toFixed(2)}.`);
+    }
     const updated = await mutateRecords(async (records) => {
       let count = 0;
       const archivedAt = new Date().toISOString();
@@ -747,5 +807,7 @@ module.exports._test = {
   PARTIAL_PAYMENT_FOLLOW_UP_TYPE,
   isActiveRecord,
   isPartialPaymentFollowUp,
-  normalizeDate
+  normalizeDate,
+  archivePaidSchedule,
+  reconcilePaidSchedules
 };

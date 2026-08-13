@@ -16,6 +16,7 @@ Owns field collection operations: collector-area assignment, collector authentic
 - Customer Management owns customer/account identity and service area.
 - Admin owns accounts, roles, authentication, and sessions.
 - Admin-created collector schedules must target an active Collector account already assigned to the selected customer's area; collectors receive schedule lifecycle changes through Android Sync.
+- Active schedules are reconciled against Billing's canonical ending balance; zero-balance customers move to audited Paid history and disappear from active Admin and Android queues after sync.
 - Admin-created priority assignments are branch-wide shared collection targets: Admin may select multiple unpaid clients in highest-balance order, every collector in the branch receives the queue on Sync, and one active assignment per client prevents duplicates. They affect collection ordering/visibility only; Billing remains canonical for balances and payment effectiveness.
 - Customer Payment Approval and Collector Cash Remittance are separate controls. Cash confirmation never changes payment approval state and is unavailable until every payment in the batch has already been approved or rejected.
 - Finance may reconcile collection/remittance results but does not own capture workflows.

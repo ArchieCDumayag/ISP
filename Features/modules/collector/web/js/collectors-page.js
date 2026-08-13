@@ -146,6 +146,7 @@
   const collectorStatsCollected = document.getElementById('collectorStatsCollected');
   const collectorStatsPending = document.getElementById('collectorStatsPending');
   const collectorStatsReschedules = document.getElementById('collectorStatsReschedules');
+  const collectorAutoRefreshStatus = document.getElementById('collectorAutoRefreshStatus');
   const assignmentModal = document.getElementById('assignmentModal');
   const assignmentForm = document.getElementById('assignmentForm');
   const modalCollectorSelect = document.getElementById('modalCollectorSelect');
@@ -208,6 +209,11 @@
   let collectorAreaReportCache = {};
   let areaReportCache = {};
   let activeCollectorAreasId = '';
+  const COLLECTOR_AUTO_REFRESH_INTERVAL_MS = 30000;
+  let collectorAutoRefreshTimer = null;
+  let collectorAutoRefreshInFlight = false;
+  let collectorAutoRefreshLastUpdatedAt = null;
+  let collectorLastFieldInteractionAt = 0;
 
   const getCurrentMonthKey = () => {
     const now = new Date();
@@ -884,8 +890,12 @@
     return payload?.error || payload?.message || 'Failed to load customer payment approvals.';
   }
 
-  async function loadCollectorApprovals() {
-    if (!collectorApprovalList) return;
+  function shouldPreserveCollectorDataOnError(preserveOnError, status) {
+    return Boolean(preserveOnError) && ![401, 403].includes(Number(status || 0));
+  }
+
+  async function loadCollectorApprovals({ preserveOnError = false } = {}) {
+    if (!collectorApprovalList) return false;
     if (collectorApprovalRefresh) collectorApprovalRefresh.disabled = true;
     try {
       const res = await fetch('/api/collector/payments/approvals', { credentials: 'include', cache: 'no-store' });
@@ -896,11 +906,15 @@
         throw error;
       }
       renderCollectorApprovals(payload.records || []);
+      return true;
     } catch (err) {
       console.warn('Failed to load collector payment approvals', err);
       const status = Number(err?.status || 0);
-      const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
-      renderCollectorApprovalNotice(err?.message || 'Failed to load customer payment approvals.', tone);
+      if (!shouldPreserveCollectorDataOnError(preserveOnError, status)) {
+        const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
+        renderCollectorApprovalNotice(err?.message || 'Failed to load customer payment approvals.', tone);
+      }
+      return false;
     } finally {
       if (collectorApprovalRefresh) collectorApprovalRefresh.disabled = false;
     }
@@ -1082,8 +1096,8 @@
     if (collectorRemittanceEmptyState) collectorRemittanceEmptyState.style.display = 'none';
   }
 
-  async function loadCollectorRemittances() {
-    if (!collectorRemittanceList) return;
+  async function loadCollectorRemittances({ preserveOnError = false } = {}) {
+    if (!collectorRemittanceList) return false;
     if (collectorRemittanceRefresh) collectorRemittanceRefresh.disabled = true;
     try {
       const response = await fetch('/api/collector/payments/remittances', {
@@ -1098,10 +1112,15 @@
       }
       collectorRemittanceRecords = Array.isArray(payload?.records) ? payload.records : [];
       renderCollectorRemittances();
+      return true;
     } catch (error) {
       console.warn('Failed to load collector remittances', error);
-      const tone = [401, 403, 404].includes(Number(error?.status || 0)) ? 'secondary' : 'danger';
-      renderCollectorRemittanceNotice(error?.message || 'Failed to load remittances.', tone);
+      const status = Number(error?.status || 0);
+      if (!shouldPreserveCollectorDataOnError(preserveOnError, status)) {
+        const tone = [401, 403, 404].includes(status) ? 'secondary' : 'danger';
+        renderCollectorRemittanceNotice(error?.message || 'Failed to load remittances.', tone);
+      }
+      return false;
     } finally {
       if (collectorRemittanceRefresh) collectorRemittanceRefresh.disabled = false;
     }
@@ -1364,8 +1383,8 @@
     if (collectorPriorityPagination) collectorPriorityPagination.hidden = true;
   }
 
-  async function loadCollectorPriorities() {
-    if (!collectorPriorityList) return;
+  async function loadCollectorPriorities({ preserveOnError = false } = {}) {
+    if (!collectorPriorityList) return false;
     if (collectorPriorityRefresh) collectorPriorityRefresh.disabled = true;
     try {
       const response = await fetch('/api/collector/payments/priorities?status=all&limit=1000', {
@@ -1380,10 +1399,15 @@
       }
       collectorPriorityRecords = Array.isArray(payload?.records) ? payload.records : [];
       renderCollectorPriorities();
+      return true;
     } catch (error) {
       console.warn('Failed to load collector priority assignments', error);
-      const tone = [401, 403, 404].includes(Number(error?.status || 0)) ? 'secondary' : 'danger';
-      renderCollectorPriorityNotice(error?.message || 'Failed to load priority clients.', tone);
+      const status = Number(error?.status || 0);
+      if (!shouldPreserveCollectorDataOnError(preserveOnError, status)) {
+        const tone = [401, 403, 404].includes(status) ? 'secondary' : 'danger';
+        renderCollectorPriorityNotice(error?.message || 'Failed to load priority clients.', tone);
+      }
+      return false;
     } finally {
       if (collectorPriorityRefresh) collectorPriorityRefresh.disabled = false;
     }
@@ -1877,8 +1901,8 @@
     if (collectorReschedulesEmptyState) collectorReschedulesEmptyState.style.display = 'none';
   }
 
-  async function loadCollectorReschedules() {
-    if (!collectorRescheduleList) return;
+  async function loadCollectorReschedules({ preserveOnError = false } = {}) {
+    if (!collectorRescheduleList) return false;
     if (collectorRescheduleRefresh) collectorRescheduleRefresh.disabled = true;
     try {
       const response = await fetch('/api/collector/payments/reschedules?status=all&limit=1000', {
@@ -1894,10 +1918,15 @@
       collectorRescheduleRecords = Array.isArray(payload?.records) ? payload.records : [];
       populateCollectorRescheduleFilter();
       renderCollectorReschedules();
+      return true;
     } catch (error) {
       console.warn('Failed to load collector reschedules', error);
-      const tone = [401, 403, 404].includes(Number(error?.status || 0)) ? 'muted' : 'danger';
-      renderCollectorRescheduleNotice(error?.message || 'Failed to load rescheduled clients.', tone);
+      const status = Number(error?.status || 0);
+      if (!shouldPreserveCollectorDataOnError(preserveOnError, status)) {
+        const tone = [401, 403, 404].includes(status) ? 'muted' : 'danger';
+        renderCollectorRescheduleNotice(error?.message || 'Failed to load rescheduled clients.', tone);
+      }
+      return false;
     } finally {
       if (collectorRescheduleRefresh) collectorRescheduleRefresh.disabled = false;
     }
@@ -3108,8 +3137,8 @@
     renderAssignments().catch(() => {});
   }
 
-  async function loadReport() {
-    if (reportContainer) reportContainer.textContent = 'Loading...';
+  async function loadReport({ showLoading = true } = {}) {
+    if (showLoading && reportContainer) reportContainer.textContent = 'Loading...';
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
@@ -3273,13 +3302,115 @@
     }
   }
 
-  async function loadAssignmentsAndReport() {
+  async function loadAssignmentsAndReport({ showLoading = true } = {}) {
     try {
       await loadCollectors();
-      await loadReport();
+      await loadReport({ showLoading });
+      return true;
     } catch (err) {
       console.warn('Failed to refresh collectors/report', err);
+      return false;
     }
+  }
+
+  function formatCollectorAutoRefreshTime(value) {
+    if (!(value instanceof Date) || Number.isNaN(value.getTime())) return '';
+    return value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function setCollectorAutoRefreshStatus(message) {
+    const label = collectorAutoRefreshStatus?.querySelector('span');
+    if (label) label.textContent = message;
+  }
+
+  function collectorAutoRefreshPauseReason() {
+    if (document.hidden) return 'page is in the background';
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
+    if (document.querySelector('.modal.show, dialog[open], [role="dialog"][aria-hidden="false"]')) {
+      return 'dialog is open';
+    }
+    if (collectorApprovalSelectedIds.size) return 'payment selection in progress';
+    const activeElement = document.activeElement;
+    if (activeElement && activeElement !== document.body
+        && activeElement.matches?.('input, select, textarea, [contenteditable="true"]')
+        && (Date.now() - collectorLastFieldInteractionAt) < 5000) {
+      return 'editing in progress';
+    }
+    const refreshButtons = [
+      collectorApprovalRefresh,
+      collectorRemittanceRefresh,
+      collectorPriorityRefresh,
+      collectorRescheduleRefresh
+    ].filter(Boolean);
+    if (refreshButtons.some((button) => button.disabled)) return 'refresh already in progress';
+    return '';
+  }
+
+  function markCollectorWorkspaceUpdated({ partial = false } = {}) {
+    collectorAutoRefreshLastUpdatedAt = new Date();
+    const time = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
+    setCollectorAutoRefreshStatus(`${partial ? 'Partly updated' : 'Updated'} ${time} · auto-refresh every 30 seconds`);
+  }
+
+  async function refreshCollectorWorkspace({ automatic = false } = {}) {
+    if (collectorAutoRefreshInFlight) return false;
+    if (automatic) {
+      const pauseReason = collectorAutoRefreshPauseReason();
+      if (pauseReason) {
+        const lastUpdated = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
+        setCollectorAutoRefreshStatus(`Auto-refresh paused: ${pauseReason}${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
+        return false;
+      }
+    }
+
+    collectorAutoRefreshInFlight = true;
+    setCollectorAutoRefreshStatus(automatic ? 'Auto-refreshing all sections…' : 'Refreshing all sections…');
+    try {
+      const results = await Promise.all([
+        loadCollectorApprovals({ preserveOnError: automatic }),
+        loadCollectorRemittances({ preserveOnError: automatic }),
+        loadCollectorPriorities({ preserveOnError: automatic }),
+        loadCollectorReschedules({ preserveOnError: automatic }),
+        loadAssignmentsAndReport({ showLoading: !automatic })
+      ]);
+      const succeeded = results.filter(Boolean).length;
+      if (succeeded) {
+        markCollectorWorkspaceUpdated({ partial: succeeded < results.length });
+        return true;
+      }
+      const lastUpdated = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
+      setCollectorAutoRefreshStatus(`Refresh unavailable · keeping current data${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
+      return false;
+    } finally {
+      collectorAutoRefreshInFlight = false;
+    }
+  }
+
+  async function runCollectorManualRefresh(loader) {
+    setCollectorAutoRefreshStatus('Refreshing section…');
+    try {
+      const updated = await loader();
+      if (updated) {
+        markCollectorWorkspaceUpdated();
+      } else {
+        const lastUpdated = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
+        setCollectorAutoRefreshStatus(`Refresh unavailable${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
+      }
+      return updated;
+    } catch (error) {
+      const lastUpdated = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
+      setCollectorAutoRefreshStatus(`Refresh unavailable${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
+      throw error;
+    }
+  }
+
+  function startCollectorAutoRefresh() {
+    if (collectorAutoRefreshTimer !== null) return;
+    collectorAutoRefreshTimer = window.setInterval(() => {
+      refreshCollectorWorkspace({ automatic: true }).catch((error) => {
+        console.warn('Failed to auto-refresh Collector Operations', error);
+      });
+    }, COLLECTOR_AUTO_REFRESH_INTERVAL_MS);
   }
 
   async function handleAssign() {
@@ -3436,7 +3567,7 @@
   });
   collectorApprovalRefresh?.addEventListener('click', () => {
     collectorApprovalPage = 1;
-    loadCollectorApprovals().catch(() => {});
+    runCollectorManualRefresh(loadCollectorApprovals).catch(() => {});
   });
   collectorApprovalPreviousPage?.addEventListener('click', () => {
     if (collectorApprovalPage <= 1) return;
@@ -3475,7 +3606,7 @@
       renderCollectorRemittances();
     });
   });
-  collectorRemittanceRefresh?.addEventListener('click', () => loadCollectorRemittances().catch(() => {}));
+  collectorRemittanceRefresh?.addEventListener('click', () => runCollectorManualRefresh(loadCollectorRemittances).catch(() => {}));
   closeCollectorRemittanceReviewModal?.addEventListener('click', closeCollectorRemittanceReviewDialog);
   cancelCollectorRemittanceReviewModal?.addEventListener('click', closeCollectorRemittanceReviewDialog);
   collectorRemittanceReviewForm?.addEventListener('submit', (event) => {
@@ -3498,7 +3629,7 @@
     collectorPriorityPage += 1;
     renderCollectorPriorities();
   });
-  collectorPriorityRefresh?.addEventListener('click', () => loadCollectorPriorities().catch(() => {}));
+  collectorPriorityRefresh?.addEventListener('click', () => runCollectorManualRefresh(loadCollectorPriorities).catch(() => {}));
   collectorPriorityCreate?.addEventListener('click', () => openCollectorPriorityModal().catch(() => {}));
   collectorPriorityCustomerSearch?.addEventListener('input', renderCollectorPriorityCustomerPicker);
   collectorPrioritySelectAllVisible?.addEventListener('click', () => {
@@ -3554,7 +3685,7 @@
   });
   collectorRescheduleRefresh?.addEventListener('click', () => {
     collectorReschedulePage = 1;
-    loadCollectorReschedules().catch(() => {});
+    runCollectorManualRefresh(loadCollectorReschedules).catch(() => {});
   });
   collectorReschedulePreviousPage?.addEventListener('click', () => {
     if (collectorReschedulePage <= 1) return;
@@ -3685,16 +3816,21 @@
     }
   });
 
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshCollectorWorkspace({ automatic: true }).catch(() => {});
+  });
+  document.addEventListener('input', () => { collectorLastFieldInteractionAt = Date.now(); }, true);
+  document.addEventListener('change', () => { collectorLastFieldInteractionAt = Date.now(); }, true);
+  window.addEventListener('online', () => refreshCollectorWorkspace({ automatic: true }).catch(() => {}));
+  window.addEventListener('offline', () => setCollectorAutoRefreshStatus('Auto-refresh paused: offline'));
+  window.addEventListener('beforeunload', () => {
+    if (collectorAutoRefreshTimer !== null) window.clearInterval(collectorAutoRefreshTimer);
+  });
+
   loadAreas().catch(() => {});
-  loadCollectorApprovals().catch(() => {});
-  loadCollectorRemittances().catch(() => {});
-  loadCollectorPriorities().catch(() => {});
-  loadCollectorReschedules().catch(() => {});
-  loadCollectors()
-    .then(() => loadReport())
+  refreshCollectorWorkspace()
     .catch(() => {
-      if (monthlySummary) {
-        monthlySummary.innerHTML = '<p class="empty-copy">Could not load the report.</p>';
-      }
-    });
+      if (monthlySummary) monthlySummary.innerHTML = '<p class="empty-copy">Could not load the report.</p>';
+    })
+    .finally(startCollectorAutoRefresh);
 })();

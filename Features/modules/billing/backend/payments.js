@@ -3785,12 +3785,43 @@ const handleXenditWebhook = async (req, res, next) => {
 
 let approvedProofPaymentQueue = Promise.resolve();
 
+const buildApprovedPaymentEntryId = (submissionId) => {
+    const compact = String(submissionId || '').replace(/[^0-9a-z_-]/gi, '');
+    const candidate = `proof-${compact}`;
+    if (candidate.length <= 64 && candidate.length > 6) return candidate;
+    return `proof-${crypto.createHash('sha1').update(String(submissionId || Date.now())).digest('hex').slice(0, 58)}`;
+};
+
+const normalizeApprovedPaymentReferenceKey = (value) => sanitizeReferenceInput(value)
+    .toUpperCase()
+    .replace(/[\s-]+/g, '');
+
+const createApprovedPaymentDuplicateError = ({ accountNumber, entry, customerName = '' } = {}) => {
+    const duplicateError = createError(409, 'Payment has been recorded');
+    duplicateError.duplicatePayment = {
+        paymentEntryId: entry?.id || '',
+        accountNumber: accountNumber || entry?.accountNumber || '',
+        customerName,
+        amount: Number(entry?.amount) || null,
+        date: entry?.date || null,
+        reference: entry?.reference || '',
+        orNumber: entry?.orNumber || entry?.or_number || '',
+        recordedAt: entry?.recordedAt || entry?.recorded_at || null,
+        recordedBy: entry?.recordedBy?.name
+            || entry?.recordedBy?.username
+            || entry?.recordedByName
+            || entry?.recordedByUsername
+            || entry?.recorded_by_name
+            || entry?.recorded_by_username
+            || '',
+        paymentMethod: entry?.paymentMethod || entry?.payment_method || '',
+        description: entry?.description || ''
+    };
+    return duplicateError;
+};
+
 const recordApprovedProofPayment = (payload = {}) => {
     const operation = approvedProofPaymentQueue.catch(() => {}).then(async () => {
-        if (await isRelationalReady()) {
-            throw createError(500, 'JSON proof payment writer cannot run in relational mode.');
-        }
-
         const branchId = Number(payload.branchId);
         const accountNumber = String(payload.accountNumber || '').trim();
         const submissionId = String(payload.submissionId || '').trim();
@@ -3803,58 +3834,26 @@ const recordApprovedProofPayment = (payload = {}) => {
         if (!reference) throw createError(400, 'Reference number is required.');
 
         const customers = await readCustomers(branchId);
-        const customer = customers.find((item) => String(item?.accountNumber || '') === accountNumber);
+        const customer = customers.find((item) => String(item?.accountNumber ?? item?.account_number ?? '') === accountNumber);
         if (!customer) throw createError(404, 'Customer not found.');
 
-        const payments = await readPayments(branchId);
-        if (!payments[accountNumber]) payments[accountNumber] = { history: [] };
-        const entryId = `proof-${submissionId}`.slice(0, 64);
-        const existingEntry = Object.values(payments).flatMap((record) => (
-            Array.isArray(record?.history) ? record.history : []
-        )).find((entry) => String(entry?.id || '') === entryId);
-        if (existingEntry) return existingEntry;
-
-        const referenceKey = reference.toLowerCase();
-        const duplicate = Object.entries(payments).flatMap(([duplicateAccount, record]) => (
-            (Array.isArray(record?.history) ? record.history : []).map((entry) => ({
-                accountNumber: duplicateAccount,
-                entry
-            }))
-        )).find(({ entry }) => {
-            const candidates = [entry?.reference, entry?.orNumber, entry?.or_number]
-                .map((value) => String(value || '').trim().toLowerCase())
-                .filter(Boolean);
-            return candidates.includes(referenceKey);
-        });
-        if (duplicate) {
-            const duplicateError = createError(409, 'Payment has been recorded');
-            duplicateError.duplicatePayment = {
-                paymentEntryId: duplicate.entry?.id || '',
-                accountNumber: duplicate.accountNumber,
-                customerName: '',
-                amount: Number(duplicate.entry?.amount) || null,
-                date: duplicate.entry?.date || null,
-                reference: duplicate.entry?.reference || '',
-                orNumber: duplicate.entry?.orNumber || duplicate.entry?.or_number || '',
-                recordedAt: duplicate.entry?.recordedAt || null,
-                recordedBy: duplicate.entry?.recordedBy?.name || duplicate.entry?.recordedBy?.username || '',
-                paymentMethod: duplicate.entry?.paymentMethod || '',
-                description: duplicate.entry?.description || ''
-            };
-            throw duplicateError;
-        }
-
         const amountRounded = Number(amount.toFixed(2));
+        const source = payload.source === 'gcash-history' ? 'gcash-history' : 'proof';
+        const referenceKey = normalizeApprovedPaymentReferenceKey(reference);
         const notes = sanitizeString(payload.notes).slice(0, 220);
+        const suppliedDescription = sanitizeString(payload.description).slice(0, 220);
+        const description = suppliedDescription || (
+            notes ? `Payment proof approved - ${notes}` : 'Payment proof approved'
+        );
         const entry = {
-            id: entryId,
+            id: buildApprovedPaymentEntryId(submissionId),
             amount: amountRounded,
             date: toPaymentDateOnly(payload.date) || new Date().toISOString().slice(0, 10),
             kind: 'payment',
             type: 'payment',
             direction: 'credit',
             reference,
-            description: notes ? `Payment proof approved - ${notes}` : 'Payment proof approved',
+            description,
             recordedAt: new Date().toISOString(),
             recordedBy: {
                 id: String(payload.reviewer?.id || ''),
@@ -3865,14 +3864,132 @@ const recordApprovedProofPayment = (payload = {}) => {
             payer: sanitizeString(payload.payer) || accountNumber,
             status: 'Approved',
             paymentMethod: 'gcash',
-            fingerprint: `${accountNumber}|${reference}|proof|${amountRounded.toFixed(2)}|${submissionId}`.slice(0, 200)
+            fingerprint: `${accountNumber}|${reference}|${source}|${amountRounded.toFixed(2)}|${submissionId}`.slice(0, 200)
         };
-        payments[accountNumber].history.unshift(entry);
-        await writePayments(payments);
-        await applyReenableOnPaid(accountNumber, branchId, payments, entry);
-        await maybeExtendPrepaidExpiryOnPayment(accountNumber, entry, branchId);
-        triggerBranchServiceRefresh(branchId, 'payment-confirmation-approved');
-        return entry;
+        let resultEntry = entry;
+        let inserted = false;
+
+        if (await isRelationalReady()) {
+            const result = await withTransaction(async (connection) => {
+                const [existingRows] = await connection.query(
+                    `SELECT
+                         id,
+                         account_number AS accountNumber,
+                         amount,
+                         date,
+                         reference,
+                         or_number AS orNumber,
+                         description,
+                         recorded_at AS recordedAt,
+                         recorded_by_username AS recordedByUsername,
+                         recorded_by_name AS recordedByName,
+                         payment_method AS paymentMethod
+                     FROM payment_entries
+                     WHERE branch_id = ?
+                       AND id = ?
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [branchId, entry.id]
+                );
+                if ((existingRows || [])[0]) {
+                    return { entry: existingRows[0], inserted: false };
+                }
+
+                const [duplicateRows] = await connection.query(
+                    `SELECT
+                         pe.id,
+                         pe.account_number AS accountNumber,
+                         pe.amount,
+                         pe.date,
+                         pe.reference,
+                         pe.or_number AS orNumber,
+                         pe.description,
+                         pe.recorded_at AS recordedAt,
+                         pe.recorded_by_username AS recordedByUsername,
+                         pe.recorded_by_name AS recordedByName,
+                         pe.payment_method AS paymentMethod,
+                         c.name AS customerName,
+                         c.first_name AS firstName,
+                         c.last_name AS lastName
+                     FROM payment_entries pe
+                     LEFT JOIN customers c
+                       ON c.account_number = pe.account_number
+                      AND c.branch_id = pe.branch_id
+                     WHERE pe.branch_id = ?
+                       AND (
+                           REPLACE(REPLACE(UPPER(pe.reference), '-', ''), ' ', '') = ?
+                           OR REPLACE(REPLACE(UPPER(pe.or_number), '-', ''), ' ', '') = ?
+                       )
+                     ORDER BY pe.recorded_at DESC, pe.date DESC
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [branchId, referenceKey, referenceKey]
+                );
+                const duplicate = (duplicateRows || [])[0];
+                if (duplicate) {
+                    const duplicateCustomerName = sanitizeString(duplicate.customerName)
+                        || [duplicate.firstName, duplicate.lastName].map(sanitizeString).filter(Boolean).join(' ');
+                    throw createApprovedPaymentDuplicateError({
+                        accountNumber: duplicate.accountNumber,
+                        entry: duplicate,
+                        customerName: duplicateCustomerName
+                    });
+                }
+
+                await assignEntryNumbers(connection, entry);
+                await assertEntryNumbersAvailable(connection, branchId, entry);
+                await insertPaymentEntry(entry, branchId, accountNumber, connection);
+                return { entry, inserted: true };
+            });
+            resultEntry = result.entry;
+            inserted = result.inserted;
+        } else {
+            const payments = await readPayments(branchId);
+            if (!payments[accountNumber]) payments[accountNumber] = { history: [] };
+            const existingEntry = Object.values(payments).flatMap((record) => (
+                Array.isArray(record?.history) ? record.history : []
+            )).find((candidate) => String(candidate?.id || '') === entry.id);
+            if (existingEntry) return existingEntry;
+
+            const duplicate = Object.entries(payments).flatMap(([duplicateAccount, record]) => (
+                (Array.isArray(record?.history) ? record.history : []).map((candidate) => ({
+                    accountNumber: duplicateAccount,
+                    entry: candidate
+                }))
+            )).find(({ entry: candidate }) => {
+                const candidates = [candidate?.reference, candidate?.orNumber, candidate?.or_number]
+                    .map(normalizeApprovedPaymentReferenceKey)
+                    .filter(Boolean);
+                return candidates.includes(referenceKey);
+            });
+            if (duplicate) {
+                const duplicateCustomer = customers.find((item) => (
+                    String(item?.accountNumber ?? item?.account_number ?? '') === duplicate.accountNumber
+                ));
+                throw createApprovedPaymentDuplicateError({
+                    ...duplicate,
+                    customerName: sanitizeString(duplicateCustomer?.name)
+                        || [duplicateCustomer?.firstName, duplicateCustomer?.lastName].map(sanitizeString).filter(Boolean).join(' ')
+                });
+            }
+
+            payments[accountNumber].history.unshift(entry);
+            await writePayments(payments);
+            resultEntry = entry;
+            inserted = true;
+            await applyReenableOnPaid(accountNumber, branchId, payments, entry);
+        }
+
+        if (inserted) {
+            if (await isRelationalReady()) {
+                await applyReenableOnPaid(accountNumber, branchId, null, resultEntry);
+            }
+            await maybeExtendPrepaidExpiryOnPayment(accountNumber, resultEntry, branchId);
+            triggerBranchServiceRefresh(branchId, source === 'gcash-history'
+                ? 'gcash-history-payment-posted'
+                : 'payment-confirmation-approved');
+        }
+        return resultEntry;
     });
     approvedProofPaymentQueue = operation.catch(() => {});
     return operation;

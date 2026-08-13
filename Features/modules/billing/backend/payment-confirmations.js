@@ -7,6 +7,7 @@ const customersModule = require('../../customer-management/backend/customers');
 const { assignEntryNumbers, assertEntryNumbersAvailable } = require('./payment-numbering');
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
 const paymentsRouter = require('./payments');
+const paymentRecordsRouter = require('./payment-records');
 const { loadIntegrationSettings } = require('../../admin/backend/integration-settings');
 const { extractGcashTransactionsFromPdf } = require('./gcash-pdf-parser');
 const {
@@ -15,7 +16,9 @@ const {
     evaluateGcashTransactionMatch,
     claimGcashTransaction,
     finalizeGcashTransactionAssignment,
-    releaseGcashTransactionClaim
+    releaseGcashTransactionClaim,
+    updateGcashTransactionRemark,
+    normalizeReference: normalizeGcashReference
 } = require('./gcash-transaction-history-store');
 const {
     PAYMENT_CONFIRMATION_QUEUE_TABLE,
@@ -58,6 +61,10 @@ const SAMPLE_PROOF_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgA
 const normalizePaymentReference = (value) => normalizeProofReference(value).slice(0, 32);
 const isGcashPaymentMethod = (value) => String(value || '').trim().toLowerCase() === 'gcash';
 const isExplicitlyConfirmed = (value) => value === true || String(value || '').trim().toLowerCase() === 'true';
+const normalizeBillingMonth = (value) => {
+    const match = toSafeText(value, 7).match(/^(\d{4})-(0[1-9]|1[0-2])$/);
+    return match ? match[0] : '';
+};
 
 const readCustomerPhone = (customer = {}) => toSafeText(
     customer.mobile_raw
@@ -296,6 +303,19 @@ const buildPaymentEntryId = (submissionId) => {
     return `proof-${crypto.createHash('sha1').update(String(submissionId || Date.now())).digest('hex').slice(0, 58)}`;
 };
 
+const buildGcashHistorySubmissionId = (branchId, reference) => (
+    `gcash-history-${crypto.createHash('sha256')
+        .update(`${branchId}:${normalizeGcashReference(reference)}`)
+        .digest('hex')
+        .slice(0, 40)}`
+);
+
+const getPaymentRecordCustomerName = (record = {}) => (
+    toSafeText(record.name, 200)
+    || `${toSafeText(record.firstName, 100)} ${toSafeText(record.lastName, 100)}`.trim()
+    || toSafeText(record.accountNumber, 20)
+);
+
 const requireAdminWithBranch = (req, _res, next) => {
     if (!accountHasRole(req.user, 'Admin')) {
         return next(createError(403, 'Admin access required.'));
@@ -338,17 +358,218 @@ router.post(
                 parsed,
                 importedBy: req.user
             });
-            return res.status(201).json({
+            const importedCount = Number(imported.batch.importedCount) || 0;
+            const duplicateCount = Number(imported.duplicateCount) || 0;
+            return res.status(importedCount > 0 ? 201 : 200).json({
                 ok: true,
-                message: `${imported.batch.importedCount} official GCash transaction(s) imported.`,
+                message: `${importedCount} official GCash transaction(s) imported; ${duplicateCount} existing reference(s) skipped.`,
                 batch: imported.batch,
-                duplicateCount: imported.duplicateCount
+                duplicateCount,
+                conflictingDuplicateCount: imported.conflictingDuplicateCount,
+                duplicateFile: imported.duplicateFile,
+                batchRecorded: imported.batchRecorded
             });
         } catch (error) {
             return next(error);
         }
     }
 );
+
+router.put('/gcash-history/:reference/remark', async (req, res, next) => {
+    try {
+        const updated = await updateGcashTransactionRemark({
+            branchId: req.branchId,
+            reference: req.params?.reference,
+            category: req.body?.category,
+            updatedBy: req.user
+        });
+        return res.json({
+            ok: true,
+            message: 'Transaction remark saved.',
+            transaction: updated.transaction,
+            remark: updated.remark
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+router.post('/gcash-history/:reference/post-payment', async (req, res, next) => {
+    let claimedGcash = null;
+    let paymentRecorded = false;
+    const reference = normalizeGcashReference(req.params?.reference);
+    const accountNumber = toSafeText(req.body?.accountNumber, 20);
+    const billingMonth = normalizeBillingMonth(req.body?.billingMonth);
+    const confirmedAmount = toFiniteNumber(req.body?.amount);
+    const assignmentConfirmed = isExplicitlyConfirmed(req.body?.assignmentConfirmed);
+    const submissionId = buildGcashHistorySubmissionId(req.branchId, reference);
+    try {
+        if (!reference) throw createError(400, 'GCash reference number is required.');
+        if (!accountNumber) throw createError(400, 'Customer account is required.');
+        if (!billingMonth) throw createError(400, 'Billing month is required.');
+        if (!assignmentConfirmed) {
+            return res.status(400).json({
+                ok: false,
+                code: 'PAYMENT_ASSIGNMENT_CONFIRMATION_REQUIRED',
+                error: 'Confirm the customer, billing month, reference, and imported amount before posting.'
+            });
+        }
+
+        const history = await listGcashTransactionHistory({ branchId: req.branchId, all: true });
+        const transaction = history.transactions.find((row) => (
+            normalizeGcashReference(row?.reference) === reference
+        ));
+        if (!transaction) throw createError(404, 'Reference is not in the imported GCash history.');
+        const importedAmount = toFiniteNumber(transaction.credit);
+        if (String(transaction.status || '').toLowerCase() !== 'received' || importedAmount == null || importedAmount <= 0) {
+            const error = createError(409, 'Only an imported incoming GCash credit can be posted as a payment.');
+            error.code = 'GCASH_INCOMING_CREDIT_REQUIRED';
+            throw error;
+        }
+        if (confirmedAmount == null || Math.abs(confirmedAmount - importedAmount) > 0.009) {
+            return res.status(409).json({
+                ok: false,
+                code: 'GCASH_IMPORTED_AMOUNT_MISMATCH',
+                error: 'The confirmed payment amount must exactly match the imported GCash credit.',
+                importedAmount: Number(importedAmount.toFixed(2))
+            });
+        }
+
+        const existingAssignment = transaction.assignment && typeof transaction.assignment === 'object'
+            ? transaction.assignment
+            : null;
+        if (existingAssignment) {
+            const sameDirectAssignment = existingAssignment.submissionId === submissionId
+                && existingAssignment.accountNumber === accountNumber
+                && existingAssignment.billingMonth === billingMonth;
+            if (
+                sameDirectAssignment
+                && existingAssignment.status === 'posted'
+                && existingAssignment.paymentEntryId
+            ) {
+                return res.json({
+                    ok: true,
+                    idempotent: true,
+                    message: 'This imported GCash transaction is already posted to the selected customer ledger.',
+                    reference,
+                    amount: Number(importedAmount.toFixed(2)),
+                    billingMonth,
+                    paymentEntryId: existingAssignment.paymentEntryId,
+                    assignment: existingAssignment
+                });
+            }
+            if (!sameDirectAssignment) {
+                return res.status(409).json({
+                    ok: false,
+                    code: 'GCASH_TRANSACTION_ALREADY_ASSIGNED',
+                    error: `This GCash transaction is already assigned to account ${existingAssignment.accountNumber}.`,
+                    assignment: existingAssignment
+                });
+            }
+        }
+
+        const paymentRecord = await paymentRecordsRouter.buildPaymentRecordForAccount(accountNumber, req.branchId);
+        if (!paymentRecord) throw createError(404, 'Customer not found.');
+        const billingRows = Array.isArray(paymentRecord?.billingSummary?.rows)
+            ? paymentRecord.billingSummary.rows
+            : [];
+        const billingRow = billingRows.find((row) => String(row?.billingMonthKey || '').trim() === billingMonth);
+        if (!billingRow) {
+            return res.status(409).json({
+                ok: false,
+                code: 'BILLING_CYCLE_NOT_FOUND',
+                error: 'The selected billing month is not available for this customer.'
+            });
+        }
+        const billingStatus = String(billingRow.paymentStatus || billingRow.paymentStatusLabel || '').trim().toLowerCase();
+        if (['paid', 'complimentary'].includes(billingStatus)) {
+            return res.status(409).json({
+                ok: false,
+                code: 'BILLING_CYCLE_ALREADY_SETTLED',
+                error: 'The selected billing month is already settled. Choose an open billing month.'
+            });
+        }
+
+        const reviewer = {
+            id: toSafeText(req.user?.id, 32) || null,
+            username: toSafeText(req.user?.username, 100) || null,
+            name: toSafeText(req.user?.name, 120) || null,
+            role: toSafeText(req.user?.role, 30) || null
+        };
+        const customerName = getPaymentRecordCustomerName(paymentRecord);
+        try {
+            claimedGcash = await claimGcashTransaction({
+                branchId: req.branchId,
+                reference,
+                submissionId,
+                accountNumber,
+                customerName,
+                amount: importedAmount,
+                paymentDate: transaction.transactionDate || transaction.transactionAt,
+                billingMonth,
+                claimedBy: reviewer
+            });
+        } catch (error) {
+            if (error?.code === 'GCASH_TRANSACTION_ALREADY_ASSIGNED') {
+                return sendGcashAssignmentConflict(res, error);
+            }
+            throw error;
+        }
+
+        if (typeof paymentsRouter.recordApprovedProofPayment !== 'function') {
+            throw createError(500, 'Imported GCash payment writer is unavailable.');
+        }
+        const paymentEntry = await paymentsRouter.recordApprovedProofPayment({
+            submissionId,
+            source: 'gcash-history',
+            branchId: req.branchId,
+            accountNumber,
+            amount: Number(importedAmount.toFixed(2)),
+            reference,
+            date: normalizeDateOnly(transaction.transactionDate || transaction.transactionAt) || nowDateOnly(),
+            reviewer,
+            payer: customerName || accountNumber,
+            description: `Imported GCash payment posted for billing cycle ${billingMonth}`
+        });
+        paymentRecorded = true;
+
+        const finalized = await finalizeGcashTransactionAssignment({
+            branchId: req.branchId,
+            reference,
+            submissionId,
+            accountNumber,
+            paymentEntryId: paymentEntry.id
+        });
+        claimedGcash = null;
+        return res.status(201).json({
+            ok: true,
+            message: 'Imported GCash transaction posted to the customer ledger.',
+            reference,
+            amount: Number(importedAmount.toFixed(2)),
+            billingMonth,
+            paymentEntryId: paymentEntry.id,
+            assignment: finalized.assignment
+        });
+    } catch (error) {
+        if (claimedGcash && !paymentRecorded) {
+            await releaseGcashClaimBestEffort({
+                branchId: req.branchId,
+                reference,
+                submissionId,
+                accountNumber
+            });
+        }
+        if (error?.status === 409 && error?.duplicatePayment) {
+            return res.status(409).json({
+                ok: false,
+                code: 'DUPLICATE_PAYMENT_REFERENCE',
+                error: error.message || 'Payment has been recorded',
+                duplicatePayment: error.duplicatePayment
+            });
+        }
+        return next(error);
+    }
+});
 
 router.get('/', async (req, res, next) => {
     try {

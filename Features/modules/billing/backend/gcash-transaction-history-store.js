@@ -4,6 +4,17 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 
 const GCASH_TRANSACTION_HISTORY_STORE_KEY = 'gcash_transaction_history';
 const EMPTY_STORE = Object.freeze({ version: 2, branches: {} });
+const GCASH_RECIPIENT_LABELS = Object.freeze({
+    '09361565251': 'Gcash - Archie',
+    '09651404623': 'Gcash - Frances'
+});
+const GCASH_TRANSACTION_REMARKS = Object.freeze({
+    expense_unclassified: 'Expense — Unclassified',
+    operating_expense: 'Operating Expense',
+    transfer: 'Transfer',
+    refund: 'Refund',
+    personal_other: 'Personal/Other'
+});
 let mutationQueue = Promise.resolve();
 
 const toSafeText = (value, maxLength = 0) => {
@@ -31,9 +42,48 @@ const normalizeDateOnly = (value) => {
     return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : '';
 };
 const normalizeMoney = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
 };
+const normalizeBillingMonth = (value) => {
+    const match = toSafeText(value, 7).match(/^(\d{4})-(0[1-9]|1[0-2])$/);
+    return match ? match[0] : '';
+};
+const getGcashRecipientLabel = (value) => GCASH_RECIPIENT_LABELS[normalizePhone(value)] || '';
+const normalizeRemarkCategory = (value) => {
+    const category = toSafeText(value, 40).toLowerCase().replace(/[\s-]+/g, '_');
+    return Object.hasOwn(GCASH_TRANSACTION_REMARKS, category) ? category : '';
+};
+
+const sanitizeRemark = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const category = normalizeRemarkCategory(value.category);
+    if (!category) return null;
+    return {
+        category,
+        label: GCASH_TRANSACTION_REMARKS[category],
+        updatedAt: toSafeText(value.updatedAt, 40) || null,
+        updatedBy: {
+            id: toSafeText(value.updatedBy?.id, 32) || null,
+            username: toSafeText(value.updatedBy?.username, 100) || null,
+            name: toSafeText(value.updatedBy?.name, 120) || null
+        }
+    };
+};
+
+const buildRemark = (category, updatedBy, updatedAt = new Date().toISOString()) => sanitizeRemark({
+    category,
+    updatedAt,
+    updatedBy
+});
+
+const getTransactionRemark = (transaction) => (
+    sanitizeRemark(transaction?.remark)
+    || (String(transaction?.status || '').toLowerCase() === 'debit'
+        ? buildRemark('expense_unclassified', transaction?.importedBy || {}, transaction?.importedAt || null)
+        : null)
+);
 
 const normalizeStore = (payload) => ({
     version: 2,
@@ -79,6 +129,7 @@ const sanitizeAssignment = (value) => {
         customerName: toSafeText(value.customerName, 200),
         amount: normalizeMoney(value.amount),
         paymentDate: normalizeDateOnly(value.paymentDate) || null,
+        billingMonth: normalizeBillingMonth(value.billingMonth) || null,
         claimedAt: toSafeText(value.claimedAt, 40) || null,
         claimedBy: {
             id: toSafeText(value.claimedBy?.id, 32) || null,
@@ -104,7 +155,8 @@ const normalizeImportedTransaction = (row, batchId) => ({
     balance: normalizeMoney(row?.balance),
     status: Number(row?.credit) > 0 ? 'received' : 'debit',
     pageNumber: Number(row?.pageNumber) || 1,
-    assignment: null
+    assignment: null,
+    remark: null
 });
 
 const transactionSignature = (row) => [
@@ -135,29 +187,20 @@ const importGcashTransactionBatch = async ({
 
     return mutateHistoryStore(async (store) => {
         const bucket = getBranchBucket(store, safeBranchId);
-        if (bucket.batches.some((batch) => String(batch?.pdfSha256 || '') === safeHash)) {
-            const error = createError(409, 'This GCash Transaction History PDF has already been imported.');
-            error.code = 'DUPLICATE_GCASH_HISTORY_PDF';
-            throw error;
-        }
+        const duplicatePdfBatch = bucket.batches.find((batch) => String(batch?.pdfSha256 || '') === safeHash) || null;
 
         const batchId = `gch-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
         const importedRows = sourceRows.map((row) => normalizeImportedTransaction(row, batchId));
-        const seenInBatch = new Map();
         importedRows.forEach((row) => {
             if (!row.reference || !row.transactionDate) {
                 throw createError(422, 'A GCash transaction row is missing its reference or date.');
             }
-            const signature = transactionSignature(row);
-            if (seenInBatch.has(row.reference) && seenInBatch.get(row.reference) !== signature) {
-                throw createError(409, `Conflicting rows use GCash reference ${row.reference}.`);
-            }
-            seenInBatch.set(row.reference, signature);
         });
 
         const existingByReference = new Map(bucket.transactions.map((row) => [normalizeReference(row?.reference), row]));
         const newRows = [];
         let duplicateCount = 0;
+        let conflictingDuplicateCount = 0;
         importedRows.forEach((row) => {
             const existing = existingByReference.get(row.reference);
             if (!existing) {
@@ -166,14 +209,17 @@ const importGcashTransactionBatch = async ({
                 return;
             }
             if (transactionSignature(existing) !== transactionSignature(row)) {
-                const error = createError(409, `Imported details conflict with the existing GCash reference ${row.reference}.`);
-                error.code = 'CONFLICTING_GCASH_REFERENCE';
-                throw error;
+                conflictingDuplicateCount += 1;
             }
             duplicateCount += 1;
         });
 
         const importedAt = new Date().toISOString();
+        newRows.forEach((row) => {
+            if (row.status === 'debit') {
+                row.remark = buildRemark('expense_unclassified', importedBy, importedAt);
+            }
+        });
         const batch = {
             id: batchId,
             fileName: toSafeText(fileName, 180) || 'gcash-transaction-history.pdf',
@@ -184,6 +230,8 @@ const importGcashTransactionBatch = async ({
             sourceRowCount: importedRows.length,
             importedCount: newRows.length,
             duplicateCount,
+            conflictingDuplicateCount,
+            duplicateFile: Boolean(duplicatePdfBatch),
             importedAt,
             importedBy: {
                 id: toSafeText(importedBy?.id, 32) || null,
@@ -192,9 +240,17 @@ const importGcashTransactionBatch = async ({
             }
         };
         bucket.transactions.push(...newRows);
-        bucket.batches.push(batch);
-        bucket.updatedAt = importedAt;
-        return { batch, transactions: newRows, duplicateCount };
+        const batchRecorded = !duplicatePdfBatch || newRows.length > 0;
+        if (batchRecorded) bucket.batches.push(batch);
+        if (newRows.length || batchRecorded) bucket.updatedAt = importedAt;
+        return {
+            batch,
+            transactions: newRows,
+            duplicateCount,
+            conflictingDuplicateCount,
+            duplicateFile: Boolean(duplicatePdfBatch),
+            batchRecorded
+        };
     });
 };
 
@@ -208,7 +264,9 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false 
     const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 1000);
     const sortedTransactions = bucket.transactions.map((transaction) => ({
         ...transaction,
-        assignment: sanitizeAssignment(transaction?.assignment)
+        recipientLabel: getGcashRecipientLabel(transaction?.recipient) || null,
+        assignment: sanitizeAssignment(transaction?.assignment),
+        remark: getTransactionRemark(transaction)
     })).sort((a, b) => String(b.transactionAt).localeCompare(String(a.transactionAt)));
     return {
         batches: bucket.batches.slice().sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt))),
@@ -216,6 +274,34 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false 
         totalTransactions: bucket.transactions.length,
         updatedAt: bucket.updatedAt || null
     };
+};
+
+const updateGcashTransactionRemark = async ({ branchId, reference, category, updatedBy } = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeReference = normalizeReference(reference);
+    const safeCategory = normalizeRemarkCategory(category);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeReference) throw createError(400, 'GCash reference number is required.');
+    if (!safeCategory) throw createError(400, 'Select a valid transaction remark.');
+
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
+        if (!transaction) throw createError(404, 'Reference is not in the imported GCash history.');
+        const updatedAt = new Date().toISOString();
+        const remark = buildRemark(safeCategory, updatedBy, updatedAt);
+        transaction.remark = remark;
+        bucket.updatedAt = updatedAt;
+        return {
+            transaction: {
+                ...transaction,
+                recipientLabel: getGcashRecipientLabel(transaction.recipient) || null,
+                assignment: sanitizeAssignment(transaction.assignment),
+                remark
+            },
+            remark
+        };
+    });
 };
 
 const matchResult = (status, message, checks = {}, transaction = null) => ({
@@ -229,6 +315,7 @@ const matchResult = (status, message, checks = {}, transaction = null) => ({
         transactionAt: transaction.transactionAt,
         sender: transaction.sender,
         recipient: transaction.recipient,
+        recipientLabel: getGcashRecipientLabel(transaction.recipient) || null,
         batchId: transaction.batchId,
         assignment: sanitizeAssignment(transaction.assignment)
     } : null
@@ -329,12 +416,14 @@ const claimGcashTransaction = async ({
     customerName,
     amount,
     paymentDate,
+    billingMonth,
     claimedBy
 } = {}) => {
     const safeBranchId = Number(branchId);
     const safeReference = normalizeReference(reference);
     const safeSubmissionId = toSafeText(submissionId, 64);
     const safeAccountNumber = toSafeText(accountNumber, 20);
+    const safeBillingMonth = normalizeBillingMonth(billingMonth);
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
     if (!safeReference) throw createError(400, 'GCash reference number is required.');
     if (!safeSubmissionId || !safeAccountNumber) throw createError(400, 'Submission and customer account are required.');
@@ -349,6 +438,13 @@ const claimGcashTransaction = async ({
                 currentAssignment.submissionId === safeSubmissionId
                 && currentAssignment.accountNumber === safeAccountNumber
             ) {
+                if (
+                    safeBillingMonth
+                    && currentAssignment.billingMonth
+                    && currentAssignment.billingMonth !== safeBillingMonth
+                ) {
+                    throw createAssignmentConflictError(currentAssignment);
+                }
                 return { transaction: { ...transaction, assignment: currentAssignment }, assignment: currentAssignment, idempotent: true };
             }
             throw createAssignmentConflictError(currentAssignment);
@@ -362,6 +458,7 @@ const claimGcashTransaction = async ({
             customerName,
             amount,
             paymentDate,
+            billingMonth: safeBillingMonth,
             claimedAt,
             claimedBy
         });
@@ -428,15 +525,21 @@ const releaseGcashTransactionClaim = async ({ branchId, reference, submissionId,
 
 module.exports = {
     GCASH_TRANSACTION_HISTORY_STORE_KEY,
+    GCASH_RECIPIENT_LABELS,
+    GCASH_TRANSACTION_REMARKS,
     importGcashTransactionBatch,
     listGcashTransactionHistory,
     evaluateGcashTransactionMatch,
     claimGcashTransaction,
     finalizeGcashTransactionAssignment,
     releaseGcashTransactionClaim,
+    updateGcashTransactionRemark,
     sanitizeAssignment,
+    sanitizeRemark,
+    normalizeRemarkCategory,
     normalizeReference,
     normalizePhone,
+    getGcashRecipientLabel,
     phoneMatches,
     transactionSignature
 };

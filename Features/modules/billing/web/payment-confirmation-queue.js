@@ -35,6 +35,17 @@
     const importGcashPasswordInput = document.getElementById('queueImportGcashPassword');
     const importGcashSubmitButton = document.getElementById('queueImportGcashSubmitBtn');
     const importGcashResult = document.getElementById('queueImportGcashResult');
+    const postGcashModal = document.getElementById('queuePostGcashModal');
+    const postGcashForm = document.getElementById('queuePostGcashForm');
+    const postGcashReferenceInput = document.getElementById('queuePostGcashReference');
+    const postGcashAmountInput = document.getElementById('queuePostGcashAmount');
+    const postGcashTransactionAtInput = document.getElementById('queuePostGcashTransactionAt');
+    const postGcashRecipientInput = document.getElementById('queuePostGcashRecipient');
+    const postGcashAccountSelect = document.getElementById('queuePostGcashAccount');
+    const postGcashBillingMonthSelect = document.getElementById('queuePostGcashBillingMonth');
+    const postGcashAccountSummary = document.getElementById('queuePostGcashAccountSummary');
+    const postGcashAssignmentConfirmed = document.getElementById('queuePostGcashAssignmentConfirmed');
+    const postGcashSubmitButton = document.getElementById('queuePostGcashSubmitBtn');
     const approveModal = document.getElementById('queueApproveModal');
     const approveMeta = document.getElementById('queueApproveMeta');
     const approveGcashMatch = document.getElementById('queueApproveGcashMatch');
@@ -84,6 +95,9 @@
         loading: false,
         queueItems: [],
         itemsById: new Map(),
+        gcashTransactionsByReference: new Map(),
+        paymentRecords: [],
+        activeGcashReference: '',
         renderedItems: [],
         activeApprovalId: '',
         activeRejectId: '',
@@ -106,6 +120,13 @@
     const PROOF_ZOOM_MIN = 1;
     const PROOF_ZOOM_MAX = 4;
     const PROOF_ZOOM_STEP = 0.25;
+    const GCASH_REMARK_OPTIONS = Object.freeze([
+        { value: 'expense_unclassified', label: 'Expense — Unclassified' },
+        { value: 'operating_expense', label: 'Operating Expense' },
+        { value: 'transfer', label: 'Transfer' },
+        { value: 'refund', label: 'Refund' },
+        { value: 'personal_other', label: 'Personal/Other' }
+    ]);
 
     if (pageSizeSelect) {
         pageSizeSelect.value = String(state.pagination.pageSize);
@@ -137,6 +158,30 @@
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         }).format(amount);
+    };
+
+    const normalizeGcashReference = (value) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
+
+    const formatBillingMonth = (value) => {
+        const match = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
+        if (!match) return String(value || '').trim() || '-';
+        const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
+        return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    };
+
+    const getPaymentRecordName = (record = {}) => (
+        String(record.name || '').trim()
+        || [record.firstName, record.lastName].map((value) => String(value || '').trim()).filter(Boolean).join(' ')
+        || String(record.accountNumber || '').trim()
+    );
+
+    const getOpenBillingRows = (record = {}) => {
+        const rows = Array.isArray(record?.billingSummary?.rows) ? record.billingSummary.rows : [];
+        return rows.filter((row) => {
+            const month = String(row?.billingMonthKey || '').trim();
+            const status = String(row?.paymentStatus || row?.paymentStatusLabel || '').trim().toLowerCase();
+            return month && !['paid', 'complimentary'].includes(status);
+        }).sort((left, right) => String(right.billingMonthKey).localeCompare(String(left.billingMonthKey)));
     };
 
     const escapeHtml = (value) => String(value == null ? '' : value)
@@ -357,6 +402,127 @@
         importGcashModal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('modal-active');
         window.setTimeout(() => importGcashFileInput?.focus({ preventScroll: true }), 0);
+    };
+
+    const closePostGcashModal = () => {
+        if (!postGcashModal) return;
+        postGcashModal.classList.remove('show');
+        postGcashModal.setAttribute('aria-hidden', 'true');
+        postGcashForm?.reset();
+        state.activeGcashReference = '';
+        if (postGcashBillingMonthSelect) {
+            postGcashBillingMonthSelect.innerHTML = '<option value="">Select a customer first</option>';
+            postGcashBillingMonthSelect.disabled = true;
+        }
+        if (postGcashAccountSummary) {
+            postGcashAccountSummary.className = 'alert alert-info queue-create-field--full';
+            postGcashAccountSummary.textContent = 'Select a customer to review the canonical balance and open billing months.';
+        }
+        if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-active');
+    };
+
+    const loadPaymentRecordsForGcashPosting = async ({ force = false } = {}) => {
+        if (!force && state.paymentRecords.length) return state.paymentRecords;
+        const response = await fetch('/api/payment-records', {
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Unable to load customer billing records.');
+        state.paymentRecords = Array.isArray(data.records) ? data.records : [];
+        return state.paymentRecords;
+    };
+
+    const populatePostGcashAccounts = () => {
+        if (!postGcashAccountSelect) return;
+        const records = state.paymentRecords
+            .filter((record) => String(record?.accountNumber || '').trim() && getOpenBillingRows(record).length)
+            .sort((left, right) => getPaymentRecordName(left).localeCompare(getPaymentRecordName(right)));
+        postGcashAccountSelect.innerHTML = [
+            '<option value="">Select a customer account</option>',
+            ...records.map((record) => {
+                const accountNumber = String(record.accountNumber || '').trim();
+                const balance = Number(record?.billingSummary?.endingBalance ?? record.balance);
+                const balanceLabel = Number.isFinite(balance) ? ` | Balance: ${formatCurrency(balance)}` : '';
+                return `<option value="${escapeHtml(accountNumber)}">${escapeHtml(`${getPaymentRecordName(record)} | Acct: ${accountNumber}${balanceLabel}`)}</option>`;
+            })
+        ].join('');
+    };
+
+    const updatePostGcashBillingMonths = () => {
+        if (!postGcashBillingMonthSelect) return;
+        const accountNumber = String(postGcashAccountSelect?.value || '').trim();
+        const record = state.paymentRecords.find((item) => String(item?.accountNumber || '').trim() === accountNumber) || null;
+        const openRows = getOpenBillingRows(record || {});
+        if (!record) {
+            postGcashBillingMonthSelect.innerHTML = '<option value="">Select a customer first</option>';
+            postGcashBillingMonthSelect.disabled = true;
+            if (postGcashAccountSummary) {
+                postGcashAccountSummary.className = 'alert alert-info queue-create-field--full';
+                postGcashAccountSummary.textContent = 'Select a customer to review the canonical balance and open billing months.';
+            }
+            return;
+        }
+
+        postGcashBillingMonthSelect.innerHTML = openRows.length
+            ? [
+                '<option value="">Select an open billing month</option>',
+                ...openRows.map((row) => {
+                    const month = String(row.billingMonthKey || '').trim();
+                    const status = String(row.paymentStatusLabel || row.paymentStatus || 'Open').trim();
+                    const remaining = Number(row.balanceAfterPayment);
+                    const remainingLabel = Number.isFinite(remaining) ? ` | Remaining: ${formatCurrency(remaining)}` : '';
+                    return `<option value="${escapeHtml(month)}">${escapeHtml(`${formatBillingMonth(month)} | ${status}${remainingLabel}`)}</option>`;
+                })
+            ].join('')
+            : '<option value="">No open billing month available</option>';
+        postGcashBillingMonthSelect.disabled = !openRows.length;
+        if (postGcashAccountSummary) {
+            const balance = Number(record?.billingSummary?.endingBalance ?? record.balance);
+            postGcashAccountSummary.className = openRows.length
+                ? 'alert alert-info queue-create-field--full'
+                : 'alert alert-warning queue-create-field--full';
+            postGcashAccountSummary.textContent = openRows.length
+                ? `${getPaymentRecordName(record)} | Acct: ${accountNumber} | Canonical balance: ${formatCurrency(balance)}`
+                : `${getPaymentRecordName(record)} has no open billing month available for this payment.`;
+        }
+    };
+
+    const openPostGcashModal = async (transaction) => {
+        if (!postGcashModal || !transaction) return;
+        const reference = normalizeGcashReference(transaction.reference);
+        if (!reference || transaction.assignment || String(transaction.status || '').toLowerCase() !== 'received') return;
+        state.activeGcashReference = reference;
+        if (postGcashReferenceInput) postGcashReferenceInput.value = reference;
+        if (postGcashAmountInput) postGcashAmountInput.value = Number(transaction.credit).toFixed(2);
+        if (postGcashTransactionAtInput) postGcashTransactionAtInput.value = formatDateTime(transaction.transactionAt);
+        if (postGcashRecipientInput) {
+            postGcashRecipientInput.value = [transaction.recipientLabel, transaction.recipient]
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+                .join(' | ') || '-';
+        }
+        if (postGcashAccountSelect) postGcashAccountSelect.innerHTML = '<option value="">Loading customer accounts...</option>';
+        if (postGcashBillingMonthSelect) {
+            postGcashBillingMonthSelect.innerHTML = '<option value="">Select a customer first</option>';
+            postGcashBillingMonthSelect.disabled = true;
+        }
+        if (postGcashAssignmentConfirmed) postGcashAssignmentConfirmed.checked = false;
+        postGcashModal.classList.add('show');
+        postGcashModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-active');
+        try {
+            await loadPaymentRecordsForGcashPosting({ force: true });
+            if (state.activeGcashReference !== reference) return;
+            populatePostGcashAccounts();
+            postGcashAccountSelect?.focus({ preventScroll: true });
+        } catch (error) {
+            if (postGcashAccountSelect) postGcashAccountSelect.innerHTML = '<option value="">Customer billing records unavailable</option>';
+            if (postGcashAccountSummary) {
+                postGcashAccountSummary.className = 'alert alert-danger queue-create-field--full';
+                postGcashAccountSummary.textContent = error.message || 'Unable to load customer billing records.';
+            }
+        }
     };
 
     const openCreateModal = () => {
@@ -882,12 +1048,40 @@
         return data;
     };
 
+    const postGcashHistoryPayment = async (reference, payload = {}) => {
+        const response = await fetch(`/api/payment-confirmations/gcash-history/${encodeURIComponent(reference)}/post-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const error = new Error(data.error || 'Unable to post the imported GCash payment.');
+            error.payload = data;
+            throw error;
+        }
+        return data;
+    };
+
+    const putGcashHistoryRemark = async (reference, category) => {
+        const response = await fetch(`/api/payment-confirmations/gcash-history/${encodeURIComponent(reference)}/remark`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ category })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Unable to save the transaction remark.');
+        return data;
+    };
+
     const renderGcashHistoryError = (message) => {
         if (gcashHistorySummary) gcashHistorySummary.textContent = 'Imported history is unavailable.';
         if (gcashHistoryBody) {
             gcashHistoryBody.innerHTML = `
                 <tr>
-                    <td colspan="6" class="queue-empty">${escapeHtml(message || 'Unable to load imported GCash transactions.')}</td>
+                    <td colspan="9" class="queue-empty">${escapeHtml(message || 'Unable to load imported GCash transactions.')}</td>
                 </tr>
             `;
         }
@@ -896,6 +1090,10 @@
     const renderGcashHistory = (data = {}) => {
         const batches = Array.isArray(data.batches) ? data.batches : [];
         const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+        state.gcashTransactionsByReference = new Map(transactions.map((transaction) => [
+            normalizeGcashReference(transaction?.reference),
+            transaction
+        ]));
         const totalTransactions = Number(data.totalTransactions) || transactions.length;
         const latestBatch = batches[0] || null;
 
@@ -912,7 +1110,7 @@
         if (!transactions.length) {
             gcashHistoryBody.innerHTML = `
                 <tr>
-                    <td colspan="6" class="queue-empty">No GCash Transaction History has been imported for this branch.</td>
+                    <td colspan="9" class="queue-empty">No GCash Transaction History has been imported for this branch.</td>
                 </tr>
             `;
             return;
@@ -926,20 +1124,66 @@
                 : null;
             const assignmentAccount = String(assignment?.accountNumber || '').trim();
             const assignmentCustomer = String(assignment?.customerName || '').trim();
+            const assignmentMonth = String(assignment?.billingMonth || '').trim();
             const matchBadge = assignment
-                ? `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Assigned and posted' : 'Reserved for approval'}</span>
-                   <small class="d-block text-secondary mt-1">${escapeHtml([assignmentCustomer, assignmentAccount ? `Acct: ${assignmentAccount}` : ''].filter(Boolean).join(' | ') || 'Assigned customer')}</small>`
+                ? `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Assigned and Posted' : 'Reserved for approval'}</span>
+                   <small class="d-block text-secondary mt-1">${escapeHtml([assignmentCustomer, assignmentAccount ? `Acct: ${assignmentAccount}` : '', assignmentMonth ? formatBillingMonth(assignmentMonth) : ''].filter(Boolean).join(' | ') || 'Assigned customer')}</small>`
                 : (isReceived
-                    ? '<span class="badge bg-green-lt text-green">Available for matching</span>'
+                    ? '<span class="badge bg-green-lt text-green">Available</span>'
                     : '<span class="badge bg-secondary-lt text-secondary">Not an incoming credit</span>');
+            const recipientLabel = String(transaction.recipientLabel || '').trim();
+            const recipient = String(transaction.recipient || '').trim();
+            const recipientCell = recipientLabel
+                ? `<div>${escapeHtml(recipientLabel)}</div><small class="d-block text-secondary">${escapeHtml(recipient || '-')}</small>`
+                : escapeHtml(recipient || '-');
+            const debitAmount = Number(transaction.debit);
+            const creditAmount = Number(transaction.credit);
+            const direction = isReceived ? 'Credit' : 'Debit';
+            const displayAmount = isReceived ? creditAmount : debitAmount;
+            const amountCell = `<div class="fw-bold ${isReceived ? 'text-green' : 'text-red'}">${escapeHtml(formatCurrency(Math.abs(displayAmount)))}</div>
+                <small class="d-block text-secondary">${direction}</small>`;
+            const remarkCategory = String(transaction.remark?.category || '').trim();
+            const remarkOptions = [
+                '<option value="">Select remark</option>',
+                ...GCASH_REMARK_OPTIONS.map((option) => (
+                    `<option value="${option.value}"${option.value === remarkCategory ? ' selected' : ''}>${escapeHtml(option.label)}</option>`
+                ))
+            ].join('');
+            const remarkAdmin = String(
+                transaction.remark?.updatedBy?.name
+                || transaction.remark?.updatedBy?.username
+                || ''
+            ).trim();
+            const remarkUpdatedAt = String(transaction.remark?.updatedAt || '').trim();
+            const remarkAudit = remarkUpdatedAt
+                ? `Updated ${formatDateTime(remarkUpdatedAt)}${remarkAdmin ? ` by ${remarkAdmin}` : ''}`
+                : '';
+            const remarkCell = `
+                <div class="gcash-remark-editor">
+                    <select class="form-select form-select-sm" data-gcash-remark-select data-reference="${escapeHtml(transaction.reference || '')}" aria-label="Remark for GCash reference ${escapeHtml(transaction.reference || '')}">
+                        ${remarkOptions}
+                    </select>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-gcash-remark" data-reference="${escapeHtml(transaction.reference || '')}"${remarkCategory ? '' : ' disabled'}>
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save
+                    </button>
+                    ${remarkAudit ? `<small class="text-secondary gcash-remark-audit">${escapeHtml(remarkAudit)}</small>` : ''}
+                </div>`;
+            const actionCell = !assignment && isReceived
+                ? `<button type="button" class="btn btn-primary btn-sm" data-action="post-gcash" data-reference="${escapeHtml(transaction.reference || '')}">
+                       <i class="ti ti-link" aria-hidden="true"></i> Bind &amp; Post
+                   </button>`
+                : '<span class="text-secondary">-</span>';
             return `
                 <tr>
                     <td>${escapeHtml(formatDateTime(transaction.transactionAt))}</td>
                     <td class="gcash-history-reference">${escapeHtml(transaction.reference || '-')}</td>
+                    <td class="gcash-history-description">${escapeHtml(transaction.description || '-')}</td>
                     <td>${escapeHtml(transaction.sender || '-')}</td>
-                    <td class="queue-amount-cell">${escapeHtml(formatCurrency(Number(transaction.credit)))}</td>
-                    <td>${escapeHtml(transaction.recipient || '-')}</td>
+                    <td class="queue-amount-cell">${amountCell}</td>
+                    <td>${recipientCell}</td>
                     <td>${matchBadge}</td>
+                    <td>${remarkCell}</td>
+                    <td>${actionCell}</td>
                 </tr>
             `;
         }).join('');
@@ -1279,7 +1523,7 @@
             const importedCount = Number(data?.batch?.importedCount) || 0;
             const duplicateCount = Number(data?.duplicateCount) || 0;
             closeImportGcashModal();
-            notify(`${importedCount} official GCash transaction(s) imported${duplicateCount ? `; ${duplicateCount} existing row(s) skipped` : ''}.`, 'success');
+            notify(`${importedCount} official GCash transaction(s) imported${duplicateCount ? `; ${duplicateCount} existing reference(s) skipped` : ''}.`, 'success');
             await Promise.all([fetchQueue(), fetchGcashHistory()]);
         } catch (error) {
             if (importGcashPasswordInput) importGcashPasswordInput.value = '';
@@ -1291,6 +1535,66 @@
             importGcashPasswordInput?.focus();
         } finally {
             if (importGcashSubmitButton) importGcashSubmitButton.disabled = false;
+            setLoadingState(false);
+        }
+    };
+
+    const onPostGcashSubmit = async (event) => {
+        event.preventDefault();
+        if (state.loading) return;
+        const reference = normalizeGcashReference(state.activeGcashReference);
+        const transaction = state.gcashTransactionsByReference.get(reference) || null;
+        const accountNumber = String(postGcashAccountSelect?.value || '').trim();
+        const billingMonth = String(postGcashBillingMonthSelect?.value || '').trim();
+        const amount = Number(postGcashAmountInput?.value);
+        if (!transaction || transaction.assignment) {
+            notify('This imported GCash transaction is no longer available.', 'error');
+            closePostGcashModal();
+            await fetchGcashHistory();
+            return;
+        }
+        if (!accountNumber) {
+            notify('Select the customer account.', 'error');
+            postGcashAccountSelect?.focus();
+            return;
+        }
+        if (!billingMonth) {
+            notify('Select an open billing month.', 'error');
+            postGcashBillingMonthSelect?.focus();
+            return;
+        }
+        if (!Number.isFinite(amount) || amount <= 0 || Math.abs(amount - Number(transaction.credit)) > 0.009) {
+            notify('The payment amount must exactly match the imported GCash credit.', 'error');
+            return;
+        }
+        if (!postGcashAssignmentConfirmed?.checked) {
+            notify('Confirm the customer, billing month, reference, recipient, and imported amount.', 'error');
+            postGcashAssignmentConfirmed?.focus();
+            return;
+        }
+
+        setLoadingState(true);
+        if (postGcashSubmitButton) postGcashSubmitButton.disabled = true;
+        try {
+            await postGcashHistoryPayment(reference, {
+                accountNumber,
+                billingMonth,
+                amount: Number(amount.toFixed(2)),
+                assignmentConfirmed: true
+            });
+            closePostGcashModal();
+            state.paymentRecords = [];
+            notify('Imported GCash transaction assigned and posted to the customer ledger.', 'success');
+            await Promise.all([fetchQueue(), fetchGcashHistory()]);
+        } catch (error) {
+            if (error?.payload?.code === 'DUPLICATE_PAYMENT_REFERENCE') {
+                closePostGcashModal();
+                openDuplicatePaymentModal(error.payload.duplicatePayment || {});
+            } else {
+                notify(error.message || 'Unable to post the imported GCash payment.', 'error');
+            }
+        } finally {
+            if (postGcashSubmitButton) postGcashSubmitButton.disabled = false;
             setLoadingState(false);
         }
     };
@@ -1327,6 +1631,49 @@
         if (action === 'reject') {
             await onReject(item);
         }
+    });
+
+    gcashHistoryBody?.addEventListener('change', (event) => {
+        const select = event.target.closest('select[data-gcash-remark-select][data-reference]');
+        if (!select) return;
+        const editor = select.closest('.gcash-remark-editor');
+        const saveButton = editor?.querySelector('button[data-action="save-gcash-remark"]');
+        if (saveButton) saveButton.disabled = !String(select.value || '').trim();
+    });
+
+    gcashHistoryBody?.addEventListener('click', async (event) => {
+        const remarkButton = event.target.closest('button[data-action="save-gcash-remark"][data-reference]');
+        if (remarkButton) {
+            if (state.loading || remarkButton.disabled) return;
+            const reference = normalizeGcashReference(remarkButton.getAttribute('data-reference'));
+            const editor = remarkButton.closest('.gcash-remark-editor');
+            const select = editor?.querySelector('select[data-gcash-remark-select]');
+            const category = String(select?.value || '').trim();
+            if (!reference || !category) {
+                notify('Select a transaction remark before saving.', 'error');
+                return;
+            }
+            remarkButton.disabled = true;
+            try {
+                await putGcashHistoryRemark(reference, category);
+                notify('Transaction remark saved.', 'success');
+                await fetchGcashHistory();
+            } catch (error) {
+                notify(error.message || 'Unable to save the transaction remark.', 'error');
+                remarkButton.disabled = false;
+            }
+            return;
+        }
+
+        const postButton = event.target.closest('button[data-action="post-gcash"][data-reference]');
+        if (!postButton || state.loading) return;
+        const reference = normalizeGcashReference(postButton.getAttribute('data-reference'));
+        const transaction = state.gcashTransactionsByReference.get(reference) || null;
+        if (!transaction) {
+            notify('Unable to load this imported transaction.', 'error');
+            return;
+        }
+        await openPostGcashModal(transaction);
     });
 
     queueViewQueueBtn?.addEventListener('click', () => {
@@ -1550,6 +1897,12 @@
     importGcashModal?.addEventListener('click', (event) => {
         const dismissTarget = event.target.closest('[data-dismiss="queue-import-gcash-modal"]');
         if (dismissTarget) closeImportGcashModal();
+    });
+    postGcashAccountSelect?.addEventListener('change', updatePostGcashBillingMonths);
+    postGcashForm?.addEventListener('submit', onPostGcashSubmit);
+    postGcashModal?.addEventListener('click', (event) => {
+        const dismissTarget = event.target.closest('[data-dismiss="queue-post-gcash-modal"]');
+        if (dismissTarget) closePostGcashModal();
     });
 
     rejectEntryModal?.addEventListener('click', (event) => {

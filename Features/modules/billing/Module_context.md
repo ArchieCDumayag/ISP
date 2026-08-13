@@ -1,6 +1,6 @@
 # Billing Module Context
 
-Last reviewed: 2026-08-11
+Last reviewed: 2026-08-13
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -50,9 +50,9 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 - For a stopped-billing disconnection, the full Payment Breakdown **Reconnect** action opens a Tabler settlement modal instead of directly clearing the disconnection. It previews the separate previous-balance treatment, prorated/full-month immediate charge or next-cycle start, next regular bill, and activation rule; it blocks both same-month immediate charges when a regular charge already exists and requires an audit reason and confirmation. A payment-gated request remains disabled and displays the remaining activation amount until collected payments reach the threshold.
 - Protected Billing pages retain the shared admin/customer authentication redirects.
 - Payment confirmation queue pages retain their feature gates; both are disabled by the default feature profile.
-- `/payment-confirmation-queue.html` provides **Import GCash History**, always displays imported statement rows in a separate **Imported GCash Transactions** table, shows an Official History result for each pending GCash proof, and repeats the match result in the approval dialog. Imported rows show Available, Reserved, or Assigned and Posted state with the allocated customer/account. The GCash approval dialog makes amount/reference read-only and requires a checked customer-and-bill confirmation. An empty pending-proof queue explicitly points to the imported table; imported rows never masquerade as customer submissions and matching evidence never clicks or completes approval automatically.
-- Pending proofs show official-history matching beside **Approve & Post**, **Request New Proof**, and **Reject**. Gmail controls and Android phone-detection controls are not part of the queue.
-- The approval dialog also shows the stored screenshot fields, local OCR confidence, analyzer source, sanitized Vision AI status/model/confidence, and warnings beside the independent official-history result. OCR and AI remain advisory until the Admin explicitly approves.
+- `/payment-confirmation-queue.html` provides **Import GCash History** and always displays official statement rows in the **Imported GCash Transactions** table. The former pending customer-proof table and its pagination footer are no longer rendered on this page; payment-confirmation APIs, stored submissions, review rules, and dialogs remain unchanged. Imported rows show Available, Reserved, or Assigned and Posted state with the allocated customer/account. The GCash approval dialog makes amount/reference read-only and requires a checked customer-and-bill confirmation; imported rows never masquerade as customer submissions and matching evidence never clicks or completes approval automatically.
+- Pending-proof review behavior remains implemented in the unchanged browser/backend contracts, including official-history matching, **Approve & Post**, **Request New Proof**, and **Reject**, but the removed table no longer exposes those records or actions on this page. Gmail controls and Android phone-detection controls are not part of the queue.
+- The retained approval dialog shows the stored screenshot fields, local OCR confidence, analyzer source, sanitized Vision AI status/model/confidence, and warnings beside the independent official-history result. OCR and AI remain advisory until the Admin explicitly approves.
 - Existing Billing browser URLs remain unchanged; current UI behavior is implemented only from the canonical module web root.
 
 ## Data and dependencies
@@ -109,9 +109,11 @@ All API prefixes and response contracts remain unchanged by the physical migrati
 - `npm run refactor:phase5` runs inventory, Core, Admin, Customer Management, Billing, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Billing asset/page URLs, feature/auth boundaries, the public plan API, and unauthenticated API denial on ports `3190`/`4190`.
+- 2026-08-13 queue-table removal validation covered the absence of pending-proof table/body/footer markup, retention of the Payment Confirmation Queue title and Imported GCash Transactions table, unchanged browser/backend approval contracts, HTML structure, JavaScript syntax, `git diff --check`, focused proof/history tests, and `npm run refactor:billing`.
 
 ## Latest meaningful changes
 
+- 2026-08-13: Removed only the pending customer-proof table and pagination footer from Payment Confirmation Queue. The page title, GCash history import controls, Imported GCash Transactions table, backend queue data, APIs, and stored submissions remain unchanged.
 - 2026-08-12: Fixed stopped-billing payment reconciliation. Effective payments recorded after the disconnection cutoff now reduce the final frozen billing row, update its payment details/status and canonical ending balance, and never create a post-disconnection monthly charge. Evelyn Sante account `100000217` now resolves seven January-through-July rows with the August Collector payment settling the July ₱3,000 balance to ₱0.
 - 2026-08-11: Removed the Gmail GCash history automation and Android GCash notification bridge, including their routes, scheduler, stores, queue controls, screenshot-match coupling, and focused tests. Manual official-history PDF import remains the sole transaction-record match source; every customer proof remains Pending Review until explicit Admin **Approve & Post**.
 - 2026-08-11: Improved local GCash screenshot extraction with block, automatic-layout, and sparse-text OCR passes. Readable reference/date fields missed by one layout are combined before parsing, common `+163` phone OCR is normalized, and Android status-bar garbage is no longer displayed as the recipient name; manual review and official-history approval gates are unchanged.

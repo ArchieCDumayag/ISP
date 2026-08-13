@@ -187,6 +187,8 @@ assert(htmlSource.includes('never approves a payment automatically'));
 assert(htmlSource.includes('id="queueGcashHistoryBody"'));
 assert(htmlSource.includes('Imported GCash Transactions'));
 assert(htmlSource.includes('They do not create a customer proof request or approve a payment by themselves.'));
+assert(!htmlSource.includes('id="queueTableBody"'));
+assert(!htmlSource.includes('id="queueTableFooter"'));
 assert(htmlSource.includes('id="queueApproveAssignmentConfirmed"'));
 assert(htmlSource.includes('permanently assigns the matched GCash transaction'));
 assert(!htmlSource.includes('queueGmailPanel'));

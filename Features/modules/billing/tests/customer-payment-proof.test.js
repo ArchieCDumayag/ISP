@@ -207,7 +207,11 @@ const adminQueuePage = fs.readFileSync(
 assert(adminQueuePage.includes('id="queueApproveProofAnalysis"'));
 assert(adminQueuePage.includes('id="queueApproveAssignmentConfirmed"'));
 assert(adminQueuePage.includes('Approve &amp; Post'));
-assert(adminQueuePage.includes('Transaction Match'));
+assert(adminQueuePage.includes('Payment Confirmation Queue'));
+assert(adminQueuePage.includes('Imported GCash Transactions'));
+assert(!adminQueuePage.includes('id="queueTableBody"'));
+assert(!adminQueuePage.includes('Proof (Image)'));
+assert(!adminQueuePage.includes('Transaction Match'));
 assert(!adminQueuePage.includes('queueBridgePanel'));
 assert(!adminQueuePage.includes('queueGmailPanel'));
 

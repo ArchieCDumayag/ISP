@@ -214,6 +214,10 @@ const browserSource = fs.readFileSync(
     path.join(projectRoot, 'Features/modules/billing/web/payment-confirmation-queue.js'),
     'utf8'
 );
+const cssSource = fs.readFileSync(
+    path.join(projectRoot, 'Features/modules/billing/web/css/payment-confirmation-queue.css'),
+    'utf8'
+);
 const paymentsSource = fs.readFileSync(
     path.join(projectRoot, 'Features/modules/billing/backend/payments.js'),
     'utf8'
@@ -269,7 +273,22 @@ assert(htmlSource.includes('<th>Description</th>'));
 assert(htmlSource.includes('<th>Amount</th>'));
 assert(!htmlSource.includes('<th>Debit</th>'));
 assert(!htmlSource.includes('<th>Credit</th>'));
-assert(htmlSource.includes('<th>Remark</th>'));
+assert(!htmlSource.includes('<th>Remark</th>'));
+assert(htmlSource.includes('<th>Actions</th>'));
+assert(htmlSource.includes('class="row row-cards queue-summary-grid"'));
+assert(htmlSource.includes('id="queueGcashStatTotal"'));
+assert(htmlSource.includes('id="queueGcashStatAvailable"'));
+assert(htmlSource.includes('id="queueGcashStatPosted"'));
+assert(htmlSource.includes('id="queueGcashStatDebit"'));
+assert(htmlSource.includes('id="queueGcashHistorySearch"'));
+assert(htmlSource.includes('id="queueGcashHistoryFilter"'));
+assert(htmlSource.includes('<option value="available">Available credits</option>'));
+assert(htmlSource.includes('<option value="posted">Posted credits</option>'));
+assert(htmlSource.includes('<option value="debit">Debit records</option>'));
+assert(htmlSource.includes('id="queueGcashVisibleCount"'));
+assert(htmlSource.includes('<col class="gcash-col-description">'));
+assert(htmlSource.includes('<col class="gcash-col-match">'));
+assert(htmlSource.includes('<col class="gcash-col-actions">'));
 assert(!htmlSource.includes('id="queueAccountFilter"'));
 assert(!htmlSource.includes('id="queuePageSize"'));
 assert(!htmlSource.includes('id="queueTableBody"'));
@@ -288,8 +307,28 @@ assert(browserSource.includes('transaction.description'));
 assert(browserSource.includes('No pending customer proof submissions. Imported GCash transactions are shown below.'));
 assert(browserSource.includes('await Promise.all([fetchQueue(), fetchGcashHistory()])'));
 assert(browserSource.includes('assignmentConfirmed: isGcash ? true : undefined'));
-assert(browserSource.includes('Assigned and Posted'));
+assert(!browserSource.includes('Assigned and Posted'));
+assert(browserSource.includes('class="gcash-match-list"'));
+assert(browserSource.includes('class="gcash-match-allocation"'));
+assert(browserSource.includes('class="gcash-match-name"'));
+assert(browserSource.includes('class="gcash-match-amount"'));
+assert(!browserSource.includes("accountNumber ? `Acct: ${accountNumber}` : ''"));
+assert(!browserSource.includes('billingMonth ? formatBillingMonth(billingMonth)'));
 assert(browserSource.includes('save-gcash-remark'));
+assert(browserSource.includes('const debitRemarkAction'));
+assert(browserSource.includes('gcash-remark-editor--compact'));
+assert(browserSource.includes('const actionCell = isReceived ? creditAction : debitRemarkAction'));
+assert(!browserSource.includes('<td>${remarkCell}</td>'));
+assert(browserSource.includes('getGcashHistoryCategory'));
+assert(browserSource.includes('renderGcashHistoryStats'));
+assert(browserSource.includes('getFilteredGcashHistoryTransactions'));
+assert(browserSource.includes('No imported transactions match the current search and status filter.'));
+assert(browserSource.includes("gcashHistorySearch?.addEventListener('input'"));
+assert(browserSource.includes("gcashHistoryFilter?.addEventListener('change'"));
+assert(cssSource.includes('table-layout: fixed'));
+assert(cssSource.includes('min-width: 76rem'));
+assert(cssSource.includes('.gcash-history-table .gcash-col-match'));
+assert(cssSource.includes('grid-template-columns: minmax(7rem, 1fr) auto'));
 assert(browserSource.includes('Expense — Unclassified'));
 assert(browserSource.includes('addPostGcashAllocation'));
 assert(browserSource.includes('allocations,'));

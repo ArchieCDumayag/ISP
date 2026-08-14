@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.1">
+    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.4">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -36,6 +36,65 @@
                         </div>
                     </div>
                 </header>
+
+                <section class="row row-cards queue-summary-grid" aria-label="GCash transaction summary">
+                    <div class="col-12 col-sm-6 col-xl-3">
+                        <div class="card card-sm queue-summary-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-fill">
+                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Imported records</div>
+                                        <div class="h2 mb-0" id="queueGcashStatTotal">—</div>
+                                        <div class="text-secondary small mt-1" id="queueGcashStatTotalMeta">Loading history...</div>
+                                    </div>
+                                    <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-file-invoice"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl-3">
+                        <div class="card card-sm queue-summary-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-fill">
+                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Available credits</div>
+                                        <div class="h2 mb-0 text-green" id="queueGcashStatAvailable">—</div>
+                                        <div class="text-secondary small mt-1" id="queueGcashStatAvailableMeta">Ready to bind</div>
+                                    </div>
+                                    <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-link-plus"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl-3">
+                        <div class="card card-sm queue-summary-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-fill">
+                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Posted credits</div>
+                                        <div class="h2 mb-0 text-blue" id="queueGcashStatPosted">—</div>
+                                        <div class="text-secondary small mt-1" id="queueGcashStatPostedMeta">Locked payments</div>
+                                    </div>
+                                    <span class="avatar bg-blue-lt text-blue" aria-hidden="true"><i class="ti ti-lock-check"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-xl-3">
+                        <div class="card card-sm queue-summary-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-fill">
+                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Debit records</div>
+                                        <div class="h2 mb-0 text-orange" id="queueGcashStatDebit">—</div>
+                                        <div class="text-secondary small mt-1" id="queueGcashStatDebitMeta">Record only</div>
+                                    </div>
+                                    <span class="avatar bg-orange-lt text-orange" aria-hidden="true"><i class="ti ti-receipt-off"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
                 <section class="card gcash-history-panel" id="queueGcashHistoryPanel" aria-labelledby="queueGcashHistoryTitle">
                     <div class="card-status-top bg-primary"></div>
@@ -66,8 +125,42 @@
                             </div>
                         </div>
                     </div>
+                    <div class="card-body queue-history-tools">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-12 col-lg-6">
+                                <label class="form-label" for="queueGcashHistorySearch">Search transactions</label>
+                                <div class="input-icon">
+                                    <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                                    <input type="search" class="form-control" id="queueGcashHistorySearch" placeholder="Reference, description, sender, or recipient" autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="col-12 col-sm-6 col-lg-3">
+                                <label class="form-label" for="queueGcashHistoryFilter">Record status</label>
+                                <select class="form-select" id="queueGcashHistoryFilter">
+                                    <option value="all">All records</option>
+                                    <option value="available">Available credits</option>
+                                    <option value="reserved">Reserved credits</option>
+                                    <option value="posted">Posted credits</option>
+                                    <option value="debit">Debit records</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-sm-6 col-lg-3">
+                                <div class="queue-visible-count text-secondary" id="queueGcashVisibleCount" aria-live="polite">Loading records...</div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="table-responsive queue-table-wrap">
                         <table class="table table-vcenter table-hover card-table gcash-history-table mb-0">
+                            <colgroup>
+                                <col class="gcash-col-date">
+                                <col class="gcash-col-reference">
+                                <col class="gcash-col-description">
+                                <col class="gcash-col-sender">
+                                <col class="gcash-col-amount">
+                                <col class="gcash-col-recipient">
+                                <col class="gcash-col-match">
+                                <col class="gcash-col-actions">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>Date &amp; Time</th>
@@ -77,13 +170,12 @@
                                     <th>Amount</th>
                                     <th>Recipient</th>
                                     <th>Match Use</th>
-                                    <th>Remark</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="queueGcashHistoryBody">
                                 <tr>
-                                    <td colspan="9" class="queue-empty">Loading imported transactions...</td>
+                                    <td colspan="8" class="queue-empty">Loading imported transactions...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -449,7 +541,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payment-confirmation-queue.js?v=5.8"></script>
+    <script src="payment-confirmation-queue.js?v=5.11"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

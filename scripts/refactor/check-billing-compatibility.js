@@ -49,10 +49,8 @@ const webFiles = [
   'account-statement.html',
   'billing-statement.html',
   'disconnections.html',
+  'gcash-transaction.html',
   'payment-breakdown.html',
-  'payment-confirmation-queue-history.html',
-  'payment-confirmation-queue-history.js',
-  'payment-confirmation-queue.html',
   'payment-confirmation-queue.js',
   'payment-history.html',
   'payment-receipt.html',
@@ -66,7 +64,6 @@ const webFiles = [
   'css/disconnections.css',
   'css/payment-breakdown.css',
   'css/payment-breakdown-table.css',
-  'css/payment-confirmation-queue-history.css',
   'css/payment-confirmation-queue.css',
   'css/payment-history.css',
   'css/payment-receipt.css',
@@ -201,6 +198,9 @@ assert(!serverSource.includes("billingBackend.load('gcashGmailImporter')"));
 assert(!serverSource.includes("'/api/payment-bridge'"));
 assert(serverSource.includes('BILLING_WEB_ROOT'));
 assert(serverSource.includes('.map((webRoot) => path.join(webRoot, filename))'));
+assert(serverSource.includes("'gcash-transaction.html'"));
+assert(serverSource.includes("'/payment-confirmation-queue-history.html'"));
+assert(serverSource.includes("res.redirect(302, '/gcash-transaction.html')"));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'quick-payment.html')"));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'payment-receipt.html')"));
 assert(!serverSource.includes("path.join(__dirname, 'public', safeName)"));
@@ -211,8 +211,18 @@ const proofStoreSource = fs.readFileSync(
   'utf8'
 );
 assert(proofStoreSource.includes("path.join(PUBLIC_ROOT, 'uploads', ...relativePath.split('/'))"));
-const paymentQueueHtmlSource = fs.readFileSync(path.join(webRoot, 'payment-confirmation-queue.html'), 'utf8');
+const paymentQueueHtmlSource = fs.readFileSync(path.join(webRoot, 'gcash-transaction.html'), 'utf8');
 const paymentQueueBrowserSource = fs.readFileSync(path.join(webRoot, 'payment-confirmation-queue.js'), 'utf8');
+assert(!fs.existsSync(path.join(webRoot, 'payment-confirmation-queue.html')));
+assert(!fs.existsSync(path.join(webRoot, 'payment-confirmation-queue-history.html')));
+assert(!fs.existsSync(path.join(webRoot, 'payment-confirmation-queue-history.js')));
+assert(!fs.existsSync(path.join(webRoot, 'css/payment-confirmation-queue-history.css')));
+assert(paymentQueueHtmlSource.includes('<title>GCash Transactions'));
+assert(paymentQueueHtmlSource.includes('<h1>GCash Transactions</h1>'));
+const sidebarSource = fs.readFileSync(path.join(projectRoot, 'public/sidebar.html'), 'utf8');
+assert(sidebarSource.includes('href="gcash-transaction.html"'));
+assert(sidebarSource.includes('GCash Transactions'));
+assert(!sidebarSource.includes('payment-confirmation-queue-history.html'));
 assert(!fs.existsSync(path.join(projectRoot, 'Features/modules/billing/backend/payment-bridge.js')));
 assert(!fs.existsSync(path.join(projectRoot, 'Features/modules/billing/backend/gcash-notification-bridge-store.js')));
 assert(!fs.existsSync(path.join(projectRoot, 'Features/modules/billing/backend/gcash-gmail-importer.js')));

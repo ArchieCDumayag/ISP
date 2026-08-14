@@ -12,8 +12,13 @@ const { accountHasRole } = require('../../../../core/security/role-utils');
 const paymentRecordsRouter = require('../../billing/backend/payment-records');
 const collectorReschedulesRouter = require('./collector-reschedules');
 const collectorPrioritiesRouter = require('./collector-priorities');
+const {
+  notifyCollectorMutation,
+  resolveCollectorPaymentMutationTopics
+} = require('./collector-live-updates');
 
 const router = express.Router();
+router.use(notifyCollectorMutation(resolveCollectorPaymentMutationTopics));
 router.use('/reschedules', collectorReschedulesRouter);
 router.use('/priorities', collectorPrioritiesRouter);
 const REFERENCE_MAX_LENGTH = 32;

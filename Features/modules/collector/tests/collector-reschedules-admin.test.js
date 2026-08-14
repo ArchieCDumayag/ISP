@@ -264,8 +264,17 @@ async function run() {
     const tombstoneAfterDelete = await request('?status=all', {
       headers: { 'x-test-actor': 'collector' }
     });
-    assert.equal(tombstoneAfterDelete.body.records.length, 1);
-    assert.equal(tombstoneAfterDelete.body.records[0].historyType, 'Deleted');
+    assert.equal(tombstoneAfterDelete.body.records.length, 0);
+    assert.equal(tombstoneAfterDelete.body.authoritativeActive, true);
+    assert.equal(tombstoneAfterDelete.body.snapshotScope, 'active');
+    assert.equal(tombstoneAfterDelete.body.tombstones.length, 1);
+    assert.equal(tombstoneAfterDelete.body.tombstones[0].id, recordId);
+    assert.equal('notes' in tombstoneAfterDelete.body.tombstones[0], false);
+
+    const adminHistoryAfterDelete = await request('?status=all');
+    const deletedAdminRecord = adminHistoryAfterDelete.body.records.find((record) => record.id === recordId);
+    assert.ok(deletedAdminRecord);
+    assert.equal(deletedAdminRecord.historyType, 'Deleted');
 
     const paidScheduleCreate = await request('', {
       method: 'POST',
@@ -289,7 +298,13 @@ async function run() {
     const paidScheduleHistory = await request('?status=all', {
       headers: { 'x-test-actor': 'collector' }
     });
-    const paidRecord = paidScheduleHistory.body.records.find(
+    assert.equal(paidScheduleHistory.body.records.length, 0);
+    assert.ok(paidScheduleHistory.body.tombstones.some(
+      (record) => record.id === paidScheduleCreate.body.record.id
+    ));
+
+    const paidScheduleAdminHistory = await request('?status=all');
+    const paidRecord = paidScheduleAdminHistory.body.records.find(
       (record) => record.id === paidScheduleCreate.body.record.id
     );
     assert.ok(paidRecord);

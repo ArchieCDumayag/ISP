@@ -209,11 +209,20 @@
   let collectorAreaReportCache = {};
   let areaReportCache = {};
   let activeCollectorAreasId = '';
-  const COLLECTOR_AUTO_REFRESH_INTERVAL_MS = 30000;
+  const COLLECTOR_FALLBACK_REFRESH_INTERVAL_MS = 30000;
+  const COLLECTOR_LIVE_RECONNECT_INTERVAL_MS = 10000;
+  const COLLECTOR_LIVE_UPDATE_DEBOUNCE_MS = 150;
+  const COLLECTOR_LIVE_TOPICS = new Set(['approvals', 'remittances', 'priorities', 'reschedules', 'assignments']);
   let collectorAutoRefreshTimer = null;
   let collectorAutoRefreshInFlight = false;
   let collectorAutoRefreshLastUpdatedAt = null;
   let collectorLastFieldInteractionAt = 0;
+  let collectorLiveEventSource = null;
+  let collectorLiveReconnectTimer = null;
+  let collectorLiveFlushTimer = null;
+  let collectorLiveConnected = false;
+  let collectorLiveLastVersion = null;
+  const collectorLivePendingTopics = new Set();
 
   const getCurrentMonthKey = () => {
     const now = new Date();
@@ -3349,30 +3358,48 @@
   function markCollectorWorkspaceUpdated({ partial = false } = {}) {
     collectorAutoRefreshLastUpdatedAt = new Date();
     const time = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
-    setCollectorAutoRefreshStatus(`${partial ? 'Partly updated' : 'Updated'} ${time} · auto-refresh every 30 seconds`);
+    const transport = collectorLiveConnected ? 'live updates connected' : '30-second fallback active';
+    setCollectorAutoRefreshStatus(`${partial ? 'Partly updated' : 'Updated'} ${time} · ${transport}`);
   }
 
-  async function refreshCollectorWorkspace({ automatic = false } = {}) {
+  async function refreshCollectorSections(topics, { automatic = false, fallback = false } = {}) {
     if (collectorAutoRefreshInFlight) return false;
     if (automatic) {
       const pauseReason = collectorAutoRefreshPauseReason();
       if (pauseReason) {
         const lastUpdated = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
-        setCollectorAutoRefreshStatus(`Auto-refresh paused: ${pauseReason}${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
+        const mode = fallback ? 'Fallback refresh' : 'Live update';
+        setCollectorAutoRefreshStatus(`${mode} waiting: ${pauseReason}${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
         return false;
       }
     }
 
+    const requestedTopics = [...new Set((Array.isArray(topics) ? topics : [topics])
+      .map((topic) => String(topic || '').trim().toLowerCase())
+      .filter((topic) => COLLECTOR_LIVE_TOPICS.has(topic)))];
+    if (!requestedTopics.length) return false;
+
+    const loaders = {
+      approvals: () => loadCollectorApprovals({ preserveOnError: automatic }),
+      remittances: () => loadCollectorRemittances({ preserveOnError: automatic }),
+      priorities: () => loadCollectorPriorities({ preserveOnError: automatic }),
+      reschedules: () => loadCollectorReschedules({ preserveOnError: automatic }),
+      assignments: () => loadAssignmentsAndReport({ showLoading: !automatic })
+    };
+    const labels = {
+      approvals: 'payment approvals',
+      remittances: 'remittances',
+      priorities: 'priority clients',
+      reschedules: 'reschedules',
+      assignments: 'assignments and totals'
+    };
+
     collectorAutoRefreshInFlight = true;
-    setCollectorAutoRefreshStatus(automatic ? 'Auto-refreshing all sections…' : 'Refreshing all sections…');
+    setCollectorAutoRefreshStatus(fallback
+      ? 'Live connection unavailable · checking all sections…'
+      : `${automatic ? 'Live updating' : 'Refreshing'} ${requestedTopics.map((topic) => labels[topic]).join(', ')}…`);
     try {
-      const results = await Promise.all([
-        loadCollectorApprovals({ preserveOnError: automatic }),
-        loadCollectorRemittances({ preserveOnError: automatic }),
-        loadCollectorPriorities({ preserveOnError: automatic }),
-        loadCollectorReschedules({ preserveOnError: automatic }),
-        loadAssignmentsAndReport({ showLoading: !automatic })
-      ]);
+      const results = await Promise.all(requestedTopics.map((topic) => loaders[topic]()));
       const succeeded = results.filter(Boolean).length;
       if (succeeded) {
         markCollectorWorkspaceUpdated({ partial: succeeded < results.length });
@@ -3384,6 +3411,10 @@
     } finally {
       collectorAutoRefreshInFlight = false;
     }
+  }
+
+  async function refreshCollectorWorkspace({ automatic = false, fallback = false } = {}) {
+    return refreshCollectorSections([...COLLECTOR_LIVE_TOPICS], { automatic, fallback });
   }
 
   async function runCollectorManualRefresh(loader) {
@@ -3404,13 +3435,132 @@
     }
   }
 
-  function startCollectorAutoRefresh() {
+  function stopCollectorFallbackRefresh() {
+    if (collectorAutoRefreshTimer === null) return;
+    window.clearInterval(collectorAutoRefreshTimer);
+    collectorAutoRefreshTimer = null;
+  }
+
+  function startCollectorFallbackRefresh() {
     if (collectorAutoRefreshTimer !== null) return;
     collectorAutoRefreshTimer = window.setInterval(() => {
-      refreshCollectorWorkspace({ automatic: true }).catch((error) => {
-        console.warn('Failed to auto-refresh Collector Operations', error);
+      if (collectorLiveConnected) return;
+      refreshCollectorWorkspace({ automatic: true, fallback: true }).catch((error) => {
+        console.warn('Failed to run Collector live-update fallback', error);
       });
-    }, COLLECTOR_AUTO_REFRESH_INTERVAL_MS);
+    }, COLLECTOR_FALLBACK_REFRESH_INTERVAL_MS);
+  }
+
+  function scheduleCollectorLiveFlush(delay = COLLECTOR_LIVE_UPDATE_DEBOUNCE_MS) {
+    if (collectorLiveFlushTimer !== null) window.clearTimeout(collectorLiveFlushTimer);
+    collectorLiveFlushTimer = window.setTimeout(() => {
+      collectorLiveFlushTimer = null;
+      flushCollectorLiveUpdates().catch((error) => {
+        console.warn('Failed to apply Collector live update', error);
+      });
+    }, delay);
+  }
+
+  function queueCollectorLiveTopics(topics) {
+    (Array.isArray(topics) ? topics : [topics]).forEach((topic) => {
+      const normalized = String(topic || '').trim().toLowerCase();
+      if (COLLECTOR_LIVE_TOPICS.has(normalized)) collectorLivePendingTopics.add(normalized);
+    });
+    if (collectorLivePendingTopics.size) scheduleCollectorLiveFlush();
+  }
+
+  async function flushCollectorLiveUpdates() {
+    if (!collectorLivePendingTopics.size) return false;
+    const pauseReason = collectorAutoRefreshPauseReason();
+    if (collectorAutoRefreshInFlight || pauseReason) {
+      const reason = pauseReason || 'another update is in progress';
+      setCollectorAutoRefreshStatus(`Live update waiting: ${reason}`);
+      if (!document.hidden && navigator.onLine !== false) scheduleCollectorLiveFlush(1000);
+      return false;
+    }
+
+    const topics = [...collectorLivePendingTopics];
+    collectorLivePendingTopics.clear();
+    return refreshCollectorSections(topics, { automatic: true });
+  }
+
+  function closeCollectorLiveSource() {
+    if (!collectorLiveEventSource) return;
+    collectorLiveEventSource.close();
+    collectorLiveEventSource = null;
+    collectorLiveConnected = false;
+  }
+
+  function scheduleCollectorLiveReconnect() {
+    if (collectorLiveReconnectTimer !== null || navigator.onLine === false) return;
+    collectorLiveReconnectTimer = window.setTimeout(() => {
+      collectorLiveReconnectTimer = null;
+      connectCollectorLiveUpdates();
+    }, COLLECTOR_LIVE_RECONNECT_INTERVAL_MS);
+  }
+
+  function connectCollectorLiveUpdates() {
+    if (typeof window.EventSource !== 'function') {
+      setCollectorAutoRefreshStatus('Live updates unsupported · 30-second fallback active');
+      startCollectorFallbackRefresh();
+      return;
+    }
+    if (navigator.onLine === false) {
+      setCollectorAutoRefreshStatus('Offline · 30-second fallback waiting');
+      startCollectorFallbackRefresh();
+      return;
+    }
+    if (collectorLiveEventSource) return;
+    if (collectorLiveReconnectTimer !== null) {
+      window.clearTimeout(collectorLiveReconnectTimer);
+      collectorLiveReconnectTimer = null;
+    }
+
+    const source = new window.EventSource('/api/collectors/events', { withCredentials: true });
+    collectorLiveEventSource = source;
+    setCollectorAutoRefreshStatus('Connecting live updates…');
+
+    source.addEventListener('open', () => {
+      if (collectorLiveEventSource !== source) return;
+      collectorLiveConnected = true;
+      stopCollectorFallbackRefresh();
+      const lastUpdated = formatCollectorAutoRefreshTime(collectorAutoRefreshLastUpdatedAt);
+      setCollectorAutoRefreshStatus(`Live updates connected${lastUpdated ? ` · last updated ${lastUpdated}` : ''}`);
+    });
+
+    source.addEventListener('collector-ready', (event) => {
+      if (collectorLiveEventSource !== source) return;
+      try {
+        const payload = JSON.parse(event.data || '{}');
+        const version = Number(payload.version);
+        if (Number.isFinite(version)) {
+          if (collectorLiveLastVersion !== null && version !== collectorLiveLastVersion) {
+            queueCollectorLiveTopics([...COLLECTOR_LIVE_TOPICS]);
+          }
+          collectorLiveLastVersion = version;
+        }
+      } catch (_) {}
+    });
+
+    source.addEventListener('collector-update', (event) => {
+      if (collectorLiveEventSource !== source) return;
+      try {
+        const payload = JSON.parse(event.data || '{}');
+        const version = Number(payload.version);
+        if (Number.isFinite(version)) collectorLiveLastVersion = version;
+        queueCollectorLiveTopics(payload.topics || []);
+      } catch (error) {
+        console.warn('Ignored malformed Collector live update', error);
+      }
+    });
+
+    source.addEventListener('error', () => {
+      if (collectorLiveEventSource !== source) return;
+      closeCollectorLiveSource();
+      setCollectorAutoRefreshStatus('Live connection interrupted · 30-second fallback active');
+      startCollectorFallbackRefresh();
+      scheduleCollectorLiveReconnect();
+    });
   }
 
   async function handleAssign() {
@@ -3817,14 +3967,28 @@
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshCollectorWorkspace({ automatic: true }).catch(() => {});
+    if (!document.hidden && collectorLivePendingTopics.size) scheduleCollectorLiveFlush(0);
   });
   document.addEventListener('input', () => { collectorLastFieldInteractionAt = Date.now(); }, true);
   document.addEventListener('change', () => { collectorLastFieldInteractionAt = Date.now(); }, true);
-  window.addEventListener('online', () => refreshCollectorWorkspace({ automatic: true }).catch(() => {}));
-  window.addEventListener('offline', () => setCollectorAutoRefreshStatus('Auto-refresh paused: offline'));
+  window.addEventListener('online', () => {
+    connectCollectorLiveUpdates();
+    if (collectorLivePendingTopics.size) scheduleCollectorLiveFlush(0);
+  });
+  window.addEventListener('offline', () => {
+    closeCollectorLiveSource();
+    if (collectorLiveReconnectTimer !== null) {
+      window.clearTimeout(collectorLiveReconnectTimer);
+      collectorLiveReconnectTimer = null;
+    }
+    setCollectorAutoRefreshStatus('Offline · live updates waiting');
+    startCollectorFallbackRefresh();
+  });
   window.addEventListener('beforeunload', () => {
-    if (collectorAutoRefreshTimer !== null) window.clearInterval(collectorAutoRefreshTimer);
+    stopCollectorFallbackRefresh();
+    closeCollectorLiveSource();
+    if (collectorLiveReconnectTimer !== null) window.clearTimeout(collectorLiveReconnectTimer);
+    if (collectorLiveFlushTimer !== null) window.clearTimeout(collectorLiveFlushTimer);
   });
 
   loadAreas().catch(() => {});
@@ -3832,5 +3996,5 @@
     .catch(() => {
       if (monthlySummary) monthlySummary.innerHTML = '<p class="empty-copy">Could not load the report.</p>';
     })
-    .finally(startCollectorAutoRefresh);
+    .finally(connectCollectorLiveUpdates);
 })();

@@ -201,13 +201,14 @@ assert(queueSource.includes('customerPhone: readCustomerPhone'));
 assert(queueSource.includes("fieldSources[field] === 'vision_ai'"));
 
 const adminQueuePage = fs.readFileSync(
-    path.join(projectRoot, 'Features/modules/billing/web/payment-confirmation-queue.html'),
+    path.join(projectRoot, 'Features/modules/billing/web/gcash-transaction.html'),
     'utf8'
 );
 assert(adminQueuePage.includes('id="queueApproveProofAnalysis"'));
 assert(adminQueuePage.includes('id="queueApproveAssignmentConfirmed"'));
 assert(adminQueuePage.includes('Approve &amp; Post'));
-assert(adminQueuePage.includes('Payment Confirmation Queue'));
+assert(adminQueuePage.includes('<title>GCash Transactions'));
+assert(adminQueuePage.includes('<h1>GCash Transactions</h1>'));
 assert(adminQueuePage.includes('Imported GCash Transactions'));
 assert(!adminQueuePage.includes('id="queueTableBody"'));
 assert(!adminQueuePage.includes('Proof (Image)'));

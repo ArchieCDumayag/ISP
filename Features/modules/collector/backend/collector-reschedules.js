@@ -78,6 +78,14 @@ function isActiveRecord(record = {}) {
   return cleanText(record.status).toLowerCase() === ACTIVE_STATUS.toLowerCase();
 }
 
+function buildCollectorRemovalTombstone(record = {}) {
+  return {
+    id: cleanText(record.id, 180),
+    clientRecordId: cleanText(record.clientRecordId, 180),
+    removedAt: cleanText(record.deletedAt || record.archivedAt || record.updatedAt, 80)
+  };
+}
+
 function readRecords(payload) {
   if (Array.isArray(payload)) return payload;
   return Array.isArray(payload?.records) ? payload.records : [];
@@ -555,7 +563,8 @@ router.get('/', async (req, res, next) => {
     const payload = await readJson(STORE_KEY, { records: [] });
     const requestedCollectorId = cleanText(req.query?.collectorId, 120);
     const collectorId = actor.isCollector ? actor.id : requestedCollectorId;
-    const status = cleanText(req.query?.status || 'active', 40).toLowerCase();
+    const requestedStatus = cleanText(req.query?.status || 'active', 40).toLowerCase();
+    const status = actor.isCollector ? 'active' : requestedStatus;
     const from = normalizeDate(req.query?.from);
     const to = normalizeDate(req.query?.to);
     const requestedLimit = Number(req.query?.limit);
@@ -563,9 +572,10 @@ router.get('/', async (req, res, next) => {
       ? Math.min(Math.max(requestedLimit, 1), 1000)
       : 500;
 
-    const records = readRecords(payload)
+    const scopedRecords = readRecords(payload)
       .filter((record) => recordMatchesBranch(record, actor.branchId))
-      .filter((record) => !collectorId || cleanText(record.collectorId, 120) === collectorId)
+      .filter((record) => !collectorId || cleanText(record.collectorId, 120) === collectorId);
+    const matchingRecords = scopedRecords
       .filter((record) => {
         if (status === 'all') return true;
         if (status === 'history') return !isActiveRecord(record);
@@ -582,14 +592,30 @@ router.get('/', async (req, res, next) => {
           if (dateCompare !== 0) return dateCompare;
         }
         return cleanText(right.createdAt).localeCompare(cleanText(left.createdAt));
-      })
-      .slice(0, limit);
+      });
+    const total = matchingRecords.length;
+    const records = matchingRecords.slice(0, limit);
+
+    const collectorTombstones = actor.isCollector
+      ? scopedRecords
+          .filter((record) => !isActiveRecord(record))
+          .slice(0, limit)
+          .map(buildCollectorRemovalTombstone)
+          .filter((record) => record.id || record.clientRecordId)
+      : [];
 
     res.json({
       ok: true,
       records,
       count: records.length,
-      activeCount: records.filter(isActiveRecord).length
+      activeCount: records.filter(isActiveRecord).length,
+      total,
+      hasMore: total > records.length,
+      ...(actor.isCollector ? {
+        authoritativeActive: true,
+        snapshotScope: 'active',
+        tombstones: collectorTombstones
+      } : {})
     });
   } catch (error) {
     next(error?.status ? error : createError(500, error.message || 'Failed to load collector reschedules.'));

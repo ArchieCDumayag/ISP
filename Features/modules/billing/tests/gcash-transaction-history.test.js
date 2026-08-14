@@ -207,7 +207,7 @@ const routeSource = fs.readFileSync(
     'utf8'
 );
 const htmlSource = fs.readFileSync(
-    path.join(projectRoot, 'Features/modules/billing/web/payment-confirmation-queue.html'),
+    path.join(projectRoot, 'Features/modules/billing/web/gcash-transaction.html'),
     'utf8'
 );
 const browserSource = fs.readFileSync(
@@ -249,7 +249,8 @@ assert(htmlSource.includes('id="queueImportGcashHistoryBtn"'));
 assert(htmlSource.includes('never approves a payment automatically'));
 assert(htmlSource.includes('id="queueGcashHistoryBody"'));
 assert(htmlSource.includes('Imported GCash Transactions'));
-assert(htmlSource.includes('<h1>GCash Reconciliation</h1>'));
+assert(htmlSource.includes('<title>GCash Transactions'));
+assert(htmlSource.includes('<h1>GCash Transactions</h1>'));
 assert(htmlSource.includes('Import statements, bind credits, and classify debits.'));
 assert(!htmlSource.includes('Admin verification is required'));
 assert(!htmlSource.includes('Imported rows never post automatically.'));
@@ -366,6 +367,16 @@ assert(!browserSource.includes('/api/payment-bridge'));
 assert(paymentsSource.includes('const recordApprovedProofPayments'));
 assert(paymentsSource.includes('module.exports.recordApprovedProofPayments'));
 assert(paymentsSource.includes('Payment allocations must exactly equal the imported GCash credit.'));
+assert(paymentsSource.includes('buildPaymentImportGcashReconciliationPlan'));
+assert(paymentsSource.includes('claimGcashTransactionAllocations'));
+assert(paymentsSource.includes('finalizeGcashTransactionAllocations'));
+assert(paymentsSource.includes('gcashReconciliation'));
+const paymentHistoryBrowserSource = fs.readFileSync(
+    path.join(projectRoot, 'Features/modules/billing/web/js/payment-history.js'),
+    'utf8'
+);
+assert(paymentHistoryBrowserSource.includes('official GCash reference'));
+assert(paymentHistoryBrowserSource.includes('Admin review'));
 
 (async () => {
     await importGcashTransactionBatch({
@@ -698,6 +709,219 @@ assert(paymentsSource.includes('Payment allocations must exactly equal the impor
         count + (Array.isArray(record?.history) ? record.history.length : 0)
     ), 0), 3);
 
+    const makeImportedPaymentRecord = ({ reference, accountNumber, amount, date = '2026-08-08' }) => ({
+        method: 'GCash',
+        accountNumber,
+        customerName: `Batch Customer ${accountNumber.slice(-1)}`,
+        amount,
+        entry: {
+            id: `import-${reference}-${accountNumber}`,
+            reference,
+            amount,
+            date,
+            kind: 'payment',
+            type: 'payment',
+            direction: 'credit'
+        }
+    });
+    const plannerInsert = actualPaymentsRouter.buildPaymentImportGcashReconciliationPlan({
+        branchId: 5,
+        records: [
+            makeImportedPaymentRecord({ reference: 'AUTO-PLAN-5005', accountNumber: 'ACC-5001', amount: 600 }),
+            makeImportedPaymentRecord({ reference: 'AUTOPLAN5005', accountNumber: 'ACC-5002', amount: 400 })
+        ],
+        transactions: [{
+            reference: 'AUTO PLAN 5005',
+            status: 'received',
+            credit: 1000,
+            transactionDate: '2026-08-08',
+            assignment: null
+        }],
+        payments: {}
+    });
+    assert.strictEqual(plannerInsert.insertGroups.length, 1);
+    assert.strictEqual(plannerInsert.insertGroups[0].allocations.length, 2);
+    const plannerConflict = actualPaymentsRouter.buildPaymentImportGcashReconciliationPlan({
+        branchId: 5,
+        records: [makeImportedPaymentRecord({
+            reference: 'AUTO-PLAN-5005',
+            accountNumber: 'ACC-5001',
+            amount: 999
+        })],
+        transactions: [{
+            reference: 'AUTO PLAN 5005',
+            status: 'received',
+            credit: 1000,
+            transactionDate: '2026-08-08',
+            assignment: null
+        }],
+        payments: {}
+    });
+    assert.strictEqual(plannerConflict.conflictGroups.length, 1);
+    assert(plannerConflict.conflictGroups[0].reason.includes('does not equal'));
+
+    await importGcashTransactionBatch({
+        branchId: 5,
+        fileName: 'payment-history-auto-bind.pdf',
+        pdfSha256: 'f'.repeat(64),
+        parsed: {
+            ...parsed,
+            transactions: [{
+                ...transaction,
+                reference: 'AUTO-BIND-5005',
+                credit: 1000,
+                recipient: '09361565251'
+            }]
+        },
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    const xlsx = require('xlsx');
+    const makePaymentImportWorkbook = ({ reference, accountNumber, amount }) => {
+        const workbook = xlsx.utils.book_new();
+        const worksheet = xlsx.utils.aoa_to_sheet([
+            ['Date', 'Gcash Account', 'Reference Number', 'Account Number', 'Particulars', '3J Payment'],
+            ['2026-08-08', '09361565251', reference, accountNumber, `Batch Customer ${accountNumber.slice(-1)}`, amount]
+        ]);
+        xlsx.utils.book_append_sheet(workbook, worksheet, 'GCASH AUG 2026');
+        return xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    };
+    const originalMkdir = fs.promises.mkdir;
+    const originalWriteFile = fs.promises.writeFile;
+    fs.promises.mkdir = async () => {};
+    fs.promises.writeFile = async () => {};
+    try {
+        const autoBindWorkbook = makePaymentImportWorkbook({
+            reference: 'AUTO-BIND-5005',
+            accountNumber: 'ACC-5001',
+            amount: 1000
+        });
+        const autoBindImport = await actualPaymentsRouter.importPaymentRecordsFromExcel({
+            buffer: autoBindWorkbook,
+            branchId: 5,
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+            fileName: 'cash-flow-auto-bind.xlsx'
+        });
+        assert.strictEqual(autoBindImport.imported, 1);
+        assert.strictEqual(autoBindImport.gcashReconciliation.autoBoundReferences, 1);
+        assert.strictEqual(autoBindImport.gcashReconciliation.newPaymentBindings, 1);
+        assert.strictEqual(autoBindImport.gcashReconciliation.conflictReferences, 0);
+        const autoBoundHistory = await listGcashTransactionHistory({ branchId: 5, all: true });
+        const autoBoundTransaction = autoBoundHistory.transactions.find((row) => row.reference === 'AUTOBIND5005');
+        assert.strictEqual(autoBoundTransaction.assignment.status, 'posted');
+        assert.strictEqual(autoBoundTransaction.assignment.accountNumber, 'ACC-5001');
+        assert.strictEqual(autoBoundTransaction.assignment.amount, 1000);
+        assert(autoBoundTransaction.assignment.paymentEntryId);
+        const autoBoundLedgerCount = Object.values(paymentStoreMemory).reduce((count, record) => (
+            count + (Array.isArray(record?.history)
+                ? record.history.filter((entry) => entry.reference === 'AUTO-BIND-5005').length
+                : 0)
+        ), 0);
+        assert.strictEqual(autoBoundLedgerCount, 1);
+
+        const autoBindRetry = await actualPaymentsRouter.importPaymentRecordsFromExcel({
+            buffer: autoBindWorkbook,
+            branchId: 5,
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+            fileName: 'cash-flow-auto-bind.xlsx'
+        });
+        assert.strictEqual(autoBindRetry.imported, 0);
+        assert.strictEqual(autoBindRetry.duplicates, 1);
+        assert.strictEqual(autoBindRetry.gcashReconciliation.alreadyPostedReferences, 1);
+        const retryLedgerCount = Object.values(paymentStoreMemory).reduce((count, record) => (
+            count + (Array.isArray(record?.history)
+                ? record.history.filter((entry) => entry.reference === 'AUTO-BIND-5005').length
+                : 0)
+        ), 0);
+        assert.strictEqual(retryLedgerCount, 1);
+
+        const existingReference = 'EXISTING-BIND-5005';
+        paymentStoreMemory['ACC-5002'].history.unshift({
+            id: 'existing-payment-bind-5005',
+            reference: existingReference,
+            amount: 500,
+            date: '2026-08-08',
+            kind: 'payment',
+            type: 'payment',
+            direction: 'credit',
+            paymentMethod: 'GCash'
+        });
+        await importGcashTransactionBatch({
+            branchId: 5,
+            fileName: 'payment-history-existing-bind.pdf',
+            pdfSha256: '1'.repeat(64),
+            parsed: {
+                ...parsed,
+                transactions: [{
+                    ...transaction,
+                    reference: existingReference,
+                    credit: 500,
+                    recipient: '09361565251'
+                }]
+            },
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+        });
+        const existingBindImport = await actualPaymentsRouter.importPaymentRecordsFromExcel({
+            buffer: makePaymentImportWorkbook({
+                reference: existingReference,
+                accountNumber: 'ACC-5002',
+                amount: 500
+            }),
+            branchId: 5,
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+            fileName: 'cash-flow-existing-bind.xlsx'
+        });
+        assert.strictEqual(existingBindImport.imported, 0);
+        assert.strictEqual(existingBindImport.duplicates, 1);
+        assert.strictEqual(existingBindImport.gcashReconciliation.autoBoundReferences, 1);
+        assert.strictEqual(existingBindImport.gcashReconciliation.existingPaymentBindings, 1);
+        const existingBoundHistory = await listGcashTransactionHistory({ branchId: 5, all: true });
+        const existingBoundTransaction = existingBoundHistory.transactions.find((row) => row.reference === 'EXISTINGBIND5005');
+        assert.strictEqual(existingBoundTransaction.assignment.status, 'posted');
+        assert.strictEqual(existingBoundTransaction.assignment.paymentEntryId, 'existing-payment-bind-5005');
+
+        await importGcashTransactionBatch({
+            branchId: 5,
+            fileName: 'payment-history-conflict.pdf',
+            pdfSha256: '3'.repeat(64),
+            parsed: {
+                ...parsed,
+                transactions: [{
+                    ...transaction,
+                    reference: 'CONFLICT-BIND-5005',
+                    credit: 800,
+                    recipient: '09361565251'
+                }]
+            },
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+        });
+        const conflictImport = await actualPaymentsRouter.importPaymentRecordsFromExcel({
+            buffer: makePaymentImportWorkbook({
+                reference: 'CONFLICT-BIND-5005',
+                accountNumber: 'ACC-5003',
+                amount: 700
+            }),
+            branchId: 5,
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+            fileName: 'cash-flow-conflict.xlsx'
+        });
+        assert.strictEqual(conflictImport.imported, 0);
+        assert.strictEqual(conflictImport.gcashReconciliation.conflictReferences, 1);
+        assert.strictEqual(conflictImport.gcashReconciliation.conflictRows, 1);
+        assert(conflictImport.warnings.some((warning) => warning.reference === 'CONFLICTBIND5005'));
+        const conflictLedgerEntries = Object.values(paymentStoreMemory).flatMap((record) => (
+            Array.isArray(record?.history) ? record.history : []
+        )).filter((entry) => entry.reference === 'CONFLICT-BIND-5005');
+        assert.strictEqual(conflictLedgerEntries.length, 0);
+        const conflictHistory = await listGcashTransactionHistory({ branchId: 5, all: true });
+        assert.strictEqual(
+            conflictHistory.transactions.find((row) => row.reference === 'CONFLICTBIND5005').assignment,
+            null
+        );
+    } finally {
+        fs.promises.mkdir = originalMkdir;
+        fs.promises.writeFile = originalWriteFile;
+    }
+
     const relationalInsertedEntries = [];
     const relationalReferenceChecks = [];
     let relationalOrSequence = 0;
@@ -764,6 +988,54 @@ assert(paymentsSource.includes('Payment allocations must exactly equal the impor
         'BATCH-WRITER-5006'
     ]);
     assert.deepStrictEqual(relationalReferenceChecks, ['BATCH-WRITER-5006', null, null]);
+    await importGcashTransactionBatch({
+        branchId: 6,
+        fileName: 'relational-payment-history-auto-bind.pdf',
+        pdfSha256: '2'.repeat(64),
+        parsed: {
+            ...parsed,
+            transactions: [{
+                ...transaction,
+                reference: 'RELATIONAL-IMPORT-6006',
+                credit: 1000,
+                recipient: '09361565251'
+            }]
+        },
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    fs.promises.mkdir = async () => {};
+    fs.promises.writeFile = async () => {};
+    let relationalImport;
+    try {
+        relationalImport = await relationalPaymentsRouter.importPaymentRecordsFromExcel({
+            buffer: makePaymentImportWorkbook({
+                reference: 'RELATIONAL-IMPORT-6006',
+                accountNumber: 'ACC-5001',
+                amount: 1000
+            }),
+            branchId: 6,
+            importedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+            fileName: 'relational-cash-flow-auto-bind.xlsx'
+        });
+    } finally {
+        fs.promises.mkdir = originalMkdir;
+        fs.promises.writeFile = originalWriteFile;
+    }
+    assert.strictEqual(relationalImport.imported, 1);
+    assert.strictEqual(relationalImport.gcashReconciliation.autoBoundReferences, 1);
+    assert.strictEqual(relationalImport.gcashReconciliation.newPaymentBindings, 1);
+    assert.strictEqual(relationalInsertedEntries.length, 4);
+    assert.strictEqual(relationalInsertedEntries[3].reference, 'RELATIONAL-IMPORT-6006');
+    assert.deepStrictEqual(relationalReferenceChecks, [
+        'BATCH-WRITER-5006',
+        null,
+        null,
+        'RELATIONAL-IMPORT-6006'
+    ]);
+    const relationalImportHistory = await listGcashTransactionHistory({ branchId: 6, all: true });
+    assert.strictEqual(relationalImportHistory.transactions[0].assignment.status, 'posted');
+    assert.strictEqual(relationalImportHistory.transactions[0].assignment.accountNumber, 'ACC-5001');
+    assert.strictEqual(relationalImportHistory.transactions[0].assignment.paymentEntryId, relationalInsertedEntries[3].id);
     require.cache[dbModulePath].exports = originalDbExports;
 
     let paymentWriteCount = 0;

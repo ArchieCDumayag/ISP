@@ -4,6 +4,10 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { accountHasRole } = require('../../../../core/security/role-utils');
+const {
+  notifyCollectorMutation,
+  subscribeCollectorLiveUpdates
+} = require('./collector-live-updates');
 
 const STORE_KEYS = {
   collectors: 'collectors',
@@ -13,6 +17,8 @@ const STORE_KEYS = {
 };
 
 const router = express.Router();
+router.get('/events', subscribeCollectorLiveUpdates);
+router.use(notifyCollectorMutation(['assignments']));
 const isApprovedCollectorPaymentEntry = (entry = {}) => {
   const kind = String(entry.kind || entry.type || '').trim().toLowerCase();
   const direction = String(entry.direction || '').trim().toLowerCase();

@@ -2714,6 +2714,7 @@ const PROTECTED_PAGES = new Set([
     'payment-breakdown.html',
     'expenses.html',
     'payroll.html',
+    'gcash-transaction.html',
     'payment-confirmation-queue.html',
     'payment-confirmation-queue-history.html',
     'customer-draft-queue.html',
@@ -3217,19 +3218,24 @@ app.get('/xendit-return', (req, res) => {
     const queryString = params.toString();
     return res.redirect(302, `${redirectPath}${queryString ? `?${queryString}` : ''}`);
 });
-app.get('/payment-confirmation-queue', async (req, res) => {
+app.get([
+    '/payment-confirmation-queue',
+    '/payment-confirmation-queue.html',
+    '/payment-confirmation-queue-history',
+    '/payment-confirmation-queue-history.html'
+], async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    res.sendFile(path.join(BILLING_WEB_ROOT, 'payment-confirmation-queue.html'));
+    return res.redirect(302, '/gcash-transaction.html');
 });
-app.get('/payment-confirmation-queue-history', async (req, res) => {
+app.get('/gcash-transaction', async (req, res) => {
     const user = await getUserFromSession(req);
     if (!isAdminUser(user)) {
         return res.redirect('/login.html');
     }
-    return res.sendFile(path.join(BILLING_WEB_ROOT, 'payment-confirmation-queue-history.html'));
+    return res.sendFile(path.join(BILLING_WEB_ROOT, 'gcash-transaction.html'));
 });
 app.get('/customer-draft-queue', async (req, res) => {
     const user = await getUserFromSession(req);
@@ -5880,6 +5886,8 @@ app.use('/api/technician/installations', technicianInstallationsRouter);
 app.use('/api/technician', technicianAssignmentsRouter);
 [
     '/api/payment-confirmations',
+    '/gcash-transaction/api/payment-confirmations',
+    '/gcash-transaction.html/api/payment-confirmations',
     '/payment-confirmation-queue/api/payment-confirmations',
     '/payment-confirmation-queue.html/api/payment-confirmations'
 ].forEach((mountPath) => {

@@ -29,6 +29,13 @@ const {
     getManilaDateKey,
     getPendingReconnectionSettlement
 } = require('./reconnection-settlement');
+const {
+    listGcashTransactionHistory,
+    claimGcashTransactionAllocations,
+    finalizeGcashTransactionAllocations,
+    releaseGcashTransactionClaim,
+    normalizeReference: normalizeGcashReference
+} = require('./gcash-transaction-history-store');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -1623,6 +1630,191 @@ const sortPaymentImportHistory = (history = []) => {
         return String(right.id || '').localeCompare(String(left.id || ''));
     });
 };
+const paymentImportMoney = (value) => {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? Number(amount.toFixed(2)) : null;
+};
+const paymentImportBillingMonth = (value) => {
+    const date = toPaymentDateOnly(value);
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date.slice(0, 7) : '';
+};
+const paymentImportGcashSubmissionId = (branchId, reference) => (
+    `payment-import-gcash-${paymentImportHash(`${branchId}|${normalizeGcashReference(reference)}`, 32)}`
+);
+const paymentImportAllocationSignature = (allocations = [], { includeBillingMonth = false } = {}) => (
+    (Array.isArray(allocations) ? allocations : [])
+        .map((allocation) => [
+            String(allocation?.accountNumber || '').trim(),
+            paymentImportMoney(allocation?.amount)?.toFixed(2) || '',
+            includeBillingMonth ? String(allocation?.billingMonth || '').trim() : ''
+        ].join('|'))
+        .sort()
+        .join('||')
+);
+const paymentImportLedgerSignature = (entries = []) => (
+    (Array.isArray(entries) ? entries : [])
+        .map(({ accountNumber, entry }) => [
+            String(accountNumber || '').trim(),
+            paymentImportMoney(entry?.amount)?.toFixed(2) || '',
+            toPaymentDateOnly(entry?.date || entry?.recordedAt) || ''
+        ].join('|'))
+        .sort()
+        .join('||')
+);
+const indexPaymentImportLedgerByReference = (payments = {}) => {
+    const index = new Map();
+    Object.entries(payments && typeof payments === 'object' ? payments : {}).forEach(([accountNumber, record]) => {
+        (Array.isArray(record?.history) ? record.history : []).forEach((entry) => {
+            const references = new Set([
+                normalizeGcashReference(entry?.reference),
+                normalizeGcashReference(entry?.orNumber || entry?.or_number)
+            ].filter(Boolean));
+            references.forEach((reference) => {
+                if (!index.has(reference)) index.set(reference, []);
+                index.get(reference).push({ accountNumber: String(accountNumber || '').trim(), entry });
+            });
+        });
+    });
+    return index;
+};
+const buildPaymentImportGcashReconciliationPlan = ({
+    records = [],
+    transactions = [],
+    payments = {},
+    branchId
+} = {}) => {
+    const officialByReference = new Map((Array.isArray(transactions) ? transactions : [])
+        .map((transaction) => [normalizeGcashReference(transaction?.reference), transaction])
+        .filter(([reference]) => Boolean(reference)));
+    const ledgerByReference = indexPaymentImportLedgerByReference(payments);
+    const regularRecords = [];
+    const grouped = new Map();
+
+    (Array.isArray(records) ? records : []).forEach((record) => {
+        const reference = record?.method === 'GCash'
+            ? normalizeGcashReference(record?.entry?.reference)
+            : '';
+        const transaction = reference ? officialByReference.get(reference) : null;
+        if (!transaction) {
+            regularRecords.push(record);
+            return;
+        }
+        if (!grouped.has(reference)) grouped.set(reference, { reference, transaction, records: [] });
+        grouped.get(reference).records.push(record);
+    });
+
+    const groups = Array.from(grouped.values()).map((group) => {
+        const paymentDates = [...new Set(group.records
+            .map((record) => toPaymentDateOnly(record?.entry?.date || record?.entry?.recordedAt))
+            .filter(Boolean))];
+        const paymentDate = paymentDates.length === 1 ? paymentDates[0] : '';
+        const allocations = group.records.map((record) => ({
+            accountNumber: String(record?.accountNumber || '').trim(),
+            customerName: String(record?.customerName || '').trim(),
+            amount: paymentImportMoney(record?.amount ?? record?.entry?.amount),
+            billingMonth: paymentImportBillingMonth(record?.entry?.date || record?.entry?.recordedAt),
+            paymentEntryId: String(record?.entry?.id || '').trim()
+        }));
+        const totalAmount = paymentImportMoney(allocations.reduce((sum, allocation) => (
+            sum + Number(allocation.amount || 0)
+        ), 0));
+        const importedSignature = paymentImportAllocationSignature(allocations);
+        const importedCycleSignature = paymentImportAllocationSignature(allocations, { includeBillingMonth: true });
+        const submissionId = paymentImportGcashSubmissionId(branchId, group.reference);
+        const assignment = group.transaction?.assignment && typeof group.transaction.assignment === 'object'
+            ? group.transaction.assignment
+            : null;
+        const existingEntries = ledgerByReference.get(group.reference) || [];
+        const officialAmount = paymentImportMoney(group.transaction?.credit);
+        const officialDate = toPaymentDateOnly(
+            group.transaction?.transactionDate || group.transaction?.transactionAt
+        );
+        const finish = (action, reason = '') => ({
+            ...group,
+            action,
+            reason,
+            submissionId,
+            paymentDate,
+            billingMonth: paymentDate ? paymentDate.slice(0, 7) : '',
+            allocations,
+            totalAmount,
+            existingEntries
+        });
+
+        if (
+            group.records.length < 1
+            || group.records.length > 3
+            || new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length
+        ) {
+            return finish('conflict', 'One official GCash reference may bind only one to three distinct customer accounts.');
+        }
+        if (allocations.some((allocation) => (
+            !allocation.accountNumber
+            || allocation.amount == null
+            || allocation.amount <= 0
+            || !allocation.billingMonth
+            || !allocation.paymentEntryId
+        ))) {
+            return finish('conflict', 'The imported GCash allocation is missing a valid customer, amount, date, or payment ID.');
+        }
+        if (String(group.transaction?.status || '').toLowerCase() !== 'received' || officialAmount == null || officialAmount <= 0) {
+            return finish('conflict', 'The matching official GCash record is not an incoming credit.');
+        }
+        if (totalAmount == null || Math.abs(totalAmount - officialAmount) > 0.009) {
+            return finish('conflict', 'The imported payment allocation does not equal the official GCash credit.');
+        }
+        if (!paymentDate || paymentDates.length !== 1 || !officialDate || paymentDate !== officialDate) {
+            return finish('conflict', 'The imported payment date does not match the official GCash transaction date.');
+        }
+
+        if (assignment) {
+            const assignmentSignature = paymentImportAllocationSignature(assignment.allocations || [assignment]);
+            if (assignment.status === 'posted') {
+                return assignmentSignature === importedSignature
+                    ? finish('already_posted', 'This official GCash reference is already posted to the same customer allocation.')
+                    : finish('conflict', 'This official GCash reference is already posted to a different customer allocation.');
+            }
+            const assignmentCycleSignature = paymentImportAllocationSignature(
+                assignment.allocations || [assignment],
+                { includeBillingMonth: true }
+            );
+            if (
+                assignment.submissionId !== submissionId
+                || assignmentCycleSignature !== importedCycleSignature
+                || toPaymentDateOnly(assignment.paymentDate) !== paymentDate
+            ) {
+                return finish('conflict', 'This official GCash reference is reserved by another review or allocation.');
+            }
+        }
+
+        if (existingEntries.length) {
+            const importedLedgerSignature = group.records
+                .map((record) => ({
+                    accountNumber: record.accountNumber,
+                    entry: record.entry
+                }));
+            const everyExistingEntryIsPayment = existingEntries.every(({ entry }) => isCollectedPaymentEntry(entry));
+            if (
+                !everyExistingEntryIsPayment
+                || paymentImportLedgerSignature(existingEntries) !== paymentImportLedgerSignature(importedLedgerSignature)
+            ) {
+                return finish('conflict', 'This reference already exists in Payment History with different customer, amount, or date details.');
+            }
+            return finish('bind_existing');
+        }
+
+        return finish('insert');
+    });
+
+    return {
+        regularRecords,
+        groups,
+        insertGroups: groups.filter((group) => group.action === 'insert'),
+        bindExistingGroups: groups.filter((group) => group.action === 'bind_existing'),
+        alreadyPostedGroups: groups.filter((group) => group.action === 'already_posted'),
+        conflictGroups: groups.filter((group) => group.action === 'conflict')
+    };
+};
 const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = null, fileName = '' } = {}) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
@@ -1653,93 +1845,297 @@ const importPaymentRecordsFromExcel = async ({ buffer, branchId, importedBy = nu
     }
 
     const relational = await isRelationalReady();
-    const existingPayments = await readPayments(scopedBranchId);
+    const [existingPayments, gcashHistory] = await Promise.all([
+        readPayments(scopedBranchId),
+        listGcashTransactionHistory({ branchId: scopedBranchId, all: true })
+    ]);
     const backup = await createPaymentRecordsBackup(existingPayments, {
         branchId: scopedBranchId,
         user: importedBy,
         reason: 'before-payment-history-excel-import'
     });
+    const reconciliation = buildPaymentImportGcashReconciliationPlan({
+        records: parsed.records,
+        transactions: gcashHistory.transactions,
+        payments: existingPayments,
+        branchId: scopedBranchId
+    });
     const methods = { cash: 0, gcash: 0 };
     let imported = 0;
-    let duplicates = 0;
+    let duplicates = reconciliation.alreadyPostedGroups.reduce((sum, group) => sum + group.records.length, 0);
+    let autoBoundReferences = 0;
+    let newPaymentBindings = 0;
+    let existingPaymentBindings = 0;
+    let pendingReferences = 0;
+    const conflictGroups = reconciliation.conflictGroups.slice();
+    const claimedInsertGroups = [];
+    const createdClaims = [];
+    const reconciliationWarnings = conflictGroups.map((group) => ({
+        reference: group.reference,
+        accountNumbers: group.allocations.map((allocation) => allocation.accountNumber),
+        reason: group.reason,
+        source: 'gcash-reference-reconciliation'
+    }));
+    const reviewer = {
+        id: String(importedBy?.id || '').trim() || null,
+        username: normalizePaymentImportText(importedBy?.username) || null,
+        name: normalizePaymentImportText(importedBy?.name) || null,
+        role: normalizePaymentImportText(importedBy?.role) || null
+    };
+    const claimGroup = async (group) => {
+        const claim = await claimGcashTransactionAllocations({
+            branchId: scopedBranchId,
+            reference: group.reference,
+            submissionId: group.submissionId,
+            allocations: group.allocations,
+            amount: group.totalAmount,
+            paymentDate: group.paymentDate,
+            claimedBy: reviewer
+        });
+        if (!claim.idempotent) createdClaims.push(group);
+        return claim;
+    };
+    const recordRuntimeConflict = (group, error) => {
+        const conflict = {
+            ...group,
+            action: 'conflict',
+            reason: error?.message || 'The official GCash reference changed while this import was being reconciled.'
+        };
+        conflictGroups.push(conflict);
+        reconciliationWarnings.push({
+            reference: group.reference,
+            accountNumbers: group.allocations.map((allocation) => allocation.accountNumber),
+            reason: conflict.reason,
+            source: 'gcash-reference-reconciliation'
+        });
+    };
 
-    if (relational) {
-        await withTransaction(async (connection) => {
-            for (const record of parsed.records) {
-                const [duplicateRows] = await connection.query(
-                    `SELECT id FROM payment_entries
-                     WHERE branch_id = ?
-                       AND account_number = ?
-                       AND (id = ? OR fingerprint = ? OR reference = ?)
-                     LIMIT 1`,
-                    [
-                        scopedBranchId,
-                        record.accountNumber,
-                        record.entry.id,
-                        record.entry.fingerprint,
-                        record.entry.reference
-                    ]
-                );
-                if (duplicateRows && duplicateRows.length) {
-                    duplicates += 1;
-                    continue;
+    for (const group of reconciliation.bindExistingGroups) {
+        duplicates += group.records.length;
+        try {
+            await claimGroup(group);
+        } catch (error) {
+            recordRuntimeConflict(group, error);
+            continue;
+        }
+        try {
+            const paymentEntries = group.allocations.map((allocation) => {
+                const existing = group.existingEntries.find(({ accountNumber, entry }) => (
+                    String(accountNumber || '') === allocation.accountNumber
+                    && paymentImportMoney(entry?.amount) === allocation.amount
+                    && toPaymentDateOnly(entry?.date || entry?.recordedAt) === group.paymentDate
+                ));
+                return {
+                    accountNumber: allocation.accountNumber,
+                    billingMonth: allocation.billingMonth,
+                    paymentEntryId: existing?.entry?.id
+                };
+            });
+            await finalizeGcashTransactionAllocations({
+                branchId: scopedBranchId,
+                reference: group.reference,
+                submissionId: group.submissionId,
+                paymentEntries
+            });
+            autoBoundReferences += 1;
+            existingPaymentBindings += 1;
+        } catch (error) {
+            pendingReferences += 1;
+            reconciliationWarnings.push({
+                reference: group.reference,
+                accountNumbers: group.allocations.map((allocation) => allocation.accountNumber),
+                reason: `${error?.message || 'Binding failed'} The existing payment was not duplicated; retry the import to finish the queue binding.`,
+                source: 'gcash-reference-reconciliation'
+            });
+        }
+    }
+
+    for (const group of reconciliation.insertGroups) {
+        try {
+            await claimGroup(group);
+            claimedInsertGroups.push(group);
+        } catch (error) {
+            recordRuntimeConflict(group, error);
+        }
+    }
+
+    const officialInsertGroupByReference = new Map(claimedInsertGroups.map((group) => [group.reference, group]));
+    const recordsForInsert = [
+        ...reconciliation.regularRecords,
+        ...claimedInsertGroups.flatMap((group) => group.records)
+    ];
+    const releaseCreatedInsertClaims = async () => {
+        const insertReferences = new Set(claimedInsertGroups.map((group) => group.reference));
+        await Promise.all(createdClaims
+            .filter((group) => insertReferences.has(group.reference))
+            .map((group) => releaseGcashTransactionClaim({
+                branchId: scopedBranchId,
+                reference: group.reference,
+                submissionId: group.submissionId
+            }).catch(() => false)));
+    };
+
+    try {
+        if (relational && recordsForInsert.length) {
+            await withTransaction(async (connection) => {
+                for (const group of claimedInsertGroups) {
+                    const [referenceRows] = await connection.query(
+                        `SELECT id
+                         FROM payment_entries
+                         WHERE branch_id = ?
+                           AND (
+                               REPLACE(REPLACE(UPPER(reference), '-', ''), ' ', '') = ?
+                               OR REPLACE(REPLACE(UPPER(or_number), '-', ''), ' ', '') = ?
+                           )
+                         LIMIT 1
+                         FOR UPDATE`,
+                        [scopedBranchId, group.reference, group.reference]
+                    );
+                    if (referenceRows && referenceRows.length) {
+                        throw createError(409, `GCash reference ${group.reference} was recorded while the import was being processed.`);
+                    }
                 }
 
-                await assignEntryNumbers(connection, record.entry);
-                await assertEntryNumbersAvailable(connection, scopedBranchId, record.entry);
-                await insertPaymentEntry(record.entry, scopedBranchId, record.accountNumber, connection);
+                const checkedOfficialReferences = new Set();
+                for (const record of recordsForInsert) {
+                    const officialReference = normalizeGcashReference(record?.entry?.reference);
+                    const officialGroup = officialInsertGroupByReference.get(officialReference);
+                    const [duplicateRows] = await connection.query(
+                        `SELECT id FROM payment_entries
+                         WHERE branch_id = ?
+                           AND account_number = ?
+                           AND (id = ? OR fingerprint = ? OR reference = ?)
+                         LIMIT 1`,
+                        [
+                            scopedBranchId,
+                            record.accountNumber,
+                            record.entry.id,
+                            record.entry.fingerprint,
+                            record.entry.reference
+                        ]
+                    );
+                    if (duplicateRows && duplicateRows.length) {
+                        if (officialGroup) {
+                            throw createError(409, `GCash reference ${officialReference} conflicts with an existing payment entry.`);
+                        }
+                        duplicates += 1;
+                        continue;
+                    }
+
+                    await assignEntryNumbers(connection, record.entry);
+                    if (officialGroup && checkedOfficialReferences.has(officialReference)) {
+                        const sharedReference = record.entry.reference;
+                        record.entry.reference = null;
+                        try {
+                            await assertEntryNumbersAvailable(connection, scopedBranchId, record.entry);
+                        } finally {
+                            record.entry.reference = sharedReference;
+                        }
+                    } else {
+                        await assertEntryNumbersAvailable(connection, scopedBranchId, record.entry);
+                    }
+                    if (officialGroup) checkedOfficialReferences.add(officialReference);
+                    await insertPaymentEntry(record.entry, scopedBranchId, record.accountNumber, connection);
+                    imported += 1;
+                    if (record.method === 'GCash') methods.gcash += 1;
+                    else methods.cash += 1;
+                }
+            });
+        } else if (!relational && recordsForInsert.length) {
+            const payments = existingPayments && typeof existingPayments === 'object' ? existingPayments : {};
+            recordsForInsert.forEach((record) => {
+                if (!payments[record.accountNumber]) {
+                    payments[record.accountNumber] = {
+                        customerName: record.customerName,
+                        area: record.area,
+                        history: []
+                    };
+                }
+                if (!Array.isArray(payments[record.accountNumber].history)) {
+                    payments[record.accountNumber].history = [];
+                }
+                if (!payments[record.accountNumber].customerName && record.customerName) {
+                    payments[record.accountNumber].customerName = record.customerName;
+                }
+                if (!payments[record.accountNumber].area && record.area) {
+                    payments[record.accountNumber].area = record.area;
+                }
+                const officialReference = normalizeGcashReference(record?.entry?.reference);
+                const officialGroup = officialInsertGroupByReference.get(officialReference);
+                if (paymentImportDuplicateInHistory(payments[record.accountNumber].history, record.entry)) {
+                    if (officialGroup) {
+                        throw createError(409, `GCash reference ${officialReference} conflicts with an existing payment entry.`);
+                    }
+                    duplicates += 1;
+                    return;
+                }
+                payments[record.accountNumber].history.unshift(record.entry);
                 imported += 1;
                 if (record.method === 'GCash') methods.gcash += 1;
                 else methods.cash += 1;
-            }
-        });
-    } else {
-        const payments = existingPayments && typeof existingPayments === 'object' ? existingPayments : {};
-        parsed.records.forEach((record) => {
-            if (!payments[record.accountNumber]) {
-                payments[record.accountNumber] = {
-                    customerName: record.customerName,
-                    area: record.area,
-                    history: []
-                };
-            }
-            if (!Array.isArray(payments[record.accountNumber].history)) {
-                payments[record.accountNumber].history = [];
-            }
-            if (!payments[record.accountNumber].customerName && record.customerName) {
-                payments[record.accountNumber].customerName = record.customerName;
-            }
-            if (!payments[record.accountNumber].area && record.area) {
-                payments[record.accountNumber].area = record.area;
-            }
-            if (paymentImportDuplicateInHistory(payments[record.accountNumber].history, record.entry)) {
-                duplicates += 1;
-                return;
-            }
-            payments[record.accountNumber].history.unshift(record.entry);
-            imported += 1;
-            if (record.method === 'GCash') methods.gcash += 1;
-            else methods.cash += 1;
-        });
+            });
 
-        Object.keys(payments).forEach((accountNumber) => {
-            if (!Array.isArray(payments[accountNumber]?.history)) return;
-            payments[accountNumber].history = sortPaymentImportHistory(payments[accountNumber].history);
-        });
-        await writePayments(payments);
+            Object.keys(payments).forEach((accountNumber) => {
+                if (!Array.isArray(payments[accountNumber]?.history)) return;
+                payments[accountNumber].history = sortPaymentImportHistory(payments[accountNumber].history);
+            });
+            await writePayments(payments);
+        }
+    } catch (error) {
+        await releaseCreatedInsertClaims();
+        throw error;
     }
 
-    triggerBranchServiceRefresh(scopedBranchId, 'payment-history-excel-import');
+    for (const group of claimedInsertGroups) {
+        try {
+            await finalizeGcashTransactionAllocations({
+                branchId: scopedBranchId,
+                reference: group.reference,
+                submissionId: group.submissionId,
+                paymentEntries: group.allocations.map((allocation) => ({
+                    accountNumber: allocation.accountNumber,
+                    billingMonth: allocation.billingMonth,
+                    paymentEntryId: allocation.paymentEntryId
+                }))
+            });
+            autoBoundReferences += 1;
+            newPaymentBindings += 1;
+        } catch (error) {
+            pendingReferences += 1;
+            reconciliationWarnings.push({
+                reference: group.reference,
+                accountNumbers: group.allocations.map((allocation) => allocation.accountNumber),
+                reason: `${error?.message || 'Binding finalization failed'} The payments were imported once and the reference remains reserved; retry the import to finish binding without duplicating them.`,
+                source: 'gcash-reference-reconciliation'
+            });
+        }
+    }
+
+    if (imported > 0) triggerBranchServiceRefresh(scopedBranchId, 'payment-history-excel-import');
+
+    const warnings = [...parsed.skipped, ...reconciliationWarnings].slice(0, PAYMENT_IMPORT_WARNING_LIMIT);
+    const conflictRows = conflictGroups.reduce((sum, group) => sum + group.records.length, 0);
+    const skipped = (parsed.skippedCount || parsed.skipped.length) + conflictRows;
 
     return {
         imported,
         duplicates,
-        skipped: parsed.skippedCount || parsed.skipped.length,
-        warnings: parsed.skipped,
+        skipped,
+        warnings,
         unmatchedQueued: unmatchedQueue.added,
         unmatchedCount: unmatchedQueue.count,
         methods,
         bySheet: parsed.bySheet,
+        gcashReconciliation: {
+            matchedReferences: reconciliation.groups.length,
+            autoBoundReferences,
+            newPaymentBindings,
+            existingPaymentBindings,
+            alreadyPostedReferences: reconciliation.alreadyPostedGroups.length,
+            conflictReferences: conflictGroups.length,
+            conflictRows,
+            pendingReferences
+        },
         backup
     };
 };
@@ -1789,66 +2185,203 @@ const bindPaymentImportUnmatchedRecord = async ({ branchId, recordId, accountNum
     const customerName = getPaymentImportCustomerDisplayName(customer, unmatchedRecord.customerName);
     const customerArea = normalizePaymentImportText(customer?.area || customer?.coverageArea || unmatchedRecord.area);
     const relational = await isRelationalReady();
-    const existingPayments = await readPayments(scopedBranchId);
+    const [existingPayments, gcashHistory] = await Promise.all([
+        readPayments(scopedBranchId),
+        listGcashTransactionHistory({ branchId: scopedBranchId, all: true })
+    ]);
+    const importRecord = {
+        accountNumber: selectedAccountNumber,
+        customerName,
+        area: customerArea,
+        sheetName: unmatchedRecord.sheetName,
+        rowNumber: unmatchedRecord.rowNumber,
+        method: unmatchedRecord.method,
+        amount: unmatchedRecord.amount,
+        entry
+    };
+    const reconciliation = buildPaymentImportGcashReconciliationPlan({
+        records: [importRecord],
+        transactions: gcashHistory.transactions,
+        payments: existingPayments,
+        branchId: scopedBranchId
+    });
+    const officialGroup = reconciliation.groups[0] || null;
+    if (officialGroup?.action === 'conflict') {
+        const conflict = createError(409, officialGroup.reason || 'The official GCash reference conflicts with this customer payment.');
+        conflict.code = 'GCASH_IMPORT_REFERENCE_CONFLICT';
+        throw conflict;
+    }
     const backup = await createPaymentRecordsBackup(existingPayments, {
         branchId: scopedBranchId,
         user: importedBy,
         reason: 'before-payment-history-unmatched-bind'
     });
-
-    if (relational) {
-        await withTransaction(async (connection) => {
-            const [duplicateRows] = await connection.query(
-                `SELECT id FROM payment_entries
-                 WHERE branch_id = ?
-                   AND account_number = ?
-                   AND (id = ? OR fingerprint = ? OR reference = ?)
-                 LIMIT 1`,
-                [
-                    scopedBranchId,
-                    selectedAccountNumber,
-                    entry.id,
-                    entry.fingerprint,
-                    entry.reference
-                ]
-            );
-            if (duplicateRows && duplicateRows.length) {
-                throw createError(409, 'Payment already exists for this subscriber.');
-            }
-            await assignEntryNumbers(connection, entry);
-            await assertEntryNumbersAvailable(connection, scopedBranchId, entry);
-            await insertPaymentEntry(entry, scopedBranchId, selectedAccountNumber, connection);
+    const reviewer = {
+        id: String(importedBy?.id || '').trim() || null,
+        username: normalizePaymentImportText(importedBy?.username) || null,
+        name: normalizePaymentImportText(importedBy?.name) || null,
+        role: normalizePaymentImportText(importedBy?.role) || null
+    };
+    let claimCreated = false;
+    const claimOfficialGroup = async () => {
+        if (!officialGroup) return null;
+        const claim = await claimGcashTransactionAllocations({
+            branchId: scopedBranchId,
+            reference: officialGroup.reference,
+            submissionId: officialGroup.submissionId,
+            allocations: officialGroup.allocations,
+            amount: officialGroup.totalAmount,
+            paymentDate: officialGroup.paymentDate,
+            claimedBy: reviewer
         });
-    } else {
-        const payments = existingPayments && typeof existingPayments === 'object' ? existingPayments : {};
-        if (!payments[selectedAccountNumber]) {
-            payments[selectedAccountNumber] = {
-                customerName,
-                area: customerArea,
-                history: []
-            };
-        }
-        if (!Array.isArray(payments[selectedAccountNumber].history)) {
-            payments[selectedAccountNumber].history = [];
-        }
-        if (paymentImportDuplicateInHistory(payments[selectedAccountNumber].history, entry)) {
-            throw createError(409, 'Payment already exists for this subscriber.');
-        }
-        if (!payments[selectedAccountNumber].customerName && customerName) {
-            payments[selectedAccountNumber].customerName = customerName;
-        }
-        if (!payments[selectedAccountNumber].area && customerArea) {
-            payments[selectedAccountNumber].area = customerArea;
-        }
-        payments[selectedAccountNumber].history.unshift(entry);
-        payments[selectedAccountNumber].history = sortPaymentImportHistory(payments[selectedAccountNumber].history);
-        await writePayments(payments);
+        claimCreated = !claim.idempotent;
+        return claim;
+    };
+    const finalizeOfficialGroup = async (paymentEntryId) => {
+        if (!officialGroup) return null;
+        return finalizeGcashTransactionAllocations({
+            branchId: scopedBranchId,
+            reference: officialGroup.reference,
+            submissionId: officialGroup.submissionId,
+            paymentEntries: [{
+                accountNumber: selectedAccountNumber,
+                billingMonth: officialGroup.allocations[0].billingMonth,
+                paymentEntryId
+            }]
+        });
+    };
+
+    if (officialGroup?.action === 'already_posted') {
+        const removal = await removePaymentImportUnmatchedRecord(scopedBranchId, unmatchedRecord.id);
+        return {
+            imported: 0,
+            duplicate: true,
+            gcashAutoBound: false,
+            gcashAlreadyPosted: true,
+            accountNumber: selectedAccountNumber,
+            customerName,
+            entry: null,
+            removed: Boolean(removal.target),
+            unmatchedCount: removal.records.length,
+            backup
+        };
     }
 
+    if (officialGroup?.action === 'bind_existing') {
+        await claimOfficialGroup();
+        const existingEntry = officialGroup.existingEntries[0]?.entry;
+        await finalizeOfficialGroup(existingEntry?.id);
+        const removal = await removePaymentImportUnmatchedRecord(scopedBranchId, unmatchedRecord.id);
+        return {
+            imported: 0,
+            duplicate: true,
+            gcashAutoBound: true,
+            gcashExistingPaymentBinding: true,
+            accountNumber: selectedAccountNumber,
+            customerName,
+            entry: existingEntry || null,
+            removed: Boolean(removal.target),
+            unmatchedCount: removal.records.length,
+            backup
+        };
+    }
+
+    if (officialGroup?.action === 'insert') await claimOfficialGroup();
+
+    try {
+        if (relational) {
+            await withTransaction(async (connection) => {
+                if (officialGroup) {
+                    const [referenceRows] = await connection.query(
+                        `SELECT id
+                         FROM payment_entries
+                         WHERE branch_id = ?
+                           AND (
+                               REPLACE(REPLACE(UPPER(reference), '-', ''), ' ', '') = ?
+                               OR REPLACE(REPLACE(UPPER(or_number), '-', ''), ' ', '') = ?
+                           )
+                         LIMIT 1
+                         FOR UPDATE`,
+                        [scopedBranchId, officialGroup.reference, officialGroup.reference]
+                    );
+                    if (referenceRows && referenceRows.length) {
+                        throw createError(409, `GCash reference ${officialGroup.reference} was recorded while the payment was being bound.`);
+                    }
+                }
+                const [duplicateRows] = await connection.query(
+                    `SELECT id FROM payment_entries
+                     WHERE branch_id = ?
+                       AND account_number = ?
+                       AND (id = ? OR fingerprint = ? OR reference = ?)
+                     LIMIT 1`,
+                    [
+                        scopedBranchId,
+                        selectedAccountNumber,
+                        entry.id,
+                        entry.fingerprint,
+                        entry.reference
+                    ]
+                );
+                if (duplicateRows && duplicateRows.length) {
+                    throw createError(409, 'Payment already exists for this subscriber.');
+                }
+                await assignEntryNumbers(connection, entry);
+                await assertEntryNumbersAvailable(connection, scopedBranchId, entry);
+                await insertPaymentEntry(entry, scopedBranchId, selectedAccountNumber, connection);
+            });
+        } else {
+            const payments = existingPayments && typeof existingPayments === 'object' ? existingPayments : {};
+            if (!payments[selectedAccountNumber]) {
+                payments[selectedAccountNumber] = {
+                    customerName,
+                    area: customerArea,
+                    history: []
+                };
+            }
+            if (!Array.isArray(payments[selectedAccountNumber].history)) {
+                payments[selectedAccountNumber].history = [];
+            }
+            if (paymentImportDuplicateInHistory(payments[selectedAccountNumber].history, entry)) {
+                throw createError(409, 'Payment already exists for this subscriber.');
+            }
+            if (!payments[selectedAccountNumber].customerName && customerName) {
+                payments[selectedAccountNumber].customerName = customerName;
+            }
+            if (!payments[selectedAccountNumber].area && customerArea) {
+                payments[selectedAccountNumber].area = customerArea;
+            }
+            payments[selectedAccountNumber].history.unshift(entry);
+            payments[selectedAccountNumber].history = sortPaymentImportHistory(payments[selectedAccountNumber].history);
+            await writePayments(payments);
+        }
+    } catch (error) {
+        if (officialGroup && claimCreated) {
+            await releaseGcashTransactionClaim({
+                branchId: scopedBranchId,
+                reference: officialGroup.reference,
+                submissionId: officialGroup.submissionId
+            }).catch(() => false);
+        }
+        throw error;
+    }
+
+    let gcashAutoBound = false;
+    let gcashBindingPending = false;
+    if (officialGroup) {
+        try {
+            await finalizeOfficialGroup(entry.id);
+            gcashAutoBound = true;
+        } catch {
+            gcashBindingPending = true;
+        }
+    }
     const removal = await removePaymentImportUnmatchedRecord(scopedBranchId, unmatchedRecord.id);
     triggerBranchServiceRefresh(scopedBranchId, 'payment-history-unmatched-bind');
     return {
         imported: 1,
+        duplicate: false,
+        gcashAutoBound,
+        gcashBindingPending,
         accountNumber: selectedAccountNumber,
         customerName,
         entry,
@@ -4269,3 +4802,5 @@ module.exports = router;
 module.exports.handleXenditWebhook = handleXenditWebhook;
 module.exports.recordApprovedProofPayment = recordApprovedProofPayment;
 module.exports.recordApprovedProofPayments = recordApprovedProofPayments;
+module.exports.buildPaymentImportGcashReconciliationPlan = buildPaymentImportGcashReconciliationPlan;
+module.exports.importPaymentRecordsFromExcel = importPaymentRecordsFromExcel;

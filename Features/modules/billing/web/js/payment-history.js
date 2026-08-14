@@ -295,14 +295,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const unmatchedQueued = Number(payload.unmatchedQueued) || 0;
         const cash = Number(payload?.methods?.cash) || 0;
         const gcash = Number(payload?.methods?.gcash) || 0;
+        const gcashReconciliation = payload?.gcashReconciliation || {};
+        const autoBoundReferences = Number(gcashReconciliation.autoBoundReferences) || 0;
+        const existingPaymentBindings = Number(gcashReconciliation.existingPaymentBindings) || 0;
+        const alreadyPostedReferences = Number(gcashReconciliation.alreadyPostedReferences) || 0;
+        const conflictReferences = Number(gcashReconciliation.conflictReferences) || 0;
+        const conflictRows = Number(gcashReconciliation.conflictRows) || 0;
+        const pendingReferences = Number(gcashReconciliation.pendingReferences) || 0;
+        const unmatchedSkipped = Math.max(0, skipped - conflictRows);
         const importedText = `${formatCount(imported)} ${imported === 1 ? 'payment' : 'payments'}`;
         const methodText = `Cash ${formatCount(cash)}, GCash ${formatCount(gcash)}`;
         const extras = [];
         if (duplicates) extras.push(`${formatCount(duplicates)} duplicate${duplicates === 1 ? '' : 's'} skipped`);
+        if (autoBoundReferences) {
+            const existingText = existingPaymentBindings
+                ? `, including ${formatCount(existingPaymentBindings)} already in Payment History`
+                : '';
+            extras.push(`${formatCount(autoBoundReferences)} official GCash reference${autoBoundReferences === 1 ? '' : 's'} auto-bound${existingText}`);
+        }
+        if (alreadyPostedReferences) {
+            extras.push(`${formatCount(alreadyPostedReferences)} already-posted GCash reference${alreadyPostedReferences === 1 ? '' : 's'} left unchanged`);
+        }
+        if (conflictReferences) {
+            extras.push(`${formatCount(conflictReferences)} GCash reference conflict${conflictReferences === 1 ? '' : 's'} ${conflictReferences === 1 ? 'requires' : 'require'} Admin review`);
+        }
+        if (pendingReferences) {
+            extras.push(`${formatCount(pendingReferences)} GCash binding${pendingReferences === 1 ? '' : 's'} reserved for retry`);
+        }
         if (unmatchedQueued) {
             extras.push(`${formatCount(unmatchedQueued)} unmatched row${unmatchedQueued === 1 ? '' : 's'} ready for review`);
-        } else if (skipped) {
-            extras.push(`${formatCount(skipped)} unmatched row${skipped === 1 ? '' : 's'} skipped`);
+        } else if (unmatchedSkipped) {
+            extras.push(`${formatCount(unmatchedSkipped)} unmatched row${unmatchedSkipped === 1 ? '' : 's'} skipped`);
         }
         return `Imported ${importedText} (${methodText})${extras.length ? `. ${extras.join('; ')}.` : '.'}`;
     };
@@ -656,7 +679,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             await loadHistory();
             await loadUnmatchedRecords({ render: true });
-            showToast(`Payment bound to ${payload?.customerName || accountNumber}.`, 'success');
+            if (payload?.gcashBindingPending) {
+                showToast('Payment recorded once; the official GCash reference is reserved. Retry the import to finish binding.', 'info');
+            } else if (payload?.gcashExistingPaymentBinding) {
+                showToast(`Existing payment linked to the official GCash reference for ${payload?.customerName || accountNumber}.`, 'success');
+            } else if (payload?.gcashAlreadyPosted) {
+                showToast(`Official GCash payment for ${payload?.customerName || accountNumber} was already posted; no duplicate was added.`, 'info');
+            } else {
+                showToast(`Payment bound to ${payload?.customerName || accountNumber}.`, 'success');
+            }
         } catch (error) {
             showToast(error.message || 'Failed to bind unmatched payment.', 'error');
             setButtonBusy(button, false);

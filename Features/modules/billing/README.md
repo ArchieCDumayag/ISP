@@ -7,7 +7,7 @@ Owns plan configuration, billing cycles, balances, payment entry/history, statem
 - Backend descriptor: `backend/index.js`
 - Canonical backend implementations: `backend/*.js`
 - Canonical pages and browser assets: `web/`
-- Admin pages: plans, payments, payment history/breakdown, confirmation queues, disconnections, statements, and thermal print
+- Admin pages: plans, payments, payment history/breakdown, GCash transactions, disconnections, statements, and thermal print
 - Public/customer payment pages: quick payment, receipt, account statement, and billing statement
 - Main APIs: `/api/plans`, `/api/payments`, `/api/payment-records`, `/api/payment-confirmations*`, `/api/disconnections`, `/api/billing/*`, and statement/receipt endpoints
 

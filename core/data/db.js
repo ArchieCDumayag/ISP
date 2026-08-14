@@ -191,13 +191,13 @@ const deleteStoredMysqlConfig = () => {
   deleteFileIfExists(MYSQL_CONFIG_BACKUP_FILE);
 };
 
-const isIsolatedFlavorRuntime = () => String(process.env.FLAVOR_RUNTIME_ISOLATED || '').trim() === '1';
+const isIsolatedRuntime = () => String(process.env.ISOLATED_RUNTIME_CONFIG || '').trim() === '1';
 
-let runtimeMysqlConfig = isIsolatedFlavorRuntime() ? null : readStoredMysqlConfig();
+let runtimeMysqlConfig = isIsolatedRuntime() ? null : readStoredMysqlConfig();
 
 const getMysqlConfigSource = () => {
   if (!isMysqlStorageMode()) return getStorageDriver();
-  if (isIsolatedFlavorRuntime() && hasMysqlConfigIntent(buildConfigFromEnv())) return 'env';
+  if (isIsolatedRuntime() && hasMysqlConfigIntent(buildConfigFromEnv())) return 'env';
   if (hasMysqlConfigIntent(runtimeMysqlConfig)) return 'runtime';
   if (hasMysqlConfigIntent(buildConfigFromEnv())) return 'env';
   return 'none';
@@ -205,7 +205,7 @@ const getMysqlConfigSource = () => {
 
 const getEffectiveMysqlConfig = () => {
   if (!isMysqlStorageMode()) return null;
-  if (isIsolatedFlavorRuntime()) {
+  if (isIsolatedRuntime()) {
     const fromEnv = buildConfigFromEnv();
     if (!hasMysqlConfigIntent(fromEnv)) return null;
     return fromEnv;

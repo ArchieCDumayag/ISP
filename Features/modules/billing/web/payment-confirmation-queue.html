@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.4">
+    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.5">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -19,79 +19,48 @@
             <main class="page queue-page">
                 <header class="page-header d-print-none queue-page-header">
                     <div class="page-title">
-                        <div class="subheader">Billing / GCash reconciliation</div>
-                        <h1>Payment Confirmation Queue</h1>
-                        <p class="text-secondary mt-1 mb-0">Import official GCash statements, review incoming credits, and post verified payments.</p>
+                        <h1>GCash Reconciliation</h1>
+                        <p class="text-secondary mt-1 mb-0">Import statements, bind credits, and classify debits.</p>
                     </div>
                     <div class="header-actions">
                         <div class="btn-list">
-                            <button type="button" class="btn btn-outline-secondary" id="queueGcashHistoryRefreshBtn">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="queueGcashHistoryRefreshBtn">
                                 <i class="ti ti-refresh" aria-hidden="true"></i>
                                 Refresh
                             </button>
-                            <button type="button" class="btn btn-primary" id="queueImportGcashHistoryBtn">
+                            <button type="button" class="btn btn-primary btn-sm" id="queueImportGcashHistoryBtn">
                                 <i class="ti ti-file-upload" aria-hidden="true"></i>
-                                Import GCash History
+                                Import PDF
                             </button>
                         </div>
                     </div>
                 </header>
 
-                <section class="row row-cards queue-summary-grid" aria-label="GCash transaction summary">
-                    <div class="col-12 col-sm-6 col-xl-3">
-                        <div class="card card-sm queue-summary-card h-100">
-                            <div class="card-body">
-                                <div class="d-flex align-items-center">
-                                    <div class="flex-fill">
-                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Imported records</div>
-                                        <div class="h2 mb-0" id="queueGcashStatTotal">—</div>
-                                        <div class="text-secondary small mt-1" id="queueGcashStatTotalMeta">Loading history...</div>
-                                    </div>
-                                    <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-file-invoice"></i></span>
-                                </div>
-                            </div>
+                <section class="card card-sm queue-summary-bar" aria-label="GCash transaction summary">
+                    <div class="card-body">
+                        <div class="queue-summary-item queue-summary-item--records">
+                            <i class="ti ti-file-invoice text-primary" aria-hidden="true"></i>
+                            <strong id="queueGcashStatTotal">—</strong>
+                            <span>Records</span>
+                            <small class="text-secondary" id="queueGcashStatTotalMeta">Loading history...</small>
                         </div>
-                    </div>
-                    <div class="col-12 col-sm-6 col-xl-3">
-                        <div class="card card-sm queue-summary-card h-100">
-                            <div class="card-body">
-                                <div class="d-flex align-items-center">
-                                    <div class="flex-fill">
-                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Available credits</div>
-                                        <div class="h2 mb-0 text-green" id="queueGcashStatAvailable">—</div>
-                                        <div class="text-secondary small mt-1" id="queueGcashStatAvailableMeta">Ready to bind</div>
-                                    </div>
-                                    <span class="avatar bg-green-lt text-green" aria-hidden="true"><i class="ti ti-link-plus"></i></span>
-                                </div>
-                            </div>
+                        <div class="queue-summary-item queue-summary-item--available">
+                            <i class="ti ti-link-plus text-green" aria-hidden="true"></i>
+                            <strong class="text-green" id="queueGcashStatAvailable">—</strong>
+                            <span>Available</span>
+                            <small class="text-secondary" id="queueGcashStatAvailableMeta">—</small>
                         </div>
-                    </div>
-                    <div class="col-12 col-sm-6 col-xl-3">
-                        <div class="card card-sm queue-summary-card h-100">
-                            <div class="card-body">
-                                <div class="d-flex align-items-center">
-                                    <div class="flex-fill">
-                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Posted credits</div>
-                                        <div class="h2 mb-0 text-blue" id="queueGcashStatPosted">—</div>
-                                        <div class="text-secondary small mt-1" id="queueGcashStatPostedMeta">Locked payments</div>
-                                    </div>
-                                    <span class="avatar bg-blue-lt text-blue" aria-hidden="true"><i class="ti ti-lock-check"></i></span>
-                                </div>
-                            </div>
+                        <div class="queue-summary-item queue-summary-item--posted">
+                            <i class="ti ti-lock-check text-blue" aria-hidden="true"></i>
+                            <strong class="text-blue" id="queueGcashStatPosted">—</strong>
+                            <span>Posted</span>
+                            <small class="text-secondary" id="queueGcashStatPostedMeta">—</small>
                         </div>
-                    </div>
-                    <div class="col-12 col-sm-6 col-xl-3">
-                        <div class="card card-sm queue-summary-card h-100">
-                            <div class="card-body">
-                                <div class="d-flex align-items-center">
-                                    <div class="flex-fill">
-                                        <div class="text-secondary text-uppercase fw-bold queue-summary-label">Debit records</div>
-                                        <div class="h2 mb-0 text-orange" id="queueGcashStatDebit">—</div>
-                                        <div class="text-secondary small mt-1" id="queueGcashStatDebitMeta">Record only</div>
-                                    </div>
-                                    <span class="avatar bg-orange-lt text-orange" aria-hidden="true"><i class="ti ti-receipt-off"></i></span>
-                                </div>
-                            </div>
+                        <div class="queue-summary-item queue-summary-item--debit">
+                            <i class="ti ti-receipt-off text-orange" aria-hidden="true"></i>
+                            <strong class="text-orange" id="queueGcashStatDebit">—</strong>
+                            <span>Debits</span>
+                            <small class="text-secondary" id="queueGcashStatDebitMeta">—</small>
                         </div>
                     </div>
                 </section>
@@ -100,28 +69,9 @@
                     <div class="card-status-top bg-primary"></div>
                     <div class="card-header queue-card-header">
                         <div class="queue-card-heading">
-                            <span class="avatar avatar-md bg-primary-lt text-primary" aria-hidden="true">
-                                <i class="ti ti-receipt-2"></i>
-                            </span>
                             <div>
-                                <div class="d-flex align-items-center gap-2 flex-wrap">
-                                    <h2 class="card-title mb-0" id="queueGcashHistoryTitle">Imported GCash Transactions</h2>
-                                    <span class="badge bg-azure-lt text-azure">Official PDF history</span>
-                                </div>
+                                <h2 class="card-title mb-0" id="queueGcashHistoryTitle">Imported GCash Transactions</h2>
                                 <p class="text-secondary mt-1 mb-0" id="queueGcashHistorySummary">Loading imported transaction history...</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body queue-guidance">
-                        <div class="alert alert-info mb-0" role="note">
-                            <div class="d-flex">
-                                <span class="avatar avatar-sm bg-info-lt text-info me-3" aria-hidden="true">
-                                    <i class="ti ti-shield-check"></i>
-                                </span>
-                                <div>
-                                    <h3 class="alert-title">Admin verification is required</h3>
-                                    <div class="text-secondary">Imported rows never post automatically. All statement rows are retained: incoming credits may be bound to a payment, while debit rows remain records only and can be classified with an audited remark.</div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -541,7 +491,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payment-confirmation-queue.js?v=5.11"></script>
+    <script src="payment-confirmation-queue.js?v=5.13"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

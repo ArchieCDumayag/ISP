@@ -17,38 +17,43 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customers.css?v=3.2">
-    <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
+    <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
+    <link rel="stylesheet" href="css/customers-tabler.css?v=1.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
-<body>
-    <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
     <div id="sidebar"></div>
-    <div class="app-main">
+    <div class="app-main page-wrapper">
         <div id="topbar"></div>
-        <main class="page customers-page">
-        <section class="page-header customer-page-header">
-            <div class="page-title">
-                <p class="eyebrow">Customer Management</p>
-                <h1>Customers</h1>
-                <p class="subtitle">Manage subscribers, plans, service areas, and account status.</p>
+        <main class="page-body customers-page">
+        <div class="container-xl py-3">
+        <section class="page-header d-print-none mb-3 customer-page-header">
+            <div class="row g-2 align-items-center w-100">
+            <div class="col">
+                <div class="page-pretitle">Customer Management</div>
+                <h1 class="page-title">Customers</h1>
+                <div class="text-secondary mt-1">Manage subscribers, plans, service areas, and account status.</div>
             </div>
-            <div class="header-actions">
-                <button class="ghost-btn import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import</button>
-                <button class="ghost-btn import-warning-review-btn" id="importWarningReviewBtn" type="button" hidden>
+            <div class="col-auto ms-auto d-print-none">
+            <div class="btn-list customer-header-actions">
+                <button class="btn btn-outline-secondary btn-sm import-clients-btn" id="importClientsBtn" type="button"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Import</button>
+                <button class="btn btn-outline-warning btn-sm import-warning-review-btn" id="importWarningReviewBtn" type="button" hidden>
                     <i class="ti ti-alert-triangle" aria-hidden="true"></i>
                     Review import warnings
-                    <span class="import-warning-review-count" id="importWarningReviewCount">0</span>
+                    <span class="badge bg-warning text-warning-fg" id="importWarningReviewCount">0</span>
                 </button>
-                <button class="ghost-btn export-clients-btn" id="exportClientsBtn" type="button"><i class="ti ti-file-export" aria-hidden="true"></i> Export</button>
+                <button class="btn btn-outline-secondary btn-sm export-clients-btn" id="exportClientsBtn" type="button"><i class="ti ti-file-export" aria-hidden="true"></i> Export</button>
                 <input type="file" class="import-clients-input" id="importClientsFile" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Import clients Excel file">
-                <button class="add-btn" id="openModalBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
+                <button class="btn btn-primary btn-sm" id="openModalBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
+            </div>
+            </div>
             </div>
         </section>
 
-        <section class="card customer-kpi-grid" aria-label="Filtered customer summary">
+        <section class="card card-sm customer-kpi-grid mb-3" aria-label="Filtered customer summary">
             <article class="customer-kpi-item">
                 <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-users"></i></span>
                 <div><span>Customers</span><strong id="customerStatsTotal">0</strong></div>
@@ -67,30 +72,30 @@
             </article>
         </section>
 
-        <section class="section-frame">
-            <div class="section-toolbar customer-compact-toolbar">
-                <div class="search-field">
-                    <i class="ti ti-search" aria-hidden="true"></i>
-                    <input type="search" id="customerSearch" placeholder="Search name or account" aria-label="Search customers">
+        <section class="card customer-list-card">
+            <div class="card-body border-bottom customer-compact-toolbar">
+                <div class="input-icon customer-search-control">
+                    <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                    <input class="form-control form-control-sm" type="search" id="customerSearch" placeholder="Search name or account" aria-label="Search customers">
                 </div>
-                <div class="filter-chips" role="radiogroup" aria-label="Status filters">
-                    <button class="chip active" role="radio" aria-checked="true">All</button>
-                    <button class="chip" role="radio" aria-checked="false">Active</button>
-                    <button class="chip" role="radio" aria-checked="false">Inactive</button>
+                <div class="btn-list flex-nowrap filter-chips" role="radiogroup" aria-label="Status filters">
+                    <button class="btn btn-sm btn-outline-secondary chip active" type="button" role="radio" aria-checked="true">All</button>
+                    <button class="btn btn-sm btn-outline-secondary chip" type="button" role="radio" aria-checked="false">Active</button>
+                    <button class="btn btn-sm btn-outline-secondary chip" type="button" role="radio" aria-checked="false">Inactive</button>
                 </div>
                 <div class="toolbar-inline-filters" aria-label="Customer filters">
                     <div class="page-size-control toolbar-filter-control toolbar-filter-control--plan">
-                        <label for="filterPlan">Plan</label>
-                        <div class="select-wrapper">
-                            <select id="filterPlan" name="filterPlan">
+                        <label class="form-label mb-1" for="filterPlan">Plan</label>
+                        <div>
+                            <select class="form-select form-select-sm" id="filterPlan" name="filterPlan">
                                 <option value="">All plans</option>
                             </select>
                         </div>
                     </div>
                     <div class="page-size-control toolbar-filter-control toolbar-filter-control--billing">
-                        <label for="customerBillingTypeFilter">Billing</label>
-                        <div class="select-wrapper">
-                            <select id="customerBillingTypeFilter" name="customerBillingTypeFilter">
+                        <label class="form-label mb-1" for="customerBillingTypeFilter">Billing</label>
+                        <div>
+                            <select class="form-select form-select-sm" id="customerBillingTypeFilter" name="customerBillingTypeFilter">
                                 <option value="">All types</option>
                                 <option value="prepaid">Prepaid</option>
                                 <option value="postpaid">Postpaid</option>
@@ -98,10 +103,10 @@
                         </div>
                     </div>
                     <div class="toolbar-filter-control toolbar-filter-control--area">
-                        <label for="customerFilterAreaTrigger">Area</label>
+                        <label class="form-label mb-1" for="customerFilterAreaTrigger">Area</label>
                         <select id="filterArea" name="filterArea" class="filter-multi-select filter-checklist__native" multiple hidden aria-hidden="true"></select>
                         <div class="filter-checklist" id="customerFilterAreaPicker">
-                            <button type="button" class="filter-checklist__trigger" id="customerFilterAreaTrigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="customerFilterAreaPanel">
+                            <button type="button" class="btn btn-sm btn-outline-secondary filter-checklist__trigger" id="customerFilterAreaTrigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="customerFilterAreaPanel">
                                 <span class="filter-checklist__copy">
                                     <span class="filter-checklist__label">All areas</span>
                                     <span class="filter-checklist__meta">No area filter applied</span>
@@ -125,9 +130,9 @@
                         </div>
                     </div>
                     <div class="page-size-control">
-                        <label for="customersSortSelect">Sort</label>
-                        <div class="select-wrapper">
-                            <select id="customersSortSelect" name="customersSortSelect">
+                        <label class="form-label mb-1" for="customersSortSelect">Sort</label>
+                        <div>
+                            <select class="form-select form-select-sm" id="customersSortSelect" name="customersSortSelect">
                                 <option value="newOld" selected>New-Old</option>
                                 <option value="oldNew">Old-New</option>
                                 <option value="firstNameAsc">A-Z by First Name</option>
@@ -136,9 +141,9 @@
                         </div>
                     </div>
                     <div class="page-size-control">
-                        <label for="pageSizeSelect">Show</label>
-                        <div class="select-wrapper">
-                            <select id="pageSizeSelect" name="pageSize">
+                        <label class="form-label mb-1" for="pageSizeSelect">Show</label>
+                        <div>
+                            <select class="form-select form-select-sm" id="pageSizeSelect" name="pageSize">
                                 <option value="5">5</option>
                                 <option value="10" selected>10</option>
                                 <option value="25">25</option>
@@ -149,18 +154,18 @@
                     </div>
                 </div>
                 <div class="toolbar-actions customer-toolbar-actions">
-                    <button class="ghost-btn customer-clear-filters" id="customerClearFilters" type="button" title="Clear customer filters">
+                    <button class="btn btn-outline-secondary btn-sm customer-clear-filters" id="customerClearFilters" type="button" title="Clear customer filters">
                         <i class="ti ti-filter-off" aria-hidden="true"></i>
                         <span>Clear</span>
                     </button>
-                    <button class="ghost-btn ghost-btn--danger" id="deleteSelectedCustomersBtn" type="button" disabled>
+                    <button class="btn btn-outline-danger btn-sm" id="deleteSelectedCustomersBtn" type="button" disabled>
                         <i class="ti ti-archive" aria-hidden="true"></i> Archive selected
                     </button>
                 </div>
             </div>
 
-            <div class="table-wrapper">
-                <table class="customer-table">
+            <div class="table-responsive customer-table-wrap">
+                <table class="table table-vcenter table-hover card-table customer-table">
                     <colgroup>
                         <col class="col-select">
                         <col class="col-account">
@@ -174,7 +179,7 @@
                     <thead>
                         <tr>
                             <th class="select-col">
-                                <input type="checkbox" id="selectAllCustomers" aria-label="Select all customers on this page">
+                                <input class="form-check-input" type="checkbox" id="selectAllCustomers" aria-label="Select all customers on this page">
                             </th>
                             <th class="account-col">Account #</th>
                             <th>Customer</th>
@@ -190,17 +195,17 @@
                     </tbody>
                 </table>
             </div>
-            <div class="table-footer" id="customersFooter">
-                <div class="footer-summary" id="customersSummary"></div>
-                <div class="footer-controls">
-                    <button type="button" class="footer-btn" id="customersPrev" aria-label="Previous page" disabled>&#8249;</button>
-                    <span class="footer-page-info" id="customersPageInfo">Page 1 of 1</span>
-                    <button type="button" class="footer-btn" id="customersNext" aria-label="Next page" disabled>&#8250;</button>
+            <div class="card-footer d-flex align-items-center justify-content-between gap-2 flex-wrap" id="customersFooter">
+                <div class="text-secondary small" id="customersSummary"></div>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="customersPrev" aria-label="Previous page" disabled><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+                    <span class="text-secondary small" id="customersPageInfo">Page 1 of 1</span>
+                    <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="customersNext" aria-label="Next page" disabled><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
                 </div>
             </div>
         </section>
+        </div>
     </main>
-</div>
 </div>
 </div>
 
@@ -212,7 +217,7 @@
                     <h2 id="customerModalTitle">Add customer</h2>
                     <p class="modal-subtitle">Generate a customer profile, assign a plan, and set the first billing cycle.</p>
                 </div>
-                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <form class="customer-form">
                 <div class="form-card form-card--primary">
@@ -287,7 +292,7 @@
                             <label for="loginPassword">Login Password</label>
                             <div class="secure-input-row">
                                 <input type="password" id="loginPassword" name="loginPassword" autocomplete="off">
-                                <button type="button" class="ghost-btn ghost-btn--icon secure-input-toggle" id="loginPasswordToggleBtn" aria-label="Show password" title="Show password">
+                                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm secure-input-toggle" id="loginPasswordToggleBtn" aria-label="Show password" title="Show password">
                                     <i class="ti ti-eye" aria-hidden="true"></i>
                                 </button>
                             </div>
@@ -331,7 +336,7 @@
                             <div class="map-pin-card">
                                 <div class="map-pin-input-row">
                                     <input type="text" id="mapPin" name="mapPin" inputmode="text" placeholder="e.g. 14.599500, 120.984200">
-                                    <button type="button" class="ghost-btn ghost-btn--icon map-pin-trigger" id="openMapPinPickerBtn" aria-label="View map" title="View map">
+                                    <button type="button" class="btn btn-icon btn-outline-secondary btn-sm map-pin-trigger" id="openMapPinPickerBtn" aria-label="View map" title="View map">
                                         <i class="ti ti-map-pin" aria-hidden="true"></i>
                                     </button>
                                 </div>
@@ -446,7 +451,7 @@
                                 <select id="customerNapId" name="napId">
                                     <option value="">No NAP assignment</option>
                                 </select>
-                                <button type="button" class="ghost-btn ghost-btn--icon customer-nap-map-btn" id="viewSelectedNapMapBtn" aria-label="Pick NAP on map" title="Pick NAP on map" aria-disabled="false">
+                                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm customer-nap-map-btn" id="viewSelectedNapMapBtn" aria-label="Pick NAP on map" title="Pick NAP on map" aria-disabled="false">
                                     <i class="ti ti-map-pin" aria-hidden="true"></i>
                                 </button>
                             </div>
@@ -470,8 +475,8 @@
                     <textarea id="remarks" name="remarks" rows="3"></textarea>
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="ghost-btn" id="closeModalFooter">Cancel</button>
-                    <button type="submit" class="primary-btn" id="modalSubmitBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="closeModalFooter">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="modalSubmitBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
                 </div>
             </form>
         </div>
@@ -484,7 +489,7 @@
                     <p class="modal-eyebrow"><i class="ti ti-map-pin" aria-hidden="true"></i> Coordinates Picker</p>
                     <h2 id="mapPinPickerTitle">Pin Customer Location</h2>
                 </div>
-                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeMapPinPickerBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeMapPinPickerBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <div class="map-picker-toolbar">
@@ -492,15 +497,15 @@
                         <i class="ti ti-search" aria-hidden="true"></i>
                         <input type="search" id="mapPinSearchInput" placeholder="Search place or coordinates">
                     </div>
-                    <button type="button" class="ghost-btn" id="mapPinSearchBtn"><i class="ti ti-search" aria-hidden="true"></i> Search</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="mapPinSearchBtn"><i class="ti ti-search" aria-hidden="true"></i> Search</button>
                     <div class="map-picker-layer-switcher" role="group" aria-label="Map layer picker">
-                        <button type="button" class="ghost-btn map-layer-btn is-active" data-map-pin-layer="satellite" aria-pressed="true">
+                        <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn is-active" data-map-pin-layer="satellite" aria-pressed="true">
                             <i class="ti ti-satellite" aria-hidden="true"></i> Satellite
                         </button>
-                        <button type="button" class="ghost-btn map-layer-btn" data-map-pin-layer="street" aria-pressed="false">
+                        <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn" data-map-pin-layer="street" aria-pressed="false">
                             <i class="ti ti-map" aria-hidden="true"></i> Street
                         </button>
-                        <button type="button" class="ghost-btn map-layer-btn" data-map-pin-layer="terrain" aria-pressed="false">
+                        <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn" data-map-pin-layer="terrain" aria-pressed="false">
                             <i class="ti ti-mountain" aria-hidden="true"></i> Terrain
                         </button>
                     </div>
@@ -509,8 +514,8 @@
                 <div id="mapPinPickerMap" class="map-picker-canvas" aria-label="Customer location map"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="ghost-btn" id="cancelMapPinPickerBtn">Cancel</button>
-                <button type="button" class="primary-btn" id="applyMapPinPickerBtn"><i class="ti ti-check" aria-hidden="true"></i> Use Coordinates</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelMapPinPickerBtn">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="applyMapPinPickerBtn"><i class="ti ti-check" aria-hidden="true"></i> Use Coordinates</button>
             </div>
         </div>
     </div>
@@ -522,14 +527,14 @@
                     <p class="modal-eyebrow"><i class="ti ti-map-pin" aria-hidden="true"></i> NAP Map Picker</p>
                     <h2 id="napMapPreviewTitle">Select NAP on Map</h2>
                 </div>
-                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeNapMapPreviewBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeNapMapPreviewBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <p class="map-picker-status" id="napMapPreviewInfo"></p>
                 <div id="napMapPreviewMap" class="map-picker-canvas" aria-label="NAP location map"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="ghost-btn" id="closeNapMapPreviewFooterBtn">Close</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="closeNapMapPreviewFooterBtn">Close</button>
             </div>
         </div>
     </div>
@@ -541,7 +546,7 @@
                     <p class="modal-eyebrow"><i class="ti ti-scale" aria-hidden="true"></i> Add New Credit Limit</p>
                     <h2 id="creditOverrideTitle">Add New Credit Limit</h2>
                 </div>
-                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeCreditOverrideBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeCreditOverrideBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <p class="credit-override-summary" id="creditOverrideSummary">
@@ -554,8 +559,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="ghost-btn" id="cancelCreditOverrideBtn">Cancel</button>
-                <button type="button" class="primary-btn" id="confirmCreditOverrideBtn">Add New Credit Limit</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelCreditOverrideBtn">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="confirmCreditOverrideBtn">Add New Credit Limit</button>
             </div>
         </div>
     </div>
@@ -569,10 +574,10 @@
                     <h2 id="customerViewTitle" class="modal-title text-truncate">View Customer Account</h2>
                 </div>
                 <div class="view-header-actions">
-                    <button type="button" class="btn btn-icon btn-ghost-primary" data-view-action="edit-account" aria-label="Edit account" title="Edit account">
+                    <button type="button" class="btn btn-icon btn-ghost-primary btn-sm" data-view-action="edit-account" aria-label="Edit account" title="Edit account">
                         <i class="ti ti-pencil" aria-hidden="true"></i>
                     </button>
-                    <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="closeViewModalBtn" data-dismiss="modal" aria-label="Close">
+                    <button type="button" class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeViewModalBtn" data-dismiss="modal" aria-label="Close">
                         <i class="ti ti-x" aria-hidden="true"></i>
                     </button>
                 </div>
@@ -589,7 +594,7 @@
                                             <p class="view-name" data-view="fullName">Customer Name</p>
                                             <p class="view-subtle view-account-number">
                                                 <span data-view="accountNumber">--</span>
-                                                <button type="button" class="copy-btn" data-copy-field="accountNumber" aria-label="Copy account number" title="Copy account number">
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="accountNumber" aria-label="Copy account number" title="Copy account number">
                                                     <i class="ti ti-copy" aria-hidden="true"></i>
                                                 </button>
                                             </p>
@@ -615,16 +620,16 @@
                                             </div>
                                             <p class="view-balance-helper" data-view="balanceHelper"></p>
                                             <div class="view-balance-actions">
-                                                <button type="button" class="view-action-btn view-action-btn--icon-only" data-view-action="pay-now" aria-label="Pay Now" data-tooltip="Pay Now">
+                                                <button type="button" class="btn btn-icon btn-primary btn-sm view-action-btn view-action-btn--icon-only" data-view-action="pay-now" aria-label="Pay Now" data-tooltip="Pay Now">
                                                     <i class="ti ti-wallet" aria-hidden="true"></i>
                                                 </button>
-                                                <button type="button" class="view-action-btn view-action-btn--ghost view-action-btn--icon-only" data-view-action="send-reminder" aria-label="Send Reminder" data-tooltip="Send Reminder">
+                                                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm view-action-btn view-action-btn--ghost view-action-btn--icon-only" data-view-action="send-reminder" aria-label="Send Reminder" data-tooltip="Send Reminder">
                                                     <i class="ti ti-bell" aria-hidden="true"></i>
                                                 </button>
-                                                <button type="button" class="view-action-btn view-action-btn--wifi view-action-btn--icon-only" data-view-action="change-wifi" aria-label="Change WiFi name and password" data-tooltip="Change WiFi">
+                                                <button type="button" class="btn btn-icon btn-outline-success btn-sm view-action-btn view-action-btn--wifi view-action-btn--icon-only" data-view-action="change-wifi" aria-label="Change WiFi name and password" data-tooltip="Change WiFi">
                                                     <i class="ti ti-wifi" aria-hidden="true"></i>
                                                 </button>
-                                                <button type="button" class="view-action-btn view-action-btn--ghost view-action-btn--icon-only" data-view-action="connected-devices" aria-label="View connected devices" data-tooltip="Connected Devices">
+                                                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm view-action-btn view-action-btn--ghost view-action-btn--icon-only" data-view-action="connected-devices" aria-label="View connected devices" data-tooltip="Connected Devices">
                                                     <i class="ti ti-device-laptop" aria-hidden="true"></i>
                                                 </button>
                                             </div>
@@ -655,7 +660,7 @@
                                     <div class="view-statement-actions-row">
                                         <button
                                             type="button"
-                                            class="view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--account"
+                                            class="btn btn-outline-secondary btn-sm view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--account"
                                             data-statement-download="account"
                                             title="Account Statement"
                                             aria-label="Download Account Statement">
@@ -664,7 +669,7 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--billing"
+                                            class="btn btn-outline-secondary btn-sm view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--billing"
                                             data-statement-download="billing"
                                             title="Billing Statement"
                                             aria-label="Download Billing Statement">
@@ -673,7 +678,7 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--thermal"
+                                            class="btn btn-outline-secondary btn-sm view-action-btn view-action-btn--icon view-statement-btn view-statement-btn--thermal"
                                             data-statement-download="thermal"
                                             title="Thermal Receipt"
                                             aria-label="Open Thermal Receipt">
@@ -687,8 +692,8 @@
 
                         <div class="view-content">
                             <div class="view-panels">
-                                <div class="view-panel">
-                                    <h3 class="view-panel-title">Account Information</h3>
+                                <div class="view-panel view-panel--account">
+                                    <h3 class="view-panel-title"><i class="ti ti-id" aria-hidden="true"></i> Account Information</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">Plan Type</span>
@@ -720,7 +725,7 @@
                                             <span class="view-row-label">Portal Username</span>
                                             <span class="view-row-value view-value--mono view-copy">
                                                 <span data-view="loginUsername"></span>
-                                                <button type="button" class="copy-btn" data-copy-field="loginUsername" aria-label="Copy portal username" title="Copy portal username">
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="loginUsername" aria-label="Copy portal username" title="Copy portal username">
                                                     <i class="ti ti-copy" aria-hidden="true"></i>
                                                 </button>
                                             </span>
@@ -729,7 +734,7 @@
                                             <span class="view-row-label">Portal Password</span>
                                             <span class="view-row-value view-value--mono view-copy">
                                                 <span data-view="loginPassword"></span>
-                                                <button type="button" class="copy-btn" data-copy-field="loginPassword" aria-label="Copy portal password" title="Copy portal password">
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="loginPassword" aria-label="Copy portal password" title="Copy portal password">
                                                     <i class="ti ti-copy" aria-hidden="true"></i>
                                                 </button>
                                             </span>
@@ -737,7 +742,8 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel">
+                                <div class="view-panel view-panel--billing">
+                                    <h3 class="view-panel-title"><i class="ti ti-calendar-dollar" aria-hidden="true"></i> Billing Schedule</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">Plan Price</span>
@@ -770,8 +776,8 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel view-panel--pppoe-grid" id="mikrotikPanel">
-                                    <h3 class="view-panel-title">MikroTik &amp; PPPoE</h3>
+                                <div class="view-panel view-panel--network view-panel--pppoe-grid" id="mikrotikPanel">
+                                    <h3 class="view-panel-title"><i class="ti ti-router" aria-hidden="true"></i> MikroTik &amp; PPPoE</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">Router</span>
@@ -781,7 +787,7 @@
                                             <span class="view-row-label">PPPoE Username</span>
                                             <span class="view-row-value view-value--mono view-copy">
                                                 <span data-view="pppoeUsername"></span>
-                                                <button type="button" class="copy-btn" data-copy-field="pppoeUsername" aria-label="Copy PPPoE username" title="Copy PPPoE username">
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="pppoeUsername" aria-label="Copy PPPoE username" title="Copy PPPoE username">
                                                     <i class="ti ti-copy" aria-hidden="true"></i>
                                                 </button>
                                             </span>
@@ -790,7 +796,7 @@
                                             <span class="view-row-label">PPPoE Password</span>
                                             <span class="view-row-value view-value--mono view-copy view-sensitive">
                                                 <span data-view="pppoePassword"></span>
-                                                <button type="button" class="copy-btn" data-copy-field="pppoePassword" aria-label="Copy PPPoE password" title="Copy PPPoE password">
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="pppoePassword" aria-label="Copy PPPoE password" title="Copy PPPoE password">
                                                     <i class="ti ti-copy" aria-hidden="true"></i>
                                                 </button>
                                             </span>
@@ -812,8 +818,8 @@
                                         <div class="view-row">
                                             <span class="view-row-label">Assigned IP</span>
                                             <span class="view-row-value view-value--mono view-copy">
-                                                <button type="button" class="assigned-ip-browser-link" data-view="pppoeAssignedIp" data-browser-player-ip>Not set</button>
-                                                <button type="button" class="copy-btn" data-copy-field="pppoeAssignedIp" aria-label="Copy assigned IP" title="Copy assigned IP">
+                                                <button type="button" class="btn btn-link btn-sm p-0 assigned-ip-browser-link" data-view="pppoeAssignedIp" data-browser-player-ip>Not set</button>
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="pppoeAssignedIp" aria-label="Copy assigned IP" title="Copy assigned IP">
                                                     <i class="ti ti-copy" aria-hidden="true"></i>
                                                 </button>
                                             </span>
@@ -828,8 +834,8 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel" id="napManagementPanel">
-                                    <h3 class="view-panel-title">NAP Management</h3>
+                                <div class="view-panel view-panel--nap" id="napManagementPanel">
+                                    <h3 class="view-panel-title"><i class="ti ti-network" aria-hidden="true"></i> NAP Management</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">NAP Info</span>
@@ -851,19 +857,19 @@
                                 </div>
 
                                 <div class="view-panel view-panel--wide view-panel--history">
-                                    <h3 class="view-panel-title">Payment History</h3>
+                                    <h3 class="view-panel-title"><i class="ti ti-history" aria-hidden="true"></i> Payment History</h3>
                                     <div class="view-history-toolbar" data-view="historyToolbar" hidden>
                                         <label class="view-history-toolbar__select">
                                             <input type="checkbox" data-view="historySelectAll" aria-label="Select all history entries">
                                             <span>Select all</span>
                                         </label>
                                         <span class="view-history-toolbar__count" data-view="historySelectionCount">0 selected</span>
-                                        <button type="button" class="ghost-btn view-history-toolbar__delete" data-view="historyDeleteSelected" disabled>
+                                        <button type="button" class="btn btn-outline-danger btn-sm view-history-toolbar__delete" data-view="historyDeleteSelected" disabled>
                                             <i class="ti ti-trash" aria-hidden="true"></i> Delete Selected
                                         </button>
                                     </div>
                                     <div class="view-table">
-                                        <table class="view-table__table">
+                                        <table class="table table-vcenter table-hover view-table__table mb-0">
                                             <thead>
                                                 <tr>
                                                     <th class="view-history-select-col">
@@ -902,7 +908,7 @@
                     <h2 id="importWarningModalTitle">Review import warnings</h2>
                     <p class="modal-subtitle">Correct the skipped rows below, then retry only those records.</p>
                 </div>
-                <button class="btn btn-icon btn-outline-secondary close-modal" id="closeImportWarningModalBtn" type="button" aria-label="Close import warning review">
+                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeImportWarningModalBtn" type="button" aria-label="Close import warning review">
                     <i class="ti ti-x" aria-hidden="true"></i>
                 </button>
             </div>
@@ -927,8 +933,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="ghost-btn" id="cancelImportWarningBtn" type="button">Close</button>
-                <button class="primary-btn" id="retryImportWarningBtn" type="button">
+                <button class="btn btn-outline-secondary btn-sm" id="cancelImportWarningBtn" type="button">Close</button>
+                <button class="btn btn-primary btn-sm" id="retryImportWarningBtn" type="button">
                     <i class="ti ti-refresh" aria-hidden="true"></i>
                     Apply fixes
                 </button>
@@ -943,6 +949,21 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async function () {
+            document.querySelectorAll('.customer-modal input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])').forEach((input) => {
+                input.classList.add('form-control', 'form-control-sm');
+            });
+            document.querySelectorAll('.customer-modal select').forEach((select) => {
+                select.classList.add('form-select', 'form-select-sm');
+            });
+            document.querySelectorAll('.customer-modal textarea').forEach((textarea) => {
+                textarea.classList.add('form-control', 'form-control-sm');
+            });
+            document.querySelectorAll('.customer-modal input[type="checkbox"]').forEach((checkbox) => {
+                checkbox.classList.add('form-check-input');
+            });
+            document.querySelectorAll('.customer-modal .form-field > label:first-child').forEach((label) => {
+                label.classList.add('form-label');
+            });
             const modal = document.getElementById('customerModal');
             const viewModal = document.getElementById('customerViewModal');
             const creditOverrideModal = document.getElementById('creditOverrideModal');
@@ -992,7 +1013,7 @@
             const modalSubmitBtn = document.getElementById('modalSubmitBtn');
             const viewTitle = document.getElementById('customerViewTitle');
             const form = modal.querySelector('form');
-            const searchInput = document.querySelector('.search-field input[type="search"]');
+            const searchInput = document.getElementById('customerSearch');
             const customerTable = document.querySelector('.customer-table');
             const tableBody = customerTable.querySelector('tbody');
             const filterChipsContainer = document.querySelector('.filter-chips');
@@ -1003,14 +1024,12 @@
             const customerFilterAreaSelectAll = document.getElementById('customerFilterAreaSelectAll');
             const toast = document.getElementById('toast');
             const accountViewShared = window.AccountViewShared || null;
-            const canUseDirectWifi = () => Boolean(window.directWifiEnabled ?? window.isArchieFlavor);
             const syncDirectWifiVisibility = () => {
                 document.querySelectorAll('.wifi-customer, [data-view-action="change-wifi"]').forEach((button) => {
-                    button.hidden = !canUseDirectWifi();
+                    button.hidden = false;
                 });
             };
             syncDirectWifiVisibility();
-            window.addEventListener('flavor:metadata', syncDirectWifiVisibility);
             const escapeHtml = accountViewShared?.escapeHtml || ((value) => String(value ?? '')
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
@@ -4294,7 +4313,7 @@
                             <td colspan="9">
                                 <button
                                     type="button"
-                                    class="view-history-year-toggle ${group.isLocked ? 'is-locked' : ''}"
+                                    class="btn btn-ghost-secondary btn-sm view-history-year-toggle ${group.isLocked ? 'is-locked' : ''}"
                                     data-history-year="${escapeHtml(group.yearKey)}"
                                     data-history-year-locked="${group.isLocked ? 'true' : 'false'}"
                                     aria-expanded="${group.isExpanded ? 'true' : 'false'}"
@@ -4312,7 +4331,7 @@
                             <tr>
                                 <td class="view-history-select-cell">
                                     ${row.entryId
-                                        ? `<input type="checkbox" class="view-history-select-checkbox" data-entry-id="${row.escaped.entryId}" aria-label="Select transaction"${viewHistorySelectedEntryIds.has(row.entryId) ? ' checked' : ''}>`
+                                        ? `<input type="checkbox" class="form-check-input view-history-select-checkbox" data-entry-id="${row.escaped.entryId}" aria-label="Select transaction"${viewHistorySelectedEntryIds.has(row.entryId) ? ' checked' : ''}>`
                                         : '<span class="view-history-action-empty">-</span>'}
                                 </td>
                                 <td>${row.escaped.recordedByLabel}</td>
@@ -4324,7 +4343,7 @@
                                 <td><span class="status-pill ${row.pillClass}">${row.escaped.directionLabel}</span></td>
                                 <td class="view-history-actions-cell">
                                     ${row.entryId
-                                        ? `<button type="button" class="view-history-delete-btn" data-entry-id="${row.escaped.entryId}" aria-label="Delete transaction" title="Delete transaction"><i class="ti ti-trash" aria-hidden="true"></i></button>`
+                                        ? `<button type="button" class="btn btn-icon btn-outline-danger btn-sm view-history-delete-btn" data-entry-id="${row.escaped.entryId}" aria-label="Delete transaction" title="Delete transaction"><i class="ti ti-trash" aria-hidden="true"></i></button>`
                                         : '<span class="view-history-action-empty">-</span>'}
                                 </td>
                             </tr>
@@ -5080,27 +5099,27 @@
                                 <span class="import-warning-message">${escapeHtml(issueText || 'Review this row before retrying.')}</span>
                             </td>
                             <td>
-                                <input class="import-warning-input" data-warning-field="accountNumber" type="text"
+                                <input class="form-control form-control-sm import-warning-input" data-warning-field="accountNumber" type="text"
                                     value="${escapeHtml(record.accountNumber || '')}" aria-label="Account number for row ${escapeHtml(rowNumber)}">
                             </td>
                             <td>
-                                <select class="import-warning-select" data-warning-field="planCategory" aria-label="Plan type for row ${escapeHtml(rowNumber)}">
+                                <select class="form-select form-select-sm import-warning-select" data-warning-field="planCategory" aria-label="Plan type for row ${escapeHtml(rowNumber)}">
                                     <option value="postpaid" ${category === 'postpaid' ? 'selected' : ''}>Postpaid</option>
                                     <option value="prepaid" ${category === 'prepaid' ? 'selected' : ''}>Prepaid</option>
                                 </select>
                             </td>
                             <td>
-                                <select class="import-warning-select" data-warning-field="catalogPlan" aria-label="Existing plan for row ${escapeHtml(rowNumber)}">
+                                <select class="form-select form-select-sm import-warning-select" data-warning-field="catalogPlan" aria-label="Existing plan for row ${escapeHtml(rowNumber)}">
                                     <option value="">Create from rate</option>
                                     ${planOptions}
                                 </select>
                             </td>
                             <td>
-                                <input class="import-warning-input" data-warning-field="planValue" type="text"
+                                <input class="form-control form-control-sm import-warning-input" data-warning-field="planValue" type="text"
                                     value="${escapeHtml(planValue)}" placeholder="Plan name" aria-label="Plan name for row ${escapeHtml(rowNumber)}">
                             </td>
                             <td>
-                                <input class="import-warning-input" data-warning-field="planAmount" type="number" min="0.01" step="0.01"
+                                <input class="form-control form-control-sm import-warning-input" data-warning-field="planAmount" type="number" min="0.01" step="0.01"
                                     value="${Number.isFinite(planAmount) && planAmount > 0 ? escapeHtml(planAmount) : ''}"
                                     placeholder="0.00" aria-label="Monthly rate for row ${escapeHtml(rowNumber)}">
                             </td>
@@ -7217,7 +7236,7 @@
                             <td class="select-col" data-label="Select">
                                 <input
                                     type="checkbox"
-                                    class="row-select-checkbox"
+                                    class="form-check-input row-select-checkbox"
                                     data-customer-select="${accountNumber}"
                                     aria-label="Select ${canonicalFullName}"
                                     ${isSelected ? 'checked' : ''}
@@ -7228,7 +7247,7 @@
                                     <span class="account-tag">${accountNumber}</span>
                                     <button
                                         type="button"
-                                        class="copy-btn account-copy-btn"
+                                        class="btn btn-icon btn-ghost-secondary btn-sm copy-btn account-copy-btn"
                                         data-copy-account-number="${accountNumber}"
                                         data-copy-account-name="${escapeHtml(canonicalFullName)}"
                                         aria-label="Copy account number ${accountNumber}"
@@ -7264,14 +7283,14 @@
                                 </div>
                             </td>
                             <td class="status-col" data-label="Status">
-                                <span class="status-pill customer-status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+                                <span class="badge status-pill customer-status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
                             </td>
                             <td class="actions-col" data-label="Actions">
                                 <div class="row-actions">
-                                    <button class="ghost-icon view-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="View ${escapeHtml(canonicalFullName)}" title="View customer details"><i class="ti ti-eye" aria-hidden="true"></i></button>
-                                    <button class="ghost-icon wifi-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Change WiFi for ${escapeHtml(canonicalFullName)}" title="Change WiFi name and password"><i class="ti ti-wifi" aria-hidden="true"></i></button>
-                                    <button class="ghost-icon edit-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Edit ${escapeHtml(canonicalFullName)}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
-                                    <button class="ghost-icon danger delete-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Archive ${escapeHtml(canonicalFullName)}" title="Archive customer"><i class="ti ti-archive" aria-hidden="true"></i></button>
+                                    <button class="btn btn-icon btn-outline-primary btn-sm view-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="View ${escapeHtml(canonicalFullName)}" title="View customer details"><i class="ti ti-eye" aria-hidden="true"></i></button>
+                                    <button class="btn btn-icon btn-outline-success btn-sm wifi-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Change WiFi for ${escapeHtml(canonicalFullName)}" title="Change WiFi name and password"><i class="ti ti-wifi" aria-hidden="true"></i></button>
+                                    <button class="btn btn-icon btn-outline-secondary btn-sm edit-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Edit ${escapeHtml(canonicalFullName)}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+                                    <button class="btn btn-icon btn-outline-danger btn-sm delete-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Archive ${escapeHtml(canonicalFullName)}" title="Archive customer"><i class="ti ti-archive" aria-hidden="true"></i></button>
                                 </div>
                             </td>
                         </tr>

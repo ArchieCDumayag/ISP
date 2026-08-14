@@ -6,7 +6,6 @@ const FEATURES_ROOT = path.join(PROJECT_ROOT, 'Features');
 const MODULES_ROOT = path.join(FEATURES_ROOT, 'modules');
 const PUBLIC_ROOT = path.join(PROJECT_ROOT, 'public');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
-const FLAVORS_DIR = path.join(PROJECT_ROOT, 'flavors');
 const SCRIPTS_ROOT = path.join(PROJECT_ROOT, 'scripts');
 const ENV_FILE = path.join(PROJECT_ROOT, '.env');
 
@@ -30,7 +29,6 @@ module.exports = Object.freeze({
   MODULES_ROOT,
   PUBLIC_ROOT,
   DATA_DIR,
-  FLAVORS_DIR,
   SCRIPTS_ROOT,
   ENV_FILE,
   isPathInside,

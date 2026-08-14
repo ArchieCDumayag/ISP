@@ -9,7 +9,6 @@ const projectRoot = path.resolve(__dirname, '..', '..');
 const retiredCompatibilityPaths = [
   ['env-loader.js', 'core/config/env-loader.js'],
   ['storage-mode.js', 'core/config/storage-mode.js'],
-  ['flavor-features.js', 'core/config/flavor-features.js'],
   ['data-store.js', 'core/data/data-store.js'],
   ['db.js', 'core/data/db.js'],
   ['db-relational.js', 'core/data/db-relational.js'],
@@ -38,7 +37,6 @@ console.log('PASS JSON default and explicit MySQL storage selection');
 const core = require(path.join(projectRoot, 'core'));
 assert.strictEqual(core.paths.PROJECT_ROOT, projectRoot);
 assert.strictEqual(core.paths.DATA_DIR, path.join(projectRoot, 'data'));
-assert.strictEqual(core.paths.FLAVORS_DIR, path.join(projectRoot, 'flavors'));
 assert.strictEqual(core.paths.ENV_FILE, path.join(projectRoot, '.env'));
 assert.throws(() => core.paths.resolveProjectPath('..', 'outside'), /escapes project root/);
 console.log('PASS canonical project paths');

@@ -36,23 +36,15 @@ npm install
 
 ---
 
-## 4) Run installer script (recommended)
-For a flavor/copy setup, edit one file:
+## 4) Configure and run the installer
 
-```powershell
-copy .\flavor.config.example.json .\flavor.config.json
-npm run flavor:apply
-```
-
-Use the `features` checklist inside `flavor.config.json` to choose which modules this copy includes.
-
-In the default JSON mode, schema update is not required.
-
-The older interactive installer is still available:
+Use the interactive installer to configure deployment settings and secrets:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\\scripts\\install.ps1
 ```
+
+All application modules are included. In the default JSON mode, a schema update is not required.
 
 ---
 

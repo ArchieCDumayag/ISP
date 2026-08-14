@@ -6,7 +6,6 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { getPool, query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
-const { isFeatureEnabled } = require('../../../../core/config/flavor-features');
 const https = require('https');
 const createError = require('http-errors');
 const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter } = require('../../admin/backend/integration-settings');
@@ -6428,9 +6427,6 @@ const buildFailedGcashProofAnalysis = (message) => sanitizeGcashProofAnalysis({
 // Authenticated customer-only payment instructions, exact amount, and submission history.
 publicRouter.get('/payments/proof/context', async (req, res, next) => {
     try {
-        if (!isFeatureEnabled('paymentConfirmationQueue')) {
-            return next(createError(404, 'GCash payment proof submission is not enabled.'));
-        }
         const customer = await getCustomerFromSession(req, res);
         if (!customer) return next(createError(401, 'Customer login required.'));
         const branchId = Number(customer.branchId || 0);
@@ -6479,9 +6475,6 @@ publicRouter.get('/payments/proof/context', async (req, res, next) => {
 // them with the invoice/merchant/history, but it never creates or approves a payment.
 publicRouter.post('/payments/proof/analyze', async (req, res, next) => {
     try {
-        if (!isFeatureEnabled('paymentConfirmationQueue')) {
-            return next(createError(404, 'GCash payment proof submission is not enabled.'));
-        }
         const customer = await getCustomerFromSession(req, res);
         if (!customer) return next(createError(401, 'Customer login required.'));
         const branchId = Number(customer.branchId || 0);
@@ -6535,9 +6528,6 @@ publicRouter.post('/payments/proof/analyze', async (req, res, next) => {
 // proofMimeType?, proofFileName?. Every submission remains pending until Admin approval.
 publicRouter.post('/payments/proof', async (req, res, next) => {
     try {
-        if (!isFeatureEnabled('paymentConfirmationQueue')) {
-            return next(createError(404, 'GCash payment proof submission is not enabled.'));
-        }
         const {
             amount,
             reference,

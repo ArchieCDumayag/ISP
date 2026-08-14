@@ -1,6 +1,6 @@
 # Admin
 
-Owns staff authentication and sessions, accounts/roles, business profile, integration configuration, activity logs, app downloads, the protected project-data reset, information API, owner-only setup/update tools, and deployment/flavor administration UI.
+Owns staff authentication and sessions, accounts/roles, business profile, integration configuration, activity logs, app downloads, the protected project-data reset, information API, and owner-only setup/update tools.
 
 ## Runtime
 

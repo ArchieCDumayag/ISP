@@ -13,43 +13,6 @@
 
 let detachTopbarInteractions = null;
 
-const normalizeFlavorIdentity = (value = '') => String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-const detectArchieFlavorFromLocation = () => {
-    const port = String(window.location.port || '').trim();
-    return port === '3000';
-};
-
-const applyFlavorMetadata = (payload = {}) => {
-    const activeFlavor = String(payload.activeFlavor || '').trim();
-    const normalizedFlavor = normalizeFlavorIdentity(activeFlavor);
-    const isArchieFlavor = typeof payload.isArchieFlavor === 'boolean'
-        ? payload.isArchieFlavor
-        : (normalizedFlavor ? ['archie', 'archie-fiber'].includes(normalizedFlavor) : detectArchieFlavorFromLocation());
-    const directWifiEnabled = payload.directWifiEnabled === undefined
-        ? isArchieFlavor
-        : Boolean(payload.directWifiEnabled);
-
-    window.activeFlavorName = activeFlavor;
-    window.isArchieFlavor = isArchieFlavor;
-    window.directWifiEnabled = directWifiEnabled;
-    document.documentElement.classList.toggle('is-archie-flavor', isArchieFlavor);
-    document.body?.classList.toggle('is-archie-flavor', isArchieFlavor);
-    window.dispatchEvent(new CustomEvent('flavor:metadata', {
-        detail: { activeFlavor, isArchieFlavor, directWifiEnabled }
-    }));
-};
-
-applyFlavorMetadata({
-    activeFlavor: window.activeFlavorName || '',
-    isArchieFlavor: detectArchieFlavorFromLocation(),
-    directWifiEnabled: detectArchieFlavorFromLocation()
-});
-
 (() => {
     if (typeof window === 'undefined' || window.appConfirm) return;
 
@@ -2040,23 +2003,19 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     };
 
-    const isFlavorFeatureDisabled = (featureKey) => Boolean(
-        featureKey && window.flavorFeatures && window.flavorFeatures[featureKey] === false
-    );
-
-    const applySidebarFeatureVisibility = (root = sidebarHost) => {
-        if (!root || !window.flavorFeatures) return;
+    const applySidebarIntegrationVisibility = (root = sidebarHost) => {
+        if (!root) return;
         root.querySelectorAll('[data-feature]').forEach((item) => {
             const featureKey = item.getAttribute('data-feature');
             if (featureKey === 'mikrotikPppoe') {
-                item.hidden = !window.mikrotikEnabled || isFlavorFeatureDisabled(featureKey);
+                item.hidden = !window.mikrotikEnabled;
                 return;
             }
             if (featureKey === 'genieacs') {
-                item.hidden = !window.genieacsEnabled || isFlavorFeatureDisabled(featureKey);
+                item.hidden = !window.genieacsEnabled;
                 return;
             }
-            item.hidden = isFlavorFeatureDisabled(featureKey);
+            item.hidden = false;
         });
         root.querySelectorAll('.sidebar-menu').forEach((menu) => {
             const items = Array.from(menu.querySelectorAll('li[data-feature]'));
@@ -2067,7 +2026,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const setMikrotikSidebarVisibility = (enabled) => {
         const pppoeItem = document.querySelector('[data-feature="mikrotikPppoe"]');
         const menu = pppoeItem?.closest('.sidebar-menu');
-        const shouldShow = Boolean(enabled) && !isFlavorFeatureDisabled('mikrotikPppoe');
+        const shouldShow = Boolean(enabled);
         if (pppoeItem) {
             pppoeItem.hidden = !shouldShow;
         }
@@ -2080,7 +2039,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const setGenieacsSidebarVisibility = (enabled) => {
         const genieacsItem = document.querySelector('[data-feature="genieacs"]');
         const menu = genieacsItem?.closest('.sidebar-menu');
-        const shouldShow = Boolean(enabled) && !isFlavorFeatureDisabled('genieacs');
+        const shouldShow = Boolean(enabled);
         if (genieacsItem) {
             genieacsItem.hidden = !shouldShow;
         }
@@ -2351,18 +2310,9 @@ document.addEventListener('DOMContentLoaded', () => {
         syncMobileSidebarViewport();
     });
 
-    loadPartial(sidebarHost, 'sidebar.html', async (root) => {
+    loadPartial(sidebarHost, 'sidebar.html', (root) => {
         dockTopbarIntoSidebar();
-        try {
-            const response = await fetch('/api/flavor/features', { credentials: 'include', cache: 'no-store' });
-            const payload = await response.json().catch(() => ({}));
-            const features = payload?.features || {};
-            window.flavorFeatures = features;
-            applyFlavorMetadata(payload);
-            applySidebarFeatureVisibility(root);
-        } catch (err) {
-            console.warn('Failed to sync flavor feature checklist:', err);
-        }
+        applySidebarIntegrationVisibility(root);
 
         const normalized = currentPath === ''
             ? 'index.html'
@@ -2497,7 +2447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             syncGenieacsSidebar(),
             syncMikrotikSidebar()
         ]).finally(() => {
-            applySidebarFeatureVisibility(root);
+            applySidebarIntegrationVisibility(root);
             setGenieacsSidebarVisibility(window.genieacsEnabled);
             setMikrotikSidebarVisibility(window.mikrotikEnabled);
             Array.from(openSidebarMenus).forEach((menu) => {

@@ -1,6 +1,6 @@
 # Customer App Module Context
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-14
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -38,6 +38,7 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - SMS modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons.
 - Existing CSS/JavaScript URLs, including root `/sms.js`, remain unchanged through module static composition.
 - Existing migrated browser files retain their original contracts; the Messenger reminder page is an additive module-owned entry point.
+- Messenger Reminder Queue uses a compact native Tabler page header, manual-review alert, segmented four-item summary, small Active/History controls, inline search/stage/setup filters, a fitted six-column queue, responsive mobile reminder cards, and compact consent/message-review dialogs. Every static and generated action uses `btn-sm`; `css/messenger-reminders.css` contains only page-specific layout additions and no legacy button/modal selectors. Reminder generation, deterministic identities, collector scope, consent requirements, message links, manual mark-sent/skip/reopen actions, audit history, APIs, and stored records are unchanged.
 
 ## Data and dependencies
 
@@ -71,9 +72,11 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged public/legal/customer/SMS pages and assets, customer/admin guards, upstream isolation, and unauthenticated Customer App/SMS denials on ports `3190`/`4190`.
 - Acceptance checks do not authenticate as a real customer, write notification/token state, run schedulers, send provider messages, or call Messenger/Firebase/SMS/email services.
+- Messenger queue UI validation covers HTML parsing, JavaScript syntax, static ID uniqueness, balanced page CSS, native Tabler header/summary/filter/table/dialog hooks, `btn-sm` on every static and generated action, responsive reminder-card hooks, unchanged API/action bindings, and absence of browser-side Meta delivery.
 
 ## Latest meaningful changes
 
+- 2026-08-14: Reorganized `messenger-reminders.html` into a compact responsive Tabler queue with small controls, fitted columns, mobile reminder cards, and compact consent/message dialogs. Replaced legacy button and modal styling with focused page-scoped Tabler layout additions; reminder generation, consent, Messenger links, manual sending, status/audit actions, authorization, APIs, and records are unchanged.
 - 2026-08-11: Removed captured-app matching and reservation from Screenshot Analysis. The page continues to show official-history matching, extracted reference/date defaults, warnings, and Pending Review status without any payment-posting capability.
 - 2026-08-10: Payment Information now identifies Local OCR, Local OCR + Vision AI, or Vision AI fallback as the analyzer source, displays AI confidence/status when used, and discloses optional external processing. The page still states that screenshot analysis cannot approve a payment.
 - 2026-08-10: Added server-assisted screenshot analysis to the GCash proof page. Selecting an image now shows extracted amount, reference, date/time, recipient, transaction status, history match, and warnings; detected reference/date values assist the form, while every submission still requires Admin approval.

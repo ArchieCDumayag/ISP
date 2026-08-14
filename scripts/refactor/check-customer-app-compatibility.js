@@ -118,7 +118,7 @@ assert(serverSource.includes('CUSTOMER_APP_WEB_ROOT'));
 assert(serverSource.includes("app.use('/webhooks/messenger', messengerBotRouter)"));
 assert(serverSource.includes("app.use('/api/customer-app'"));
 assert(serverSource.includes("app.use('/api/messenger-reminders'"));
-assert(serverSource.includes("requireMessengerReminderAccess, requireFeature('customerAppPopupReminder'), messengerRemindersRouter"));
+assert(serverSource.includes("requireMessengerReminderAccess, messengerRemindersRouter"));
 assert(serverSource.includes("accountHasRole(sessionUser, 'Collector')"));
 assert(serverSource.includes("app.use('/api/sms'"));
 assert(serverSource.includes('startCustomerUpstream();'));

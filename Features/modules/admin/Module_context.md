@@ -9,7 +9,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Manage protected admin accounts and primary/backup admin safeguards.
 - Maintain business profile, protected integration settings, activity logs, and app downloads.
 - Provide an Admin-only, password-confirmed project factory reset for operational records across all modules and branches.
-- Expose the information API plus owner-only setup, schema, flavor, and update tools.
+- Expose the information API plus owner-only setup, schema, and update tools.
 
 ## Canonical runtime layout
 
@@ -34,7 +34,6 @@ The former eleven root backend shims were retired in Phase 11. Existing browser 
 - `/accounts.html` → `web/accounts.html`
 - The Accounts tab bar exposes GCash as a normal settings panel. Admins can view and edit the merchant account name, number, and QR code without relying on a hidden integration panel.
 - The `Data Reset` section inside `/accounts.html` displays current record/file counts, deletion and preservation scope, an Android offline-data warning, and the guarded reset form.
-- `/flavors.html` → `web/flavors.html`
 - `/setup.html` → `web/setup.html`
 - `/install-guide.html` → `web/install-guide.html`
 - `/update-download.html` → `web/update-download.html`
@@ -59,11 +58,12 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 
 ## Verification contract
 
-- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, ten web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, profile-editor structure, and the visible GCash tab contract.
+- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, eleven web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, profile-editor structure, and the visible GCash tab contract.
 - `npm run refactor:phase3` runs structural, core, Admin, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public Admin files, protected-page redirects, owner-page denial, and unauthenticated API denial.
 - Admin compatibility tests exercise the JSON factory-reset service in memory, including Admin/session/configuration preservation, centralized referral-registry and imported GCash-history clearing, dynamic Finance-store clearing, audit creation, and UI/API wiring. Smoke coverage requires authentication for reset preview and confirms the new CSS/JavaScript assets are served.
+- The 2026-08-14 flavor retirement passed JavaScript/JSON syntax checks, focused Admin/Integration/HTTP smoke validation, the complete `npm test` Phase 12 gate, and live browser checks confirming `/flavors` is gone while authenticated Payment Queue navigation remains available.
 - The 2026-08-06 factory-reset change passed syntax checks, read-only live preview, `npm run refactor:admin`, isolated HTTP smoke tests, and the complete `npm test` Phase 12 suite. Local port 3000 serves the new assets and returns `401` for unauthenticated reset preview. In-app visual testing was unavailable because no browser session was connected.
 - The 2026-07-30 IP Browser profile change passed JavaScript syntax checks, HTML structure parsing, `npm run refactor:admin`, and the complete `npm test` Phase 12 suite. Interactive browser-control verification was unavailable in that session.
 
@@ -81,6 +81,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 
 ## Latest meaningful changes
 
+- 2026-08-14: Retired the owner-only flavor management page and APIs. All application modules are now present in every deployment; Admin authentication, roles, and integration readiness remain the access boundaries. No Admin accounts, sessions, integration settings, or business records were migrated or deleted.
 - 2026-08-10: Added Billing's `gcash_transaction_history` app-store key to the guarded Clear All Data contract and Admin compatibility coverage; integration settings and merchant details remain preserved.
 - 2026-08-10: Exposed the existing GCash merchant integration as a visible Accounts settings tab, retaining the existing account-name, mobile-number, QR upload, status, validation, and save behavior.
 - 2026-08-07: Added `referral_registry` to the protected project-data reset contract so Clear All Data also removes referral relationships and application audit records across branches.

@@ -104,7 +104,7 @@
   const trafficSessionHistoryBody = document.getElementById('pppoe-session-history-body');
   const pppoeWorkbench = document.getElementById('pppoe-workbench');
   const pppoeDisabledNotice = document.getElementById('pppoe-disabled-notice');
-  const disabledNoticeText = pppoeDisabledNotice?.querySelector('p');
+  const disabledNoticeText = pppoeDisabledNotice?.querySelector('[data-pppoe-disabled-message]');
 
   const showToast = (msg, type = 'info') => {
     if (typeof window.appToast === 'function') {
@@ -211,9 +211,10 @@
   // Default to on; will auto-fallback if backend lacks the live endpoint
   let liveStatusSupported = true;
   let liveStatusErrorNotified = false;
+  const pageSizeStorageKey = 'pppoePageSizeCompact';
   const initialPageSize =
-    sessionStorage.getItem('pppoePageSize') ||
-    (pageSizeSelect ? pageSizeSelect.value : '25');
+    sessionStorage.getItem(pageSizeStorageKey) ||
+    (pageSizeSelect ? pageSizeSelect.value : '50');
   const normalizeFilterValue = (value, allowedValues, fallback = 'all') => {
     const normalized = String(value || '').trim().toLowerCase();
     return allowedValues.includes(normalized) ? normalized : fallback;
@@ -738,10 +739,20 @@
     mikrotikConnected = false;
     markStatusPending();
     if (pppoeDisabledNotice) {
+      pppoeDisabledNotice.hidden = false;
       pppoeDisabledNotice.style.display = '';
       if (disabledNoticeText) {
         disabledNoticeText.textContent = message;
       }
+    }
+  };
+
+  const hideIntegrationDisabled = () => {
+    if (statusCard) statusCard.style.display = '';
+    if (pppoeWorkbench) pppoeWorkbench.style.display = '';
+    if (pppoeDisabledNotice) {
+      pppoeDisabledNotice.hidden = true;
+      pppoeDisabledNotice.style.display = 'none';
     }
   };
 
@@ -887,8 +898,8 @@
     if (pppoeLastSyncState) {
       pppoeLastSyncState.classList.toggle('is-error', !ok);
       pppoeLastSyncState.innerHTML = ok
-        ? '<i class="fa-solid fa-circle"></i> Success'
-        : `<i class="fa-solid fa-circle"></i> ${escapeHtml(message || 'Failed')}`;
+        ? '<i class="ti ti-circle-filled" aria-hidden="true"></i> Success'
+        : `<i class="ti ti-circle-filled" aria-hidden="true"></i> ${escapeHtml(message || 'Failed')}`;
     }
   };
 
@@ -1375,7 +1386,7 @@
           <td>${escapeHtml(formatSessionDateTime(entry.loginAt))}</td>
           <td>${entry.active ? 'Still Online' : escapeHtml(formatSessionDateTime(entry.logoutAt))}</td>
           <td>${escapeHtml(duration || '-')}</td>
-          <td><span class="pppoe-session-status ${entry.active ? 'is-active' : 'is-completed'}">${escapeHtml(entry.status || (entry.active ? 'Active' : 'Completed'))}</span></td>
+          <td><span class="badge rounded-pill pppoe-session-status ${entry.active ? 'is-active' : 'is-completed'}">${escapeHtml(entry.status || (entry.active ? 'Active' : 'Completed'))}</span></td>
         </tr>
       `;
     }).join('');
@@ -1725,7 +1736,7 @@
       return;
     }
 
-    const slotCount = Math.max(trafficState.maxSamples - 1, 1);
+    const slotCount = Math.max(Math.min(trafficState.maxSamples, Math.max(points.length, 2)) - 1, 1);
     const sampleSpacing = chartWidth / slotCount;
     const startX = chartRight - sampleSpacing * Math.max(points.length - 1, 0);
     const toX = (index) => startX + sampleSpacing * index;
@@ -1733,7 +1744,7 @@
     const pointPositions = points.map((_, index) => toX(index));
     const timeLabelIndexes = [];
     if (points.length > 1) {
-      const desiredLabels = Math.min(6, points.length);
+      const desiredLabels = Math.min(Math.max(Math.floor(chartWidth / 110), 2), 6, points.length);
       const lastIndex = points.length - 1;
       for (let labelIndex = 0; labelIndex < desiredLabels; labelIndex += 1) {
         const pointIndex = Math.round((lastIndex / Math.max(desiredLabels - 1, 1)) * labelIndex);
@@ -2289,6 +2300,7 @@
       : runtime.info;
     runtime.connected = isConnected;
     if (isConnected) {
+      hideIntegrationDisabled();
       if (runtimeRouterId === resolveActiveRouterId() || (!runtimeRouterId && !resolveActiveRouterId())) {
         renderPppoeSyncStatus({ ok: true });
       }
@@ -3454,7 +3466,7 @@
     const originalLabel = assignSave ? assignSave.innerHTML : '';
     if (assignSave) {
       assignSave.disabled = true;
-      assignSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Assigning...';
+      assignSave.innerHTML = '<i class="ti ti-loader-2 pppoe-spin" aria-hidden="true"></i> Assigning...';
     }
     if (assignUnassign) {
       assignUnassign.disabled = true;
@@ -3507,7 +3519,7 @@
     const originalLabel = assignUnassign ? assignUnassign.innerHTML : '';
     if (assignUnassign) {
       assignUnassign.disabled = true;
-      assignUnassign.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Unassigning...';
+      assignUnassign.innerHTML = '<i class="ti ti-loader-2 pppoe-spin" aria-hidden="true"></i> Unassigning...';
     }
     if (assignSave) assignSave.disabled = true;
     try {
@@ -3763,7 +3775,7 @@
     const maxUsageBytes = rows.reduce((max, row) => Math.max(max, getUsageBytes(row)), 0);
 
     if (!sliced.length) {
-      pppoeTableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:14px;">No PPPoE entries yet.</td></tr>';
+      pppoeTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-secondary py-4">No PPPoE entries yet.</td></tr>';
       updateTableFooter({ total, start, end, pageCount });
       return;
     }
@@ -3790,9 +3802,8 @@
         const rowKey = getAccountIdentityKey(row, rowRouterId);
         const activeAddress = resolvePppoeAddressValue(row);
         const activeAddressCell = activeAddress
-          ? `<button type="button" class="pppoe-ip-browser-link" data-browser-player-ip data-browser-player-source="${escapeHtml(activeAddress)}">${escapeHtml(activeAddress)}</button>`
+          ? `<button type="button" class="btn btn-link btn-sm p-0 pppoe-ip-browser-link" data-browser-player-ip data-browser-player-source="${escapeHtml(activeAddress)}">${escapeHtml(activeAddress)}</button>`
           : '<span class="pppoe-subtext"></span>';
-        const callerId = resolveCallerIdValue(row);
         const usageBytes = getUsageBytes(row);
         const usage = formatUsageFromBytes(usageBytes);
         const usagePercent = maxUsageBytes > 0 ? Math.min((usageBytes / maxUsageBytes) * 100, 100) : 0;
@@ -3807,10 +3818,10 @@
         return `
           <tr class="pppoe-row pppoe-row--${escapeHtml(rowStatusClass)}${isDisabled ? ' pppoe-row--disabled' : ''}" data-index="${globalIndex}" data-account-key="${escapeHtml(rowKey)}" data-username="${escapeHtml(row.username || '')}" data-router-id="${escapeHtml(rowRouterId)}" data-secret-id="${escapeHtml(normalizeSecretId(row.secretId))}">
             <td>${start + idx + 1}</td>
-            <td>
+            <td title="${escapeHtml(customerName)}">
               ${customerInfo.hasAssignment ? `
               <div class="pppoe-customer">
-                <div class="pppoe-avatar">${escapeHtml(customerInitials || 'NA')}</div>
+                <div class="avatar avatar-sm bg-blue-lt text-blue pppoe-avatar">${escapeHtml(customerInitials || 'NA')}</div>
                 <div class="pppoe-customer-meta">
                   <div class="pppoe-name">${escapeHtml(customerName)}</div>
                   <div class="pppoe-subtext">${escapeHtml(customerInfo.meta || '')}</div>
@@ -3818,14 +3829,13 @@
               </div>
               ` : ''}
             </td>
-            <td>
+            <td title="${escapeHtml(username || '')}">
               <span class="pppoe-name">${escapeHtml(username || '')}</span>
             </td>
-            <td>
+            <td title="${escapeHtml(activeAddress)}">
               ${activeAddressCell}
             </td>
-            <td>${escapeHtml(callerId)}</td>
-            <td>${escapeHtml(row.profile || '')}</td>
+            <td title="${escapeHtml(row.profile || '')}">${escapeHtml(row.profile || '')}</td>
             <td>
               <span class="last-seen-stack">
                 <span class="${escapeHtml(lastSeen.className)}">${escapeHtml(lastSeen.label)}</span>
@@ -3843,15 +3853,15 @@
             <td>
               ${isLiveOnly
                 ? `<div class="table-actions">
-                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-chart-line"></i></button>
-                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"><i class="ti ti-chart-line" aria-hidden="true"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="ti ti-history" aria-hidden="true"></i></button>
               </div>
               <span class="pppoe-subtext">Live only</span>`
                 : `<div class="table-actions">
-                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"${isDisabled ? ' disabled title="Traffic unavailable for disabled PPPoE"' : ''}><i class="fa-solid fa-chart-line"></i></button>
-                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="edit" aria-label="Edit ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-pen-to-square"></i></button>
-                <button class="icon-btn danger btn btn-icon btn-sm btn-outline-danger" type="button" data-pppoe-action="delete" aria-label="Delete ${escapeHtml(row.username || 'entry')}"><i class="fa-solid fa-trash"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="traffic" aria-label="Traffic for ${escapeHtml(row.username || 'entry')}"${isDisabled ? ' disabled title="Traffic unavailable for disabled PPPoE"' : ''}><i class="ti ti-chart-line" aria-hidden="true"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="sessions" aria-label="Session history for ${escapeHtml(row.username || 'entry')}" title="Session history"><i class="ti ti-history" aria-hidden="true"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-secondary" type="button" data-pppoe-action="edit" aria-label="Edit ${escapeHtml(row.username || 'entry')}"><i class="ti ti-edit" aria-hidden="true"></i></button>
+                <button class="icon-btn btn btn-icon btn-sm btn-outline-danger" type="button" data-pppoe-action="delete" aria-label="Delete ${escapeHtml(row.username || 'entry')}"><i class="ti ti-trash" aria-hidden="true"></i></button>
               </div>`}
             </td>
           </tr>
@@ -4372,8 +4382,8 @@
     if (!editPasswordToggle) return;
     const icon = editPasswordToggle.querySelector('i');
     if (icon) {
-      icon.classList.toggle('fa-eye', !show);
-      icon.classList.toggle('fa-eye-slash', show);
+      icon.classList.toggle('ti-eye', !show);
+      icon.classList.toggle('ti-eye-off', show);
     }
     editPasswordToggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
     editPasswordToggle.title = show ? 'Hide password' : 'Show password';
@@ -4450,7 +4460,7 @@
     const originalLabel = saveBtn ? saveBtn.textContent : '';
     if (saveBtn) {
       saveBtn.disabled = true;
-      saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+      saveBtn.innerHTML = '<i class="ti ti-loader-2 pppoe-spin" aria-hidden="true"></i> Saving...';
     }
     try {
       const saved = await saveToMikrotik(updated);
@@ -4492,7 +4502,7 @@
     const originalLabel = pppoeSyncBtn ? pppoeSyncBtn.innerHTML : '';
     if (pppoeSyncBtn && !background && !allRouters) {
       pppoeSyncBtn.disabled = true;
-      pppoeSyncBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Syncing...`;
+      pppoeSyncBtn.innerHTML = '<i class="ti ti-loader-2 pppoe-spin" aria-hidden="true"></i> Syncing...';
     }
     const routerIds = allRouters ? getAllRouterIds() : [resolveActiveRouterId()].filter(Boolean);
     let syncedCount = 0;
@@ -4572,7 +4582,7 @@
       const originalLabel = generateSaveBtn ? generateSaveBtn.innerHTML : '';
       if (generateSaveBtn) {
         generateSaveBtn.disabled = true;
-        generateSaveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Reusing...';
+        generateSaveBtn.innerHTML = '<i class="ti ti-loader-2 pppoe-spin" aria-hidden="true"></i> Reusing...';
       }
 
       try {
@@ -4629,7 +4639,7 @@
     const originalLabel = generateSaveBtn ? generateSaveBtn.innerHTML : '';
     if (generateSaveBtn) {
       generateSaveBtn.disabled = true;
-      generateSaveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+      generateSaveBtn.innerHTML = '<i class="ti ti-loader-2 pppoe-spin" aria-hidden="true"></i> Generating...';
     }
 
     try {
@@ -4927,7 +4937,7 @@
       const raw = e.target.value;
       const numeric = Number(raw);
       filters.pageSize = Number.isFinite(numeric) && numeric > 0 ? numeric : 'all';
-      sessionStorage.setItem('pppoePageSize', filters.pageSize);
+      sessionStorage.setItem(pageSizeStorageKey, filters.pageSize);
       page = 1;
       renderTable();
     });
@@ -5063,6 +5073,7 @@
       showIntegrationDisabled(message);
       return;
     }
+    hideIntegrationDisabled();
     getAllRouterIds().forEach((routerId) => hydrateRouterRuntimeFromCache(routerId));
     renderActiveRouterSnapshot();
     markStatusPending();

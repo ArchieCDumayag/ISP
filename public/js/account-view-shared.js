@@ -160,8 +160,6 @@
         });
     };
 
-    const isDirectWifiEnabled = () => Boolean(global.directWifiEnabled ?? global.isArchieFlavor);
-
     let browserPlayerModal = null;
     let browserPlayerFrame = null;
     let browserPlayerTitle = null;
@@ -696,10 +694,6 @@
     };
 
     const openWifiChangeForAccount = async (accountNumber, options = {}) => {
-        if (!isDirectWifiEnabled()) {
-            showSharedToast('WiFi editor is only available for Archie Fiber.', 'error');
-            return false;
-        }
         const targetAccount = String(accountNumber || '').trim();
         if (!targetAccount) {
             showSharedToast('Account number is missing.', 'error');

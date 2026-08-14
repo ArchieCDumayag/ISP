@@ -66,12 +66,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const accountInfoPayNowBtn = document.getElementById('accountInfoPayNowBtn');
     const accountInfoSendReminderBtn = document.getElementById('accountInfoSendReminderBtn');
     const accountInfoWifiBtn = document.getElementById('accountInfoWifiBtn');
-    const canUseDirectWifi = () => Boolean(window.directWifiEnabled ?? window.isArchieFlavor);
     const syncAccountInfoWifiVisibility = () => {
-        if (accountInfoWifiBtn) accountInfoWifiBtn.hidden = !canUseDirectWifi();
+        if (accountInfoWifiBtn) accountInfoWifiBtn.hidden = false;
     };
     syncAccountInfoWifiVisibility();
-    window.addEventListener('flavor:metadata', syncAccountInfoWifiVisibility);
     const accountInfoStatusCard = document.getElementById('accountInfoStatusCard');
     const accountInfoStatusPill = document.getElementById('accountInfoStatusPill');
     const accountInfoSidebarPlan = document.getElementById('accountInfoSidebarPlan');

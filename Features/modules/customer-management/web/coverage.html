@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/coverage-tabler.css?v=2.0">
+    <link rel="stylesheet" href="css/coverage-tabler.css?v=3.0">
 </head>
 <body class="layout-fluid layout-fluid-vertical">
   <div class="app-shell tabler-fluid-vertical">
@@ -18,19 +18,24 @@
     <div class="app-main page-wrapper">
       <div id="topbar"></div>
 
-      <main class="page coverage-page coverage-index-page">
-        <section class="page-header coverage-page-header">
-          <div class="page-title">
-            <p class="eyebrow">Service Area Management</p>
-            <h1>Coverage Table</h1>
-            <p class="subtitle">Manage service areas, linked routers, and covered customers.</p>
+      <main class="page-body coverage-page coverage-index-page">
+        <div class="container-xl py-3 coverage-workspace">
+        <section class="page-header d-print-none mb-3 coverage-page-header">
+          <div class="row g-2 align-items-center w-100">
+          <div class="col">
+            <div class="page-pretitle">Service Area Management</div>
+            <h1 class="page-title">Coverage Table</h1>
+            <div class="text-secondary mt-1">Manage service areas, linked routers, and covered customers.</div>
           </div>
-          <div class="header-actions">
+          <div class="col-auto ms-auto d-print-none">
+          <div class="btn-list coverage-header-actions">
             <button class="btn btn-primary btn-sm" id="openModalBtn" type="button"><i class="ti ti-map-pin" aria-hidden="true"></i> Add Coverage Area</button>
+          </div>
+          </div>
           </div>
         </section>
 
-        <section class="card coverage-summary-strip" aria-label="Filtered coverage summary">
+        <section class="card card-sm coverage-summary-strip mb-3" aria-label="Filtered coverage summary">
           <article class="coverage-summary-item">
             <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-map-2"></i></span>
             <div><span>Coverage Areas</span><strong id="coverageMetricTotal">0</strong></div>
@@ -50,7 +55,7 @@
         </section>
 
         <section class="card coverage-card coverage-list-card">
-          <div class="card-header coverage-toolbar">
+          <div class="card-body border-bottom coverage-toolbar">
             <div class="input-icon coverage-search">
               <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
               <input class="form-control form-control-sm" id="searchCoverage" type="search" placeholder="Search area, code, or router" aria-label="Search coverage">
@@ -86,7 +91,7 @@
           </div>
 
           <div class="table-responsive" id="tableView">
-            <table class="table table-vcenter table-sm coverage-table">
+            <table class="table table-vcenter table-hover card-table coverage-table mb-0">
               <thead>
                 <tr>
                   <th class="coverage-area-col">Coverage Area</th>
@@ -103,15 +108,16 @@
               <p>No coverage areas found.</p>
             </div>
           </div>
-          <div class="table-footer" id="coverageFooter">
-            <div class="footer-summary" id="coverageSummary"></div>
-            <div class="footer-controls">
-              <button type="button" class="footer-btn" id="coveragePrev" aria-label="Previous page" disabled>&#8249;</button>
-              <span class="footer-page-info" id="coveragePageInfo">Page 1 of 1</span>
-              <button type="button" class="footer-btn" id="coverageNext" aria-label="Next page" disabled>&#8250;</button>
+          <div class="card-footer d-flex align-items-center justify-content-between gap-2 flex-wrap coverage-footer" id="coverageFooter">
+            <div class="text-secondary small" id="coverageSummary"></div>
+            <div class="d-flex align-items-center gap-2 coverage-footer-controls">
+              <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="coveragePrev" aria-label="Previous page" disabled><i class="ti ti-chevron-left" aria-hidden="true"></i></button>
+              <span class="text-secondary small" id="coveragePageInfo">Page 1 of 1</span>
+              <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="coverageNext" aria-label="Next page" disabled><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
             </div>
           </div>
         </section>
+        </div>
       </main>
     </div>
   </div>
@@ -128,7 +134,7 @@
               <p class="modal-subtitle" id="modalSubtitle">Register a serviceable location and optional router link.</p>
             </div>
           </div>
-          <button class="btn btn-icon btn-outline-secondary close-modal coverage-modal-close" id="closeModalBtn" type="button" aria-label="Close coverage editor" title="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+          <button class="btn btn-icon btn-outline-secondary btn-sm close-modal coverage-modal-close" id="closeModalBtn" type="button" aria-label="Close coverage editor" title="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
         <form id="coverageForm" class="tabler-modal-form" autocomplete="off">
           <div class="modal-body">
@@ -139,12 +145,12 @@
             <div class="form-grid">
               <div class="form-field coverage-form-field">
                 <label class="form-label" for="coverageAreaName">Area Name <span class="text-danger" aria-hidden="true">*</span></label>
-                <input class="form-control" id="coverageAreaName" type="text" name="name" maxlength="120" required aria-describedby="coverageAreaNameHint">
+                <input class="form-control form-control-sm" id="coverageAreaName" type="text" name="name" maxlength="120" required aria-describedby="coverageAreaNameHint">
                 <div class="form-hint" id="coverageAreaNameHint">Use a unique service-area name.</div>
               </div>
               <div class="form-field coverage-form-field">
                 <label class="form-label" for="coverageMikrotikLink">MikroTik Link</label>
-                <select class="form-select" name="mikrotikId" id="coverageMikrotikLink" aria-describedby="coverageMikrotikHint">
+                <select class="form-select form-select-sm" name="mikrotikId" id="coverageMikrotikLink" aria-describedby="coverageMikrotikHint">
                   <option value="">No MikroTik link</option>
                 </select>
                 <div class="form-hint" id="coverageMikrotikHint">Optional router used for this area's subscribers.</div>

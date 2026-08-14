@@ -1,6 +1,6 @@
 # Network Module Context
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-08-14
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -28,13 +28,17 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Frontend entry points
 
-- Canonical browser implementations live under `web/`: five HTML entry points, four stylesheets, and three JavaScript files.
+- Canonical browser implementations live under `web/`: five HTML entry points, five stylesheets, and three JavaScript files.
 - Existing URLs remain `/pppoe.html`, `/pon-management.html`, `/genieacs.html`, `/coverage-map.html`, and `/coverage-map-app.html`.
 - PPPoE, PON, GenieACS, and the administrative coverage map retain shared feature and authentication guards.
 - The application coverage map remains public at `/coverage-map-app.html` and `/coverage-map-app`.
 - `web/css/leaflet-popups-tabler.css` gives administrative/public coverage-map subscriber, NAP, and network-link popups plus PON coordinate reference popups one shared responsive Tabler card presentation with avatars, status badges, lists, progress, dark mode, and one Tabler-style close control. It styles Leaflet's native close glyph and suppresses generated pseudo-element glyphs to prevent duplicate close icons.
-- Network pages continue consuming shared Admin styles, Customer Management coverage styles, Billing current-bill helpers, and shared shell/vendor assets through their unchanged root URLs.
-- All 11 moved browser files are byte-identical to their pre-migration versions.
+- `web/pppoe.html` uses Tabler page headers, cards, responsive grids, controls, tables, badges, progress bars, and modals while preserving every existing PPPoE DOM ID and action hook.
+- `web/css/pppoe-tabler.css` is the only PPPoE-specific presentation layer. The page no longer loads Admin `accounts.css` or Customer account-view CSS; it retains the shared shell, Tabler vendor, `tabler-app.css`, and account browser-player JavaScript contract.
+- `web/js/pppoe.js` renders Tabler icons and table components and spaces live-traffic chart samples across the available plot width; router, customer binding, sync, CRUD, traffic, and persistence APIs are unchanged.
+- The PPPoE account list defaults to 50 rows per page and uses a compact eight-column fixed-layout Tabler table. Caller ID remains available in runtime data but is hidden from the list; Username receives the largest width, long values retain native title tooltips, and the table falls back to horizontal scrolling only below its 840px readable width.
+- The missing-configuration alert uses a true `hidden` state that cannot be overridden by Tabler display utilities. An enabled integration hides the alert immediately, and any confirmed MikroTik connection also clears it while restoring the workbench.
+- Other Network pages continue consuming their existing Customer Management coverage styles, Billing helpers, and shared shell/vendor assets through unchanged root URLs.
 
 ## Data and dependencies
 
@@ -57,14 +61,20 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Validation
 
-- `npm run refactor:network` verifies the descriptor, retirement of six root entries, 12 web files, server wiring, canonical cross-module dependencies, representative endpoint/PPPoE/audit/client/PON helper behavior, and shared Tabler Leaflet popup structure across both coverage maps and PON Management.
+- `npm run refactor:network` verifies the descriptor, retirement of six root entries, 13 web files, server wiring, canonical cross-module dependencies, representative endpoint/PPPoE/audit/client/PON helper behavior, shared Tabler Leaflet popup structure, and the PPPoE page's focused Tabler dependency and component contract.
 - `npm run refactor:phase6` runs inventory, Core, Admin, Customer Management, Billing, Network, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Network asset/page URLs, authentication and feature boundaries, public coverage-map data, and unauthenticated MikroTik/PON/GenieACS denials on ports `3190`/`4190`.
 - No acceptance check connects to or mutates a router or GenieACS device.
+- 2026-08-14 PPPoE UI validation: `npm run refactor:network` and full `npm test` passed; authenticated browser checks confirmed the live summary/table, edit modal, customer assignment autocomplete, traffic modal/canvases, preserved 109-ID selector contract, focused stylesheet loading, and no console errors. Browser checks did not submit a form or mutate router/customer state.
+- 2026-08-14 compact-table validation: JavaScript syntax and `npm run refactor:network` passed; an authenticated browser check confirmed 50 rendered rows, the `Showing 1-50 of 398` footer, eight pages, fixed aligned columns, and no record-changing action.
+- 2026-08-14 warning/column validation: JavaScript syntax and `npm run refactor:network` passed; an authenticated browser check confirmed the connected-router warning is hidden, Caller ID is absent, all eight headers fit, Username is widened, and 50 rows still render without any record-changing action.
 
 ## Latest meaningful changes
 
+- 2026-08-14: Fixed the false MikroTik warning by removing the conflicting Tabler display utility and synchronizing its hidden state with integration/connection success; removed Caller ID from the list, widened Username, and rebalanced all eight columns without changing stored PPPoE data.
+- 2026-08-14: Compacted the PPPoE account table with Tabler `table-sm`, fixed column proportions, smaller cells/avatar/actions, ellipsis plus title tooltips, and a fresh default of 50 rows per page; PPPoE APIs and records are unchanged.
+- 2026-08-14: Rebuilt `/pppoe.html` with Tabler page, card, metric, toolbar, table, form, progress, badge, and modal components; replaced the page-wide Admin/account-view CSS dependencies with Network-owned `web/css/pppoe-tabler.css`; retained all 109 DOM IDs and all existing router/customer/payment-independent behavior; improved live-chart time-label spacing; and added focused Network compatibility assertions.
 - 2026-08-07: Removed the duplicate Leaflet popup close icon by retaining and styling only Leaflet's native close glyph; the popup card layout is unchanged.
 - 2026-08-07: Replaced default/custom Leaflet popup content on both coverage maps and the PON coordinate picker with a shared responsive Tabler card UI, including status badges, icons, structured lists, NAP port progress, dark mode, and mobile sizing.
 - 2026-07-29: Added branch-scoped PON topology and customer-connection round-trip behavior to the shared dashboard full backup/import workflow; live router operations are not invoked.

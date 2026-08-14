@@ -92,7 +92,7 @@ STORAGE_DRIVER=mysql
 - Accounts and role-aware access controls.
 - Business profile settings used across receipts, statements, and branded pages.
 - Owner-only structure/update tools restricted to localhost and the configured owner ID.
-- Feature flags for enabling or hiding modules per deployment flavor.
+- All application modules are available in every deployment; authentication, roles, and integration readiness control access and operational availability.
 
 ### Customer Management
 

@@ -143,7 +143,7 @@ const customerRoutes = fs.readFileSync(
 assert(customerRoutes.includes("publicRouter.get('/payments/proof/context'"));
 assert(customerRoutes.includes("publicRouter.post('/payments/proof'"));
 assert(customerRoutes.includes("publicRouter.post('/payments/proof/analyze'"));
-assert(customerRoutes.includes("isFeatureEnabled('paymentConfirmationQueue')"));
+assert(!customerRoutes.includes('isFeatureEnabled'));
 assert(customerRoutes.includes("getCustomerFromSession(req, res)"));
 assert(customerRoutes.includes('amountValue - expectedAmount'));
 assert(customerRoutes.includes("paymentMethod: 'GCash'"));

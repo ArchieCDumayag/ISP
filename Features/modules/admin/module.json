@@ -24,7 +24,6 @@
   "webEntryPoints": [
     "Features/modules/admin/web/login.html",
     "Features/modules/admin/web/accounts.html",
-    "Features/modules/admin/web/flavors.html",
     "Features/modules/admin/web/setup.html",
     "Features/modules/admin/web/install-guide.html",
     "Features/modules/admin/web/update-download.html"

@@ -121,7 +121,6 @@ const webFiles = [
   'css/accounts.css',
   'css/factory-reset.css',
   'css/login.css',
-  'flavors.html',
   'install-guide.html',
   'js/factory-reset.js',
   'js/install-guide.js',
@@ -247,6 +246,10 @@ assert(serverSource.includes('.map((webRoot) => path.join(webRoot, filename))'))
 assert(!serverSource.includes("path.join(__dirname, 'public', 'login.html')"));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'update-download.html')"));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'flavors.html')"));
+assert(!serverSource.includes("app.get('/flavors'"));
+assert(!serverSource.includes("app.get('/api/flavor"));
+assert(!serverSource.includes("app.get('/api/flavors"));
+assert(!serverSource.includes("app.put('/api/flavors"));
 assert(serverSource.includes('const { loadIntegrationSettings, resolveIpBrowserProfile } = integrationSettingsRouter;'));
 assert(serverSource.includes('loadIpBrowserAutoLoginSettings(req, targetUrl)'));
 assert(serverSource.includes('normalizeIpBrowserAutoLoginSettings(settings, targetUrl)'));

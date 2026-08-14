@@ -42,7 +42,7 @@ The current application is a manifest-driven modular monolith:
 
 Canonical shared runtime structure:
 
-- `core/config`: environment loading, storage-mode selection, and feature/flavor configuration
+- `core/config`: environment loading and storage-mode selection
 - `core/data`: JSON/MySQL persistence, relational readiness, and protected database configuration
 - `core/security`: passwords, roles, rate limiting, and session primitives
 - `core/runtime`: canonical project paths, module manifest registry, guarded module entry loader, and complete runtime composition
@@ -125,7 +125,7 @@ Each module contains `README.md`, `module.json`, and `Module_context.md`. The ma
 
 ## Shared integration-owned code
 
-Shared code includes `server.js`, database/storage helpers, environment loading, role/password/session helpers, feature/flavor plumbing, package files, common public shell assets, and repository scripts. Changes to shared code require an integration task, explicit locks, cross-module review, and a `Project_Context.md` update when the contract changes.
+Shared code includes `server.js`, database/storage helpers, environment loading, role/password/session helpers, package files, common public shell assets, and repository scripts. Changes to shared code require an integration task, explicit locks, cross-module review, and a `Project_Context.md` update when the contract changes.
 
 ## Storage and secrets
 
@@ -215,11 +215,12 @@ Use one shared working tree and the coordination script. Agents lock exact files
 - Run `npm run refactor:verify` before and after future physical file moves.
 - Run `npm run refactor:smoke` after module wiring, shared routing, or static-delivery changes.
 - The isolated smoke runtime uses ports `3190` and `4190`; normal development remains on `3100` and `4101`.
-- The HTTP smoke child process forces the default isolated feature profile and ignores live `data/flavor-features.json`, `ACTIVE_FLAVOR_NAME`, and inherited `FLAVOR_FEATURES`, so feature-gate assertions are deterministic without changing the operator's enabled pages.
+- The HTTP smoke child process uses `ISOLATED_RUNTIME_CONFIG=1` so it cannot inherit stored MySQL configuration; it exercises the full application surface without reading or mutating operator records.
 
 ## Latest integration changes
 
-- 2026-08-12: Isolated the HTTP smoke server from live flavor settings. The suite now clears any active flavor and supplies the default feature profile explicitly, so locally enabled Payment Confirmation Queue pages cannot change the expected default-profile `404` checks.
+- 2026-08-14: Retired deployment flavors, feature-toggle files/scripts, the owner-only flavor page/APIs, and backend/sidebar feature gates. Every module is now available under its existing authentication and role boundaries; MikroTik/GenieACS visibility still follows live integration readiness. Existing ignored legacy configuration files are inert and left untouched, and no customer, billing, payment, or operational stores were migrated or deleted.
+- 2026-08-12: Added deterministic feature-profile isolation to the HTTP smoke runtime; this mechanism was retired when deployment feature toggles were removed on 2026-08-14.
 - 2026-08-11: Removed Gmail-based GCash history automation and the Android GCash notification bridge from runtime, APIs, queues, proof analysis, and shared composition. Manual official-history PDF import remains the sole record-match source, and only explicit Admin **Approve & Post** can create a ledger payment or restore service.
 - 2026-08-10: Added a disabled-by-default, OpenAI-compatible Vision AI fallback to the three-module GCash proof contract. It runs only after incomplete/low-confidence local OCR, supplements missing fields with provenance and visible warnings, exposes sanitized source/status in customer and Admin review, and cannot bypass imported-history matching, immutable allocation, or explicit Admin approval.
 - 2026-08-10: Added immutable GCash transaction allocation. Imported references now show Available, Reserved, or Assigned and Posted state; GCash approval locks submitted fields, blocks reliable screenshot contradictions, flags sender/customer-mobile mismatch, requires explicit Admin customer/bill confirmation, and records one durable reference-to-submission/account/payment assignment before any ledger or MikroTik effect.

@@ -122,7 +122,6 @@ assert(!installerSource.includes("  'setup-installer.js',"));
 console.log('PASS structure package contract requires canonical Admin installer paths');
 
 const sourceChecks = [
-  ['scripts/apply-flavor.js', '../core/config/flavor-features'],
   ['scripts/check-security-modules.js', '../core/runtime/module-loader'],
   ['scripts/migrate-json-to-relational.js', '../Features/modules/technician/backend/job-numbering'],
   ['scripts/migrate-json-to-relational.js', '../Features/modules/billing/backend/plan-profile-utils'],
@@ -134,6 +133,21 @@ sourceChecks.forEach(([relativePath, expected]) => {
   const source = fs.readFileSync(path.join(projectRoot, relativePath), 'utf8');
   assert(source.includes(expected), `${relativePath} is missing canonical dependency ${expected}`);
 });
+[
+  'core/config/flavor-features.js',
+  'scripts/apply-flavor.js',
+  'scripts/check-flavors.js',
+  'scripts/create-flavor.js',
+  'scripts/flavor-tools.js',
+  'scripts/generate-flavor-launcher.js',
+  'scripts/start-flavor.js'
+].forEach((relativePath) => {
+  assert(!fs.existsSync(path.join(projectRoot, relativePath)), `${relativePath} must remain retired`);
+});
+const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
+assert(!Object.keys(packageJson.scripts || {}).some((name) => name.startsWith('flavor:')));
+assert(!serverSource.includes('requireFeature('));
+assert(!serverSource.includes('/api/flavor'));
 assert.strictEqual(DATA_DIR, path.join(projectRoot, 'data'));
 console.log('PASS operational scripts and cross-module dependencies use canonical paths');
 console.log('INTEGRATION CLEANUP PASSED');

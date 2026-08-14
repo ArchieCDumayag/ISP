@@ -98,7 +98,6 @@ const { router: structureRouter } = adminBackend.load('setupInstaller');
 const { assertRelationalReady, isRelationalReady } = require('./core/data/db-relational');
 const { query, getPool } = require('./core/data/db');
 const { readJson, writeJson } = require('./core/data/data-store');
-const { getFlavorFeatures } = require('./core/config/flavor-features');
 const { normalizePppoeUsernameKey } = networkBackend.load('pppoeAccountUtils');
 const { accountHasRole } = require('./core/security/role-utils');
 const { isJsonStorageMode, getStorageDriver } = require('./core/config/storage-mode');
@@ -2706,7 +2705,6 @@ app.get(/^\/[^/]+\.(?:css|js|mjs|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|map)$/i, 
 const PROTECTED_PAGES = new Set([
     'index.html',
     'update-download.html',
-    'flavors.html',
     'customers.html',
     'customer-archive.html',
     'payments.html',
@@ -2745,45 +2743,6 @@ const PROTECTED_PAGES = new Set([
     'job-history.html',
     'tickets.html'
 ]);
-const FEATURE_PAGE_MAP = Object.freeze({
-    'index.html': 'dashboard',
-    'customers.html': 'customers',
-    'customer-draft-queue.html': 'customerDrafts',
-    'customer-archive.html': 'customerArchive',
-    'plans.html': 'plans',
-    'coverage.html': 'coverageTable',
-    'coverage-map.html': 'coverageMap',
-    'coverage-map-app.html': 'coverageMap',
-    'payments.html': 'payments',
-    'disconnections.html': 'payments',
-    'referrals.html': 'payments',
-    'payment-history.html': 'paymentHistory',
-    'payment-breakdown.html': 'paymentHistory',
-    'payment-confirmation-queue.html': 'paymentConfirmationQueue',
-    'payment-confirmation-queue-history.html': 'paymentConfirmationQueueHistory',
-    'customer-payment-proof.html': 'paymentConfirmationQueue',
-    'pon-management.html': 'ponManagement',
-    'genieacs.html': 'genieacs',
-    'collectors.html': 'collectors',
-    'collectors-history.html': 'collectionHistory',
-    'tickets.html': 'tickets',
-    'technicians.html': 'jobs',
-    'job-history.html': 'jobHistory',
-    'expenses.html': 'expenses',
-    'payroll.html': 'payroll',
-    'pppoe.html': 'mikrotikPppoe',
-    'customer-app-popup-reminder.html': 'customerAppPopupReminder',
-    'messenger-reminders.html': 'customerAppPopupReminder',
-    'accounts.html': 'accounts',
-    'sms.html': 'sms'
-});
-const requireFeature = (featureKey) => (req, res, next) => {
-    if (!featureKey) return next();
-    if (getFlavorFeatures().features[featureKey] === false) {
-        return res.status(404).json({ ok: false, error: 'Feature is not enabled for this flavor.' });
-    }
-    return next();
-};
 const CUSTOMER_PAGES = new Set([
     'customer-portal.html',
     'customer-payment-proof.html',
@@ -2827,16 +2786,11 @@ app.use(async (req, res, next) => {
         return res.redirect('/customer-app-popup-reminder.html');
     }
 
-    const featureKey = FEATURE_PAGE_MAP[pageToCheck];
-    if (featureKey && getFlavorFeatures().features[featureKey] === false) {
-        return res.status(404).send('Not Found');
-    }
-
     if (pageToCheck === 'coverage-map-app.html') {
         return next();
     }
 
-    if (pageToCheck === 'update-download.html' || pageToCheck === 'flavors.html') {
+    if (pageToCheck === 'update-download.html') {
         if (!isLocalhostRequest(req)) {
             return res.status(404).send('Not Found');
         }
@@ -2936,7 +2890,7 @@ app.get('/apply-now', (req, res) => {
     const target = plan ? `/apply-now.html?plan=${encodeURIComponent(plan)}` : '/apply-now.html';
     return res.redirect(target);
 });
-app.get('/coverage-map-app', requireFeature('coverageMap'), (_req, res) => {
+app.get('/coverage-map-app', (_req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
@@ -3296,9 +3250,6 @@ app.get('/technician-customer-drafts', (_req, res) => {
 });
 app.get('/update-download', requireStructureOwnerAccess, async (req, res) => {
     res.sendFile(path.join(ADMIN_WEB_ROOT, 'update-download.html'));
-});
-app.get('/flavors', requireStructureOwnerAccess, async (req, res) => {
-    res.sendFile(path.join(ADMIN_WEB_ROOT, 'flavors.html'));
 });
 app.get('/tickets', async (req, res) => {
     const user = await getUserFromSession(req);
@@ -5517,7 +5468,7 @@ app.get('/api/public/philippines/barangays', (req, res) => {
         return res.status(500).json({ ok: false, error: 'Failed to load barangays.' });
     }
 });
-app.get('/api/public/plans', requireFeature('plans'), async (_req, res) => {
+app.get('/api/public/plans', async (_req, res) => {
     try {
         const relational = await isRelationalReady();
         let branchId = null;
@@ -5567,7 +5518,7 @@ app.get('/api/public/plans', requireFeature('plans'), async (_req, res) => {
         return res.status(500).json({ ok: false, error: 'Failed to load public plans.' });
     }
 });
-app.get('/api/public/coverage-areas', requireFeature('coverageTable'), async (_req, res) => {
+app.get('/api/public/coverage-areas', async (_req, res) => {
     try {
         const relational = await isRelationalReady();
         let branchId = null;
@@ -5741,7 +5692,7 @@ const isMissingPublicMapPonState = (error) => (
     /doesn't exist/i.test(String(error?.message || ''))
 );
 
-app.get('/api/public/coverage-map/customers', requireFeature('coverageMap'), async (_req, res) => {
+app.get('/api/public/coverage-map/customers', async (_req, res) => {
     try {
         const branchId = await resolvePublicMapBranchId();
         if (!branchId && !isJsonStorageMode()) {
@@ -5766,7 +5717,7 @@ app.get('/api/public/coverage-map/customers', requireFeature('coverageMap'), asy
     }
 });
 
-app.get('/api/public/coverage-map/pon-state', requireFeature('coverageMap'), async (_req, res) => {
+app.get('/api/public/coverage-map/pon-state', async (_req, res) => {
     try {
         const branchId = await resolvePublicMapBranchId();
         if (!branchId) {
@@ -5916,29 +5867,29 @@ app.post('/api/public/applications', publicApplicationLimiter, async (req, res) 
         return res.status(500).json({ ok: false, error: 'Unable to submit your application right now.' });
     }
 });
-app.use('/api/plans', requireAuth, requireFeature('plans'), plansRouter);
+app.use('/api/plans', requireAuth, plansRouter);
 if (paymentsWebhookHandler) {
-    app.post('/api/payments/xendit/webhook', requireFeature('payments'), paymentsWebhookHandler);
+    app.post('/api/payments/xendit/webhook', paymentsWebhookHandler);
 }
-app.use('/api/payments', requireAuth, requireFeature('payments'), paymentsRouter);
-app.use('/api/disconnections', requireAuth, requireFeature('payments'), disconnectionsRouter);
-app.use('/api/referrals', requireAuth, requireFeature('payments'), referralsRouter);
-app.use('/api/technician/customer-drafts/auth', requireFeature('customerDrafts'), customerDraftTechnicianAuthRouter);
-app.use('/api/technician/customer-drafts', requireFeature('customerDrafts'), customerDraftTechnicianRouter);
-app.use('/api/technician/installations', requireFeature('jobs'), technicianInstallationsRouter);
-app.use('/api/technician', requireFeature('jobs'), technicianAssignmentsRouter);
+app.use('/api/payments', requireAuth, paymentsRouter);
+app.use('/api/disconnections', requireAuth, disconnectionsRouter);
+app.use('/api/referrals', requireAuth, referralsRouter);
+app.use('/api/technician/customer-drafts/auth', customerDraftTechnicianAuthRouter);
+app.use('/api/technician/customer-drafts', customerDraftTechnicianRouter);
+app.use('/api/technician/installations', technicianInstallationsRouter);
+app.use('/api/technician', technicianAssignmentsRouter);
 [
     '/api/payment-confirmations',
     '/payment-confirmation-queue/api/payment-confirmations',
     '/payment-confirmation-queue.html/api/payment-confirmations'
 ].forEach((mountPath) => {
-    app.use(mountPath, requireAuth, requireFeature('paymentConfirmationQueue'), paymentConfirmationsRouter);
+    app.use(mountPath, requireAuth, paymentConfirmationsRouter);
 });
-app.use('/api/customer-drafts', requireAuth, requireFeature('customerDrafts'), customerDraftAdminRouter);
-app.use('/api/collector/payments', requireCollectorOrAdminAuth, requireFeature('collectors'), collectorPaymentsRouter);
-app.use('/api/customer-app', requireFeature('customerAppPopupReminder'), customerAppPublicRouter);
-app.use('/api/customer-app', requireAuth, requireFeature('customerAppPopupReminder'), customerAppRouter);
-app.use('/api/messenger-reminders', requireMessengerReminderAccess, requireFeature('customerAppPopupReminder'), messengerRemindersRouter);
+app.use('/api/customer-drafts', requireAuth, customerDraftAdminRouter);
+app.use('/api/collector/payments', requireCollectorOrAdminAuth, collectorPaymentsRouter);
+app.use('/api/customer-app', customerAppPublicRouter);
+app.use('/api/customer-app', requireAuth, customerAppRouter);
+app.use('/api/messenger-reminders', requireMessengerReminderAccess, messengerRemindersRouter);
 
 app.get('/api/sidebar/work-counts', requireAuth, async (req, res) => {
     try {
@@ -6000,98 +5951,6 @@ app.get('/api/sidebar/work-counts', requireAuth, async (req, res) => {
     }
 });
 
-const normalizeFlavorIdentity = (value = '') => String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-const isArchieFlavorRuntime = () => {
-    const activeFlavor = normalizeFlavorIdentity(process.env.ACTIVE_FLAVOR_NAME);
-    if (activeFlavor) return activeFlavor === 'archie' || activeFlavor === 'archie-fiber';
-    return [
-        process.env.PUBLIC_BASE_URL,
-        process.env.APP_BASE_URL,
-        process.env.CENTRAL_URL,
-        process.env.BUSINESS_NAME,
-        process.env.INITIAL_BRANCH_NAME,
-        process.env.MYSQL_DATABASE
-    ].some((value) => {
-        const normalized = normalizeFlavorIdentity(value);
-        return normalized.includes('archiexfiber')
-            || normalized.includes('archie-fiber')
-            || normalized === 'archie';
-    });
-};
-
-app.get('/api/flavor/features', requireAuth, (_req, res) => {
-    const archieFlavor = isArchieFlavorRuntime();
-    res.json({
-        ...getFlavorFeatures(),
-        activeFlavor: process.env.ACTIVE_FLAVOR_NAME || '',
-        isArchieFlavor: archieFlavor,
-        directWifiEnabled: archieFlavor
-    });
-});
-app.get('/api/flavors/status', requireAuth, (req, res) => {
-    if (!isStructureOwnerUser(req.user)) {
-        return res.status(404).json({ ok: false, error: 'Not Found' });
-    }
-    try {
-        const { allFlavorSummaries, findDuplicateIssues } = require('./scripts/flavor-tools');
-        const flavors = allFlavorSummaries();
-        return res.json({
-            ok: true,
-            activeFlavor: process.env.ACTIVE_FLAVOR_NAME || '',
-            flavors,
-            issues: findDuplicateIssues(flavors)
-        });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: 'Failed to read flavor status.' });
-    }
-});
-app.get('/api/flavors/features', requireAuth, (req, res) => {
-    if (!isStructureOwnerUser(req.user)) {
-        return res.status(404).json({ ok: false, error: 'Not Found' });
-    }
-    try {
-        const { listFlavorNames, loadFlavor } = require('./scripts/flavor-tools');
-        const { FEATURE_GROUPS, FEATURE_LABELS, FEATURE_ORDER, normalizeFeatures } = require('./core/config/flavor-features');
-        const flavors = listFlavorNames().map((name) => {
-            const flavor = loadFlavor(name);
-            return {
-                name,
-                branch: flavor.initialAdmin?.branchName || name,
-                features: normalizeFeatures(flavor.features || {})
-            };
-        });
-        return res.json({
-            ok: true,
-            labels: FEATURE_LABELS,
-            groups: FEATURE_GROUPS,
-            order: FEATURE_ORDER,
-            flavors
-        });
-    } catch (error) {
-        return res.status(500).json({ ok: false, error: 'Failed to read flavor features.' });
-    }
-});
-app.put('/api/flavors/:name/features', requireAuth, (req, res) => {
-    if (!isStructureOwnerUser(req.user)) {
-        return res.status(404).json({ ok: false, error: 'Not Found' });
-    }
-    try {
-        const { getFlavorPath, loadFlavor, normalizeFlavorName } = require('./scripts/flavor-tools');
-        const { normalizeFeatures } = require('./core/config/flavor-features');
-        const name = normalizeFlavorName(req.params.name);
-        const flavor = loadFlavor(name);
-        flavor.features = normalizeFeatures(req.body?.features || {});
-        fs.writeFileSync(getFlavorPath(name), `${JSON.stringify(flavor, null, 2)}\n`, 'utf8');
-        return res.json({ ok: true, name, features: flavor.features });
-    } catch (error) {
-        return res.status(400).json({ ok: false, error: error.message || 'Failed to save flavor features.' });
-    }
-});
 // Public customer login (no auth)
 const DIRECT_WIFI_UNAVAILABLE_TARGETS = new Set(['', '-', '--', 'n/a', 'na', 'none', 'not set', 'offline']);
 
@@ -6397,9 +6256,6 @@ app.post('/api/customers/:accountNumber/direct-connected-devices', requireAuth, 
 });
 
 app.post('/api/customers/:accountNumber/direct-wifi', requireAuth, async (req, res) => {
-    if (!isArchieFlavorRuntime()) {
-        return res.status(404).json({ ok: false, error: 'Not Found' });
-    }
     if (!isAdminUser(req.user)) {
         return res.status(403).json({ ok: false, error: 'Admin access required.' });
     }
@@ -6534,30 +6390,29 @@ app.use('/api/customers', requireAuth, customersRouter);
 // and never delegates to the canonical customer or billing data stores.
 app.use('/api/temp', requireAuth, tempWorkspaceRouter);
 // Public ticket submission (no auth)
-app.use('/api/tickets', requireFeature('tickets'), ticketsPublicRouter);
+app.use('/api/tickets', ticketsPublicRouter);
 // Protected ticket routes
-app.use('/api/tickets', requireAuth, requireFeature('tickets'), ticketsRouter);
-app.use('/api/payment-records', requireAuth, requireFeature('paymentHistory'), paymentRecordsRouter);
-app.use('/api/coverage', requireAuth, requireFeature('coverageTable'), coverageRouter);
-app.use('/api/pon', requireAuth, requireFeature('ponManagement'), ponManagementRouter);
-app.use('/api/sms', requireAuth, requireFeature('sms'), smsRouter);
-app.use('/api/expenses', requireAuth, requireFeature('expenses'), expensesRouter);
-app.use('/api/payroll', requireAuth, requireFeature('payroll'), payrollRouter);
+app.use('/api/tickets', requireAuth, ticketsRouter);
+app.use('/api/payment-records', requireAuth, paymentRecordsRouter);
+app.use('/api/coverage', requireAuth, coverageRouter);
+app.use('/api/pon', requireAuth, ponManagementRouter);
+app.use('/api/sms', requireAuth, smsRouter);
+app.use('/api/expenses', requireAuth, expensesRouter);
+app.use('/api/payroll', requireAuth, payrollRouter);
 app.use('/api/info', infoRouter);
-app.use('/api/accounts', requireAuth, requireFeature('accounts'), accountsRouter);
+app.use('/api/accounts', requireAuth, accountsRouter);
 app.use(
     '/api/admin-data-reset',
     requireAuth,
-    requireFeature('accounts'),
     (req, res, next) => (req.method === 'POST' ? factoryResetLimiter(req, res, next) : next()),
     factoryResetRouter
 );
-app.use('/api/collectors', requireAuth, requireFeature('collectors'), collectorsRouter);
+app.use('/api/collectors', requireAuth, collectorsRouter);
 app.use('/api/business-profile', businessProfileRouter);
 app.use('/api/app-downloads', appDownloadsRouter);
 app.use('/api/integrations', integrationSettingsRouter);
-app.use('/api/mikrotik', requireFeature('mikrotikPppoe'), mikrotikRouter);
-app.use('/api/jobs', requireAuth, requireFeature('jobs'), jobsRouter);
+app.use('/api/mikrotik', mikrotikRouter);
+app.use('/api/jobs', requireAuth, jobsRouter);
 
 app.get('/api/export/clients', requireAuth, async (req, res) => {
     if (!isAdminUser(req.user)) {

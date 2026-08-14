@@ -1472,8 +1472,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const updatePppoeSidebarVisibility = (visible, attempt = 0) => {
-        const featureAllowed = !(window.flavorFeatures && window.flavorFeatures.mikrotikPppoe === false);
-        const shouldShow = Boolean(visible && featureAllowed);
+        const shouldShow = Boolean(visible);
         const item = document.querySelector('[data-feature="mikrotikPppoe"]');
         const link = item?.querySelector('a[href="pppoe.html"]') || document.querySelector('.sidebar-menu a[href="pppoe.html"]');
         if (link || item) {

@@ -203,10 +203,6 @@
     box-shadow: 0 10px 22px rgba(20, 184, 166, 0.18);
 }
 
-body:not(.is-archie-flavor) :is(#customerViewModal, #accountInfoModal) .view-action-btn--wifi {
-    display: none !important;
-}
-
 :is(#customerViewModal, #accountInfoModal) .view-statement-btn {
     min-height: 62px;
     border-radius: 12px;

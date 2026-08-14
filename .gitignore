@@ -1,9 +1,9 @@
 node_modules/
 .env
 .env.*
+# Retired local deployment profiles may contain secrets; keep them inert and untracked.
 flavor.config.json
-flavors/*.json
-!flavors/.gitkeep
+flavors/
 *.log
 dist/
 build/

@@ -1409,15 +1409,15 @@
         }
         if (gcashHistoryStatAvailable) gcashHistoryStatAvailable.textContent = String(grouped.available.length);
         if (gcashHistoryStatAvailableMeta) {
-            gcashHistoryStatAvailableMeta.textContent = `${formatCurrency(sumGcashHistoryAmount(grouped.available, 'credit'))} ready to bind`;
+            gcashHistoryStatAvailableMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.available, 'credit'))})`;
         }
         if (gcashHistoryStatPosted) gcashHistoryStatPosted.textContent = String(grouped.posted.length);
         if (gcashHistoryStatPostedMeta) {
-            gcashHistoryStatPostedMeta.textContent = `${formatCurrency(sumGcashHistoryAmount(grouped.posted, 'credit'))} locked`;
+            gcashHistoryStatPostedMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.posted, 'credit'))})`;
         }
         if (gcashHistoryStatDebit) gcashHistoryStatDebit.textContent = String(grouped.debit.length);
         if (gcashHistoryStatDebitMeta) {
-            gcashHistoryStatDebitMeta.textContent = `${formatCurrency(sumGcashHistoryAmount(grouped.debit, 'debit'))} record only`;
+            gcashHistoryStatDebitMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.debit, 'debit'))})`;
         }
     };
 
@@ -1474,12 +1474,9 @@
         }
 
         if (gcashHistorySummary) {
-            const parts = [
-                `${totalTransactions} transaction${totalTransactions === 1 ? '' : 's'} from ${batches.length} imported PDF${batches.length === 1 ? '' : 's'}`
-            ];
-            if (latestBatch?.importedAt) parts.push(`Last import: ${formatDateTime(latestBatch.importedAt)}`);
-            if (latestBatch?.fileName) parts.push(String(latestBatch.fileName));
-            gcashHistorySummary.textContent = parts.join(' | ');
+            gcashHistorySummary.textContent = latestBatch?.importedAt
+                ? `Last import: ${formatDateTime(latestBatch.importedAt)}`
+                : 'No official PDF history imported yet.';
         }
 
         if (!gcashHistoryBody) return;
@@ -1562,14 +1559,14 @@
                     <select class="form-select form-select-sm" data-gcash-remark-select data-reference="${escapeHtml(transaction.reference || '')}" aria-label="Remark for GCash reference ${escapeHtml(transaction.reference || '')}">
                         ${remarkOptions}
                     </select>
-                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-gcash-remark" data-reference="${escapeHtml(transaction.reference || '')}"${remarkCategory ? '' : ' disabled'}>
-                        <i class="ti ti-device-floppy" aria-hidden="true"></i> Save
+                    <button type="button" class="btn btn-icon btn-outline-primary btn-sm" data-action="save-gcash-remark" data-reference="${escapeHtml(transaction.reference || '')}" title="Save remark" aria-label="Save remark for GCash reference ${escapeHtml(transaction.reference || '')}"${remarkCategory ? '' : ' disabled'}>
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i>
                     </button>
                     ${remarkAudit ? `<small class="text-secondary gcash-remark-audit">${escapeHtml(remarkAudit)}</small>` : ''}
                 </div>`;
             const creditAction = !assignment
-                ? `<button type="button" class="btn btn-primary btn-sm" data-action="post-gcash" data-reference="${escapeHtml(transaction.reference || '')}">
-                       <i class="ti ti-link" aria-hidden="true"></i> Bind &amp; Post
+                ? `<button type="button" class="btn btn-icon btn-primary btn-sm" data-action="post-gcash" data-reference="${escapeHtml(transaction.reference || '')}" title="Bind &amp; Post" aria-label="Bind and post GCash reference ${escapeHtml(transaction.reference || '')}">
+                       <i class="ti ti-link" aria-hidden="true"></i>
                    </button>`
                 : `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Posted' : 'Reserved'}</span>`;
             const actionCell = isReceived ? creditAction : debitRemarkAction;

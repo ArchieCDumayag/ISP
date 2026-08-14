@@ -46,6 +46,7 @@ const webFiles = [
   'css/leaflet-popups-tabler.css',
   'css/pon-management-tabler.css',
   'css/pon-management.css',
+  'css/pppoe-tabler.css',
   'js/genieacs.js',
   'js/pon-management.js',
   'js/pppoe.js'
@@ -65,6 +66,9 @@ const publicCoverageMapSource = fs.readFileSync(path.join(webRoot, 'coverage-map
 const ponManagementHtmlSource = fs.readFileSync(path.join(webRoot, 'pon-management.html'), 'utf8');
 const ponManagementJsSource = fs.readFileSync(path.join(webRoot, 'js', 'pon-management.js'), 'utf8');
 const leafletPopupStyles = fs.readFileSync(path.join(webRoot, 'css', 'leaflet-popups-tabler.css'), 'utf8');
+const pppoeHtmlSource = fs.readFileSync(path.join(webRoot, 'pppoe.html'), 'utf8');
+const pppoeJsSource = fs.readFileSync(path.join(webRoot, 'js', 'pppoe.js'), 'utf8');
+const pppoeTablerStyles = fs.readFileSync(path.join(webRoot, 'css', 'pppoe-tabler.css'), 'utf8');
 
 [coverageMapSource, publicCoverageMapSource].forEach((source) => {
   assert(source.includes('css/leaflet-popups-tabler.css?v=1.1'));
@@ -95,6 +99,47 @@ assert(leafletPopupStyles.includes('.leaflet-popup-close-button > span'));
 assert(leafletPopupStyles.includes('content: none !important'));
 assert(!leafletPopupStyles.includes('content: "\\00d7"'));
 console.log('PASS coverage and PON Leaflet popups use shared Tabler card UI');
+
+[
+  'vendor/tabler/css/tabler.min.css',
+  'css/tabler-app.css?v=3.1',
+  'css/pppoe-tabler.css?v=1.3',
+  'class="page-body pppoe-page"',
+  'class="row row-deck row-cards g-3 mb-3 pppoe-summary-strip"',
+  'class="pppoe-table table table-sm table-vcenter table-hover card-table mb-0"',
+  '<col class="pppoe-col-customer">',
+  '<col class="pppoe-col-username">',
+  '<option value="50" selected>50</option>',
+  'class="modal-overlay tabler-form-modal"'
+].forEach((expected) => {
+  assert(pppoeHtmlSource.includes(expected), `PPPoE Tabler page is missing ${expected}`);
+});
+assert(!pppoeHtmlSource.includes('css/accounts.css'));
+assert(!pppoeHtmlSource.includes('css/account-view-shared.css'));
+assert(!pppoeHtmlSource.includes('<th>Caller ID</th>'));
+assert(!pppoeHtmlSource.includes('pppoe-col-caller-id'));
+assert(!pppoeJsSource.includes('fa-solid'));
+assert(pppoeHtmlSource.includes('data-pppoe-disabled-message'));
+assert(pppoeHtmlSource.includes('class="alert alert-warning align-items-start gap-2 mb-0 pppoe-disabled-notice" hidden'));
+assert(pppoeJsSource.includes('const hideIntegrationDisabled = () => {'));
+assert(pppoeJsSource.includes('if (isConnected) {\n      hideIntegrationDisabled();'));
+assert(pppoeJsSource.includes("const pageSizeStorageKey = 'pppoePageSizeCompact';"));
+assert(pppoeJsSource.includes("(pageSizeSelect ? pageSizeSelect.value : '50')"));
+[
+  '.pppoe-toolbar',
+  '.pppoe-table',
+  'table-layout: fixed',
+  '.pppoe-disabled-notice[hidden]',
+  '.pppoe-col-username { width: 22%; }',
+  '.pppoe-col-actions',
+  '.pppoe-customer-search-results',
+  '.pppoe-traffic-panel canvas',
+  '#pppoe-edit-modal',
+  'var(--tblr-primary'
+].forEach((expected) => {
+  assert(pppoeTablerStyles.includes(expected), `PPPoE Tabler stylesheet is missing ${expected}`);
+});
+console.log('PASS PPPoE uses Network-owned Tabler UI without legacy Admin styles');
 
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(serverSource.includes('const MODULE_RUNTIMES = loadModuleRuntimes({'));

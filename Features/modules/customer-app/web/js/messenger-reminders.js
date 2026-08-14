@@ -154,12 +154,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ].join('');
             const activeActions = entry.status === 'pending'
                 ? `
-                    <button class="messenger-action-btn" type="button" data-action="setup" data-id="${escapeHtml(entry.id)}"><i class="ti ti-settings" aria-hidden="true"></i> Setup</button>
-                    <button class="messenger-action-btn is-primary" type="button" data-action="preview" data-id="${escapeHtml(entry.id)}"><i class="ti ti-message" aria-hidden="true"></i> Review</button>
-                    <button class="messenger-action-btn is-danger" type="button" data-action="skip" data-id="${escapeHtml(entry.id)}"><i class="ti ti-player-skip-forward" aria-hidden="true"></i> Skip</button>`
+                    <button class="btn btn-outline-secondary btn-sm messenger-action-btn" type="button" data-action="setup" data-id="${escapeHtml(entry.id)}"><i class="ti ti-settings" aria-hidden="true"></i> Setup</button>
+                    <button class="btn btn-primary btn-sm messenger-action-btn" type="button" data-action="preview" data-id="${escapeHtml(entry.id)}"><i class="ti ti-message" aria-hidden="true"></i> Review</button>
+                    <button class="btn btn-outline-warning btn-sm messenger-action-btn" type="button" data-action="skip" data-id="${escapeHtml(entry.id)}"><i class="ti ti-player-skip-forward" aria-hidden="true"></i> Skip</button>`
                 : `
-                    <button class="messenger-action-btn" type="button" data-action="preview" data-id="${escapeHtml(entry.id)}"><i class="ti ti-eye" aria-hidden="true"></i> View</button>
-                    ${['sent', 'skipped'].includes(entry.status) ? `<button class="messenger-action-btn" type="button" data-action="reopen" data-id="${escapeHtml(entry.id)}"><i class="ti ti-restore" aria-hidden="true"></i> Reopen</button>` : ''}`;
+                    <button class="btn btn-outline-primary btn-sm messenger-action-btn" type="button" data-action="preview" data-id="${escapeHtml(entry.id)}"><i class="ti ti-eye" aria-hidden="true"></i> View</button>
+                    ${['sent', 'skipped'].includes(entry.status) ? `<button class="btn btn-outline-secondary btn-sm messenger-action-btn" type="button" data-action="reopen" data-id="${escapeHtml(entry.id)}"><i class="ti ti-restore" aria-hidden="true"></i> Reopen</button>` : ''}`;
             const billingAmount = entry.stage === 'payment_confirmation'
                 ? `Paid ${formatMoney(entry.paymentAmount)}`
                 : formatMoney(entry.amountDue);
@@ -167,33 +167,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `Remaining: ${formatMoney(entry.currentBalance)}`
                 : `Due: ${escapeHtml(entry.dueDate || 'Not specified')}`;
             return `
-                <tr>
-                    <td>
+                <tr data-reminder-id="${escapeHtml(entry.id)}">
+                    <td class="messenger-customer-cell" data-label="Customer">
                         <div class="messenger-customer">
                             <strong title="${escapeHtml(entry.customerName)}">${escapeHtml(entry.customerName)}</strong>
                             <span>${escapeHtml(entry.accountNumber)} · ${escapeHtml(entry.area || 'Unassigned area')}</span>
                         </div>
                     </td>
-                    <td>
+                    <td class="messenger-billing-cell" data-label="Billing">
                         <div class="messenger-billing">
                             <strong>${billingAmount}</strong>
                             <span class="messenger-subtext">${billingSubtext}</span>
                         </div>
                     </td>
-                    <td>
+                    <td class="messenger-reminder-cell" data-label="Reminder">
                         <div class="messenger-stage">
                             <span class="badge ${stageBadgeClass(entry.stage)}">${escapeHtml(entry.stageLabel)}</span>
                             ${statusBadge(entry.status)}
                         </div>
                     </td>
-                    <td><div class="messenger-setup-state">${setupLines}</div></td>
-                    <td>
+                    <td class="messenger-setup-cell" data-label="Messenger &amp; consent"><div class="messenger-setup-state">${setupLines}</div></td>
+                    <td class="messenger-last-sent-cell" data-label="Last sent">
                         <div class="messenger-billing">
                             <strong>${escapeHtml(formatDateTime(entry.lastReminderSent))}</strong>
                             <span class="messenger-subtext">${entry.sentBy?.name ? `By ${escapeHtml(entry.sentBy.name)}` : 'Audit history retained'}</span>
                         </div>
                     </td>
-                    <td><div class="messenger-row-actions">${activeActions}</div></td>
+                    <td class="messenger-actions-cell" data-label="Actions"><div class="messenger-row-actions">${activeActions}</div></td>
                 </tr>`;
         }).join('');
     };

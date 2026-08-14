@@ -3995,6 +3995,277 @@ const recordApprovedProofPayment = (payload = {}) => {
     return operation;
 };
 
+const recordApprovedProofPayments = (payload = {}) => {
+    const operation = approvedProofPaymentQueue.catch(() => {}).then(async () => {
+        const branchId = Number(payload.branchId);
+        const submissionId = String(payload.submissionId || '').trim();
+        const reference = sanitizeReferenceInput(payload.reference);
+        const sourceAllocations = Array.isArray(payload.allocations) ? payload.allocations : [];
+        if (!Number.isInteger(branchId) || branchId <= 0) throw createError(400, 'Branch ID is required.');
+        if (!submissionId) throw createError(400, 'Submission ID is required.');
+        if (!reference) throw createError(400, 'Reference number is required.');
+        if (sourceAllocations.length < 1 || sourceAllocations.length > 3) {
+            throw createError(400, 'Provide one to three payment allocations.');
+        }
+
+        const allocations = sourceAllocations.map((allocation) => ({
+            accountNumber: String(allocation?.accountNumber || '').trim(),
+            billingMonth: String(allocation?.billingMonth || '').trim(),
+            amount: Number(allocation?.amount),
+            customerName: sanitizeString(allocation?.customerName),
+            description: sanitizeString(allocation?.description).slice(0, 220)
+        }));
+        if (allocations.some((allocation) => (
+            !allocation.accountNumber
+            || !/^\d{4}-(0[1-9]|1[0-2])$/.test(allocation.billingMonth)
+            || !Number.isFinite(allocation.amount)
+            || allocation.amount <= 0
+        ))) {
+            throw createError(400, 'Every payment allocation requires an account, billing month, and amount greater than 0.');
+        }
+        if (new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length) {
+            throw createError(400, 'Each payment allocation must use a different customer account.');
+        }
+        allocations.forEach((allocation) => {
+            allocation.amount = Number(allocation.amount.toFixed(2));
+        });
+        const allocatedTotal = Number(allocations.reduce((sum, allocation) => sum + allocation.amount, 0).toFixed(2));
+        const expectedTotal = Number(payload.amount ?? payload.totalAmount);
+        if (!Number.isFinite(expectedTotal) || Math.abs(allocatedTotal - expectedTotal) > 0.009) {
+            throw createError(409, 'Payment allocations must exactly equal the imported GCash credit.');
+        }
+
+        const customers = await readCustomers(branchId);
+        const customerByAccount = new Map(customers.map((customer) => [
+            String(customer?.accountNumber ?? customer?.account_number ?? ''),
+            customer
+        ]));
+        const missingAccount = allocations.find((allocation) => !customerByAccount.has(allocation.accountNumber));
+        if (missingAccount) throw createError(404, `Customer ${missingAccount.accountNumber} was not found.`);
+
+        const source = payload.source === 'gcash-history' ? 'gcash-history' : 'proof';
+        const referenceKey = normalizeApprovedPaymentReferenceKey(reference);
+        const paymentDate = toPaymentDateOnly(payload.date) || new Date().toISOString().slice(0, 10);
+        const recordedAt = new Date().toISOString();
+        const entries = allocations.map((allocation, index) => {
+            const allocationSubmissionId = allocations.length === 1
+                ? submissionId
+                : `${submissionId}-${index + 1}`;
+            const customer = customerByAccount.get(allocation.accountNumber) || {};
+            const customerName = allocation.customerName
+                || sanitizeString(customer.name)
+                || [customer.firstName ?? customer.first_name, customer.lastName ?? customer.last_name]
+                    .map(sanitizeString)
+                    .filter(Boolean)
+                    .join(' ')
+                || allocation.accountNumber;
+            const description = allocation.description
+                || `Imported GCash payment allocation ${index + 1} of ${allocations.length} for billing cycle ${allocation.billingMonth}`;
+            return {
+                id: buildApprovedPaymentEntryId(allocationSubmissionId),
+                accountNumber: allocation.accountNumber,
+                billingMonth: allocation.billingMonth,
+                amount: allocation.amount,
+                date: paymentDate,
+                kind: 'payment',
+                type: 'payment',
+                direction: 'credit',
+                reference,
+                description,
+                recordedAt,
+                recordedBy: {
+                    id: String(payload.reviewer?.id || ''),
+                    username: payload.reviewer?.username || null,
+                    name: payload.reviewer?.name || null,
+                    role: payload.reviewer?.role || null
+                },
+                payer: sanitizeString(payload.payer) || customerName,
+                status: 'Approved',
+                paymentMethod: 'gcash',
+                fingerprint: `${allocation.accountNumber}|${reference}|${source}|${allocation.amount.toFixed(2)}|${allocationSubmissionId}`.slice(0, 200)
+            };
+        });
+        const entryIds = new Set(entries.map((entry) => entry.id));
+        const entryMatches = (existing, expected) => (
+            String(existing?.accountNumber ?? existing?.account_number ?? '') === expected.accountNumber
+            && Number(existing?.amount) === expected.amount
+            && normalizeApprovedPaymentReferenceKey(existing?.reference) === referenceKey
+        );
+        let resultEntries = entries;
+        let inserted = false;
+        const relational = await isRelationalReady();
+
+        if (relational) {
+            const result = await withTransaction(async (connection) => {
+                const placeholders = entries.map(() => '?').join(', ');
+                const [existingRows] = await connection.query(
+                    `SELECT
+                         id,
+                         account_number AS accountNumber,
+                         amount,
+                         date,
+                         reference,
+                         or_number AS orNumber,
+                         description,
+                         recorded_at AS recordedAt,
+                         recorded_by_username AS recordedByUsername,
+                         recorded_by_name AS recordedByName,
+                         payment_method AS paymentMethod
+                     FROM payment_entries
+                     WHERE branch_id = ?
+                       AND id IN (${placeholders})
+                     FOR UPDATE`,
+                    [branchId, ...entries.map((entry) => entry.id)]
+                );
+                const existingById = new Map((existingRows || []).map((entry) => [String(entry.id), entry]));
+                if (existingById.size) {
+                    const allMatch = existingById.size === entries.length
+                        && entries.every((entry) => entryMatches(existingById.get(entry.id), entry));
+                    if (!allMatch) throw createError(409, 'The GCash allocation group is only partially recorded or conflicts with stored payments.');
+                    return { entries: entries.map((entry) => existingById.get(entry.id)), inserted: false };
+                }
+
+                const [duplicateRows] = await connection.query(
+                    `SELECT
+                         pe.id,
+                         pe.account_number AS accountNumber,
+                         pe.amount,
+                         pe.date,
+                         pe.reference,
+                         pe.or_number AS orNumber,
+                         pe.description,
+                         pe.recorded_at AS recordedAt,
+                         pe.recorded_by_username AS recordedByUsername,
+                         pe.recorded_by_name AS recordedByName,
+                         pe.payment_method AS paymentMethod,
+                         c.name AS customerName,
+                         c.first_name AS firstName,
+                         c.last_name AS lastName
+                     FROM payment_entries pe
+                     LEFT JOIN customers c
+                       ON c.account_number = pe.account_number
+                      AND c.branch_id = pe.branch_id
+                     WHERE pe.branch_id = ?
+                       AND (
+                           REPLACE(REPLACE(UPPER(pe.reference), '-', ''), ' ', '') = ?
+                           OR REPLACE(REPLACE(UPPER(pe.or_number), '-', ''), ' ', '') = ?
+                       )
+                     ORDER BY pe.recorded_at DESC, pe.date DESC
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [branchId, referenceKey, referenceKey]
+                );
+                const duplicate = (duplicateRows || [])[0];
+                if (duplicate) {
+                    const duplicateCustomerName = sanitizeString(duplicate.customerName)
+                        || [duplicate.firstName, duplicate.lastName].map(sanitizeString).filter(Boolean).join(' ');
+                    throw createApprovedPaymentDuplicateError({
+                        accountNumber: duplicate.accountNumber,
+                        entry: duplicate,
+                        customerName: duplicateCustomerName
+                    });
+                }
+
+                for (const [entryIndex, entry] of entries.entries()) {
+                    await assignEntryNumbers(connection, entry);
+                    if (entryIndex === 0) {
+                        await assertEntryNumbersAvailable(connection, branchId, entry);
+                    } else {
+                        const sharedReference = entry.reference;
+                        entry.reference = null;
+                        try {
+                            await assertEntryNumbersAvailable(connection, branchId, entry);
+                        } finally {
+                            entry.reference = sharedReference;
+                        }
+                    }
+                    await insertPaymentEntry(entry, branchId, entry.accountNumber, connection);
+                }
+                return { entries, inserted: true };
+            });
+            resultEntries = result.entries;
+            inserted = result.inserted;
+        } else {
+            const payments = await readPayments(branchId);
+            const storedEntries = Object.entries(payments).flatMap(([accountNumber, record]) => (
+                (Array.isArray(record?.history) ? record.history : []).map((entry) => ({ accountNumber, entry }))
+            ));
+            const existingById = new Map(storedEntries
+                .filter(({ entry }) => entryIds.has(String(entry?.id || '')))
+                .map(({ accountNumber, entry }) => [String(entry.id), { ...entry, accountNumber }]));
+            if (existingById.size) {
+                const allMatch = existingById.size === entries.length
+                    && entries.every((entry) => entryMatches(existingById.get(entry.id), entry));
+                if (!allMatch) throw createError(409, 'The GCash allocation group is only partially recorded or conflicts with stored payments.');
+                return { entries: entries.map((entry) => existingById.get(entry.id)), inserted: false, idempotent: true };
+            }
+
+            const duplicate = storedEntries.find(({ entry }) => {
+                const candidates = [entry?.reference, entry?.orNumber, entry?.or_number]
+                    .map(normalizeApprovedPaymentReferenceKey)
+                    .filter(Boolean);
+                return candidates.includes(referenceKey);
+            });
+            if (duplicate) {
+                const duplicateCustomer = customerByAccount.get(duplicate.accountNumber) || {};
+                throw createApprovedPaymentDuplicateError({
+                    ...duplicate,
+                    customerName: sanitizeString(duplicateCustomer.name)
+                        || [duplicateCustomer.firstName, duplicateCustomer.lastName]
+                            .map(sanitizeString)
+                            .filter(Boolean)
+                            .join(' ')
+                });
+            }
+
+            entries.forEach((entry) => {
+                if (!payments[entry.accountNumber]) payments[entry.accountNumber] = { history: [] };
+                payments[entry.accountNumber].history.unshift(entry);
+            });
+            await writePayments(payments);
+            resultEntries = entries;
+            inserted = true;
+            for (const entry of entries) {
+                try {
+                    await applyReenableOnPaid(entry.accountNumber, branchId, payments, entry);
+                } catch (error) {
+                    console.error('GCash allocation service re-enable failed:', error);
+                }
+            }
+        }
+
+        if (inserted) {
+            if (relational) {
+                for (const entry of resultEntries) {
+                    try {
+                        await applyReenableOnPaid(entry.accountNumber, branchId, null, entry);
+                    } catch (error) {
+                        console.error('GCash allocation service re-enable failed:', error);
+                    }
+                }
+            }
+            for (const entry of resultEntries) {
+                try {
+                    await maybeExtendPrepaidExpiryOnPayment(entry.accountNumber, entry, branchId);
+                } catch (error) {
+                    console.error('GCash allocation prepaid expiry update failed:', error);
+                }
+            }
+            try {
+                triggerBranchServiceRefresh(branchId, source === 'gcash-history'
+                    ? 'gcash-history-payment-posted'
+                    : 'payment-confirmation-approved');
+            } catch (error) {
+                console.error('GCash allocation service refresh failed:', error);
+            }
+        }
+        return { entries: resultEntries, inserted, idempotent: !inserted };
+    });
+    approvedProofPaymentQueue = operation.catch(() => {});
+    return operation;
+};
+
 module.exports = router;
 module.exports.handleXenditWebhook = handleXenditWebhook;
 module.exports.recordApprovedProofPayment = recordApprovedProofPayment;
+module.exports.recordApprovedProofPayments = recordApprovedProofPayments;

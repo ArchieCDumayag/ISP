@@ -41,9 +41,10 @@
     const postGcashAmountInput = document.getElementById('queuePostGcashAmount');
     const postGcashTransactionAtInput = document.getElementById('queuePostGcashTransactionAt');
     const postGcashRecipientInput = document.getElementById('queuePostGcashRecipient');
-    const postGcashAccountSelect = document.getElementById('queuePostGcashAccount');
-    const postGcashBillingMonthSelect = document.getElementById('queuePostGcashBillingMonth');
-    const postGcashAccountSummary = document.getElementById('queuePostGcashAccountSummary');
+    const postGcashAccountSearch = document.getElementById('queuePostGcashAccount');
+    const postGcashAllocations = document.getElementById('queuePostGcashAllocations');
+    const postGcashAddAllocationButton = document.getElementById('queuePostGcashAddAllocationBtn');
+    const postGcashAllocationTotal = document.getElementById('queuePostGcashAllocationTotal');
     const postGcashAssignmentConfirmed = document.getElementById('queuePostGcashAssignmentConfirmed');
     const postGcashSubmitButton = document.getElementById('queuePostGcashSubmitBtn');
     const approveModal = document.getElementById('queueApproveModal');
@@ -127,6 +128,7 @@
         { value: 'refund', label: 'Refund' },
         { value: 'personal_other', label: 'Personal/Other' }
     ]);
+    let postGcashAccountPickerSequence = 1;
 
     if (pageSizeSelect) {
         pageSizeSelect.value = String(state.pagination.pageSize);
@@ -175,14 +177,40 @@
         || String(record.accountNumber || '').trim()
     );
 
-    const getOpenBillingRows = (record = {}) => {
-        const rows = Array.isArray(record?.billingSummary?.rows) ? record.billingSummary.rows : [];
-        return rows.filter((row) => {
-            const month = String(row?.billingMonthKey || '').trim();
-            const status = String(row?.paymentStatus || row?.paymentStatusLabel || '').trim().toLowerCase();
-            return month && !['paid', 'complimentary'].includes(status);
-        }).sort((left, right) => String(right.billingMonthKey).localeCompare(String(left.billingMonthKey)));
+    const getCurrentBillingCycle = (record = {}) => {
+        const summary = record?.billingSummary;
+        if (summary?.available !== true || !summary.currentCycle) return null;
+        const month = String(
+            summary.currentCycle.billingMonthKey
+            || summary.currentCycle.billDate
+            || ''
+        ).trim().slice(0, 7);
+        return /^\d{4}-\d{2}$/.test(month)
+            ? { ...summary.currentCycle, billingMonthKey: month }
+            : null;
     };
+
+    const getCanonicalEndingBalance = (record = {}) => {
+        const balance = Number(record?.billingSummary?.endingBalance ?? record.endingBalance ?? record.balance);
+        return Number.isFinite(balance) ? Number(balance.toFixed(2)) : null;
+    };
+
+    const isPostGcashAdvancePaymentRecord = (record = {}) => {
+        const endingBalance = getCanonicalEndingBalance(record);
+        const paymentStatus = String(
+            getCurrentBillingCycle(record)?.paymentStatus
+            || record?.billingSummary?.billingStatus
+            || ''
+        ).trim().toLowerCase();
+        return Number.isFinite(endingBalance)
+            && (endingBalance <= 0.009 || ['paid', 'settled'].includes(paymentStatus));
+    };
+
+    const getPostGcashPaymentLabel = (record = {}) => (
+        isPostGcashAdvancePaymentRecord(record)
+            ? 'Advance Payment'
+            : formatCurrency(getCanonicalEndingBalance(record))
+    );
 
     const escapeHtml = (value) => String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -404,20 +432,84 @@
         window.setTimeout(() => importGcashFileInput?.focus({ preventScroll: true }), 0);
     };
 
+    const getPostGcashAllocationRows = () => Array.from(
+        postGcashAllocations?.querySelectorAll('[data-gcash-allocation-row]') || []
+    );
+
+    const renumberPostGcashAllocationRows = () => {
+        getPostGcashAllocationRows().forEach((row, index) => {
+            const title = row.querySelector('[data-gcash-allocation-title]');
+            if (title) title.textContent = `Allocation ${index + 1}`;
+        });
+    };
+
+    const renderPostGcashAllocationTotal = () => {
+        const importedAmount = Number(postGcashAmountInput?.value);
+        const allocatedAmount = Number(getPostGcashAllocationRows().reduce((sum, row) => (
+            sum + (Number(row.querySelector('[data-gcash-allocation-amount]')?.value) || 0)
+        ), 0).toFixed(2));
+        const remaining = Number(((Number.isFinite(importedAmount) ? importedAmount : 0) - allocatedAmount).toFixed(2));
+        if (postGcashAllocationTotal) {
+            const exact = Number.isFinite(importedAmount) && importedAmount > 0 && Math.abs(remaining) <= 0.009;
+            const remainingLabel = exact
+                ? new Intl.NumberFormat('en-PH', {
+                    style: 'currency',
+                    currency: 'PHP',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(0)
+                : formatCurrency(Math.abs(remaining));
+            postGcashAllocationTotal.className = `alert ${exact ? 'alert-success' : (remaining < 0 ? 'alert-danger' : 'alert-warning')} mt-3 mb-0`;
+            postGcashAllocationTotal.textContent = `Allocated: ${formatCurrency(allocatedAmount)} | ${remaining < 0 ? 'Over' : 'Remaining'}: ${remainingLabel}`;
+        }
+        if (postGcashAddAllocationButton) {
+            postGcashAddAllocationButton.disabled = !state.paymentRecords.length || getPostGcashAllocationRows().length >= 3;
+        }
+    };
+
+    const resetPostGcashAllocations = () => {
+        const rows = getPostGcashAllocationRows();
+        rows.slice(1).forEach((row) => row.remove());
+        postGcashAccountPickerSequence = 1;
+        const firstRow = rows[0];
+        if (firstRow) {
+            const accountSearch = firstRow.querySelector('[data-gcash-account-search]');
+            const accountInput = firstRow.querySelector('[data-gcash-allocation-account]');
+            const suggestions = firstRow.querySelector('[data-gcash-account-suggestions]');
+            const amountInput = firstRow.querySelector('[data-gcash-allocation-amount]');
+            const summary = firstRow.querySelector('[data-gcash-allocation-summary]');
+            if (accountSearch) {
+                accountSearch.value = '';
+                accountSearch.disabled = false;
+                accountSearch.placeholder = 'Type client name or account number';
+                accountSearch.setAttribute('aria-expanded', 'false');
+                accountSearch.removeAttribute('aria-activedescendant');
+            }
+            if (accountInput) accountInput.value = '';
+            if (suggestions) {
+                suggestions.innerHTML = '';
+                suggestions.hidden = true;
+            }
+            if (amountInput) {
+                amountInput.value = '';
+                amountInput.removeAttribute('max');
+            }
+            if (summary) {
+                summary.className = 'alert alert-info mb-0';
+                summary.textContent = 'Select a customer to review the amount due or advance payment.';
+            }
+        }
+        renumberPostGcashAllocationRows();
+        renderPostGcashAllocationTotal();
+    };
+
     const closePostGcashModal = () => {
         if (!postGcashModal) return;
         postGcashModal.classList.remove('show');
         postGcashModal.setAttribute('aria-hidden', 'true');
         postGcashForm?.reset();
         state.activeGcashReference = '';
-        if (postGcashBillingMonthSelect) {
-            postGcashBillingMonthSelect.innerHTML = '<option value="">Select a customer first</option>';
-            postGcashBillingMonthSelect.disabled = true;
-        }
-        if (postGcashAccountSummary) {
-            postGcashAccountSummary.className = 'alert alert-info queue-create-field--full';
-            postGcashAccountSummary.textContent = 'Select a customer to review the canonical balance and open billing months.';
-        }
+        resetPostGcashAllocations();
         if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-active');
     };
 
@@ -433,68 +525,227 @@
         return state.paymentRecords;
     };
 
-    const populatePostGcashAccounts = () => {
-        if (!postGcashAccountSelect) return;
-        const records = state.paymentRecords
-            .filter((record) => String(record?.accountNumber || '').trim() && getOpenBillingRows(record).length)
-            .sort((left, right) => getPaymentRecordName(left).localeCompare(getPaymentRecordName(right)));
-        postGcashAccountSelect.innerHTML = [
-            '<option value="">Select a customer account</option>',
-            ...records.map((record) => {
-                const accountNumber = String(record.accountNumber || '').trim();
-                const balance = Number(record?.billingSummary?.endingBalance ?? record.balance);
-                const balanceLabel = Number.isFinite(balance) ? ` | Balance: ${formatCurrency(balance)}` : '';
-                return `<option value="${escapeHtml(accountNumber)}">${escapeHtml(`${getPaymentRecordName(record)} | Acct: ${accountNumber}${balanceLabel}`)}</option>`;
-            })
-        ].join('');
+    const getPostGcashEligibleRecords = () => (
+        state.paymentRecords
+            .filter((record) => (
+                String(record?.accountNumber || '').trim()
+                && getCurrentBillingCycle(record)
+                && Number.isFinite(getCanonicalEndingBalance(record))
+            ))
+            .sort((left, right) => (
+                getPaymentRecordName(left).localeCompare(getPaymentRecordName(right))
+                || String(left.accountNumber || '').localeCompare(String(right.accountNumber || ''))
+            ))
+    );
+
+    const normalizePostGcashAccountSearch = (value) => (
+        String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim()
+    );
+
+    const getPostGcashAccountDisplay = (record = {}) => {
+        return `${getPaymentRecordName(record)} — ${getPostGcashPaymentLabel(record)}`;
     };
 
-    const updatePostGcashBillingMonths = () => {
-        if (!postGcashBillingMonthSelect) return;
-        const accountNumber = String(postGcashAccountSelect?.value || '').trim();
+    const getPostGcashSelectedAccount = (row) => (
+        String(row?.querySelector('[data-gcash-allocation-account]')?.value || '').trim()
+    );
+
+    const getPostGcashSelectedAccounts = (excludedRow = null) => new Set(
+        getPostGcashAllocationRows()
+            .filter((row) => row !== excludedRow)
+            .map((row) => getPostGcashSelectedAccount(row))
+            .filter(Boolean)
+    );
+
+    const closePostGcashAccountSuggestions = (targetRow = null) => {
+        const rows = targetRow ? [targetRow] : getPostGcashAllocationRows();
+        rows.forEach((row) => {
+            const searchInput = row.querySelector('[data-gcash-account-search]');
+            const suggestions = row.querySelector('[data-gcash-account-suggestions]');
+            if (suggestions) {
+                suggestions.hidden = true;
+                suggestions.querySelectorAll('[data-gcash-account-option]').forEach((option) => {
+                    option.classList.remove('active');
+                    option.setAttribute('aria-selected', 'false');
+                });
+            }
+            searchInput?.setAttribute('aria-expanded', 'false');
+            searchInput?.removeAttribute('aria-activedescendant');
+        });
+    };
+
+    const renderPostGcashAccountSuggestions = (row) => {
+        const searchInput = row?.querySelector('[data-gcash-account-search]');
+        const suggestions = row?.querySelector('[data-gcash-account-suggestions]');
+        if (!searchInput || !suggestions || searchInput.disabled) return;
+        const terms = normalizePostGcashAccountSearch(searchInput.value).split(' ').filter(Boolean);
+        const selectedElsewhere = getPostGcashSelectedAccounts(row);
+        const matches = getPostGcashEligibleRecords().filter((record) => {
+            const accountNumber = String(record.accountNumber || '').trim();
+            if (selectedElsewhere.has(accountNumber)) return false;
+            const searchable = normalizePostGcashAccountSearch(`${getPaymentRecordName(record)} ${accountNumber}`);
+            return terms.every((term) => searchable.includes(term));
+        });
+        const visibleMatches = matches.slice(0, 8);
+        const listboxId = suggestions.id || `queuePostGcashAccountSuggestions${postGcashAccountPickerSequence}`;
+        if (!suggestions.id) suggestions.id = listboxId;
+        searchInput.setAttribute('aria-controls', listboxId);
+        suggestions.innerHTML = visibleMatches.length
+            ? visibleMatches.map((record, index) => {
+                const accountNumber = String(record.accountNumber || '').trim();
+                return `<button class="queue-gcash-account-option" type="button" role="option" id="${escapeHtml(`${listboxId}Option${index + 1}`)}" data-gcash-account-option data-account-number="${escapeHtml(accountNumber)}" aria-selected="false">
+                    <span class="queue-gcash-account-option__name">${escapeHtml(getPaymentRecordName(record))}</span>
+                    <span class="queue-gcash-account-option__amount">${escapeHtml(getPostGcashPaymentLabel(record))}</span>
+                </button>`;
+            }).join('')
+            : '<div class="queue-gcash-account-empty" role="status">No matching client.</div>';
+        if (matches.length > visibleMatches.length) {
+            suggestions.insertAdjacentHTML('beforeend', `<div class="queue-gcash-account-more">Keep typing to narrow ${matches.length} clients.</div>`);
+        }
+        suggestions.hidden = false;
+        searchInput.setAttribute('aria-expanded', 'true');
+        searchInput.removeAttribute('aria-activedescendant');
+    };
+
+    const selectPostGcashAccount = (row, accountNumber) => {
+        const normalizedAccount = String(accountNumber || '').trim();
+        const accountInput = row?.querySelector('[data-gcash-allocation-account]');
+        const searchInput = row?.querySelector('[data-gcash-account-search]');
+        const record = getPostGcashEligibleRecords().find((item) => (
+            String(item.accountNumber || '').trim() === normalizedAccount
+        )) || null;
+        if (!row || !accountInput || !searchInput || !record) return;
+        if (getPostGcashSelectedAccounts(row).has(normalizedAccount)) {
+            notify('This customer account is already used in another allocation.', 'error');
+            renderPostGcashAccountSuggestions(row);
+            return;
+        }
+        accountInput.value = normalizedAccount;
+        searchInput.value = getPostGcashAccountDisplay(record);
+        closePostGcashAccountSuggestions();
+        updatePostGcashCurrentMonth(row);
+        renderPostGcashAllocationTotal();
+    };
+
+    const populatePostGcashAccounts = (targetRow = null) => {
+        const rows = targetRow ? [targetRow] : getPostGcashAllocationRows();
+        const eligibleRecords = getPostGcashEligibleRecords();
+        rows.forEach((row) => {
+            const searchInput = row.querySelector('[data-gcash-account-search]');
+            const accountInput = row.querySelector('[data-gcash-allocation-account]');
+            const selectedAccount = getPostGcashSelectedAccount(row);
+            const selectedRecord = eligibleRecords.find((record) => (
+                String(record.accountNumber || '').trim() === selectedAccount
+            )) || null;
+            if (!searchInput || !accountInput) return;
+            searchInput.disabled = !eligibleRecords.length;
+            searchInput.placeholder = eligibleRecords.length
+                ? 'Type client name or account number'
+                : 'No clients with a current billing cycle';
+            if (selectedRecord) {
+                searchInput.value = getPostGcashAccountDisplay(selectedRecord);
+            } else {
+                accountInput.value = '';
+                searchInput.value = '';
+            }
+            closePostGcashAccountSuggestions(row);
+        });
+        renderPostGcashAllocationTotal();
+    };
+
+    const updatePostGcashCurrentMonth = (targetRow = null) => {
+        const row = targetRow || getPostGcashAllocationRows()[0];
+        if (!row) return;
+        const amountInput = row.querySelector('[data-gcash-allocation-amount]');
+        const summary = row.querySelector('[data-gcash-allocation-summary]');
+        const accountNumber = getPostGcashSelectedAccount(row);
         const record = state.paymentRecords.find((item) => String(item?.accountNumber || '').trim() === accountNumber) || null;
-        const openRows = getOpenBillingRows(record || {});
+        const currentCycle = getCurrentBillingCycle(record || {});
+        const endingBalance = getCanonicalEndingBalance(record || {});
         if (!record) {
-            postGcashBillingMonthSelect.innerHTML = '<option value="">Select a customer first</option>';
-            postGcashBillingMonthSelect.disabled = true;
-            if (postGcashAccountSummary) {
-                postGcashAccountSummary.className = 'alert alert-info queue-create-field--full';
-                postGcashAccountSummary.textContent = 'Select a customer to review the canonical balance and open billing months.';
+            amountInput?.removeAttribute('max');
+            if (summary) {
+                summary.className = 'alert alert-info mb-0';
+                summary.textContent = 'Select a customer to review the amount due or advance payment.';
             }
             return;
         }
 
-        postGcashBillingMonthSelect.innerHTML = openRows.length
-            ? [
-                '<option value="">Select an open billing month</option>',
-                ...openRows.map((row) => {
-                    const month = String(row.billingMonthKey || '').trim();
-                    const status = String(row.paymentStatusLabel || row.paymentStatus || 'Open').trim();
-                    const remaining = Number(row.balanceAfterPayment);
-                    const remainingLabel = Number.isFinite(remaining) ? ` | Remaining: ${formatCurrency(remaining)}` : '';
-                    return `<option value="${escapeHtml(month)}">${escapeHtml(`${formatBillingMonth(month)} | ${status}${remainingLabel}`)}</option>`;
-                })
-            ].join('')
-            : '<option value="">No open billing month available</option>';
-        postGcashBillingMonthSelect.disabled = !openRows.length;
-        if (postGcashAccountSummary) {
-            const balance = Number(record?.billingSummary?.endingBalance ?? record.balance);
-            postGcashAccountSummary.className = openRows.length
-                ? 'alert alert-info queue-create-field--full'
-                : 'alert alert-warning queue-create-field--full';
-            postGcashAccountSummary.textContent = openRows.length
-                ? `${getPaymentRecordName(record)} | Acct: ${accountNumber} | Canonical balance: ${formatCurrency(balance)}`
-                : `${getPaymentRecordName(record)} has no open billing month available for this payment.`;
+        const isAdvancePayment = isPostGcashAdvancePaymentRecord(record);
+        if (amountInput && !isAdvancePayment && Number.isFinite(endingBalance) && endingBalance > 0) {
+            amountInput.max = endingBalance.toFixed(2);
+        } else {
+            amountInput?.removeAttribute('max');
         }
+        if (summary) {
+            const available = currentCycle && Number.isFinite(endingBalance);
+            summary.className = `alert ${available ? 'alert-info' : 'alert-warning'} mb-0`;
+            summary.textContent = available
+                ? (isAdvancePayment
+                    ? `${getPaymentRecordName(record)} | Advance Payment`
+                    : `${getPaymentRecordName(record)} | Amount due: ${formatCurrency(endingBalance)}`)
+                : `${getPaymentRecordName(record)} has no current billing cycle available.`;
+        }
+    };
+
+    const addPostGcashAllocation = () => {
+        if (!postGcashAllocations || getPostGcashAllocationRows().length >= 3) return;
+        const allocationNumber = getPostGcashAllocationRows().length + 1;
+        postGcashAccountPickerSequence += 1;
+        const suggestionId = `queuePostGcashAccountSuggestions${postGcashAccountPickerSequence}`;
+        postGcashAllocations.insertAdjacentHTML('beforeend', `
+            <section class="card queue-gcash-allocation" data-gcash-allocation-row>
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                        <strong data-gcash-allocation-title>Allocation ${allocationNumber}</strong>
+                        <button type="button" class="btn btn-outline-danger btn-sm" data-action="remove-gcash-allocation">
+                            <i class="ti ti-trash" aria-hidden="true"></i> Remove
+                        </button>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-lg-8">
+                            <label class="form-label">Customer Account</label>
+                            <div class="queue-gcash-account-picker" data-gcash-account-picker>
+                                <input class="form-control" type="search" data-gcash-account-search role="combobox" aria-label="Customer Account" aria-autocomplete="list" aria-expanded="false" aria-controls="${suggestionId}" autocomplete="off" placeholder="Type client name or account number">
+                                <input type="hidden" data-gcash-allocation-account>
+                                <div class="queue-gcash-account-suggestions" id="${suggestionId}" data-gcash-account-suggestions role="listbox" hidden></div>
+                            </div>
+                            <div class="form-hint">Type a client name or account number, then choose a suggestion.</div>
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Amount</label>
+                            <input class="form-control" type="number" data-gcash-allocation-amount min="0.01" step="0.01" required>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-info mb-0" data-gcash-allocation-summary role="status">
+                                Select a customer to review the amount due or advance payment.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>`);
+        const newRow = getPostGcashAllocationRows().at(-1);
+        populatePostGcashAccounts(newRow);
+        renumberPostGcashAllocationRows();
+        renderPostGcashAllocationTotal();
+        newRow?.querySelector('[data-gcash-account-search]')?.focus({ preventScroll: true });
     };
 
     const openPostGcashModal = async (transaction) => {
         if (!postGcashModal || !transaction) return;
         const reference = normalizeGcashReference(transaction.reference);
         if (!reference || transaction.assignment || String(transaction.status || '').toLowerCase() !== 'received') return;
+        resetPostGcashAllocations();
         state.activeGcashReference = reference;
         if (postGcashReferenceInput) postGcashReferenceInput.value = reference;
         if (postGcashAmountInput) postGcashAmountInput.value = Number(transaction.credit).toFixed(2);
+        const firstAmountInput = getPostGcashAllocationRows()[0]?.querySelector('[data-gcash-allocation-amount]');
+        if (firstAmountInput) firstAmountInput.value = Number(transaction.credit).toFixed(2);
         if (postGcashTransactionAtInput) postGcashTransactionAtInput.value = formatDateTime(transaction.transactionAt);
         if (postGcashRecipientInput) {
             postGcashRecipientInput.value = [transaction.recipientLabel, transaction.recipient]
@@ -502,12 +753,13 @@
                 .filter(Boolean)
                 .join(' | ') || '-';
         }
-        if (postGcashAccountSelect) postGcashAccountSelect.innerHTML = '<option value="">Loading customer accounts...</option>';
-        if (postGcashBillingMonthSelect) {
-            postGcashBillingMonthSelect.innerHTML = '<option value="">Select a customer first</option>';
-            postGcashBillingMonthSelect.disabled = true;
+        if (postGcashAccountSearch) {
+            postGcashAccountSearch.value = '';
+            postGcashAccountSearch.disabled = true;
+            postGcashAccountSearch.placeholder = 'Loading customer accounts...';
         }
         if (postGcashAssignmentConfirmed) postGcashAssignmentConfirmed.checked = false;
+        renderPostGcashAllocationTotal();
         postGcashModal.classList.add('show');
         postGcashModal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('modal-active');
@@ -515,13 +767,24 @@
             await loadPaymentRecordsForGcashPosting({ force: true });
             if (state.activeGcashReference !== reference) return;
             populatePostGcashAccounts();
-            postGcashAccountSelect?.focus({ preventScroll: true });
+            postGcashAccountSearch?.focus({ preventScroll: true });
         } catch (error) {
-            if (postGcashAccountSelect) postGcashAccountSelect.innerHTML = '<option value="">Customer billing records unavailable</option>';
-            if (postGcashAccountSummary) {
-                postGcashAccountSummary.className = 'alert alert-danger queue-create-field--full';
-                postGcashAccountSummary.textContent = error.message || 'Unable to load customer billing records.';
-            }
+            getPostGcashAllocationRows().forEach((row) => {
+                const accountSearch = row.querySelector('[data-gcash-account-search]');
+                const accountInput = row.querySelector('[data-gcash-allocation-account]');
+                const summary = row.querySelector('[data-gcash-allocation-summary]');
+                if (accountSearch) {
+                    accountSearch.value = '';
+                    accountSearch.disabled = true;
+                    accountSearch.placeholder = 'Customer billing records unavailable';
+                }
+                if (accountInput) accountInput.value = '';
+                closePostGcashAccountSuggestions(row);
+                if (summary) {
+                    summary.className = 'alert alert-danger mb-0';
+                    summary.textContent = error.message || 'Unable to load customer billing records.';
+                }
+            });
         }
     };
 
@@ -1122,12 +1385,31 @@
             const assignment = transaction.assignment && typeof transaction.assignment === 'object'
                 ? transaction.assignment
                 : null;
-            const assignmentAccount = String(assignment?.accountNumber || '').trim();
-            const assignmentCustomer = String(assignment?.customerName || '').trim();
-            const assignmentMonth = String(assignment?.billingMonth || '').trim();
+            const assignmentAllocations = assignment
+                ? (Array.isArray(assignment.allocations) && assignment.allocations.length
+                    ? assignment.allocations
+                    : [{
+                        accountNumber: assignment.accountNumber,
+                        customerName: assignment.customerName,
+                        billingMonth: assignment.billingMonth,
+                        amount: assignment.amount
+                    }])
+                : [];
+            const assignmentDetails = assignmentAllocations.map((allocation) => {
+                const accountNumber = String(allocation?.accountNumber || '').trim();
+                const customerName = String(allocation?.customerName || '').trim();
+                const billingMonth = String(allocation?.billingMonth || '').trim();
+                const amount = Number(allocation?.amount);
+                return `<small class="d-block text-secondary mt-1">${escapeHtml([
+                    customerName,
+                    accountNumber ? `Acct: ${accountNumber}` : '',
+                    billingMonth ? formatBillingMonth(billingMonth) : '',
+                    Number.isFinite(amount) ? formatCurrency(amount) : ''
+                ].filter(Boolean).join(' | ') || 'Assigned customer')}</small>`;
+            }).join('');
             const matchBadge = assignment
                 ? `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Assigned and Posted' : 'Reserved for approval'}</span>
-                   <small class="d-block text-secondary mt-1">${escapeHtml([assignmentCustomer, assignmentAccount ? `Acct: ${assignmentAccount}` : '', assignmentMonth ? formatBillingMonth(assignmentMonth) : ''].filter(Boolean).join(' | ') || 'Assigned customer')}</small>`
+                   ${assignmentDetails}`
                 : (isReceived
                     ? '<span class="badge bg-green-lt text-green">Available</span>'
                     : '<span class="badge bg-secondary-lt text-secondary">Not an incoming credit</span>');
@@ -1544,31 +1826,84 @@
         if (state.loading) return;
         const reference = normalizeGcashReference(state.activeGcashReference);
         const transaction = state.gcashTransactionsByReference.get(reference) || null;
-        const accountNumber = String(postGcashAccountSelect?.value || '').trim();
-        const billingMonth = String(postGcashBillingMonthSelect?.value || '').trim();
         const amount = Number(postGcashAmountInput?.value);
+        const allocationRows = getPostGcashAllocationRows();
+        const allocations = allocationRows.map((row) => ({
+            accountNumber: String(row.querySelector('[data-gcash-allocation-account]')?.value || '').trim(),
+            amount: Number(row.querySelector('[data-gcash-allocation-amount]')?.value)
+        }));
         if (!transaction || transaction.assignment) {
             notify('This imported GCash transaction is no longer available.', 'error');
             closePostGcashModal();
             await fetchGcashHistory();
             return;
         }
-        if (!accountNumber) {
-            notify('Select the customer account.', 'error');
-            postGcashAccountSelect?.focus();
+        if (allocations.length < 1 || allocations.length > 3) {
+            notify('Provide one to three customer allocations.', 'error');
             return;
         }
-        if (!billingMonth) {
-            notify('Select an open billing month.', 'error');
-            postGcashBillingMonthSelect?.focus();
+        const invalidIndex = allocations.findIndex((allocation) => (
+            !allocation.accountNumber
+            || !Number.isFinite(allocation.amount)
+            || allocation.amount <= 0
+        ));
+        if (invalidIndex >= 0) {
+            notify(`Complete the account and amount for allocation ${invalidIndex + 1}.`, 'error');
+            const row = allocationRows[invalidIndex];
+            row?.querySelector(
+                !allocations[invalidIndex].accountNumber
+                    ? '[data-gcash-account-search]'
+                    : '[data-gcash-allocation-amount]'
+            )?.focus();
+            return;
+        }
+        if (new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length) {
+            notify('Each allocation must use a different customer account.', 'error');
             return;
         }
         if (!Number.isFinite(amount) || amount <= 0 || Math.abs(amount - Number(transaction.credit)) > 0.009) {
             notify('The payment amount must exactly match the imported GCash credit.', 'error');
             return;
         }
+        allocations.forEach((allocation) => {
+            allocation.amount = Number(allocation.amount.toFixed(2));
+        });
+        const unavailableAccountIndex = allocations.findIndex((allocation) => {
+            const record = state.paymentRecords.find((item) => (
+                String(item?.accountNumber || '').trim() === allocation.accountNumber
+            ));
+            const endingBalance = getCanonicalEndingBalance(record || {});
+            return !record || !getCurrentBillingCycle(record) || !Number.isFinite(endingBalance);
+        });
+        if (unavailableAccountIndex >= 0) {
+            notify(`Allocation ${unavailableAccountIndex + 1} has no available current billing cycle.`, 'error');
+            allocationRows[unavailableAccountIndex]?.querySelector('[data-gcash-account-search]')?.focus();
+            return;
+        }
+        const overBalanceIndex = allocations.findIndex((allocation) => {
+            const record = state.paymentRecords.find((item) => (
+                String(item?.accountNumber || '').trim() === allocation.accountNumber
+            ));
+            const endingBalance = getCanonicalEndingBalance(record || {});
+            return !isPostGcashAdvancePaymentRecord(record || {})
+                && allocation.amount - endingBalance > 0.009;
+        });
+        if (overBalanceIndex >= 0) {
+            const allocation = allocations[overBalanceIndex];
+            const record = state.paymentRecords.find((item) => (
+                String(item?.accountNumber || '').trim() === allocation.accountNumber
+            ));
+            notify(`Allocation ${overBalanceIndex + 1} cannot exceed the ending balance of ${formatCurrency(getCanonicalEndingBalance(record || {}))}.`, 'error');
+            allocationRows[overBalanceIndex]?.querySelector('[data-gcash-allocation-amount]')?.focus();
+            return;
+        }
+        const allocatedTotal = Number(allocations.reduce((sum, allocation) => sum + allocation.amount, 0).toFixed(2));
+        if (Math.abs(allocatedTotal - amount) > 0.009) {
+            notify(`Allocation total must equal ${formatCurrency(amount)}.`, 'error');
+            return;
+        }
         if (!postGcashAssignmentConfirmed?.checked) {
-            notify('Confirm the customer, billing month, reference, recipient, and imported amount.', 'error');
+            notify('Confirm every allocation and the imported GCash total.', 'error');
             postGcashAssignmentConfirmed?.focus();
             return;
         }
@@ -1577,14 +1912,13 @@
         if (postGcashSubmitButton) postGcashSubmitButton.disabled = true;
         try {
             await postGcashHistoryPayment(reference, {
-                accountNumber,
-                billingMonth,
                 amount: Number(amount.toFixed(2)),
+                allocations,
                 assignmentConfirmed: true
             });
             closePostGcashModal();
             state.paymentRecords = [];
-            notify('Imported GCash transaction assigned and posted to the customer ledger.', 'success');
+            notify(`Imported GCash transaction posted across ${allocations.length} customer ledger${allocations.length === 1 ? '' : 's'}.`, 'success');
             await Promise.all([fetchQueue(), fetchGcashHistory()]);
         } catch (error) {
             if (error?.payload?.code === 'DUPLICATE_PAYMENT_REFERENCE') {
@@ -1898,11 +2232,85 @@
         const dismissTarget = event.target.closest('[data-dismiss="queue-import-gcash-modal"]');
         if (dismissTarget) closeImportGcashModal();
     });
-    postGcashAccountSelect?.addEventListener('change', updatePostGcashBillingMonths);
+    postGcashAddAllocationButton?.addEventListener('click', addPostGcashAllocation);
+    postGcashAllocations?.addEventListener('focusin', (event) => {
+        const searchInput = event.target.closest('[data-gcash-account-search]');
+        if (!searchInput) return;
+        const row = searchInput.closest('[data-gcash-allocation-row]');
+        if (row) renderPostGcashAccountSuggestions(row);
+    });
+    postGcashAllocations?.addEventListener('input', (event) => {
+        const row = event.target.closest('[data-gcash-allocation-row]');
+        if (!row) return;
+        if (event.target.matches('[data-gcash-account-search]')) {
+            const accountInput = row.querySelector('[data-gcash-allocation-account]');
+            if (accountInput) accountInput.value = '';
+            updatePostGcashCurrentMonth(row);
+            renderPostGcashAccountSuggestions(row);
+        }
+        if (event.target.matches('[data-gcash-allocation-amount]')) {
+            renderPostGcashAllocationTotal();
+        }
+    });
+    postGcashAllocations?.addEventListener('keydown', (event) => {
+        const searchInput = event.target.closest('[data-gcash-account-search]');
+        if (!searchInput) return;
+        const row = searchInput.closest('[data-gcash-allocation-row]');
+        const suggestions = row?.querySelector('[data-gcash-account-suggestions]');
+        if (!row || !suggestions) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closePostGcashAccountSuggestions(row);
+            return;
+        }
+        if (event.key === 'Tab') {
+            closePostGcashAccountSuggestions(row);
+            return;
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+        event.preventDefault();
+        if (suggestions.hidden) renderPostGcashAccountSuggestions(row);
+        const options = Array.from(suggestions.querySelectorAll('[data-gcash-account-option]'));
+        if (!options.length) return;
+        const activeId = searchInput.getAttribute('aria-activedescendant');
+        const activeIndex = options.findIndex((option) => option.id === activeId);
+        if (event.key === 'Enter') {
+            const selectedOption = options[activeIndex >= 0 ? activeIndex : 0];
+            selectPostGcashAccount(row, selectedOption.dataset.accountNumber);
+            return;
+        }
+        const nextIndex = event.key === 'ArrowDown'
+            ? (activeIndex + 1) % options.length
+            : (activeIndex <= 0 ? options.length - 1 : activeIndex - 1);
+        options.forEach((option, index) => {
+            const active = index === nextIndex;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        searchInput.setAttribute('aria-activedescendant', options[nextIndex].id);
+        options[nextIndex].scrollIntoView({ block: 'nearest' });
+    });
+    postGcashAllocations?.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('[data-gcash-account-option]')) event.preventDefault();
+    });
+    postGcashAllocations?.addEventListener('click', (event) => {
+        const accountOption = event.target.closest('[data-gcash-account-option]');
+        if (accountOption) {
+            const row = accountOption.closest('[data-gcash-allocation-row]');
+            if (row) selectPostGcashAccount(row, accountOption.dataset.accountNumber);
+            return;
+        }
+        const removeButton = event.target.closest('[data-action="remove-gcash-allocation"]');
+        if (!removeButton) return;
+        removeButton.closest('[data-gcash-allocation-row]')?.remove();
+        renumberPostGcashAllocationRows();
+        renderPostGcashAllocationTotal();
+    });
     postGcashForm?.addEventListener('submit', onPostGcashSubmit);
     postGcashModal?.addEventListener('click', (event) => {
         const dismissTarget = event.target.closest('[data-dismiss="queue-post-gcash-modal"]');
         if (dismissTarget) closePostGcashModal();
+        if (!event.target.closest('[data-gcash-account-picker]')) closePostGcashAccountSuggestions();
     });
 
     rejectEntryModal?.addEventListener('click', (event) => {

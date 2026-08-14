@@ -15,7 +15,9 @@ const {
     listGcashTransactionHistory,
     evaluateGcashTransactionMatch,
     claimGcashTransaction,
+    claimGcashTransactionAllocations,
     finalizeGcashTransactionAssignment,
+    finalizeGcashTransactionAllocations,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
     normalizeReference: normalizeGcashReference
@@ -56,6 +58,16 @@ const normalizeDateOnly = (value) => {
 };
 
 const nowDateOnly = () => new Date().toISOString().slice(0, 10);
+const currentManilaDateOnly = () => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+};
 const nowDateTime = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const SAMPLE_PROOF_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgNfN3tQAAAAASUVORK5CYII=';
 const normalizePaymentReference = (value) => normalizeProofReference(value).slice(0, 32);
@@ -310,6 +322,27 @@ const buildGcashHistorySubmissionId = (branchId, reference) => (
         .slice(0, 40)}`
 );
 
+const normalizeDirectGcashAllocations = (body = {}) => {
+    const source = Array.isArray(body?.allocations) && body.allocations.length
+        ? body.allocations
+        : [{
+            accountNumber: body?.accountNumber,
+            amount: body?.amount
+        }];
+    return source.map((allocation) => ({
+        accountNumber: toSafeText(allocation?.accountNumber, 20),
+        amount: toFiniteNumber(allocation?.amount)
+    }));
+};
+
+const directGcashRequestSignature = (allocations = []) => allocations
+    .map((allocation) => [
+        toSafeText(allocation?.accountNumber, 20),
+        toFiniteNumber(allocation?.amount)?.toFixed(2) || ''
+    ].join('|'))
+    .sort()
+    .join('||');
+
 const getPaymentRecordCustomerName = (record = {}) => (
     toSafeText(record.name, 200)
     || `${toSafeText(record.firstName, 100)} ${toSafeText(record.lastName, 100)}`.trim()
@@ -396,22 +429,45 @@ router.put('/gcash-history/:reference/remark', async (req, res, next) => {
 
 router.post('/gcash-history/:reference/post-payment', async (req, res, next) => {
     let claimedGcash = null;
+    let claimCreated = false;
     let paymentRecorded = false;
     const reference = normalizeGcashReference(req.params?.reference);
-    const accountNumber = toSafeText(req.body?.accountNumber, 20);
-    const billingMonth = normalizeBillingMonth(req.body?.billingMonth);
+    const allocations = normalizeDirectGcashAllocations(req.body);
     const confirmedAmount = toFiniteNumber(req.body?.amount);
     const assignmentConfirmed = isExplicitlyConfirmed(req.body?.assignmentConfirmed);
     const submissionId = buildGcashHistorySubmissionId(req.branchId, reference);
     try {
         if (!reference) throw createError(400, 'GCash reference number is required.');
-        if (!accountNumber) throw createError(400, 'Customer account is required.');
-        if (!billingMonth) throw createError(400, 'Billing month is required.');
+        if (allocations.length < 1 || allocations.length > 3) {
+            return res.status(400).json({
+                ok: false,
+                code: 'GCASH_ALLOCATION_COUNT_INVALID',
+                error: 'Provide one to three customer allocations.'
+            });
+        }
+        if (allocations.some((allocation) => (
+            !allocation.accountNumber
+            || allocation.amount == null
+            || allocation.amount <= 0
+        ))) {
+            return res.status(400).json({
+                ok: false,
+                code: 'GCASH_ALLOCATION_INVALID',
+                error: 'Every allocation requires a customer account and amount greater than 0.'
+            });
+        }
+        if (new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length) {
+            return res.status(400).json({
+                ok: false,
+                code: 'GCASH_ALLOCATION_ACCOUNT_DUPLICATE',
+                error: 'Each allocation must use a different customer account.'
+            });
+        }
         if (!assignmentConfirmed) {
             return res.status(400).json({
                 ok: false,
                 code: 'PAYMENT_ASSIGNMENT_CONFIRMATION_REQUIRED',
-                error: 'Confirm the customer, billing month, reference, and imported amount before posting.'
+                error: 'Confirm every customer, current-month allocation amount, reference, and imported total before posting.'
             });
         }
 
@@ -434,81 +490,137 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
                 importedAmount: Number(importedAmount.toFixed(2))
             });
         }
+        allocations.forEach((allocation) => {
+            allocation.amount = Number(allocation.amount.toFixed(2));
+        });
+        const allocatedTotal = Number(allocations.reduce((sum, allocation) => sum + allocation.amount, 0).toFixed(2));
+        if (Math.abs(allocatedTotal - importedAmount) > 0.009) {
+            return res.status(409).json({
+                ok: false,
+                code: 'GCASH_ALLOCATION_TOTAL_MISMATCH',
+                error: 'The allocation amounts must exactly equal the imported GCash credit.',
+                importedAmount: Number(importedAmount.toFixed(2)),
+                allocatedTotal
+            });
+        }
 
         const existingAssignment = transaction.assignment && typeof transaction.assignment === 'object'
             ? transaction.assignment
             : null;
         if (existingAssignment) {
+            const existingAllocations = normalizeDirectGcashAllocations({
+                allocations: existingAssignment.allocations,
+                accountNumber: existingAssignment.accountNumber,
+                amount: existingAssignment.amount
+            });
             const sameDirectAssignment = existingAssignment.submissionId === submissionId
-                && existingAssignment.accountNumber === accountNumber
-                && existingAssignment.billingMonth === billingMonth;
+                && directGcashRequestSignature(existingAllocations) === directGcashRequestSignature(allocations);
             if (
                 sameDirectAssignment
                 && existingAssignment.status === 'posted'
-                && existingAssignment.paymentEntryId
+                && existingAllocations.every((allocation, index) => (
+                    existingAssignment.allocations?.[index]?.paymentEntryId
+                    || (existingAllocations.length === 1 && existingAssignment.paymentEntryId)
+                ))
             ) {
                 return res.json({
                     ok: true,
                     idempotent: true,
-                    message: 'This imported GCash transaction is already posted to the selected customer ledger.',
+                    message: 'This imported GCash transaction is already posted to the selected customer ledgers.',
                     reference,
                     amount: Number(importedAmount.toFixed(2)),
-                    billingMonth,
-                    paymentEntryId: existingAssignment.paymentEntryId,
+                    allocations: existingAssignment.allocations,
+                    paymentEntryIds: existingAssignment.paymentEntryIds,
                     assignment: existingAssignment
                 });
             }
             if (!sameDirectAssignment) {
+                const assignedAccounts = existingAllocations.map((allocation) => allocation.accountNumber).filter(Boolean);
                 return res.status(409).json({
                     ok: false,
                     code: 'GCASH_TRANSACTION_ALREADY_ASSIGNED',
-                    error: `This GCash transaction is already assigned to account ${existingAssignment.accountNumber}.`,
+                    error: assignedAccounts.length === 1
+                        ? `This GCash transaction is already assigned to account ${assignedAccounts[0]}.`
+                        : `This GCash transaction is already assigned to ${assignedAccounts.length} accounts.`,
                     assignment: existingAssignment
                 });
             }
         }
 
-        const paymentRecord = await paymentRecordsRouter.buildPaymentRecordForAccount(accountNumber, req.branchId);
-        if (!paymentRecord) throw createError(404, 'Customer not found.');
-        const billingRows = Array.isArray(paymentRecord?.billingSummary?.rows)
-            ? paymentRecord.billingSummary.rows
-            : [];
-        const billingRow = billingRows.find((row) => String(row?.billingMonthKey || '').trim() === billingMonth);
-        if (!billingRow) {
-            return res.status(409).json({
-                ok: false,
-                code: 'BILLING_CYCLE_NOT_FOUND',
-                error: 'The selected billing month is not available for this customer.'
-            });
-        }
-        const billingStatus = String(billingRow.paymentStatus || billingRow.paymentStatusLabel || '').trim().toLowerCase();
-        if (['paid', 'complimentary'].includes(billingStatus)) {
-            return res.status(409).json({
-                ok: false,
-                code: 'BILLING_CYCLE_ALREADY_SETTLED',
-                error: 'The selected billing month is already settled. Choose an open billing month.'
+        const resolvedAllocations = [];
+        for (const allocation of allocations) {
+            const paymentRecord = await paymentRecordsRouter.buildPaymentRecordForAccount(
+                allocation.accountNumber,
+                req.branchId
+            );
+            if (!paymentRecord) throw createError(404, `Customer ${allocation.accountNumber} was not found.`);
+            const billingSummary = paymentRecord?.billingSummary;
+            const currentCycle = billingSummary?.available === true
+                ? billingSummary.currentCycle
+                : null;
+            const billingMonth = normalizeBillingMonth(
+                currentCycle?.billingMonthKey || currentCycle?.billDate
+            );
+            if (!billingMonth) {
+                return res.status(409).json({
+                    ok: false,
+                    code: 'GCASH_CURRENT_BILLING_CYCLE_UNAVAILABLE',
+                    error: `The current billing month is unavailable for account ${allocation.accountNumber}.`
+                });
+            }
+            const endingBalance = toFiniteNumber(
+                billingSummary.endingBalance ?? paymentRecord.endingBalance ?? paymentRecord.balance
+            );
+            if (endingBalance == null) {
+                return res.status(409).json({
+                    ok: false,
+                    code: 'GCASH_ACCOUNT_HAS_NO_ENDING_BALANCE',
+                    error: `Account ${allocation.accountNumber} has no available billing balance.`
+                });
+            }
+            const currentPaymentStatus = toSafeText(
+                currentCycle?.paymentStatus || billingSummary.billingStatus,
+                40
+            ).toLowerCase();
+            const isAdvancePayment = endingBalance <= 0.009
+                || ['paid', 'settled'].includes(currentPaymentStatus);
+            if (!isAdvancePayment && allocation.amount - endingBalance > 0.009) {
+                return res.status(409).json({
+                    ok: false,
+                    code: 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE',
+                    error: `Allocation for account ${allocation.accountNumber} cannot exceed its ending balance.`,
+                    accountNumber: allocation.accountNumber,
+                    endingBalance: Number(endingBalance.toFixed(2)),
+                    allocationAmount: allocation.amount
+                });
+            }
+            resolvedAllocations.push({
+                ...allocation,
+                billingMonth,
+                customerName: getPaymentRecordCustomerName(paymentRecord),
+                endingBalance: Number(endingBalance.toFixed(2)),
+                isAdvancePayment
             });
         }
 
+        const postingDate = currentManilaDateOnly();
         const reviewer = {
             id: toSafeText(req.user?.id, 32) || null,
             username: toSafeText(req.user?.username, 100) || null,
             name: toSafeText(req.user?.name, 120) || null,
             role: toSafeText(req.user?.role, 30) || null
         };
-        const customerName = getPaymentRecordCustomerName(paymentRecord);
         try {
-            claimedGcash = await claimGcashTransaction({
+            claimedGcash = await claimGcashTransactionAllocations({
                 branchId: req.branchId,
                 reference,
                 submissionId,
-                accountNumber,
-                customerName,
+                allocations: resolvedAllocations,
                 amount: importedAmount,
-                paymentDate: transaction.transactionDate || transaction.transactionAt,
-                billingMonth,
+                paymentDate: postingDate,
                 claimedBy: reviewer
             });
+            claimCreated = !claimedGcash.idempotent;
         } catch (error) {
             if (error?.code === 'GCASH_TRANSACTION_ALREADY_ASSIGNED') {
                 return sendGcashAssignmentConflict(res, error);
@@ -516,47 +628,55 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
             throw error;
         }
 
-        if (typeof paymentsRouter.recordApprovedProofPayment !== 'function') {
-            throw createError(500, 'Imported GCash payment writer is unavailable.');
+        if (typeof paymentsRouter.recordApprovedProofPayments !== 'function') {
+            throw createError(500, 'Imported GCash allocation writer is unavailable.');
         }
-        const paymentEntry = await paymentsRouter.recordApprovedProofPayment({
+        const paymentResult = await paymentsRouter.recordApprovedProofPayments({
             submissionId,
             source: 'gcash-history',
             branchId: req.branchId,
-            accountNumber,
             amount: Number(importedAmount.toFixed(2)),
+            allocations: resolvedAllocations.map((allocation, index) => ({
+                ...allocation,
+                description: allocation.isAdvancePayment
+                    ? `Imported GCash advance payment allocation ${index + 1} of ${resolvedAllocations.length} posted through current billing cycle ${allocation.billingMonth}`
+                    : `Imported GCash payment allocation ${index + 1} of ${resolvedAllocations.length} posted to current billing cycle ${allocation.billingMonth}`
+            })),
             reference,
-            date: normalizeDateOnly(transaction.transactionDate || transaction.transactionAt) || nowDateOnly(),
+            date: postingDate,
             reviewer,
-            payer: customerName || accountNumber,
-            description: `Imported GCash payment posted for billing cycle ${billingMonth}`
+            payer: toSafeText(transaction.sender, 80) || 'GCash sender'
         });
         paymentRecorded = true;
 
-        const finalized = await finalizeGcashTransactionAssignment({
+        const paymentEntries = resolvedAllocations.map((allocation, index) => ({
+            accountNumber: allocation.accountNumber,
+            billingMonth: allocation.billingMonth,
+            paymentEntryId: paymentResult.entries[index]?.id
+        }));
+        const finalized = await finalizeGcashTransactionAllocations({
             branchId: req.branchId,
             reference,
             submissionId,
-            accountNumber,
-            paymentEntryId: paymentEntry.id
+            paymentEntries
         });
         claimedGcash = null;
-        return res.status(201).json({
+        return res.status(paymentResult.inserted === false ? 200 : 201).json({
             ok: true,
-            message: 'Imported GCash transaction posted to the customer ledger.',
+            idempotent: paymentResult.inserted === false,
+            message: `Imported GCash transaction posted across ${resolvedAllocations.length} customer ledger${resolvedAllocations.length === 1 ? '' : 's'}.`,
             reference,
             amount: Number(importedAmount.toFixed(2)),
-            billingMonth,
-            paymentEntryId: paymentEntry.id,
+            allocations: finalized.assignment.allocations,
+            paymentEntryIds: finalized.assignment.paymentEntryIds,
             assignment: finalized.assignment
         });
     } catch (error) {
-        if (claimedGcash && !paymentRecorded) {
+        if (claimedGcash && claimCreated && !paymentRecorded) {
             await releaseGcashClaimBestEffort({
                 branchId: req.branchId,
                 reference,
-                submissionId,
-                accountNumber
+                submissionId
             });
         }
         if (error?.status === 409 && error?.duplicatePayment) {

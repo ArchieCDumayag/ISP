@@ -117,29 +117,61 @@ const getBranchBucket = (store, branchId) => {
     return bucket;
 };
 
+const sanitizeAssignmentAllocation = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const accountNumber = toSafeText(value.accountNumber, 20);
+    const amount = normalizeMoney(value.amount);
+    if (!accountNumber || amount == null || amount <= 0) return null;
+    return {
+        accountNumber,
+        customerName: toSafeText(value.customerName, 200),
+        amount,
+        billingMonth: normalizeBillingMonth(value.billingMonth) || null,
+        paymentEntryId: toSafeText(value.paymentEntryId, 64) || null
+    };
+};
+
 const sanitizeAssignment = (value) => {
     if (!value || typeof value !== 'object') return null;
     const submissionId = toSafeText(value.submissionId, 64);
-    const accountNumber = toSafeText(value.accountNumber, 20);
-    if (!submissionId || !accountNumber) return null;
+    const legacyAllocation = sanitizeAssignmentAllocation(value);
+    const suppliedAllocations = Array.isArray(value.allocations)
+        ? value.allocations.map(sanitizeAssignmentAllocation).filter(Boolean).slice(0, 3)
+        : [];
+    const allocations = suppliedAllocations.length ? suppliedAllocations : (legacyAllocation ? [legacyAllocation] : []);
+    if (!submissionId || !allocations.length) return null;
+    const singleAllocation = allocations.length === 1 ? allocations[0] : null;
+    const paymentEntryIds = allocations.map((allocation) => allocation.paymentEntryId).filter(Boolean);
+    const allocationTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
     return {
         status: value.status === 'posted' ? 'posted' : 'claimed',
         submissionId,
-        accountNumber,
-        customerName: toSafeText(value.customerName, 200),
-        amount: normalizeMoney(value.amount),
+        accountNumber: singleAllocation?.accountNumber || '',
+        customerName: singleAllocation?.customerName || '',
+        amount: normalizeMoney(value.amount) ?? Number(allocationTotal.toFixed(2)),
         paymentDate: normalizeDateOnly(value.paymentDate) || null,
-        billingMonth: normalizeBillingMonth(value.billingMonth) || null,
+        billingMonth: singleAllocation?.billingMonth || null,
+        allocations,
         claimedAt: toSafeText(value.claimedAt, 40) || null,
         claimedBy: {
             id: toSafeText(value.claimedBy?.id, 32) || null,
             username: toSafeText(value.claimedBy?.username, 100) || null,
             name: toSafeText(value.claimedBy?.name, 120) || null
         },
-        paymentEntryId: toSafeText(value.paymentEntryId, 64) || null,
+        paymentEntryId: singleAllocation?.paymentEntryId || null,
+        paymentEntryIds,
         postedAt: toSafeText(value.postedAt, 40) || null
     };
 };
+
+const assignmentAllocationSignature = (allocations = []) => allocations
+    .map((allocation) => [
+        toSafeText(allocation?.accountNumber, 20),
+        normalizeBillingMonth(allocation?.billingMonth),
+        normalizeMoney(allocation?.amount)
+    ].join('|'))
+    .sort()
+    .join('||');
 
 const normalizeImportedTransaction = (row, batchId) => ({
     id: `gct-${crypto.randomUUID()}`,
@@ -397,15 +429,82 @@ const evaluateGcashTransactionMatch = ({
 
 const createAssignmentConflictError = (assignment) => {
     const safeAssignment = sanitizeAssignment(assignment);
+    const assignedAccounts = safeAssignment?.allocations?.map((allocation) => allocation.accountNumber).filter(Boolean) || [];
     const error = createError(
         409,
-        safeAssignment
-            ? `This GCash transaction is already assigned to account ${safeAssignment.accountNumber}.`
+        assignedAccounts.length
+            ? `This GCash transaction is already assigned to ${assignedAccounts.length === 1 ? `account ${assignedAccounts[0]}` : `${assignedAccounts.length} accounts`}.`
             : 'This GCash transaction is already assigned.'
     );
     error.code = 'GCASH_TRANSACTION_ALREADY_ASSIGNED';
     error.assignment = safeAssignment;
     return error;
+};
+
+const claimGcashTransactionAllocations = async ({
+    branchId,
+    reference,
+    submissionId,
+    allocations,
+    amount,
+    paymentDate,
+    claimedBy
+} = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeReference = normalizeReference(reference);
+    const safeSubmissionId = toSafeText(submissionId, 64);
+    const sourceAllocations = Array.isArray(allocations) ? allocations : [];
+    const safeAllocations = sourceAllocations.map(sanitizeAssignmentAllocation).filter(Boolean);
+    const accountKeys = safeAllocations.map((allocation) => allocation.accountNumber);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeReference) throw createError(400, 'GCash reference number is required.');
+    if (!safeSubmissionId) throw createError(400, 'Submission ID is required.');
+    if (
+        safeAllocations.length < 1
+        || safeAllocations.length > 3
+        || safeAllocations.length !== sourceAllocations.length
+    ) {
+        throw createError(400, 'Provide one to three valid GCash payment allocations.');
+    }
+    if (new Set(accountKeys).size !== accountKeys.length) {
+        throw createError(400, 'Each GCash allocation must use a different customer account.');
+    }
+    if (safeAllocations.some((allocation) => !allocation.billingMonth)) {
+        throw createError(400, 'Each GCash allocation requires a billing month.');
+    }
+
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
+        if (!transaction) throw createError(409, 'Reference is not in the imported GCash history.');
+        const currentAssignment = sanitizeAssignment(transaction.assignment);
+        if (currentAssignment) {
+            const sameAllocation = currentAssignment.submissionId === safeSubmissionId
+                && assignmentAllocationSignature(currentAssignment.allocations) === assignmentAllocationSignature(safeAllocations);
+            if (sameAllocation) {
+                return {
+                    transaction: { ...transaction, assignment: currentAssignment },
+                    assignment: currentAssignment,
+                    idempotent: true
+                };
+            }
+            throw createAssignmentConflictError(currentAssignment);
+        }
+
+        const claimedAt = new Date().toISOString();
+        const assignment = sanitizeAssignment({
+            status: 'claimed',
+            submissionId: safeSubmissionId,
+            allocations: safeAllocations,
+            amount,
+            paymentDate,
+            claimedAt,
+            claimedBy
+        });
+        transaction.assignment = assignment;
+        bucket.updatedAt = claimedAt;
+        return { transaction: { ...transaction, assignment }, assignment, idempotent: false };
+    });
 };
 
 const claimGcashTransaction = async ({
@@ -496,6 +595,54 @@ const finalizeGcashTransactionAssignment = async ({
             ...assignment,
             status: 'posted',
             paymentEntryId: safePaymentEntryId,
+            allocations: assignment.allocations.map((allocation) => ({
+                ...allocation,
+                paymentEntryId: safePaymentEntryId
+            })),
+            postedAt
+        });
+        transaction.assignment = finalized;
+        bucket.updatedAt = postedAt;
+        return { transaction: { ...transaction, assignment: finalized }, assignment: finalized };
+    });
+};
+
+const finalizeGcashTransactionAllocations = async ({
+    branchId,
+    reference,
+    submissionId,
+    paymentEntries
+} = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeSubmissionId = toSafeText(submissionId, 64);
+    const entries = Array.isArray(paymentEntries) ? paymentEntries : [];
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeSubmissionId) throw createError(400, 'Submission ID is required.');
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === normalizeReference(reference));
+        if (!transaction) throw createError(409, 'Reference is not in the imported GCash history.');
+        const assignment = sanitizeAssignment(transaction.assignment);
+        if (!assignment || assignment.submissionId !== safeSubmissionId) {
+            throw createAssignmentConflictError(assignment);
+        }
+        if (entries.length !== assignment.allocations.length) {
+            throw createError(409, 'Every GCash allocation requires one payment entry before finalization.');
+        }
+        const entryByAllocation = new Map(entries.map((entry) => [
+            `${toSafeText(entry?.accountNumber, 20)}|${normalizeBillingMonth(entry?.billingMonth)}`,
+            toSafeText(entry?.paymentEntryId || entry?.id, 64)
+        ]));
+        const finalizedAllocations = assignment.allocations.map((allocation) => {
+            const paymentEntryId = entryByAllocation.get(`${allocation.accountNumber}|${allocation.billingMonth}`);
+            if (!paymentEntryId) throw createError(409, 'A GCash allocation payment entry is missing or mismatched.');
+            return { ...allocation, paymentEntryId };
+        });
+        const postedAt = new Date().toISOString();
+        const finalized = sanitizeAssignment({
+            ...assignment,
+            status: 'posted',
+            allocations: finalizedAllocations,
             postedAt
         });
         transaction.assignment = finalized;
@@ -512,11 +659,10 @@ const releaseGcashTransactionClaim = async ({ branchId, reference, submissionId,
         const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === normalizeReference(reference));
         if (!transaction) return false;
         const assignment = sanitizeAssignment(transaction.assignment);
-        if (!assignment || assignment.status === 'posted' || assignment.paymentEntryId) return false;
-        if (
-            assignment.submissionId !== toSafeText(submissionId, 64)
-            || assignment.accountNumber !== toSafeText(accountNumber, 20)
-        ) return false;
+        if (!assignment || assignment.status === 'posted' || assignment.paymentEntryIds.length) return false;
+        const safeAccountNumber = toSafeText(accountNumber, 20);
+        if (assignment.submissionId !== toSafeText(submissionId, 64)) return false;
+        if (safeAccountNumber && assignment.accountNumber && assignment.accountNumber !== safeAccountNumber) return false;
         transaction.assignment = null;
         bucket.updatedAt = new Date().toISOString();
         return true;
@@ -531,7 +677,9 @@ module.exports = {
     listGcashTransactionHistory,
     evaluateGcashTransactionMatch,
     claimGcashTransaction,
+    claimGcashTransactionAllocations,
     finalizeGcashTransactionAssignment,
+    finalizeGcashTransactionAllocations,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
     sanitizeAssignment,

@@ -2,20 +2,35 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
+const manilaParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+}).formatToParts(new Date());
+const manilaDateValues = Object.fromEntries(manilaParts.map((part) => [part.type, part.value]));
+const currentPostingDate = `${manilaDateValues.year}-${manilaDateValues.month}-${manilaDateValues.day}`;
+const currentBillingMonth = currentPostingDate.slice(0, 7);
 const {
     parseGcashTextPages
 } = require('../backend/gcash-pdf-parser');
 
 let historyStoreMemory = { version: 2, branches: {} };
+let paymentStoreMemory = {};
 const dataStoreModulePath = require.resolve(path.join(projectRoot, 'core/data/data-store'));
 require.cache[dataStoreModulePath] = {
     id: dataStoreModulePath,
     filename: dataStoreModulePath,
     loaded: true,
     exports: {
-        readJson: async () => historyStoreMemory,
-        writeJson: async (_key, value) => {
-            historyStoreMemory = value;
+        readJson: async (key, fallback) => {
+            if (key === 'gcash_transaction_history') return historyStoreMemory;
+            if (key === 'payments') return paymentStoreMemory;
+            return fallback;
+        },
+        writeJson: async (key, value) => {
+            if (key === 'gcash_transaction_history') historyStoreMemory = value;
+            if (key === 'payments') paymentStoreMemory = value;
         }
     }
 };
@@ -24,7 +39,9 @@ const {
     phoneMatches,
     importGcashTransactionBatch,
     claimGcashTransaction,
+    claimGcashTransactionAllocations,
     finalizeGcashTransactionAssignment,
+    finalizeGcashTransactionAllocations,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
     listGcashTransactionHistory,
@@ -197,11 +214,22 @@ const browserSource = fs.readFileSync(
     path.join(projectRoot, 'Features/modules/billing/web/payment-confirmation-queue.js'),
     'utf8'
 );
+const paymentsSource = fs.readFileSync(
+    path.join(projectRoot, 'Features/modules/billing/backend/payments.js'),
+    'utf8'
+);
 assert(routeSource.includes("'/gcash-history/import'"));
 assert(routeSource.includes("'/gcash-history/:reference/post-payment'"));
 assert(routeSource.includes("'/gcash-history/:reference/remark'"));
 assert(routeSource.includes("code: 'GCASH_IMPORTED_AMOUNT_MISMATCH'"));
-assert(routeSource.includes("code: 'BILLING_CYCLE_ALREADY_SETTLED'"));
+assert(routeSource.includes("code: 'GCASH_ALLOCATION_TOTAL_MISMATCH'"));
+assert(routeSource.includes('claimGcashTransactionAllocations'));
+assert(routeSource.includes('finalizeGcashTransactionAllocations'));
+assert(routeSource.includes("code: 'GCASH_CURRENT_BILLING_CYCLE_UNAVAILABLE'"));
+assert(routeSource.includes("code: 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE'"));
+assert(routeSource.includes('const isAdvancePayment = endingBalance <= 0.009'));
+assert(routeSource.includes('Imported GCash advance payment allocation'));
+assert(routeSource.includes('date: postingDate'));
 assert(routeSource.includes('buildPaymentRecordForAccount'));
 assert(routeSource.includes("code: 'GCASH_HISTORY_MATCH_REQUIRED'"));
 assert(routeSource.includes('gcashApproval && !gcashMatch?.matched'));
@@ -221,9 +249,22 @@ assert(htmlSource.includes('Imported rows never post automatically.'));
 assert(htmlSource.includes('class="card gcash-history-panel"'));
 assert(htmlSource.includes('table table-vcenter table-hover card-table'));
 assert(htmlSource.includes('modal modal-blur tabler-form-modal queue-tabler-modal'));
-assert(htmlSource.includes('class="form-select" id="queuePostGcashAccount"'));
+assert(htmlSource.includes('type="search" id="queuePostGcashAccount"'));
+assert(htmlSource.includes('data-gcash-account-search role="combobox"'));
+assert(htmlSource.includes('aria-autocomplete="list"'));
+assert(htmlSource.includes('data-gcash-account-suggestions role="listbox"'));
+assert(htmlSource.includes('Type a client name or account number, then choose a suggestion.'));
+assert(!htmlSource.includes('<select class="form-select" id="queuePostGcashAccount"'));
 assert(htmlSource.includes('id="queuePostGcashModal"'));
-assert(htmlSource.includes('Confirm &amp; Post Payment'));
+assert(htmlSource.includes('Confirm &amp; Post Allocations'));
+assert(htmlSource.includes('id="queuePostGcashAllocations"'));
+assert(htmlSource.includes('id="queuePostGcashAddAllocationBtn"'));
+assert(htmlSource.includes('id="queuePostGcashAllocationTotal"'));
+assert(!htmlSource.includes('Current Billing Month'));
+assert(!htmlSource.includes('data-gcash-allocation-month'));
+assert(htmlSource.includes('Select a customer to review the amount due or advance payment.'));
+assert(htmlSource.includes('Paid clients can receive advance payments.'));
+assert(!htmlSource.includes('Open Billing Month'));
 assert(htmlSource.includes('<th>Description</th>'));
 assert(htmlSource.includes('<th>Amount</th>'));
 assert(!htmlSource.includes('<th>Debit</th>'));
@@ -250,9 +291,33 @@ assert(browserSource.includes('assignmentConfirmed: isGcash ? true : undefined')
 assert(browserSource.includes('Assigned and Posted'));
 assert(browserSource.includes('save-gcash-remark'));
 assert(browserSource.includes('Expense — Unclassified'));
+assert(browserSource.includes('addPostGcashAllocation'));
+assert(browserSource.includes('allocations,'));
+assert(browserSource.includes('getCanonicalEndingBalance'));
+assert(browserSource.includes('queue-gcash-account-option__amount'));
+assert(browserSource.includes('Amount due:'));
+assert(browserSource.includes('Advance Payment'));
+assert(browserSource.includes('isPostGcashAdvancePaymentRecord'));
+assert(browserSource.includes('getPostGcashAccountDisplay'));
+assert(browserSource.includes('formatCurrency(getCanonicalEndingBalance(record))'));
+assert(!browserSource.includes('Number(getCanonicalEndingBalance(record)) > 0.009'));
+assert(!browserSource.includes('queue-gcash-account-option__meta'));
+assert(!browserSource.includes('data-gcash-allocation-month'));
+assert(!browserSource.includes('Posts only to'));
+assert(browserSource.includes('normalizePostGcashAccountSearch'));
+assert(browserSource.includes('renderPostGcashAccountSuggestions'));
+assert(browserSource.includes('getPostGcashSelectedAccounts'));
+assert(browserSource.includes('selectedElsewhere.has(accountNumber)'));
+assert(browserSource.includes('This customer account is already used in another allocation.'));
+assert(browserSource.includes("['ArrowDown', 'ArrowUp', 'Enter']"));
+assert(browserSource.includes('[data-gcash-account-option]'));
+assert(!browserSource.includes("billingMonth: String(row.querySelector('[data-gcash-allocation-month]')"));
 assert(!browserSource.includes('Choose a classification for this record.'));
 assert(!browserSource.includes('/gcash-gmail/'));
 assert(!browserSource.includes('/api/payment-bridge'));
+assert(paymentsSource.includes('const recordApprovedProofPayments'));
+assert(paymentsSource.includes('module.exports.recordApprovedProofPayments'));
+assert(paymentsSource.includes('Payment allocations must exactly equal the imported GCash credit.'));
 
 (async () => {
     await importGcashTransactionBatch({
@@ -420,34 +485,281 @@ assert(!browserSource.includes('/api/payment-bridge'));
     assert.strictEqual(stored.transactions[0].assignment.billingMonth, '2026-08');
 
     await importGcashTransactionBatch({
+        branchId: 4,
+        fileName: 'split-allocation-fixture.pdf',
+        pdfSha256: 'e'.repeat(64),
+        parsed: {
+            ...parsed,
+            transactions: [{ ...transaction, reference: 'SPLIT-ALLOC-4004' }]
+        },
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    const splitClaim = await claimGcashTransactionAllocations({
+        branchId: 4,
+        reference: 'SPLIT-ALLOC-4004',
+        submissionId: 'split-claim-4004',
+        amount: 1000,
+        paymentDate: '2026-08-08',
+        allocations: [
+            { accountNumber: 'ACC-4001', customerName: 'Account One', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-4002', customerName: 'Account Two', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-4003', customerName: 'Account Three', billingMonth: '2026-08', amount: 400 }
+        ],
+        claimedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    assert.strictEqual(splitClaim.assignment.status, 'claimed');
+    assert.strictEqual(splitClaim.assignment.accountNumber, '');
+    assert.strictEqual(splitClaim.assignment.allocations.length, 3);
+    assert.strictEqual(splitClaim.assignment.amount, 1000);
+    await assert.rejects(
+        () => claimGcashTransactionAllocations({
+            branchId: 4,
+            reference: 'SPLIT-ALLOC-4004',
+            submissionId: 'split-claim-4004',
+            allocations: [
+                { accountNumber: 'ACC-4001', billingMonth: '2026-08', amount: 500 },
+                { accountNumber: 'ACC-4002', billingMonth: '2026-08', amount: 500 }
+            ]
+        }),
+        (error) => error?.code === 'GCASH_TRANSACTION_ALREADY_ASSIGNED'
+            && error?.assignment?.allocations?.length === 3
+    );
+    const splitFinalized = await finalizeGcashTransactionAllocations({
+        branchId: 4,
+        reference: 'SPLIT-ALLOC-4004',
+        submissionId: 'split-claim-4004',
+        paymentEntries: [
+            { accountNumber: 'ACC-4001', billingMonth: '2026-08', paymentEntryId: 'proof-split-4004-1' },
+            { accountNumber: 'ACC-4002', billingMonth: '2026-08', paymentEntryId: 'proof-split-4004-2' },
+            { accountNumber: 'ACC-4003', billingMonth: '2026-08', paymentEntryId: 'proof-split-4004-3' }
+        ]
+    });
+    assert.strictEqual(splitFinalized.assignment.status, 'posted');
+    assert.deepStrictEqual(splitFinalized.assignment.paymentEntryIds, [
+        'proof-split-4004-1',
+        'proof-split-4004-2',
+        'proof-split-4004-3'
+    ]);
+    assert.strictEqual(await releaseGcashTransactionClaim({
+        branchId: 4,
+        reference: 'SPLIT-ALLOC-4004',
+        submissionId: 'split-claim-4004'
+    }), false);
+
+    await importGcashTransactionBatch({
         branchId: 3,
         fileName: 'direct-post-fixture.pdf',
         pdfSha256: 'c'.repeat(64),
         parsed: {
             ...parsed,
-            transactions: [{
-                ...transaction,
-                reference: 'DIRECT-POST-1001',
-                recipient: '09361565251'
-            }]
+            transactions: [
+                {
+                    ...transaction,
+                    reference: 'DIRECT-POST-1001',
+                    recipient: '09361565251'
+                },
+                {
+                    ...transaction,
+                    reference: 'DIRECT-ADVANCE-1002',
+                    credit: 500,
+                    recipient: '09361565251'
+                }
+            ]
         },
         importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
     });
 
-    let paymentWriteCount = 0;
+    const batchCustomers = ['ACC-5001', 'ACC-5002', 'ACC-5003'].map((accountNumber, index) => ({
+        accountNumber,
+        branchId: 5,
+        name: `Batch Customer ${index + 1}`,
+        status: 'active',
+        plan: 'Postpaid Test Plan',
+        billingType: 'postpaid',
+        creditLimit: 999999
+    }));
+    const customersModulePath = require.resolve('../../customer-management/backend/customers');
+    require.cache[customersModulePath] = {
+        id: customersModulePath,
+        filename: customersModulePath,
+        loaded: true,
+        exports: {
+            readVisibleCustomers: async () => batchCustomers,
+            readCustomers: async () => batchCustomers,
+            writeCustomers: async () => {},
+            readPlans: async () => []
+        }
+    };
+    const relationalModulePath = require.resolve(path.join(projectRoot, 'core/data/db-relational'));
+    require.cache[relationalModulePath] = {
+        id: relationalModulePath,
+        filename: relationalModulePath,
+        loaded: true,
+        exports: { isRelationalReady: async () => false }
+    };
+    const serviceRefreshModulePath = require.resolve('../backend/payment-service-refresh');
+    require.cache[serviceRefreshModulePath] = {
+        id: serviceRefreshModulePath,
+        filename: serviceRefreshModulePath,
+        loaded: true,
+        exports: { triggerBranchServiceRefresh: () => {} }
+    };
     const paymentsModulePath = require.resolve('../backend/payments');
+    const actualPaymentsRouter = require('../backend/payments');
+    const batchWrite = await actualPaymentsRouter.recordApprovedProofPayments({
+        submissionId: 'batch-writer-5005',
+        source: 'gcash-history',
+        branchId: 5,
+        amount: 1000,
+        reference: 'BATCH-WRITER-5005',
+        date: '2026-08-08',
+        reviewer: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+        allocations: [
+            { accountNumber: 'ACC-5001', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-5002', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-5003', billingMonth: '2026-08', amount: 400 }
+        ]
+    });
+    assert.strictEqual(batchWrite.inserted, true);
+    assert.strictEqual(batchWrite.entries.length, 3);
+    assert.strictEqual(new Set(batchWrite.entries.map((entry) => entry.id)).size, 3);
+    assert.strictEqual(Object.values(paymentStoreMemory).reduce((count, record) => (
+        count + (Array.isArray(record?.history) ? record.history.length : 0)
+    ), 0), 3);
+    assert.deepStrictEqual(Object.values(paymentStoreMemory).flatMap((record) => record.history).map((entry) => entry.reference), [
+        'BATCH-WRITER-5005',
+        'BATCH-WRITER-5005',
+        'BATCH-WRITER-5005'
+    ]);
+    const batchRetry = await actualPaymentsRouter.recordApprovedProofPayments({
+        submissionId: 'batch-writer-5005',
+        source: 'gcash-history',
+        branchId: 5,
+        amount: 1000,
+        reference: 'BATCH-WRITER-5005',
+        date: '2026-08-08',
+        reviewer: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+        allocations: [
+            { accountNumber: 'ACC-5001', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-5002', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-5003', billingMonth: '2026-08', amount: 400 }
+        ]
+    });
+    assert.strictEqual(batchRetry.idempotent, true);
+    assert.strictEqual(Object.values(paymentStoreMemory).reduce((count, record) => (
+        count + (Array.isArray(record?.history) ? record.history.length : 0)
+    ), 0), 3);
+
+    const relationalInsertedEntries = [];
+    const relationalReferenceChecks = [];
+    let relationalOrSequence = 0;
+    const dbModulePath = require.resolve(path.join(projectRoot, 'core/data/db'));
+    const originalDbExports = require.cache[dbModulePath]?.exports || require(dbModulePath);
+    const paymentNumberingModulePath = require.resolve('../backend/payment-numbering');
+    require.cache[relationalModulePath].exports = { isRelationalReady: async () => true };
+    require.cache[dbModulePath].exports = { ...originalDbExports, query: async () => [[], []] };
+    require.cache[paymentNumberingModulePath] = {
+        id: paymentNumberingModulePath,
+        filename: paymentNumberingModulePath,
+        loaded: true,
+        exports: {
+            assignEntryNumbers: async (_connection, entry) => {
+                relationalOrSequence += 1;
+                entry.orNumber = `OR-MOCK-${relationalOrSequence}`;
+                return entry;
+            },
+            assertEntryNumbersAvailable: async (_connection, _branchId, entry) => {
+                relationalReferenceChecks.push(entry.reference || null);
+            },
+            withTransaction: async (work) => {
+                const staged = [];
+                const connection = {
+                    query: async (sql, params = []) => {
+                        if (/INSERT INTO payment_entries/i.test(sql)) {
+                            staged.push({
+                                id: params[0],
+                                accountNumber: params[2],
+                                reference: params[7],
+                                orNumber: params[8]
+                            });
+                        }
+                        return [[], []];
+                    }
+                };
+                const result = await work(connection);
+                relationalInsertedEntries.push(...staged);
+                return result;
+            }
+        }
+    };
+    delete require.cache[paymentsModulePath];
+    const relationalPaymentsRouter = require('../backend/payments');
+    const relationalBatchWrite = await relationalPaymentsRouter.recordApprovedProofPayments({
+        submissionId: 'batch-writer-5006',
+        source: 'gcash-history',
+        branchId: 5,
+        amount: 1000,
+        reference: 'BATCH-WRITER-5006',
+        date: '2026-08-08',
+        reviewer: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' },
+        allocations: [
+            { accountNumber: 'ACC-5001', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-5002', billingMonth: '2026-08', amount: 300 },
+            { accountNumber: 'ACC-5003', billingMonth: '2026-08', amount: 400 }
+        ]
+    });
+    assert.strictEqual(relationalBatchWrite.inserted, true);
+    assert.strictEqual(relationalInsertedEntries.length, 3);
+    assert.deepStrictEqual(relationalInsertedEntries.map((entry) => entry.reference), [
+        'BATCH-WRITER-5006',
+        'BATCH-WRITER-5006',
+        'BATCH-WRITER-5006'
+    ]);
+    assert.deepStrictEqual(relationalReferenceChecks, ['BATCH-WRITER-5006', null, null]);
+    require.cache[dbModulePath].exports = originalDbExports;
+
+    let paymentWriteCount = 0;
+    const paymentWritePayloads = [];
     const paymentRecordsModulePath = require.resolve('../backend/payment-records');
     require.cache[paymentsModulePath] = {
         id: paymentsModulePath,
         filename: paymentsModulePath,
         loaded: true,
         exports: {
-            recordApprovedProofPayment: async (payload) => {
+            recordApprovedProofPayments: async (payload) => {
                 paymentWriteCount += 1;
+                paymentWritePayloads.push(payload);
                 assert.strictEqual(payload.source, 'gcash-history');
-                assert.strictEqual(payload.amount, 1000);
-                assert.strictEqual(payload.reference, 'DIRECTPOST1001');
-                return { id: 'proof-direct-post-1001' };
+                assert.strictEqual(payload.date, currentPostingDate);
+                if (payload.reference === 'DIRECTPOST1001') {
+                    assert.strictEqual(payload.amount, 1000);
+                    assert.strictEqual(payload.allocations.length, 3);
+                    assert.deepStrictEqual(payload.allocations.map((allocation) => allocation.amount), [300, 300, 400]);
+                    assert.deepStrictEqual(payload.allocations.map((allocation) => allocation.billingMonth), [
+                        currentBillingMonth,
+                        currentBillingMonth,
+                        currentBillingMonth
+                    ]);
+                    assert(payload.allocations.every((allocation) => allocation.isAdvancePayment === false));
+                    assert(payload.allocations.every((allocation) => allocation.description.includes('current billing cycle')));
+                } else {
+                    assert.strictEqual(payload.reference, 'DIRECTADVANCE1002');
+                    assert.strictEqual(payload.amount, 500);
+                    assert.strictEqual(payload.allocations.length, 1);
+                    assert.strictEqual(payload.allocations[0].accountNumber, 'ACC-PAID');
+                    assert.strictEqual(payload.allocations[0].amount, 500);
+                    assert.strictEqual(payload.allocations[0].billingMonth, currentBillingMonth);
+                    assert.strictEqual(payload.allocations[0].isAdvancePayment, true);
+                    assert(payload.allocations[0].description.includes('advance payment'));
+                }
+                return {
+                    inserted: true,
+                    entries: payload.allocations.map((allocation, index) => ({
+                        id: `proof-${payload.reference.toLowerCase()}-${index + 1}`,
+                        accountNumber: allocation.accountNumber,
+                        amount: allocation.amount
+                    }))
+                };
             }
         }
     };
@@ -458,14 +770,22 @@ assert(!browserSource.includes('/api/payment-bridge'));
         exports: {
             buildPaymentRecordForAccount: async (accountNumber, branchId) => ({
                 accountNumber,
-                name: 'Direct Post Customer',
+                name: `Direct Post Customer ${accountNumber}`,
                 branchId,
                 billingSummary: {
-                    rows: [{
-                        billingMonthKey: '2026-08',
-                        paymentStatus: 'unpaid',
-                        balanceAfterPayment: 1000
-                    }]
+                    available: true,
+                    endingBalance: ({
+                        'ACC-3001': 300,
+                        'ACC-3002': 300,
+                        'ACC-3003': 400,
+                        'ACC-PAID': 0
+                    }[accountNumber] ?? 1000),
+                    currentCycle: {
+                        billingMonthKey: currentBillingMonth,
+                        paymentStatus: accountNumber === 'ACC-PAID' ? 'paid' : 'unpaid',
+                        balanceAfterPayment: accountNumber === 'ACC-PAID' ? 0 : 1000
+                    },
+                    rows: []
                 }
             })
         }
@@ -476,7 +796,7 @@ assert(!browserSource.includes('/api/payment-bridge'));
     ));
     assert(directPostLayer, 'direct imported-history payment route must be registered');
     const directPostHandler = directPostLayer.route.stack[directPostLayer.route.stack.length - 1].handle;
-    const invokeDirectPost = async (body) => {
+    const invokeDirectPost = async (body, reference = 'DIRECT-POST-1001') => {
         const result = { statusCode: 200, payload: null };
         const response = {
             status(code) {
@@ -490,7 +810,7 @@ assert(!browserSource.includes('/api/payment-bridge'));
         };
         await directPostHandler({
             branchId: 3,
-            params: { reference: 'DIRECT-POST-1001' },
+            params: { reference },
             body,
             user: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin', branchId: 3 }
         }, response, (error) => {
@@ -501,7 +821,6 @@ assert(!browserSource.includes('/api/payment-bridge'));
 
     const amountMismatch = await invokeDirectPost({
         accountNumber: 'ACC-3003',
-        billingMonth: '2026-08',
         amount: 999,
         assignmentConfirmed: true
     });
@@ -509,27 +828,83 @@ assert(!browserSource.includes('/api/payment-bridge'));
     assert.strictEqual(amountMismatch.payload.code, 'GCASH_IMPORTED_AMOUNT_MISMATCH');
     assert.strictEqual(paymentWriteCount, 0);
 
-    const directPost = await invokeDirectPost({
-        accountNumber: 'ACC-3003',
-        billingMonth: '2026-08',
+    const allocationMismatch = await invokeDirectPost({
         amount: 1000,
+        allocations: [
+            { accountNumber: 'ACC-3001', amount: 300 },
+            { accountNumber: 'ACC-3002', amount: 300 },
+            { accountNumber: 'ACC-3003', amount: 300 }
+        ],
+        assignmentConfirmed: true
+    });
+    assert.strictEqual(allocationMismatch.statusCode, 409);
+    assert.strictEqual(allocationMismatch.payload.code, 'GCASH_ALLOCATION_TOTAL_MISMATCH');
+    assert.strictEqual(paymentWriteCount, 0);
+
+    const endingBalanceMismatch = await invokeDirectPost({
+        amount: 1000,
+        allocations: [
+            { accountNumber: 'ACC-3001', amount: 301 },
+            { accountNumber: 'ACC-3002', amount: 299 },
+            { accountNumber: 'ACC-3003', amount: 400 }
+        ],
+        assignmentConfirmed: true
+    });
+    assert.strictEqual(endingBalanceMismatch.statusCode, 409);
+    assert.strictEqual(endingBalanceMismatch.payload.code, 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE');
+    assert.strictEqual(endingBalanceMismatch.payload.endingBalance, 300);
+    assert.strictEqual(paymentWriteCount, 0);
+
+    const directPost = await invokeDirectPost({
+        amount: 1000,
+        allocations: [
+            { accountNumber: 'ACC-3001', amount: 300 },
+            { accountNumber: 'ACC-3002', amount: 300 },
+            { accountNumber: 'ACC-3003', amount: 400 }
+        ],
         assignmentConfirmed: true
     });
     assert.strictEqual(directPost.statusCode, 201);
     assert.strictEqual(directPost.payload.assignment.status, 'posted');
-    assert.strictEqual(directPost.payload.assignment.accountNumber, 'ACC-3003');
-    assert.strictEqual(directPost.payload.assignment.billingMonth, '2026-08');
+    assert.strictEqual(directPost.payload.assignment.accountNumber, '');
+    assert.strictEqual(directPost.payload.assignment.allocations.length, 3);
+    assert.deepStrictEqual(directPost.payload.assignment.allocations.map((allocation) => allocation.amount), [300, 300, 400]);
+    assert.deepStrictEqual(directPost.payload.assignment.allocations.map((allocation) => allocation.billingMonth), [
+        currentBillingMonth,
+        currentBillingMonth,
+        currentBillingMonth
+    ]);
+    assert.strictEqual(directPost.payload.assignment.paymentDate, currentPostingDate);
+    assert.strictEqual(directPost.payload.paymentEntryIds.length, 3);
     assert.strictEqual(paymentWriteCount, 1);
 
     const retry = await invokeDirectPost({
-        accountNumber: 'ACC-3003',
-        billingMonth: '2026-08',
         amount: 1000,
+        allocations: [
+            { accountNumber: 'ACC-3001', amount: 300 },
+            { accountNumber: 'ACC-3002', amount: 300 },
+            { accountNumber: 'ACC-3003', amount: 400 }
+        ],
         assignmentConfirmed: true
     });
     assert.strictEqual(retry.statusCode, 200);
     assert.strictEqual(retry.payload.idempotent, true);
     assert.strictEqual(paymentWriteCount, 1);
+
+    const advancePost = await invokeDirectPost({
+        amount: 500,
+        allocations: [
+            { accountNumber: 'ACC-PAID', amount: 500 }
+        ],
+        assignmentConfirmed: true
+    }, 'DIRECT-ADVANCE-1002');
+    assert.strictEqual(advancePost.statusCode, 201);
+    assert.strictEqual(advancePost.payload.assignment.status, 'posted');
+    assert.strictEqual(advancePost.payload.assignment.allocations.length, 1);
+    assert.strictEqual(advancePost.payload.assignment.allocations[0].accountNumber, 'ACC-PAID');
+    assert.strictEqual(advancePost.payload.assignment.allocations[0].amount, 500);
+    assert.strictEqual(paymentWriteCount, 2);
+    assert.strictEqual(paymentWritePayloads[1].allocations[0].isAdvancePayment, true);
 
     console.log('PASS GCash history de-duplication, recipient labels, immutable account/cycle assignment, and guarded posting UI contracts');
 })().catch((error) => {

@@ -431,6 +431,8 @@ const layoutSource = fs.readFileSync(path.join(projectRoot, 'public/layout.js'),
 assert(layoutSource.includes('SMS runs: ${Number(imported.sms_automation_runs || 0)}'));
 assert(layoutSource.includes('PON: ${Number(imported.pon_nap_connections || 0)}'));
 assert(layoutSource.includes('Duplicates skipped: ${duplicateCount}'));
-assert(layoutSource.includes('Full backup downloaded: customers, balances, plans, payments, tickets, jobs, SMS, and PON.'));
+assert(layoutSource.includes("fetch('/api/system-backup/export'"));
+assert(layoutSource.includes("fetch('/api/import/customers-full'"));
+assert(layoutSource.includes('Full-system backup downloaded: all application records and uploaded files are in one archive.'));
 console.log('PASS web-app canonical Customer stylesheet reference');
 console.log('CUSTOMER MANAGEMENT COMPATIBILITY PASSED');

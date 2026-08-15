@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-history.css?v=4.4">
+    <link rel="stylesheet" href="css/payment-history.css?v=4.6">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.5">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -288,9 +288,81 @@
         </div>
     </div>
 
+    <div class="modal modal-blur fade" id="paymentHistoryEditBindModal" tabindex="-1" aria-labelledby="paymentHistoryEditBindModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <form class="modal-content" id="paymentHistoryEditBindForm">
+                <div class="modal-header py-3">
+                    <div>
+                        <h2 class="modal-title" id="paymentHistoryEditBindModalTitle">Edit Imported Payment</h2>
+                        <div class="text-secondary small">Correct the client and bind one unused official GCash reference. Amount and date stay locked.</div>
+                    </div>
+                    <button type="button" class="btn-close" data-payment-history-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-3">
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <label class="form-label">Locked amount</label>
+                            <input class="form-control" id="paymentHistoryEditBindAmount" type="text" readonly>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label">Locked payment date</label>
+                            <input class="form-control" id="paymentHistoryEditBindDate" type="text" readonly>
+                        </div>
+                        <div class="col-12">
+                            <div class="text-secondary small" id="paymentHistoryEditBindCurrent">Select an imported payment from the table.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label required" for="paymentHistoryEditBindCustomer">Customer</label>
+                            <div class="position-relative">
+                                <input
+                                    class="form-control"
+                                    id="paymentHistoryEditBindCustomer"
+                                    type="search"
+                                    placeholder="Type a client name or account number"
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-expanded="false"
+                                    aria-controls="paymentHistoryEditBindCustomerSuggestions"
+                                    autocomplete="off"
+                                >
+                                <div class="dropdown-menu w-100 p-1" id="paymentHistoryEditBindCustomerSuggestions" role="listbox"></div>
+                            </div>
+                            <div class="form-hint">Suggestions show only the client name and amount due. Paid clients remain available for corrections or advance payments.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label required" for="paymentHistoryEditBindGcash">Official GCash reference</label>
+                            <select class="form-select" id="paymentHistoryEditBindGcash" required disabled>
+                                <option value="">Loading exact matches...</option>
+                            </select>
+                            <div class="form-hint" id="paymentHistoryEditBindGcashHelp">Choose an unused incoming credit with the exact amount and payment date.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-check">
+                                <input class="form-check-input" type="checkbox" id="paymentHistoryEditBindConfirmed">
+                                <span class="form-check-label">I verified the customer and selected official GCash reference.</span>
+                            </label>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-warning py-2 mb-0" role="note">
+                                This updates the same Payment History entry and records an audit trail; no duplicate payment is created. After posting, the Edit action is permanently locked.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-payment-history-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="paymentHistoryEditBindSave" disabled>
+                        <i class="ti ti-device-floppy" aria-hidden="true"></i>
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="layout.js?v=3.9"></script>
-    <script src="js/payment-history.js?v=3.1"></script>
+    <script src="js/payment-history.js?v=4.3"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>

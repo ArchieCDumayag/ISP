@@ -32,6 +32,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const unmatchedClearBtn = document.getElementById('paymentHistoryUnmatchedClearBtn');
     const unmatchedRefreshBtn = document.getElementById('paymentHistoryUnmatchedRefreshBtn');
     const unmatchedCustomerList = document.getElementById('paymentHistoryUnmatchedCustomerList');
+    const editBindModalEl = document.getElementById('paymentHistoryEditBindModal');
+    const editBindForm = document.getElementById('paymentHistoryEditBindForm');
+    const editBindAmount = document.getElementById('paymentHistoryEditBindAmount');
+    const editBindDate = document.getElementById('paymentHistoryEditBindDate');
+    const editBindCurrent = document.getElementById('paymentHistoryEditBindCurrent');
+    const editBindCustomer = document.getElementById('paymentHistoryEditBindCustomer');
+    const editBindCustomerSuggestions = document.getElementById('paymentHistoryEditBindCustomerSuggestions');
+    const editBindGcash = document.getElementById('paymentHistoryEditBindGcash');
+    const editBindGcashHelp = document.getElementById('paymentHistoryEditBindGcashHelp');
+    const editBindConfirmed = document.getElementById('paymentHistoryEditBindConfirmed');
+    const editBindSave = document.getElementById('paymentHistoryEditBindSave');
     const metricEntriesEl = document.getElementById('historyMetricEntries');
     const metricPaymentsEl = document.getElementById('historyMetricPayments');
     const metricReferencesEl = document.getElementById('historyMetricReferences');
@@ -72,6 +83,12 @@ document.addEventListener('DOMContentLoaded', () => {
         unmatchedRows: [],
         unmatchedCustomerValues: new Map(),
         clearingUnmatched: false,
+        editBindRow: null,
+        editBindTransactions: [],
+        editBindTargetAccountNumber: '',
+        savingEditBind: false,
+        gcashBindingsLoaded: false,
+        boundGcashEntryIds: new Set(),
         page: 1,
         pageSize: Number(pageSizeSelect?.value) || 25
     };
@@ -95,8 +112,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const hideAllocationMetadata = (value) => String(value ?? '')
         .replace(/\s*\[ALLOC:\s*[\s\S]*?\]\s*/gi, ' ')
+        .replace(/\s*\[EDIT_BIND:[^\]]*\]\s*/gi, ' ')
+        .replace(/\s*\[GCASH_RECEIVED_AT:[^\]]*\]\s*/gi, ' ')
         .replace(/\s{2,}/g, ' ')
         .trim();
+    const getPaymentReceivedAt = (entry = {}) => {
+        const explicit = String(
+            entry?.paymentReceivedAt
+            || entry?.payment_received_at
+            || entry?.gcashReceivedAt
+            || ''
+        ).trim();
+        if (explicit) return explicit;
+        return [entry?.fingerprint, entry?.description]
+            .map((value) => String(value || ''))
+            .join(' ')
+            .match(/\[GCASH_RECEIVED_AT:([^\]]+)\]/i)?.[1] || '';
+    };
     const showToast = (message, type = 'info') => {
         const text = String(message || '').trim();
         if (!text) return;
@@ -654,6 +686,234 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast(error.message || 'Failed to load unmatched imported payments.', 'error');
         }
     };
+    const getCustomerAmountDue = (customer = {}) => {
+        const candidates = [
+            customer?.billingSummary?.endingBalance,
+            customer?.billingSummary?.currentCycle?.balanceAfterPayment,
+            customer?.endingBalance,
+            customer?.balance
+        ];
+        const amount = candidates.map(Number).find(Number.isFinite);
+        return Math.max(0, amount || 0);
+    };
+    const getEditBindCustomerDisplay = (customer = {}) => {
+        const accountNumber = getCustomerAccountNumber(customer);
+        return `${getCustomerName(customer, accountNumber)} — Amount due: ${formatCurrency(getCustomerAmountDue(customer))}`;
+    };
+    const getCustomerByAccountNumber = (accountNumber = '') => (
+        getSortedCustomers().find((customer) => getCustomerAccountNumber(customer) === String(accountNumber || '').trim()) || null
+    );
+    const closeEditBindCustomerSuggestions = () => {
+        if (!editBindCustomerSuggestions || !editBindCustomer) return;
+        editBindCustomerSuggestions.classList.remove('show');
+        editBindCustomerSuggestions.innerHTML = '';
+        editBindCustomer.setAttribute('aria-expanded', 'false');
+    };
+    const selectEditBindCustomer = (accountNumber = '') => {
+        const customer = getCustomerByAccountNumber(accountNumber);
+        state.editBindTargetAccountNumber = customer ? getCustomerAccountNumber(customer) : '';
+        if (editBindCustomer) {
+            editBindCustomer.value = customer ? getEditBindCustomerDisplay(customer) : '';
+            editBindCustomer.classList.toggle('is-invalid', !customer);
+        }
+        closeEditBindCustomerSuggestions();
+        updateEditBindSaveState();
+    };
+    const renderEditBindCustomerSuggestions = (searchValue = '') => {
+        if (!editBindCustomerSuggestions || !editBindCustomer) return;
+        const query = normalizeText(searchValue);
+        const matches = getSortedCustomers().filter((customer) => {
+            const accountNumber = getCustomerAccountNumber(customer);
+            const name = getCustomerName(customer, accountNumber);
+            return !query
+                || normalizeText(name).includes(query)
+                || normalizeText(accountNumber).includes(query);
+        }).slice(0, 8);
+        if (!matches.length) {
+            editBindCustomerSuggestions.innerHTML = '<div class="dropdown-item-text text-secondary">No client found.</div>';
+        } else {
+            editBindCustomerSuggestions.innerHTML = matches.map((customer) => {
+                const accountNumber = getCustomerAccountNumber(customer);
+                return `
+                    <button type="button" class="dropdown-item d-flex align-items-center justify-content-between gap-3" data-edit-bind-account="${escapeHtml(accountNumber)}" role="option">
+                        <span class="text-truncate fw-semibold">${escapeHtml(getCustomerName(customer, accountNumber))}</span>
+                        <span class="text-secondary text-nowrap">${escapeHtml(formatCurrency(getCustomerAmountDue(customer)))}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+        editBindCustomerSuggestions.classList.add('show');
+        editBindCustomer.setAttribute('aria-expanded', 'true');
+    };
+    const updateEditBindGcashHelp = () => {
+        if (!editBindGcashHelp) return;
+        const selectedReference = String(editBindGcash?.value || '').trim();
+        const transaction = state.editBindTransactions.find((item) => item.reference === selectedReference);
+        if (!transaction) {
+            editBindGcashHelp.textContent = state.editBindTransactions.length
+                ? 'Choose the official incoming credit for this payment.'
+                : 'No available incoming GCash credit matches the locked amount and date.';
+            return;
+        }
+        if (transaction.pendingBinding) {
+            editBindGcashHelp.textContent = `Pending binding: ${transaction.reference}. Save again to finish posting this official reference.`;
+            return;
+        }
+        editBindGcashHelp.textContent = [
+            transaction.description,
+            transaction.recipientLabel || transaction.recipient
+        ].filter(Boolean).join(' • ') || 'Exact amount and date match.';
+    };
+    function updateEditBindSaveState() {
+        if (!editBindSave) return;
+        const ready = Boolean(
+            state.editBindRow
+            && state.editBindTargetAccountNumber
+            && String(editBindGcash?.value || '').trim()
+            && editBindConfirmed?.checked
+            && !state.savingEditBind
+        );
+        editBindSave.disabled = !ready;
+    }
+    const showEditBindModal = () => {
+        if (!editBindModalEl) return;
+        const Modal = getTablerModalClass();
+        if (Modal?.getOrCreateInstance) {
+            Modal.getOrCreateInstance(editBindModalEl).show();
+            return;
+        }
+        if (Modal) {
+            new Modal(editBindModalEl).show();
+            return;
+        }
+        fallbackShowModal(editBindModalEl);
+    };
+    const hideEditBindModal = () => {
+        if (!editBindModalEl) return;
+        const Modal = getTablerModalClass();
+        if (Modal?.getInstance) {
+            const instance = Modal.getInstance(editBindModalEl);
+            if (instance) {
+                instance.hide();
+                return;
+            }
+        }
+        fallbackHideModal(editBindModalEl);
+    };
+    const resetEditBindModal = () => {
+        state.editBindRow = null;
+        state.editBindTransactions = [];
+        state.editBindTargetAccountNumber = '';
+        state.savingEditBind = false;
+        if (editBindForm) editBindForm.reset();
+        if (editBindAmount) editBindAmount.value = '';
+        if (editBindDate) editBindDate.value = '';
+        if (editBindCurrent) editBindCurrent.textContent = 'Select an imported payment from the table.';
+        if (editBindGcash) {
+            editBindGcash.innerHTML = '<option value="">Select an exact GCash match</option>';
+            editBindGcash.disabled = true;
+        }
+        closeEditBindCustomerSuggestions();
+        updateEditBindSaveState();
+    };
+    const openEditBindModal = async (row) => {
+        if (!row || !editBindModalEl) return;
+        if (row.isGcashBound) {
+            showToast('Locked—this GCash transaction is already posted.', 'info');
+            return;
+        }
+        state.editBindRow = row;
+        state.editBindTransactions = [];
+        state.editBindTargetAccountNumber = row.accountNumber;
+        state.savingEditBind = false;
+        if (editBindAmount) editBindAmount.value = formatCurrency(row.amount);
+        if (editBindDate) editBindDate.value = row.dateKey || row.displayDate;
+        if (editBindCurrent) {
+            editBindCurrent.textContent = `Current client: ${row.subscriber}. Current reference: ${row.reference || 'None'}.`;
+        }
+        const currentCustomer = getCustomerByAccountNumber(row.accountNumber);
+        if (editBindCustomer) {
+            editBindCustomer.value = currentCustomer
+                ? getEditBindCustomerDisplay(currentCustomer)
+                : row.subscriber;
+            editBindCustomer.classList.remove('is-invalid');
+        }
+        if (editBindConfirmed) editBindConfirmed.checked = false;
+        if (editBindGcash) {
+            editBindGcash.disabled = true;
+            editBindGcash.innerHTML = '<option value="">Loading exact matches...</option>';
+        }
+        if (editBindGcashHelp) editBindGcashHelp.textContent = 'Checking available incoming credits in Imported GCash Transactions...';
+        updateEditBindSaveState();
+        showEditBindModal();
+
+        try {
+            const payload = await fetchJSON(
+                `/api/payments/${encodeURIComponent(row.accountNumber)}/${encodeURIComponent(row.entryId)}/edit-bind-options`
+            );
+            if (!state.editBindRow || state.editBindRow.entryId !== row.entryId) return;
+            if (editBindAmount) editBindAmount.value = formatCurrency(payload.amount);
+            if (editBindDate) editBindDate.value = payload.paymentDate || row.dateKey;
+            state.editBindTransactions = Array.isArray(payload?.transactions) ? payload.transactions : [];
+            if (editBindGcash) {
+                editBindGcash.innerHTML = [
+                    '<option value="">Select an exact GCash reference</option>',
+                    ...state.editBindTransactions.map((transaction) => (
+                        `<option value="${escapeHtml(transaction.reference)}">${escapeHtml(transaction.reference)}${transaction.pendingBinding ? ' — Pending binding' : ` — ${escapeHtml(transaction.transactionDate || '')} — ${escapeHtml(formatCurrency(transaction.amount))}`}</option>`
+                    ))
+                ].join('');
+                editBindGcash.disabled = state.editBindTransactions.length === 0;
+                editBindGcash.value = String(payload?.selectedReference || '').trim();
+            }
+            updateEditBindGcashHelp();
+            updateEditBindSaveState();
+        } catch (error) {
+            state.editBindTransactions = [];
+            if (editBindGcash) {
+                editBindGcash.innerHTML = '<option value="">No available transaction</option>';
+                editBindGcash.disabled = true;
+            }
+            if (editBindGcashHelp) editBindGcashHelp.textContent = error.message || 'Failed to load exact GCash matches.';
+            showToast(error.message || 'Failed to load Edit & Bind options.', 'error');
+            updateEditBindSaveState();
+        }
+    };
+    const saveEditBindPayment = async () => {
+        const row = state.editBindRow;
+        const targetAccountNumber = String(state.editBindTargetAccountNumber || '').trim();
+        const gcashReference = String(editBindGcash?.value || '').trim();
+        if (!row || !targetAccountNumber || !gcashReference || !editBindConfirmed?.checked) {
+            showToast('Select the client and GCash transaction, then confirm the locked details.', 'error');
+            updateEditBindSaveState();
+            return;
+        }
+        state.savingEditBind = true;
+        setButtonBusy(editBindSave, true);
+        try {
+            const payload = await fetchJSON(
+                `/api/payments/${encodeURIComponent(row.accountNumber)}/${encodeURIComponent(row.entryId)}/edit-bind`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        targetAccountNumber,
+                        gcashReference,
+                        assignmentConfirmed: true
+                    })
+                }
+            );
+            hideEditBindModal();
+            showToast(payload.message || 'Payment updated and bound successfully.', 'success');
+            resetEditBindModal();
+            await loadHistory();
+        } catch (error) {
+            showToast(error.message || 'Failed to edit and bind the payment.', 'error');
+        } finally {
+            state.savingEditBind = false;
+            setButtonBusy(editBindSave, false);
+            updateEditBindSaveState();
+        }
+    };
     const bindUnmatchedPayment = async (button) => {
         const recordId = String(button?.dataset?.recordId || '').trim();
         const rowEl = button?.closest('tr');
@@ -791,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recordedByFilter.value = uniqueRecorders.includes(currentValue) ? currentValue : '';
     }
 
-    function buildRows(customers, payments) {
+    function buildRows(customers, payments, boundGcashEntryIds = new Set()) {
         const customerMap = new Map(
             (Array.isArray(customers) ? customers : []).map((customer) => [
                 String(customer?.accountNumber || '').trim(),
@@ -813,7 +1073,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             (paymentRecord?.history || []).forEach((entry, index) => {
                 if (!isEffectivePaymentHistoryEntry(entry)) return;
-                const rawDate = entry?.recordedAt || entry?.date || '';
+                const rawDate = getPaymentReceivedAt(entry) || entry?.recordedAt || entry?.date || '';
                 const dateObj = safeDate(rawDate);
                 const dateKey = dateObj ? toDateKey(dateObj) : String(rawDate || '').slice(0, 10);
                 const direction = resolveDirection(entry);
@@ -828,6 +1088,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const paymentMethodKey = resolvePaymentMethodKey(paymentMethodLabel);
                 const displayDate = formatEntryDate(rawDate, dateObj);
                 const entryId = String(entry?.id || '').trim();
+                const isImportedPayment = /^cf2026-(?:cash|gcash)-/i.test(entryId)
+                    || /^Imported (?:Cash|GCash) payment from\b/i.test(String(entry?.description || '').trim());
 
                 rows.push({
                     id: `${accountNumber}-${entryId || entry?.reference || index}`,
@@ -846,6 +1108,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     rawDate,
                     displayDate,
                     dateKey,
+                    isImportedPayment,
+                    isGcashBound: boundGcashEntryIds.has(entryId),
                     timestamp: dateObj ? dateObj.getTime() : 0
                 });
             });
@@ -955,6 +1219,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const printButton = row.accountNumber
                     ? `<button type="button" class="payment-history-print btn btn-icon btn-ghost-secondary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" data-reference="${escapeHtml(row.reference || row.orNumber || '')}" aria-label="Reprint thermal receipt" title="Reprint thermal receipt"><i class="ti ti-receipt"></i></button>`
                     : '';
+                const editBindButton = row.entryId && row.isImportedPayment
+                    ? (row.isGcashBound
+                        ? '<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-secondary btn-sm" aria-label="Locked—this GCash transaction is already posted" title="Locked—this GCash transaction is already posted" disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'
+                        : (state.gcashBindingsLoaded
+                            ? `<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-primary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Edit client and bind official GCash transaction" title="Edit & Bind"><i class="ti ti-edit"></i></button>`
+                            : '<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-secondary btn-sm" aria-label="GCash binding status is unavailable" title="GCash binding status is unavailable. Refresh to try again." disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'))
+                    : '';
                 const deleteButton = row.entryId
                     ? `<button type="button" class="payment-history-delete btn btn-icon btn-ghost-danger btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="ti ti-trash"></i></button>`
                     : '<span class="text-secondary">-</span>';
@@ -994,6 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td class="payment-history-actions-cell">
                             <div class="payment-history-action-row">
                                 ${printButton}
+                                ${editBindButton}
                                 ${deleteButton}
                             </div>
                         </td>
@@ -1229,8 +1501,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadHistory() {
         try {
-            const paymentRecordPayload = await fetchJSON('/api/payment-records');
+            const [paymentRecordPayload, gcashBindingPayload] = await Promise.all([
+                fetchJSON('/api/payment-records'),
+                fetchJSON('/api/payments/gcash-bindings').catch(() => null)
+            ]);
             const paymentRecords = Array.isArray(paymentRecordPayload?.records) ? paymentRecordPayload.records : [];
+            const gcashBindings = Array.isArray(gcashBindingPayload?.bindings) ? gcashBindingPayload.bindings : [];
+            state.gcashBindingsLoaded = Boolean(gcashBindingPayload);
+            state.boundGcashEntryIds = new Set(gcashBindings
+                .map((binding) => String(binding?.paymentEntryId || '').trim())
+                .filter(Boolean));
             const paymentPayload = paymentRecords.reduce((recordsByAccount, record) => {
                 const accountNumber = String(record?.accountNumber || '').trim();
                 if (!accountNumber) return recordsByAccount;
@@ -1243,7 +1523,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             state.customers = paymentRecords;
             renderUnmatchedCustomerList();
-            state.allRows = buildRows(state.customers, paymentPayload);
+            state.allRows = buildRows(state.customers, paymentPayload, state.boundGcashEntryIds);
             populateAreaFilter(state.allRows);
             populateRecordedByFilter(state.allRows);
             applyFilters({ resetPage: true });
@@ -1315,9 +1595,72 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         fallbackHideModal(unmatchedModalEl);
     });
+    editBindCustomer?.addEventListener('input', () => {
+        state.editBindTargetAccountNumber = '';
+        editBindCustomer.classList.remove('is-invalid');
+        renderEditBindCustomerSuggestions(editBindCustomer.value);
+        updateEditBindSaveState();
+    });
+    editBindCustomer?.addEventListener('focus', () => {
+        renderEditBindCustomerSuggestions(
+            state.editBindTargetAccountNumber ? '' : editBindCustomer.value
+        );
+    });
+    editBindCustomer?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeEditBindCustomerSuggestions();
+            return;
+        }
+        if (event.key !== 'Enter' || !editBindCustomerSuggestions?.classList.contains('show')) return;
+        const firstOption = editBindCustomerSuggestions.querySelector('[data-edit-bind-account]');
+        if (!firstOption) return;
+        event.preventDefault();
+        selectEditBindCustomer(firstOption.dataset.editBindAccount);
+    });
+    editBindCustomerSuggestions?.addEventListener('click', (event) => {
+        const option = event.target.closest('[data-edit-bind-account]');
+        if (!option) return;
+        selectEditBindCustomer(option.dataset.editBindAccount);
+    });
+    document.addEventListener('click', (event) => {
+        if (event.target === editBindCustomer || editBindCustomerSuggestions?.contains(event.target)) return;
+        closeEditBindCustomerSuggestions();
+    });
+    editBindGcash?.addEventListener('change', () => {
+        updateEditBindGcashHelp();
+        updateEditBindSaveState();
+    });
+    editBindConfirmed?.addEventListener('change', updateEditBindSaveState);
+    editBindForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void saveEditBindPayment();
+    });
+    editBindModalEl?.addEventListener('hidden.bs.modal', resetEditBindModal);
+    const dismissEditBindModal = (event) => {
+        const closeBtn = event.target.closest('[data-payment-history-dismiss="modal"]');
+        if (!closeBtn) return;
+        event.preventDefault();
+        hideEditBindModal();
+        if (!editBindModalEl.classList.contains('show')) resetEditBindModal();
+    };
+    editBindModalEl?.addEventListener('pointerdown', dismissEditBindModal, true);
+    editBindModalEl?.addEventListener('click', dismissEditBindModal);
     backupBtn?.addEventListener('click', backupPaymentRecords);
     clearBtn?.addEventListener('click', clearPaymentRecords);
     tableBody?.addEventListener('click', async (event) => {
+        const editBindBtn = event.target.closest('.payment-history-edit-bind');
+        if (editBindBtn) {
+            const accountNumber = String(editBindBtn.dataset.accountNumber || '').trim();
+            const entryId = String(editBindBtn.dataset.entryId || '').trim();
+            const row = state.allRows.find((item) => item.accountNumber === accountNumber && item.entryId === entryId);
+            if (!row) {
+                showToast('Payment entry was not found in the current list.', 'error');
+                return;
+            }
+            void openEditBindModal(row);
+            return;
+        }
+
         const printBtn = event.target.closest('.payment-history-print');
         if (printBtn) {
             const accountNumber = String(printBtn.dataset.accountNumber || '').trim();

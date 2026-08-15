@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { getPool, isMysqlEnabled } = require('./db');
 const { isJsonStorageMode } = require('../config/storage-mode');
 const { DATA_DIR } = require('../runtime/paths');
+const { assertDataWritesAllowed } = require('../runtime/maintenance-state');
 
 const STORE_TABLE = process.env.MYSQL_STORE_TABLE || 'app_store';
 let tableReady = null;
@@ -84,7 +85,9 @@ function enqueueWrite(key, operation) {
 }
 
 async function writeJsonFile(key, data) {
+  assertDataWritesAllowed();
   return enqueueWrite(key, async () => {
+    assertDataWritesAllowed();
     const filePath = keyToFilePath(key);
     const dir = path.dirname(filePath);
     await fs.mkdir(dir, { recursive: true });
@@ -99,6 +102,12 @@ async function writeJsonFile(key, data) {
       await fs.unlink(tempPath).catch(() => {});
     }
   });
+}
+
+async function waitForPendingWrites() {
+  while (writeQueues.size) {
+    await Promise.allSettled([...writeQueues.values()]);
+  }
 }
 
 async function readJson(key, fallback) {
@@ -130,6 +139,7 @@ async function writeJson(key, data, options = {}) {
     await writeJsonFile(key, data);
     return;
   }
+  assertDataWritesAllowed();
   await ensureTable();
   const pool = await getPool();
   if (!pool) {
@@ -152,5 +162,6 @@ module.exports = {
   readJson,
   writeJson,
   readJsonFile,
-  writeJsonFile
+  writeJsonFile,
+  waitForPendingWrites
 };

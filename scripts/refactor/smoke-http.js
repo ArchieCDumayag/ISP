@@ -158,6 +158,7 @@ const checks = [
   { path: '/api/flavors/features', status: 404 },
   { path: '/api/accounts', status: 401 },
   { path: '/api/admin-data-reset/preview', status: 401 },
+  { path: '/api/system-backup/export', status: 401 },
   { path: '/api/customers', status: 401 },
   { path: '/api/temp/workspace', status: 401 },
   { path: '/api/coverage', status: 401 },

@@ -69,6 +69,7 @@ const infoRouter = adminBackend.load('infoApi');
 const collectorPaymentsRouter = collectorBackend.load('collectorPayments');
 const businessProfileRouter = adminBackend.load('businessProfile');
 const factoryResetRouter = adminBackend.load('factoryReset');
+const systemBackupRouter = adminBackend.load('systemBackup');
 const appDownloadsRouter = adminBackend.load('appDownloads');
 const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
 const integrationSettingsRouter = adminBackend.load('integrationSettings');
@@ -2527,6 +2528,11 @@ const factoryResetLimiter = createRateLimiter({
     max: 5,
     message: 'Too many factory reset attempts. Please wait before trying again.'
 });
+const systemBackupLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: 'Too many backup or restore attempts. Please wait before trying again.'
+});
 app.use('/api/auth/login', adminLoginLimiter);
 app.use('/api/auth/collector-login', adminLoginLimiter);
 app.use('/api/auth/technician-login', adminLoginLimiter);
@@ -2548,6 +2554,16 @@ app.use(express.urlencoded({
     limit: '6mb',
     verify: captureRawRequestBody
 })); // for parsing application/x-www-form-urlencoded
+app.use('/api', (req, res, next) => {
+    if (!systemBackupRouter.isRestoreInProgress?.() || req.path.startsWith('/system-backup/')) {
+        return next();
+    }
+    res.set('Retry-After', '5');
+    return res.status(503).json({
+        ok: false,
+        error: 'A full-system restore is in progress. Record changes are temporarily paused.'
+    });
+});
 app.use('/webhooks/messenger', messengerBotRouter);
 
 // --- Auth Routes ---
@@ -6415,6 +6431,7 @@ app.use(
     (req, res, next) => (req.method === 'POST' ? factoryResetLimiter(req, res, next) : next()),
     factoryResetRouter
 );
+app.use('/api/system-backup', requireAuth, systemBackupLimiter, systemBackupRouter);
 app.use('/api/collectors', requireAuth, collectorsRouter);
 app.use('/api/business-profile', businessProfileRouter);
 app.use('/api/app-downloads', appDownloadsRouter);

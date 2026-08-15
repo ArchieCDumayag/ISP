@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -24,7 +25,9 @@ const backendPairs = [
   ['factory-reset.js', 'factory-reset'],
   ['info-api.js', 'info-api'],
   ['integration-settings.js', 'integration-settings'],
-  ['setup-installer.js', 'setup-installer']
+  ['setup-installer.js', 'setup-installer'],
+  ['system-backup-service.js', 'system-backup-service'],
+  ['system-backup.js', 'system-backup']
 ];
 
 const backend = loadModuleBackend('admin', { required: true, fresh: true });
@@ -237,6 +240,109 @@ async function verifyFactoryResetContract() {
   console.log('PASS Admin factory reset safeguards and JSON reset contract');
 }
 
+const systemBackupModule = require(path.join(
+  projectRoot,
+  'Features/modules/admin/backend/system-backup-service'
+));
+assert.strictEqual(systemBackupModule.BACKUP_KIND, 'isp-full-system-backup');
+assert.strictEqual(systemBackupModule.BACKUP_SCHEMA_VERSION, 1);
+assert.strictEqual(systemBackupModule.RESTORE_CONFIRMATION_PHRASE, 'RESTORE ALL DATA');
+assert.strictEqual(systemBackupModule.isSensitiveJsonFile('master-key.json'), true);
+assert.strictEqual(systemBackupModule.isSensitiveJsonFile('firebase-service-account.json'), true);
+assert.strictEqual(systemBackupModule.isSensitiveJsonFile('payments.json'), false);
+assert.throws(() => systemBackupModule.assertSafeRelativePath('../outside.jpg'));
+const maintenanceState = require(path.join(projectRoot, 'core/runtime/maintenance-state'));
+const maintenanceToken = maintenanceState.beginMaintenance('backup compatibility test');
+assert.strictEqual(maintenanceState.getMaintenance()?.kind, 'backup compatibility test');
+assert.throws(() => maintenanceState.assertDataWritesAllowed(), /temporarily paused/);
+assert.strictEqual(maintenanceState.endMaintenance(maintenanceToken), true);
+maintenanceState.assertDataWritesAllowed();
+
+async function verifyFullSystemBackupContract() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'isp-system-backup-test-'));
+  const dataDir = path.join(tempRoot, 'data');
+  const publicRoot = path.join(tempRoot, 'public');
+  const stagingRoot = path.join(dataDir, 'backups', '.staging');
+  const backupRoot = path.join(dataDir, 'backups');
+  const writeJson = (fileName, value) => {
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, fileName), JSON.stringify(value, null, 2));
+  };
+  try {
+    writeJson('accounts.json', [{ id: '1', username: 'owner', role: 'Admin', password: 'hashed' }]);
+    writeJson('customers.json', [{ id: 'customer-1', accountNumber: '100000001' }]);
+    writeJson('payments.json', { 1: [{ id: 'payment-1', accountNumber: '100000001' }] });
+    writeJson('integrations.json', { encrypted: { data: 'ciphertext-only' } });
+    writeJson('sessions.json', { sessions: { live: { userId: '1' } } });
+    writeJson('customer_sessions.json', { sessions: { customer: { accountNumber: '100000001' } } });
+    writeJson('master-key.json', { value: 'must-never-enter-an-archive' });
+    fs.mkdirSync(path.join(dataDir, 'uploads', 'documents'), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'uploads', 'documents', 'record.txt'), 'official-record');
+    fs.mkdirSync(path.join(publicRoot, 'uploads', 'payment-proofs'), { recursive: true });
+    fs.writeFileSync(path.join(publicRoot, 'uploads', 'payment-proofs', 'proof.jpg'), 'proof-image');
+
+    const service = systemBackupModule.createSystemBackupService({
+      dataDir,
+      publicRoot,
+      stagingRoot,
+      backupRoot,
+      getStorageDriver: () => 'json',
+      isRelationalReady: async () => false
+    });
+    const exported = await service.createTemporaryArchive();
+    const uploadStream = fs.createReadStream(exported.destinationPath);
+    uploadStream.headers = { 'content-length': String(fs.statSync(exported.destinationPath).size) };
+    const received = await service.receiveArchive(uploadStream);
+    const prepared = await service.validateArchive(received);
+    const archivedStoreNames = prepared.manifest.records.jsonStores.map((store) => store.fileName);
+    assert(archivedStoreNames.includes('customers.json'), 'Full backup must include customer records');
+    assert(archivedStoreNames.includes('payments.json'), 'Full backup must include payment records');
+    assert(archivedStoreNames.includes('integrations.json'), 'Full backup must include protected integration settings');
+    assert(!archivedStoreNames.includes('sessions.json'), 'Full backup must exclude runtime Admin sessions');
+    assert(!archivedStoreNames.includes('customer_sessions.json'), 'Full backup must exclude customer sessions');
+    assert(!archivedStoreNames.includes('master-key.json'), 'Full backup must exclude the encryption master key');
+    assert.strictEqual(prepared.summary.uploadFileCount, 2, 'Full backup must include both upload roots');
+
+    writeJson('customers.json', [{ id: 'changed-customer' }]);
+    writeJson('stale-store.json', [{ id: 'remove-me' }]);
+    writeJson('master-key.json', { value: 'current-secret-stays-local' });
+    writeJson('sessions.json', { sessions: { stale: { userId: '1' } } });
+    fs.writeFileSync(path.join(dataDir, 'uploads', 'documents', 'record.txt'), 'changed-record');
+    fs.writeFileSync(path.join(dataDir, 'uploads', 'documents', 'stale.txt'), 'remove-me');
+
+    const restored = await service.restorePrepared(prepared);
+    assert.deepStrictEqual(
+      JSON.parse(fs.readFileSync(path.join(dataDir, 'customers.json'), 'utf8')),
+      [{ id: 'customer-1', accountNumber: '100000001' }],
+      'Restore must replace changed customer records with the validated snapshot'
+    );
+    assert(!fs.existsSync(path.join(dataDir, 'stale-store.json')), 'Restore must remove stores absent from the complete snapshot');
+    assert.deepStrictEqual(
+      JSON.parse(fs.readFileSync(path.join(dataDir, 'master-key.json'), 'utf8')),
+      { value: 'current-secret-stays-local' },
+      'Restore must preserve the server-local encryption key'
+    );
+    assert.deepStrictEqual(
+      JSON.parse(fs.readFileSync(path.join(dataDir, 'sessions.json'), 'utf8')).sessions,
+      {},
+      'Restore must invalidate stale Admin sessions'
+    );
+    assert.strictEqual(
+      fs.readFileSync(path.join(dataDir, 'uploads', 'documents', 'record.txt'), 'utf8'),
+      'official-record',
+      'Restore must round-trip uploaded records'
+    );
+    assert(!fs.existsSync(path.join(dataDir, 'uploads', 'documents', 'stale.txt')), 'Restore must remove uploads absent from the snapshot');
+    assert(fs.existsSync(path.join(backupRoot, restored.preImportBackup.fileName)), 'Restore must create a pre-import recovery backup');
+
+    await service.cleanupPrepared(prepared);
+    await service.cleanupPrepared({ stageRoot: exported.tempRoot });
+    console.log('PASS Admin full-system backup validation and JSON restore contract');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(serverSource.includes('const MODULE_RUNTIMES = loadModuleRuntimes({'));
 assert(serverSource.includes("requireModuleRuntime('admin')"));
@@ -254,7 +360,15 @@ assert(serverSource.includes('const { loadIntegrationSettings, resolveIpBrowserP
 assert(serverSource.includes('loadIpBrowserAutoLoginSettings(req, targetUrl)'));
 assert(serverSource.includes('normalizeIpBrowserAutoLoginSettings(settings, targetUrl)'));
 assert(serverSource.includes("adminBackend.load('factoryReset')"));
+assert(serverSource.includes("adminBackend.load('systemBackup')"));
 assert(serverSource.includes("req.method === 'POST' ? factoryResetLimiter(req, res, next) : next()"));
+assert(serverSource.includes("app.use('/api/system-backup', requireAuth, systemBackupLimiter, systemBackupRouter)"));
+const sharedLayoutSource = fs.readFileSync(path.join(projectRoot, 'public/layout.js'), 'utf8');
+assert(sharedLayoutSource.includes("fetch('/api/system-backup/export'"));
+assert(sharedLayoutSource.includes("fetch('/api/system-backup/preview'"));
+assert(sharedLayoutSource.includes("fetch('/api/system-backup/restore'"));
+assert(sharedLayoutSource.includes("fetch('/api/import/customers-full'"));
+assert(sharedLayoutSource.includes('RESTORE ALL DATA'));
 console.log('PASS Admin server loader and web routing');
 
 const installerSource = fs.readFileSync(
@@ -267,6 +381,7 @@ assert(installerSource.includes("'Features/modules/admin/backend/setup-installer
 assert(installerSource.includes("'Features/modules/admin/web/update-download.html'"));
 console.log('PASS Admin installer root and package paths');
 verifyFactoryResetContract()
+  .then(verifyFullSystemBackupContract)
   .then(() => console.log('ADMIN COMPATIBILITY PASSED'))
   .catch((error) => {
     console.error(error);

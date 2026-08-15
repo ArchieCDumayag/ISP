@@ -5,7 +5,7 @@ This repository is developed in one shared working tree by multiple Codex sessio
 The coordination command is:
 
 ```bash
-python3 scripts/ai_coord.py
+node scripts/ai_coord.js
 ```
 
 Never manually edit `.ai_coord/`. It is generated runtime state and is ignored by Git.
@@ -19,14 +19,14 @@ Every new Codex session must do the following before work:
 3. Register once and keep the returned identity for that terminal:
 
    ```bash
-   python3 scripts/ai_coord.py register "short purpose of this Codex session"
+   node scripts/ai_coord.js register "short purpose of this Codex session"
    ```
 
 4. Review coordination and Git state:
 
    ```bash
-   python3 scripts/ai_coord.py status
-   python3 scripts/ai_coord.py modules
+   node scripts/ai_coord.js status
+   node scripts/ai_coord.js modules
    git status --short
    git branch --show-current
    ```
@@ -34,13 +34,13 @@ Every new Codex session must do the following before work:
 5. Announce the task:
 
    ```bash
-   python3 scripts/ai_coord.py start <agent> "<task-name>" "<work being started>"
+   node scripts/ai_coord.js start <agent> "<task-name>" "<work being started>"
    ```
 
 Do not invent or reuse another session's identity. Retire a permanent session when it is no longer used:
 
 ```bash
-python3 scripts/ai_coord.py retire <agent>
+node scripts/ai_coord.js retire <agent>
 ```
 
 ## Lock before editing
@@ -48,9 +48,9 @@ python3 scripts/ai_coord.py retire <agent>
 Immediately before editing, always check recent activity and locks, then lock every path you will change:
 
 ```bash
-python3 scripts/ai_coord.py recent
-python3 scripts/ai_coord.py locks
-python3 scripts/ai_coord.py lock <path> <agent> "<task-name>" "<reason>"
+node scripts/ai_coord.js recent
+node scripts/ai_coord.js locks
+node scripts/ai_coord.js lock <path> <agent> "<task-name>" "<reason>"
 ```
 
 Locks cover both parent and child paths. A lock on `Features/modules/billing` conflicts with locks anywhere below that directory. Never edit a path locked by another Codex.
@@ -60,7 +60,7 @@ For module files, lock the canonical path under `Features/modules/`; for shared 
 If a needed path is locked, work on other unlocked parts first. If nothing else can proceed, use:
 
 ```bash
-python3 scripts/ai_coord.py wait-lock <path> <agent> "<task-name>" "<reason>" --timeout 600
+node scripts/ai_coord.js wait-lock <path> <agent> "<task-name>" "<reason>" --timeout 600
 ```
 
 Do not bypass locks. `force-unlock` is only for abandoned locks after confirming the owning session is gone.
@@ -146,7 +146,7 @@ The coordination script checks the `--files` list passed to `done`. If an owned 
 Check before finishing:
 
 ```bash
-python3 scripts/ai_coord.py check-context --files <all-changed-files>
+node scripts/ai_coord.js check-context --files <all-changed-files>
 ```
 
 `Project_Context.md` is only for project-wide facts: architecture, shared contracts, runtime ports, storage, deployments, module boundaries, and integration status. Ordinary module progress belongs only in the module context.
@@ -156,7 +156,7 @@ python3 scripts/ai_coord.py check-context --files <all-changed-files>
 Post updates after meaningful changes or discoveries:
 
 ```bash
-python3 scripts/ai_coord.py update <agent> "<task-name>" "<what changed>" --files <paths>
+node scripts/ai_coord.js update <agent> "<task-name>" "<what changed>" --files <paths>
 ```
 
 Before finishing:
@@ -169,9 +169,9 @@ Before finishing:
 6. Mark the task done with the complete changed-file list.
 
 ```bash
-python3 scripts/ai_coord.py update <agent> "<task-name>" "Task complete; releasing locks" --files <paths>
-python3 scripts/ai_coord.py unlock-task <agent> "<task-name>"
-python3 scripts/ai_coord.py done <agent> "<task-name>" "<summary and checks>" --files <paths>
+node scripts/ai_coord.js update <agent> "<task-name>" "Task complete; releasing locks" --files <paths>
+node scripts/ai_coord.js unlock-task <agent> "<task-name>"
+node scripts/ai_coord.js done <agent> "<task-name>" "<summary and checks>" --files <paths>
 ```
 
 Do not silently stop with active locks.
@@ -190,7 +190,7 @@ Do not edit `/opt/isp-billing`, restart `isp-billing.service`, alter production 
 Before starting, stopping, building, or restarting the shared development runtime, lock:
 
 ```bash
-python3 scripts/ai_coord.py lock runtime/server <agent> "<task-name>" "<runtime operation>"
+node scripts/ai_coord.js lock runtime/server <agent> "<task-name>" "<runtime operation>"
 ```
 
 Release `runtime/server` immediately after the operation and its basic verification. Read-only checks such as `curl`, `systemctl status`, `ps`, and log inspection do not require the runtime lock.

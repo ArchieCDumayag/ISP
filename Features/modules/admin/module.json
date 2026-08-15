@@ -18,6 +18,7 @@
     "/api/info",
     "/api/app-downloads",
     "/api/admin-data-reset",
+    "/api/system-backup",
     "/api/structure",
     "/api/system-update"
   ],

@@ -264,6 +264,24 @@ body:has(.payment-history-page) .app-main main,
     pointer-events: auto !important;
 }
 
+#paymentHistoryEditBindModal,
+#paymentHistoryEditBindModal .modal-dialog,
+#paymentHistoryEditBindModal .modal-content,
+#paymentHistoryEditBindModal .modal-header,
+#paymentHistoryEditBindModal .modal-body,
+#paymentHistoryEditBindModal .modal-footer,
+#paymentHistoryEditBindModal .form-control,
+#paymentHistoryEditBindModal .form-select,
+#paymentHistoryEditBindModal .form-check-input,
+#paymentHistoryEditBindModal .btn,
+#paymentHistoryEditBindModal .btn-close {
+    pointer-events: auto !important;
+}
+
+#paymentHistoryEditBindModal.modal {
+    z-index: 1110 !important;
+}
+
 .payment-history-unmatched-backdrop.modal-backdrop {
     z-index: 1100 !important;
 }

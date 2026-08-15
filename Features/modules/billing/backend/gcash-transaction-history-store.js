@@ -164,6 +164,46 @@ const sanitizeAssignment = (value) => {
     };
 };
 
+const sanitizeAssignmentAuditEntry = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const auditId = toSafeText(value.auditId, 64);
+    const paymentEntryId = toSafeText(value.paymentEntryId, 64);
+    const action = ['assigned', 'released', 'reassigned'].includes(value.action)
+        ? value.action
+        : '';
+    if (!auditId || !paymentEntryId || !action) return null;
+    return {
+        auditId,
+        action,
+        paymentEntryId,
+        fromReference: normalizeReference(value.fromReference) || null,
+        toReference: normalizeReference(value.toReference) || null,
+        sourceAccountNumber: toSafeText(value.sourceAccountNumber, 20) || null,
+        targetAccountNumber: toSafeText(value.targetAccountNumber, 20) || null,
+        editedAt: toSafeText(value.editedAt, 40) || null,
+        editedBy: {
+            id: toSafeText(value.editedBy?.id, 32) || null,
+            username: toSafeText(value.editedBy?.username, 100) || null,
+            name: toSafeText(value.editedBy?.name, 120) || null
+        }
+    };
+};
+
+const sanitizeAssignmentAudit = (value) => (Array.isArray(value) ? value : [])
+    .map(sanitizeAssignmentAuditEntry)
+    .filter(Boolean)
+    .slice(-100);
+
+const appendAssignmentAudit = (transaction, value) => {
+    const audit = sanitizeAssignmentAuditEntry(value);
+    if (!audit) return;
+    const history = sanitizeAssignmentAudit(transaction?.assignmentAudit);
+    if (!history.some((entry) => entry.auditId === audit.auditId && entry.action === audit.action)) {
+        history.push(audit);
+    }
+    transaction.assignmentAudit = history.slice(-100);
+};
+
 const assignmentAllocationSignature = (allocations = []) => allocations
     .map((allocation) => [
         toSafeText(allocation?.accountNumber, 20),
@@ -188,6 +228,7 @@ const normalizeImportedTransaction = (row, batchId) => ({
     status: Number(row?.credit) > 0 ? 'received' : 'debit',
     pageNumber: Number(row?.pageNumber) || 1,
     assignment: null,
+    assignmentAudit: [],
     remark: null
 });
 
@@ -298,6 +339,7 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false 
         ...transaction,
         recipientLabel: getGcashRecipientLabel(transaction?.recipient) || null,
         assignment: sanitizeAssignment(transaction?.assignment),
+        assignmentAudit: sanitizeAssignmentAudit(transaction?.assignmentAudit),
         remark: getTransactionRemark(transaction)
     })).sort((a, b) => String(b.transactionAt).localeCompare(String(a.transactionAt)));
     return {
@@ -651,6 +693,131 @@ const finalizeGcashTransactionAllocations = async ({
     });
 };
 
+const replaceGcashTransactionPaymentBinding = async ({
+    branchId,
+    oldReference,
+    newReference,
+    newSubmissionId,
+    paymentEntryId,
+    targetAllocation,
+    auditId,
+    editedAt,
+    editedBy
+} = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeOldReference = normalizeReference(oldReference);
+    const safeNewReference = normalizeReference(newReference);
+    const safeSubmissionId = toSafeText(newSubmissionId, 64);
+    const safePaymentEntryId = toSafeText(paymentEntryId, 64);
+    const safeTargetAllocation = sanitizeAssignmentAllocation({
+        ...(targetAllocation && typeof targetAllocation === 'object' ? targetAllocation : {}),
+        paymentEntryId: safePaymentEntryId
+    });
+    const safeAuditId = toSafeText(auditId, 64);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeOldReference || !safeNewReference) throw createError(400, 'The previous and replacement GCash references are required.');
+    if (!safeSubmissionId || !safePaymentEntryId || !safeTargetAllocation?.billingMonth) {
+        throw createError(400, 'A valid payment entry and replacement allocation are required.');
+    }
+    if (!safeAuditId) throw createError(400, 'A binding audit ID is required.');
+
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const oldTransaction = bucket.transactions.find((row) => (
+            normalizeReference(row?.reference) === safeOldReference
+        ));
+        const newTransaction = bucket.transactions.find((row) => (
+            normalizeReference(row?.reference) === safeNewReference
+        ));
+        if (!oldTransaction || !newTransaction) {
+            throw createError(409, 'The previous or replacement reference is missing from imported GCash history.');
+        }
+
+        const oldAssignment = sanitizeAssignment(oldTransaction.assignment);
+        const newAssignment = sanitizeAssignment(newTransaction.assignment);
+        const postedNewAllocation = newAssignment?.status === 'posted'
+            && newAssignment.allocations.length === 1
+            && newAssignment.allocations[0].paymentEntryId === safePaymentEntryId
+            && assignmentAllocationSignature(newAssignment.allocations) === assignmentAllocationSignature([safeTargetAllocation]);
+        if (safeOldReference !== safeNewReference && !oldAssignment && postedNewAllocation) {
+            return {
+                oldTransaction: { ...oldTransaction, assignment: null },
+                newTransaction: { ...newTransaction, assignment: newAssignment },
+                assignment: newAssignment,
+                idempotent: true
+            };
+        }
+        if (
+            !oldAssignment
+            || oldAssignment.status !== 'posted'
+            || oldAssignment.allocations.length !== 1
+            || oldAssignment.allocations[0].paymentEntryId !== safePaymentEntryId
+        ) {
+            throw createError(409, 'The existing GCash binding is not a single posted payment and cannot be edited safely.');
+        }
+
+        const oldAllocation = oldAssignment.allocations[0];
+        const auditBase = {
+            auditId: safeAuditId,
+            paymentEntryId: safePaymentEntryId,
+            fromReference: safeOldReference,
+            toReference: safeNewReference,
+            sourceAccountNumber: oldAllocation.accountNumber,
+            targetAccountNumber: safeTargetAllocation.accountNumber,
+            editedAt: toSafeText(editedAt, 40) || new Date().toISOString(),
+            editedBy
+        };
+
+        if (safeOldReference === safeNewReference) {
+            const updatedAssignment = sanitizeAssignment({
+                ...oldAssignment,
+                amount: safeTargetAllocation.amount,
+                paymentDate: oldAssignment.paymentDate,
+                allocations: [safeTargetAllocation]
+            });
+            const idempotent = assignmentAllocationSignature(oldAssignment.allocations)
+                === assignmentAllocationSignature(updatedAssignment.allocations);
+            oldTransaction.assignment = updatedAssignment;
+            if (!idempotent) appendAssignmentAudit(oldTransaction, { ...auditBase, action: 'reassigned' });
+            bucket.updatedAt = auditBase.editedAt;
+            return {
+                oldTransaction: { ...oldTransaction, assignment: updatedAssignment },
+                newTransaction: { ...oldTransaction, assignment: updatedAssignment },
+                assignment: updatedAssignment,
+                idempotent
+            };
+        }
+
+        if (
+            !newAssignment
+            || newAssignment.submissionId !== safeSubmissionId
+            || newAssignment.allocations.length !== 1
+            || assignmentAllocationSignature(newAssignment.allocations) !== assignmentAllocationSignature([safeTargetAllocation])
+            || (newAssignment.allocations[0].paymentEntryId && newAssignment.allocations[0].paymentEntryId !== safePaymentEntryId)
+        ) {
+            throw createAssignmentConflictError(newAssignment);
+        }
+        const postedAt = newAssignment.postedAt || auditBase.editedAt;
+        const finalized = sanitizeAssignment({
+            ...newAssignment,
+            status: 'posted',
+            allocations: [safeTargetAllocation],
+            postedAt
+        });
+        oldTransaction.assignment = null;
+        newTransaction.assignment = finalized;
+        appendAssignmentAudit(oldTransaction, { ...auditBase, action: 'released' });
+        appendAssignmentAudit(newTransaction, { ...auditBase, action: 'assigned' });
+        bucket.updatedAt = auditBase.editedAt;
+        return {
+            oldTransaction: { ...oldTransaction, assignment: null },
+            newTransaction: { ...newTransaction, assignment: finalized },
+            assignment: finalized,
+            idempotent: false
+        };
+    });
+};
+
 const releaseGcashTransactionClaim = async ({ branchId, reference, submissionId, accountNumber } = {}) => {
     const safeBranchId = Number(branchId);
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) return false;
@@ -680,9 +847,11 @@ module.exports = {
     claimGcashTransactionAllocations,
     finalizeGcashTransactionAssignment,
     finalizeGcashTransactionAllocations,
+    replaceGcashTransactionPaymentBinding,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
     sanitizeAssignment,
+    sanitizeAssignmentAudit,
     sanitizeRemark,
     normalizeRemarkCategory,
     normalizeReference,

@@ -1373,6 +1373,9 @@
         const allocations = Array.isArray(assignment?.allocations) && assignment.allocations.length
             ? assignment.allocations
             : (assignment ? [assignment] : []);
+        const paymentHistoryAllocations = Array.isArray(transaction.paymentHistoryMatch?.allocations)
+            ? transaction.paymentHistoryMatch.allocations
+            : [];
         return [
             transaction.reference,
             transaction.description,
@@ -1381,7 +1384,8 @@
             transaction.recipientLabel,
             transaction.status,
             transaction.remark?.category,
-            ...allocations.flatMap((allocation) => [allocation?.customerName, allocation?.accountNumber])
+            ...allocations.flatMap((allocation) => [allocation?.customerName, allocation?.accountNumber]),
+            ...paymentHistoryAllocations.flatMap((allocation) => [allocation?.customerName, allocation?.accountNumber])
         ].map((value) => String(value || '').trim()).filter(Boolean).join(' ').toLowerCase();
     };
 
@@ -1522,11 +1526,29 @@
                     <span class="gcash-match-amount">${escapeHtml(Number.isFinite(amount) ? formatCurrency(amount) : '-')}</span>
                 </div>`;
             }).join('');
+            const paymentHistoryMatch = !assignment
+                && transaction.paymentHistoryMatch
+                && typeof transaction.paymentHistoryMatch === 'object'
+                ? transaction.paymentHistoryMatch
+                : null;
+            const suggestedAllocations = Array.isArray(paymentHistoryMatch?.allocations)
+                ? paymentHistoryMatch.allocations
+                : [];
+            const suggestionDetails = suggestedAllocations.map((allocation) => {
+                const customerName = String(allocation?.customerName || '').trim();
+                const amount = Number(allocation?.amount);
+                return `<div class="gcash-match-allocation">
+                    <span class="gcash-match-name">${escapeHtml(customerName || 'Suggested customer')}</span>
+                    <span class="gcash-match-amount">${escapeHtml(Number.isFinite(amount) ? formatCurrency(amount) : '-')}</span>
+                </div>`;
+            }).join('');
             const matchBadge = assignment
                 ? `<div class="gcash-match-list">${assignmentDetails}</div>`
-                : (isReceived
-                    ? '<span class="badge bg-green-lt text-green">Available</span>'
-                    : '<span class="text-secondary">-</span>');
+                : (suggestionDetails
+                    ? `<div class="gcash-match-list" title="${escapeHtml(paymentHistoryMatch.reason || 'Suggested from Payment History for Admin review.')}">${suggestionDetails}</div>`
+                    : (isReceived
+                        ? '<span class="badge bg-green-lt text-green">Available</span>'
+                        : '<span class="text-secondary">-</span>'));
             const recipientLabel = String(transaction.recipientLabel || '').trim();
             const recipient = String(transaction.recipient || '').trim();
             const recipientCell = recipientLabel

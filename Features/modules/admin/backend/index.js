@@ -10,7 +10,9 @@ const entries = Object.freeze({
   factoryReset: './factory-reset',
   infoApi: './info-api',
   integrationSettings: './integration-settings',
-  setupInstaller: './setup-installer'
+  setupInstaller: './setup-installer',
+  systemBackupService: './system-backup-service',
+  systemBackup: './system-backup'
 });
 
 function load(entryName) {

@@ -179,9 +179,9 @@ Start with:
 
 ```bash
 cd /home/archiecd/ISP
-python3 scripts/ai_coord.py register "<module and task>"
-python3 scripts/ai_coord.py status
-python3 scripts/ai_coord.py modules
+node scripts/ai_coord.js register "<module and task>"
+node scripts/ai_coord.js status
+node scripts/ai_coord.js modules
 ```
 
 Read `AGENTS.md`, `Project_Context.md`, `start_codex.md`, and the assigned module's files under `Features/modules/` before editing. Every module change must update its `Module_context.md`.

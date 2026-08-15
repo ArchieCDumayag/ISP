@@ -26,14 +26,14 @@ Features/modules/<assigned-module>/Module_context.md
 ## 3. Register the terminal
 
 ```bash
-python3 scripts/ai_coord.py register "<assigned module and purpose>"
+node scripts/ai_coord.js register "<assigned module and purpose>"
 ```
 
 Keep the returned `codex-N` identity for that terminal. Then inspect state:
 
 ```bash
-python3 scripts/ai_coord.py status
-python3 scripts/ai_coord.py modules
+node scripts/ai_coord.js status
+node scripts/ai_coord.js modules
 git status --short
 git branch --show-current
 ```
@@ -43,11 +43,11 @@ The normal branch is `main`.
 ## 4. Start and lock the task
 
 ```bash
-python3 scripts/ai_coord.py start <agent> "<task-name>" "<scope>"
-python3 scripts/ai_coord.py recent
-python3 scripts/ai_coord.py locks
-python3 scripts/ai_coord.py lock <source-path> <agent> "<task-name>" "<reason>"
-python3 scripts/ai_coord.py lock Features/modules/<module>/Module_context.md <agent> "<task-name>" "Update durable module context"
+node scripts/ai_coord.js start <agent> "<task-name>" "<scope>"
+node scripts/ai_coord.js recent
+node scripts/ai_coord.js locks
+node scripts/ai_coord.js lock <source-path> <agent> "<task-name>" "<reason>"
+node scripts/ai_coord.js lock Features/modules/<module>/Module_context.md <agent> "<task-name>" "Update durable module context"
 ```
 
 Use `module.json` to find the canonical owned paths for the assigned module. Lock every path before editing it. Do not touch shared code unless assigned integration work.
@@ -57,7 +57,7 @@ Use `module.json` to find the canonical owned paths for the assigned module. Loc
 Post meaningful updates:
 
 ```bash
-python3 scripts/ai_coord.py update <agent> "<task-name>" "<progress>" --files <paths>
+node scripts/ai_coord.js update <agent> "<task-name>" "<progress>" --files <paths>
 ```
 
 If another agent owns a required path, work elsewhere or use `wait-lock` after all other work is exhausted.
@@ -69,9 +69,9 @@ Production uses `/opt/isp-billing` on ports `3000`/`4001`; do not touch it.
 Development uses `/home/archiecd/ISP` on ports `3100`/`4101`. Before changing the development runtime:
 
 ```bash
-python3 scripts/ai_coord.py lock runtime/server <agent> "<task-name>" "Start or restart development server"
+node scripts/ai_coord.js lock runtime/server <agent> "<task-name>" "Start or restart development server"
 npm start
-python3 scripts/ai_coord.py unlock runtime/server <agent>
+node scripts/ai_coord.js unlock runtime/server <agent>
 ```
 
 Read-only HTTP/process/log checks do not require the runtime lock.
@@ -87,12 +87,12 @@ npm test
 Update the module's `Module_context.md`, validate it is included, review the diff, and release locks:
 
 ```bash
-python3 scripts/ai_coord.py check-context --files <all-changed-files>
+node scripts/ai_coord.js check-context --files <all-changed-files>
 git status --short
 git diff --name-only
-python3 scripts/ai_coord.py update <agent> "<task-name>" "Task complete; releasing locks" --files <all-changed-files>
-python3 scripts/ai_coord.py unlock-task <agent> "<task-name>"
-python3 scripts/ai_coord.py done <agent> "<task-name>" "<summary and checks>" --files <all-changed-files>
+node scripts/ai_coord.js update <agent> "<task-name>" "Task complete; releasing locks" --files <all-changed-files>
+node scripts/ai_coord.js unlock-task <agent> "<task-name>"
+node scripts/ai_coord.js done <agent> "<task-name>" "<summary and checks>" --files <all-changed-files>
 ```
 
 Report the agent identity, changed paths, checks, context update, runtime action, remaining risks, and next step.

@@ -14,7 +14,6 @@ Run from anywhere inside the Git repo when possible.
 
 import argparse
 import csv
-import fcntl
 import fnmatch
 import json
 import os
@@ -22,6 +21,16 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
 
 def find_project_root():
@@ -230,13 +239,32 @@ def with_state_lock(fn):
     """
     ensure_state_dir()
 
-    with open(STATE_LOCK, "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with open(STATE_LOCK, "a+b") as lock:
+        if fcntl is not None:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        elif msvcrt is not None:
+            lock.seek(0, os.SEEK_END)
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.05)
+        else:
+            raise RuntimeError("No supported file-locking implementation is available.")
 
         try:
             return fn()
         finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            else:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 # ---------------------------------------------------------------------
@@ -297,7 +325,7 @@ def require_active_agent(agent_name):
     print(f"Agent: {agent_name}")
     print()
     print("Register this Codex first:")
-    print('python3 scripts/ai_coord.py register "describe this Codex session"')
+    print('node scripts/ai_coord.js register "describe this Codex session"')
     return False
 
 
@@ -599,7 +627,7 @@ def cmd_retire(args):
 
             print()
             print("Recommended cleanup:")
-            print(f'python3 scripts/ai_coord.py unlock-task {args.agent} "<task-name>"')
+            print(f'node scripts/ai_coord.js unlock-task {args.agent} "<task-name>"')
             print("or use force-unlock for specific files if this was intentional.")
 
         return 0
@@ -667,7 +695,7 @@ def cmd_done(args):
 
             print()
             print("Release them with:")
-            print(f'python3 scripts/ai_coord.py unlock-task {args.agent} "{args.task}"')
+            print(f'node scripts/ai_coord.js unlock-task {args.agent} "{args.task}"')
 
         return 0
 

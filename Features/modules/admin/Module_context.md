@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-16
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -9,6 +9,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Manage protected admin accounts and primary/backup admin safeguards.
 - Maintain business profile, protected integration settings, activity logs, and app downloads.
 - Provide an Admin-only, password-confirmed project factory reset for operational records across all modules and branches.
+- Provide one Admin-only, versioned full-system backup archive and a checksum-validated complete restore for all application records and uploaded files.
 - Expose the information API plus owner-only setup, schema, and update tools.
 
 ## Canonical runtime layout
@@ -19,6 +20,8 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - `backend/activity-log.js` and `backend/activity-log-visibility.js`: audit persistence and visibility.
 - `backend/business-profile.js`: `/api/business-profile`.
 - `backend/factory-reset.js`: `/api/admin-data-reset` preview and reset operations. Reset requires the current Admin password, the exact `CLEAR ALL DATA` phrase, an irreversible-action acknowledgement, and a final browser confirmation.
+- `backend/system-backup.js`: `/api/system-backup/export`, `/preview`, and `/restore`. Preview stages the selected ZIP for 15 minutes, verifies its manifest, paths, sizes, SHA-256 checksums, storage driver, Admin-account presence, and MySQL schema compatibility without writing application records.
+- `backend/system-backup-service.js`: creates/restores schema-versioned `isp-full-system-backup` archives, snapshots every eligible JSON store or MySQL table plus `data/uploads` and `public/uploads`, creates the automatic pre-import recovery archive, and rolls filesystem changes back on normal restore failures. MySQL restores use an InnoDB transaction.
 - `backend/integration-settings.js`: `/api/integrations` and protected settings.
 - `backend/info-api.js`: `/api/info` aggregation.
 - `backend/app-downloads.js` and `backend/app-downloads-store.js`: `/api/app-downloads`.
@@ -34,6 +37,7 @@ The former eleven root backend shims were retired in Phase 11. Existing browser 
 - `/accounts.html` → `web/accounts.html`
 - The Accounts tab bar exposes GCash as a normal settings panel. Admins can view and edit the merchant account name, number, and QR code without relying on a hidden integration panel.
 - The `Data Reset` section inside `/accounts.html` displays current record/file counts, deletion and preservation scope, an Android offline-data warning, and the guarded reset form.
+- The shared toolbar Export button downloads the complete `.isp-backup.zip`; Import validates that archive, previews selected/current record and upload counts, and requires the current Admin password, `RESTORE ALL DATA`, and an explicit replacement acknowledgement. Legacy customer workbook imports remain available through the same picker for `.xlsx`, `.xls`, and `.json` files.
 - `/setup.html` → `web/setup.html`
 - `/install-guide.html` → `web/install-guide.html`
 - `/update-download.html` → `web/update-download.html`
@@ -55,6 +59,9 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - IP Browser profile credentials and usernames are redacted from `/api/integrations` responses and represented only by presence flags. Blank username/password values sent while editing an existing profile preserve the stored secrets. The legacy top-level IP Browser credentials remain the fallback when no profile matches.
 - Factory reset deletes customers, plans, billing/payment history, imported GCash transaction history, the centralized referral registry/application audit, collector/technician accounts and assignments, schedules/reminders, tickets/jobs, PON/coverage state, Finance, SMS records/templates/automations, Temp workspace records, activity history, generated backups/cache, legacy record uploads, and payment proof files. It preserves Admin accounts/sessions, branches, business profile, account-number and Customer App/collector settings, integrations, app downloads, MySQL configuration, and source code. A non-secret last-reset audit marker is retained.
 - JSON reset rewrites known business stores to empty canonical shapes with rollback on store-write failure. MySQL reset deletes business tables and business `app_store` keys in a transaction, retaining only Admin users/sessions and configuration tables/keys. Generated-file cleanup runs after the record transaction and reports any file warnings.
+- Full-system archives include accounts/users, customers, plans, all payment and billing stores, imported GCash rows and allocations, Collector/Technician/Finance/Network/Customer App/Temp records, business and encrypted integration settings, activity/audit data, app-download records, and both upload roots. The manifest discovers records dynamically so new JSON stores or MySQL tables are not silently omitted.
+- Full-system archives intentionally exclude Admin/customer runtime sessions, `CONFIG_MASTER_KEY`, MySQL connection files, Firebase/service-account files, environment/source/log data, generated caches, and prior backup directories. Encrypted integration settings restored on another server require the same externally managed `CONFIG_MASTER_KEY`.
+- Complete restore replaces eligible records/uploads rather than merging them. It blocks other API requests, activates the shared maintenance write gate for background JSON/shared-MySQL mutations, drains queued JSON writes, creates `data/backups/pre-import-system-backup-*.isp-backup.zip`, and invalidates every server session after success. JSON file/upload swaps retain rollback copies until installation succeeds; MySQL requires an exact compatible table/column set and transactional InnoDB tables.
 
 ## Verification contract
 
@@ -63,6 +70,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public Admin files, protected-page redirects, owner-page denial, and unauthenticated API denial.
 - Admin compatibility tests exercise the JSON factory-reset service in memory, including Admin/session/configuration preservation, centralized referral-registry and imported GCash-history clearing, dynamic Finance-store clearing, audit creation, and UI/API wiring. Smoke coverage requires authentication for reset preview and confirms the new CSS/JavaScript assets are served.
+- Admin compatibility tests create an isolated temporary full archive, verify secret/session exclusions and both upload roots, mutate only temporary fixtures, restore the archive, confirm complete replacement/session invalidation, and verify that the automatic pre-import backup exists. HTTP smoke coverage keeps `/api/system-backup/export` protected.
 - The 2026-08-14 flavor retirement passed JavaScript/JSON syntax checks, focused Admin/Integration/HTTP smoke validation, the complete `npm test` Phase 12 gate, and live browser checks confirming `/flavors` is gone while authenticated Payment Queue navigation remains available.
 - The 2026-08-06 factory-reset change passed syntax checks, read-only live preview, `npm run refactor:admin`, isolated HTTP smoke tests, and the complete `npm test` Phase 12 suite. Local port 3000 serves the new assets and returns `401` for unauthenticated reset preview. In-app visual testing was unavailable because no browser session was connected.
 - The 2026-07-30 IP Browser profile change passed JavaScript syntax checks, HTML structure parsing, `npm run refactor:admin`, and the complete `npm test` Phase 12 suite. Interactive browser-control verification was unavailable in that session.
@@ -77,10 +85,13 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - Admin CSS is shared by Network pages; preserve its unchanged public URL.
 - System update/setup behavior can affect deployment and schema state; never run production mutations without explicit approval.
 - Factory reset is global, permanent, and intentionally does not create a backup. Android offline records exist outside the server and can upload again after Sync unless cleared on those devices.
+- A full-system restore is global and replaces current server records. The preview expires after 15 minutes, archives must match the server storage driver, MySQL restores require the same compatible schema, and Android offline storage is outside the archive and can sync again later.
+- Full-system archives contain password hashes and protected business data even though raw server keys are excluded; store downloaded archives securely. Restored encrypted integrations depend on the same `CONFIG_MASTER_KEY`.
 - Add a fuller automated role matrix, session invalidation, protected-account, and authenticated owner-route suite.
 
 ## Latest meaningful changes
 
+- 2026-08-16: Replaced the shared toolbar's partial export with one versioned full-system ZIP covering all eligible JSON/MySQL application records and both upload roots. Import now validates/checksums and previews the archive, requires fresh Admin authorization, creates a pre-import recovery backup, replaces records with JSON rollback or an InnoDB transaction, pauses other record writes, and invalidates sessions. Legacy customer workbook merge import remains supported.
 - 2026-08-14: Retired the owner-only flavor management page and APIs. All application modules are now present in every deployment; Admin authentication, roles, and integration readiness remain the access boundaries. No Admin accounts, sessions, integration settings, or business records were migrated or deleted.
 - 2026-08-10: Added Billing's `gcash_transaction_history` app-store key to the guarded Clear All Data contract and Admin compatibility coverage; integration settings and merchant details remain preserved.
 - 2026-08-10: Exposed the existing GCash merchant integration as a visible Accounts settings tab, retaining the existing account-name, mobile-number, QR upload, status, validation, and save behavior.

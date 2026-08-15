@@ -16,6 +16,7 @@ const MONTH_KEY_RE = /^(\d{4})-(\d{2})$/;
 const DATE_PREFIX_RE = /^(\d{4})-(\d{2})-\d{2}/;
 const SQL_DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const ISO_DATETIME_NO_TZ_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+const GCASH_RECEIVED_AT_AUDIT_RE = /\[GCASH_RECEIVED_AT:([^\]]+)\]/i;
 
 const zonedDatePartsFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: APP_TIME_ZONE,
@@ -275,6 +276,19 @@ const safeDate = (raw) => {
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
+const resolvePaymentReceivedAt = (entry = {}) => {
+  const explicit = String(
+    entry?.paymentReceivedAt
+    || entry?.payment_received_at
+    || entry?.gcashReceivedAt
+    || ''
+  ).trim();
+  if (explicit) return explicit;
+  return [entry?.fingerprint, entry?.description]
+    .map((value) => String(value || ''))
+    .join(' ')
+    .match(GCASH_RECEIVED_AT_AUDIT_RE)?.[1] || '';
+};
 
 const getZonedDateParts = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
@@ -484,6 +498,9 @@ const normalizeEntry = (entry, index) => {
   const dateObj = safeDate(direction === 'debit'
     ? (entry?.date || entry?.recordedAt || entry?.recorded_at || entry?.createdAt || entry?.created_at)
     : (entry?.recordedAt || entry?.recorded_at || entry?.date || entry?.createdAt || entry?.created_at));
+  const paymentDisplayDateObj = direction === 'credit'
+    ? (safeDate(resolvePaymentReceivedAt(entry)) || dateObj)
+    : dateObj;
   return {
     raw: entry || {},
     index,
@@ -492,6 +509,7 @@ const normalizeEntry = (entry, index) => {
     direction,
     kind,
     dateObj,
+    paymentDisplayDateObj,
     time: dateObj ? dateObj.getTime() : index,
     isOpeningPreviousBalance: openingPreviousBalance,
     isOpeningAdvance: isOpeningAdvanceRaw(entry),
@@ -779,22 +797,27 @@ const buildPaymentDetails = (entries = []) => {
   return (Array.isArray(entries) ? entries : [])
     .slice()
     .sort((left, right) => {
-      const leftTime = left?.dateObj instanceof Date && !Number.isNaN(left.dateObj.getTime())
-        ? left.dateObj.getTime()
+      const leftDisplayDate = left?.paymentDisplayDateObj || left?.dateObj;
+      const rightDisplayDate = right?.paymentDisplayDateObj || right?.dateObj;
+      const leftTime = leftDisplayDate instanceof Date && !Number.isNaN(leftDisplayDate.getTime())
+        ? leftDisplayDate.getTime()
         : 0;
-      const rightTime = right?.dateObj instanceof Date && !Number.isNaN(right.dateObj.getTime())
-        ? right.dateObj.getTime()
+      const rightTime = rightDisplayDate instanceof Date && !Number.isNaN(rightDisplayDate.getTime())
+        ? rightDisplayDate.getTime()
         : 0;
       if (leftTime !== rightTime) return leftTime - rightTime;
       return (Number(left?.sortOrder) || 0) - (Number(right?.sortOrder) || 0);
     })
-    .map((entry) => ({
-      amount: Number(entry?.amount) || 0,
-      mode: resolvePaymentModeLabel(entry),
-      date: entry?.dateObj instanceof Date && !Number.isNaN(entry.dateObj.getTime())
-        ? entry.dateObj.toISOString()
-        : ''
-    }))
+    .map((entry) => {
+      const displayDate = entry?.paymentDisplayDateObj || entry?.dateObj;
+      return {
+        amount: Number(entry?.amount) || 0,
+        mode: resolvePaymentModeLabel(entry),
+        date: displayDate instanceof Date && !Number.isNaN(displayDate.getTime())
+          ? displayDate.toISOString()
+          : ''
+      };
+    })
     .filter((entry) => Math.abs(Number(entry.amount) || 0) > EPSILON);
 };
 

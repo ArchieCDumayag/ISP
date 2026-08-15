@@ -1504,7 +1504,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return '';
         };
 
-        const triggerFullCustomerExport = async () => {
+        const triggerFullSystemExport = async () => {
             if (exportInProgress) return;
             exportInProgress = true;
             const originalTooltip = exportBtn?.getAttribute('data-tooltip') || 'Export';
@@ -1515,7 +1515,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             try {
-                const response = await fetch('/api/export/customers-full', {
+                const response = await fetch('/api/system-backup/export', {
                     method: 'GET',
                     credentials: 'include'
                 });
@@ -1532,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const filename = parseFilenameFromDisposition(response.headers.get('content-disposition'))
-                    || `customers-full-export-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
+                    || `isp-full-system-backup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.isp-backup.zip`;
                 const blob = await response.blob();
                 const blobUrl = URL.createObjectURL(blob);
                 const anchor = document.createElement('a');
@@ -1543,14 +1543,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 anchor.remove();
                 window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
-                addActivityLog({ message: 'Exported full customer data', meta: filename });
+                addActivityLog({ message: 'Exported full-system backup', meta: filename });
                 if (typeof window.appToast === 'function') {
-                    window.appToast('Full backup downloaded: customers, balances, plans, payments, tickets, jobs, SMS, and PON.', { type: 'success' });
+                    window.appToast('Full-system backup downloaded: all application records and uploaded files are in one archive.', { type: 'success' });
                 }
             } catch (error) {
-                console.error('Failed to export full customer data:', error);
+                console.error('Failed to export full-system backup:', error);
                 if (typeof window.appToast === 'function') {
-                    window.appToast(error?.message || 'Failed to export customer data.', { type: 'error' });
+                    window.appToast(error?.message || 'Failed to export full-system backup.', { type: 'error' });
                 }
             } finally {
                 exportInProgress = false;
@@ -1558,6 +1558,194 @@ document.addEventListener('DOMContentLoaded', () => {
                     exportBtn.disabled = false;
                     exportBtn.removeAttribute('aria-busy');
                     exportBtn.setAttribute('data-tooltip', originalTooltip);
+                }
+            }
+        };
+
+        const formatBackupCount = (value) => new Intl.NumberFormat().format(Number(value || 0));
+
+        const formatBackupBytes = (value) => {
+            const bytes = Number(value || 0);
+            if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+            const amount = bytes / (1024 ** unitIndex);
+            return `${amount >= 10 || unitIndex === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[unitIndex]}`;
+        };
+
+        const requestSystemRestoreAuthorization = (preview) => new Promise((resolve) => {
+            const phrase = String(preview?.confirmationPhrase || 'RESTORE ALL DATA');
+            const archive = preview?.archive || {};
+            const current = preview?.current || {};
+            const modal = document.createElement('div');
+            modal.className = 'modal modal-blur show d-block';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-labelledby', 'systemRestoreTitle');
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+                    <form class="modal-content" autocomplete="off">
+                        <div class="modal-header">
+                            <div>
+                                <h2 class="modal-title" id="systemRestoreTitle">Restore Full-System Backup</h2>
+                                <div class="text-secondary small mt-1" data-restore-file></div>
+                            </div>
+                            <button type="button" class="btn-close" aria-label="Cancel restore" data-restore-cancel></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-danger" role="alert">
+                                <div class="fw-semibold mb-1">All current server records and uploaded files will be replaced.</div>
+                                <div class="small">A complete pre-import backup is created automatically. API and background record changes are paused during restore, and every session is signed out afterward.</div>
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-6"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Selected backup</div><div class="fw-semibold" data-restore-archive-summary></div></div></div></div>
+                                <div class="col-md-6"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Current server to replace</div><div class="fw-semibold" data-restore-current-summary></div></div></div></div>
+                            </div>
+                            <label class="form-label required" for="systemRestorePassword">Current Admin password</label>
+                            <input class="form-control mb-3" id="systemRestorePassword" type="password" autocomplete="current-password" required>
+                            <label class="form-label required" for="systemRestorePhrase">Type <span data-restore-phrase></span></label>
+                            <input class="form-control mb-3" id="systemRestorePhrase" type="text" autocomplete="off" spellcheck="false" required>
+                            <label class="form-check">
+                                <input class="form-check-input" type="checkbox" data-restore-acknowledge>
+                                <span class="form-check-label">I verified the selected archive and understand this replaces all current server records and uploads.</span>
+                            </label>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-link link-secondary" data-restore-cancel>Cancel</button>
+                            <button type="submit" class="btn btn-danger" data-restore-submit disabled>
+                                <i class="ti ti-database-import" aria-hidden="true"></i> Restore Everything
+                            </button>
+                        </div>
+                    </form>
+                </div>`;
+
+            const fileLabel = modal.querySelector('[data-restore-file]');
+            const archiveSummary = modal.querySelector('[data-restore-archive-summary]');
+            const currentSummary = modal.querySelector('[data-restore-current-summary]');
+            const phraseLabel = modal.querySelector('[data-restore-phrase]');
+            const passwordInput = modal.querySelector('#systemRestorePassword');
+            const phraseInput = modal.querySelector('#systemRestorePhrase');
+            const acknowledgeInput = modal.querySelector('[data-restore-acknowledge]');
+            const submitButton = modal.querySelector('[data-restore-submit]');
+            const form = modal.querySelector('form');
+
+            fileLabel.textContent = `${archive.fileName || 'Selected archive'} · ${String(archive.storageDriver || '').toUpperCase()} · created ${archive.createdAt ? new Date(archive.createdAt).toLocaleString() : 'unknown'}`;
+            archiveSummary.textContent = `${formatBackupCount(archive.recordCount)} records · ${formatBackupCount(archive.uploadFileCount)} files (${formatBackupBytes(archive.uploadBytes)})`;
+            currentSummary.textContent = `${formatBackupCount(current.recordCount)} records · ${formatBackupCount(current.uploadFileCount)} files (${formatBackupBytes(current.uploadBytes)})`;
+            phraseLabel.textContent = phrase;
+
+            let settled = false;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                modal.remove();
+                resolve(value);
+            };
+            const updateSubmitState = () => {
+                submitButton.disabled = !passwordInput.value
+                    || phraseInput.value.trim() !== phrase
+                    || !acknowledgeInput.checked;
+            };
+            modal.querySelectorAll('[data-restore-cancel]').forEach((button) => {
+                button.addEventListener('click', () => finish(null));
+            });
+            [passwordInput, phraseInput, acknowledgeInput].forEach((input) => {
+                input.addEventListener('input', updateSubmitState);
+                input.addEventListener('change', updateSubmitState);
+            });
+            modal.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') event.preventDefault();
+            });
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                updateSubmitState();
+                if (submitButton.disabled) return;
+                finish({
+                    password: passwordInput.value,
+                    confirmation: phraseInput.value.trim(),
+                    acknowledgeReplacement: acknowledgeInput.checked
+                });
+            });
+            document.body.appendChild(modal);
+            window.setTimeout(() => passwordInput.focus({ preventScroll: true }), 0);
+        });
+
+        const triggerSystemBackupRestore = async (file) => {
+            if (!file || importInProgress) return;
+            importInProgress = true;
+            const originalTooltip = importBtn?.getAttribute('data-tooltip') || 'Import';
+            if (importBtn) {
+                importBtn.disabled = true;
+                importBtn.setAttribute('aria-busy', 'true');
+                importBtn.setAttribute('data-tooltip', 'Validating backup...');
+            }
+            try {
+                const previewResponse = await fetch('/api/system-backup/preview', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        'X-Backup-Filename': encodeURIComponent(file.name || 'backup.isp-backup.zip')
+                    },
+                    body: file
+                });
+                let preview = null;
+                try {
+                    preview = await previewResponse.json();
+                } catch {
+                    preview = null;
+                }
+                if (!previewResponse.ok) {
+                    throw new Error(preview?.error || `Backup validation failed (${previewResponse.status})`);
+                }
+
+                const authorization = await requestSystemRestoreAuthorization(preview);
+                if (!authorization) return;
+                if (importBtn) importBtn.setAttribute('data-tooltip', 'Restoring backup...');
+                const restoreResponse = await fetch('/api/system-backup/restore', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        restoreToken: preview.restoreToken,
+                        ...authorization
+                    })
+                });
+                let result = null;
+                try {
+                    result = await restoreResponse.json();
+                } catch {
+                    result = null;
+                }
+                if (!restoreResponse.ok) {
+                    throw new Error(result?.error || `Full-system restore failed (${restoreResponse.status})`);
+                }
+                const summary = result?.summary || preview.archive || {};
+                const preImportName = result?.preImportBackup?.fileName || 'created';
+                addActivityLog({
+                    message: 'Restored full-system backup',
+                    meta: `${formatBackupCount(summary.recordCount)} records; pre-import backup ${preImportName}`
+                });
+                const message = `Restore complete: ${formatBackupCount(summary.recordCount)} records and ${formatBackupCount(summary.uploadFileCount)} uploaded files. Pre-import backup: ${preImportName}. Sign in again.`;
+                if (typeof window.appAlert === 'function') {
+                    await window.appAlert(message, { title: 'Restore Complete' });
+                } else {
+                    window.alert(message);
+                }
+                localStorage.removeItem('user-session');
+                localStorage.removeItem('auth-token');
+                window.location.href = '/login.html';
+            } catch (error) {
+                console.error('Failed to restore full-system backup:', error);
+                if (typeof window.appToast === 'function') {
+                    window.appToast(error?.message || 'Failed to restore full-system backup.', { type: 'error' });
+                }
+            } finally {
+                importInProgress = false;
+                if (importBtn) {
+                    importBtn.disabled = false;
+                    importBtn.removeAttribute('aria-busy');
+                    importBtn.setAttribute('data-tooltip', originalTooltip);
                 }
             }
         };
@@ -1639,14 +1827,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (importInputEl && importInputEl.isConnected) return importInputEl;
             importInputEl = document.createElement('input');
             importInputEl.type = 'file';
-            importInputEl.accept = '.xlsx,.xls,.json,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            importInputEl.accept = '.isp-backup.zip,.zip,.xlsx,.xls,.json,application/zip,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             importInputEl.hidden = true;
             document.body.appendChild(importInputEl);
             addListener(importInputEl, 'change', async () => {
                 const file = importInputEl.files && importInputEl.files[0] ? importInputEl.files[0] : null;
                 importInputEl.value = '';
                 if (!file) return;
-                await triggerCustomerImportUpload(file);
+                const normalizedName = String(file.name || '').toLowerCase();
+                if (normalizedName.endsWith('.zip') || file.type === 'application/zip') {
+                    await triggerSystemBackupRestore(file);
+                } else {
+                    await triggerCustomerImportUpload(file);
+                }
             });
             addCleanup(() => {
                 if (importInputEl && importInputEl.isConnected) {
@@ -1657,14 +1850,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return importInputEl;
         };
 
-        const triggerFullCustomerImport = async () => {
+        const triggerFullSystemImport = async () => {
             if (importInProgress) return;
             const confirmed = window.appConfirm
                 ? await window.appConfirm(
-                    'Import will safely upsert customers, plans, payments, tickets, jobs, SMS history/runs, and PON connections. Exact duplicates are skipped and conflicting identities stop the import. Continue?',
-                    { title: 'Import Customer Data', okText: 'Import', cancelText: 'Cancel' }
+                    'Select a full-system backup ZIP to validate and restore. Existing customer workbook files remain supported as safe merge imports.',
+                    { title: 'Import Data', okText: 'Select File', cancelText: 'Cancel' }
                 )
-                : window.confirm('Import customer data from file?');
+                : window.confirm('Select a backup or customer import file?');
             if (!confirmed) return;
             const input = ensureImportInput();
             input.click();
@@ -1701,12 +1894,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (handled) return;
 
             if (actionName === 'export') {
-                await triggerFullCustomerExport();
+                await triggerFullSystemExport();
                 return;
             }
 
             if (actionName === 'import') {
-                await triggerFullCustomerImport();
+                await triggerFullSystemImport();
                 return;
             }
 

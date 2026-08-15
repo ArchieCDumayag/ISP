@@ -56,6 +56,16 @@ const normalizeDateOnly = (value) => {
     if (!Number.isFinite(parsed.getTime())) return '';
     return parsed.toISOString().slice(0, 10);
 };
+const normalizeImportedGcashTransactionAt = (value) => {
+    const raw = String(value || '').trim();
+    const localMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (localMatch) {
+        return `${localMatch[1]}T${localMatch[2]}:${localMatch[3]}:${localMatch[4] || '00'}+08:00`;
+    }
+    if (!raw || !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return '';
+    const parsed = new Date(raw);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+};
 
 const nowDateOnly = () => new Date().toISOString().slice(0, 10);
 const currentManilaDateOnly = () => {
@@ -365,11 +375,63 @@ router.use(requireAdminWithBranch);
 
 router.get('/gcash-history', async (req, res, next) => {
     try {
+        let automaticReconciliation = {
+            autoBoundReferences: 0,
+            autoBoundRows: 0,
+            suggestedReferences: 0,
+            failedReferences: 0,
+            warnings: []
+        };
+        if (typeof paymentsRouter.reconcileExistingPaymentHistoryWithGcashTransactions === 'function') {
+            try {
+                automaticReconciliation = await paymentsRouter.reconcileExistingPaymentHistoryWithGcashTransactions({
+                    branchId: req.branchId,
+                    importedBy: req.user
+                });
+            } catch (error) {
+                automaticReconciliation.failedReferences = 1;
+                automaticReconciliation.warnings = [{
+                    reference: '',
+                    accountNumbers: [],
+                    reason: error?.message || 'Automatic Payment History reconciliation failed.',
+                    source: 'gcash-reference-reconciliation'
+                }];
+            }
+        }
         const history = await listGcashTransactionHistory({
             branchId: req.branchId,
             limit: req.query?.limit
         });
-        return res.json({ ok: true, ...history });
+        let paymentHistoryMatches = { matchesByReference: {}, exactReferences: 0, suggestedReferences: 0 };
+        if (typeof paymentsRouter.getExistingPaymentHistoryGcashMatches === 'function') {
+            try {
+                paymentHistoryMatches = await paymentsRouter.getExistingPaymentHistoryGcashMatches({
+                    branchId: req.branchId,
+                    transactions: history.transactions
+                });
+            } catch {
+                paymentHistoryMatches = { matchesByReference: {}, exactReferences: 0, suggestedReferences: 0 };
+            }
+        }
+        const transactions = history.transactions.map((transaction) => ({
+            ...transaction,
+            paymentHistoryMatch: paymentHistoryMatches.matchesByReference[
+                normalizeGcashReference(transaction.reference)
+            ] || null
+        }));
+        return res.json({
+            ok: true,
+            ...history,
+            transactions,
+            paymentHistoryReconciliation: {
+                autoBoundReferences: automaticReconciliation.autoBoundReferences,
+                autoBoundRows: automaticReconciliation.autoBoundRows,
+                exactReferences: paymentHistoryMatches.exactReferences,
+                suggestedReferences: paymentHistoryMatches.suggestedReferences,
+                failedReferences: automaticReconciliation.failedReferences,
+                warnings: automaticReconciliation.warnings
+            }
+        });
     } catch (error) {
         return next(error);
     }
@@ -393,14 +455,44 @@ router.post(
             });
             const importedCount = Number(imported.batch.importedCount) || 0;
             const duplicateCount = Number(imported.duplicateCount) || 0;
+            let reconciliation = {
+                autoBoundReferences: 0,
+                autoBoundRows: 0,
+                suggestedReferences: 0,
+                failedReferences: 0,
+                warnings: []
+            };
+            if (typeof paymentsRouter.reconcileExistingPaymentHistoryWithGcashTransactions === 'function') {
+                try {
+                    reconciliation = await paymentsRouter.reconcileExistingPaymentHistoryWithGcashTransactions({
+                        branchId: req.branchId,
+                        importedBy: req.user
+                    });
+                } catch (error) {
+                    reconciliation.failedReferences = 1;
+                    reconciliation.warnings = [{
+                        reference: '',
+                        accountNumbers: [],
+                        reason: error?.message || 'Payment History reconciliation failed.',
+                        source: 'gcash-reference-reconciliation'
+                    }];
+                }
+            }
+            const autoBoundMessage = reconciliation.autoBoundReferences > 0
+                ? ` ${reconciliation.autoBoundReferences} exact Payment History reference(s) auto-bound.`
+                : '';
+            const suggestionMessage = reconciliation.suggestedReferences > 0
+                ? ` ${reconciliation.suggestedReferences} same-reference record(s) require Admin review.`
+                : '';
             return res.status(importedCount > 0 ? 201 : 200).json({
                 ok: true,
-                message: `${importedCount} official GCash transaction(s) imported; ${duplicateCount} existing reference(s) skipped.`,
+                message: `${importedCount} official GCash transaction(s) imported; ${duplicateCount} existing reference(s) skipped.${autoBoundMessage}${suggestionMessage}`,
                 batch: imported.batch,
                 duplicateCount,
                 conflictingDuplicateCount: imported.conflictingDuplicateCount,
                 duplicateFile: imported.duplicateFile,
-                batchRecorded: imported.batchRecorded
+                batchRecorded: imported.batchRecorded,
+                paymentHistoryReconciliation: reconciliation
             });
         } catch (error) {
             return next(error);
@@ -480,6 +572,13 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
         if (String(transaction.status || '').toLowerCase() !== 'received' || importedAmount == null || importedAmount <= 0) {
             const error = createError(409, 'Only an imported incoming GCash credit can be posted as a payment.');
             error.code = 'GCASH_INCOMING_CREDIT_REQUIRED';
+            throw error;
+        }
+        const officialTransactionAt = normalizeImportedGcashTransactionAt(transaction.transactionAt);
+        const officialPaymentDate = normalizeDateOnly(transaction.transactionDate || officialTransactionAt);
+        if (!officialTransactionAt || !officialPaymentDate) {
+            const error = createError(409, 'The imported GCash record is missing its official transaction date and time.');
+            error.code = 'GCASH_TRANSACTION_TIMESTAMP_REQUIRED';
             throw error;
         }
         if (confirmedAmount == null || Math.abs(confirmedAmount - importedAmount) > 0.009) {
@@ -617,7 +716,7 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
                 submissionId,
                 allocations: resolvedAllocations,
                 amount: importedAmount,
-                paymentDate: postingDate,
+                paymentDate: officialPaymentDate,
                 claimedBy: reviewer
             });
             claimCreated = !claimedGcash.idempotent;
@@ -643,7 +742,9 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
                     : `Imported GCash payment allocation ${index + 1} of ${resolvedAllocations.length} posted to current billing cycle ${allocation.billingMonth}`
             })),
             reference,
-            date: postingDate,
+            date: officialPaymentDate,
+            paymentReceivedAt: officialTransactionAt,
+            postingDate,
             reviewer,
             payer: toSafeText(transaction.sender, 80) || 'GCash sender'
         });

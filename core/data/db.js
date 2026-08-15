@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getStorageDriver, isMysqlStorageMode } = require('../config/storage-mode');
 const { DATA_DIR } = require('../runtime/paths');
+const { assertDataWritesAllowed } = require('../runtime/maintenance-state');
 
 let mysql = null;
 let pool = null;
@@ -304,6 +305,9 @@ async function getPool() {
 }
 
 async function query(sql, params) {
+  if (/^\s*(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|TRUNCATE|RENAME|LOAD|CALL|GRANT|REVOKE)\b/i.test(String(sql || ''))) {
+    assertDataWritesAllowed();
+  }
   const activePool = await getPool();
   if (!activePool) {
     throw new Error(

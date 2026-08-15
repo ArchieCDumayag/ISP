@@ -18,6 +18,7 @@ const backendPairs = [
   ['billing-scheduler.js', 'billing-scheduler'],
   ['disconnection-store.js', 'disconnection-store'],
   ['disconnections.js', 'disconnections'],
+  ['first-bill-adjustment-transfer.js', 'first-bill-adjustment-transfer'],
   ['payment-breakdown-balance.js', 'payment-breakdown-balance'],
   ['payment-confirmation-queue-store.js', 'payment-confirmation-queue-store'],
   ['payment-confirmations.js', 'payment-confirmations'],

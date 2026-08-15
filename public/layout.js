@@ -1794,6 +1794,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     `SMS: ${Number(imported.sms_messages || 0)}`,
                     `SMS runs: ${Number(imported.sms_automation_runs || 0)}`,
                     `PON: ${Number(imported.pon_nap_connections || 0)}`,
+                    `First-bill adjustments: ${Number(imported.payment_breakdown_adjustments || 0)}`,
                     `Duplicates skipped: ${duplicateCount}`
                 ].join(' | ');
 

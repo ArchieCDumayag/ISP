@@ -157,8 +157,9 @@ assert(serverSource.includes("readJson('sms_messages', [])"));
 assert(serverSource.includes("readJson('sms_automation_runs', [])"));
 assert(serverSource.includes("readJson('pon-state', {})"));
 assert(serverSource.includes("appendSheet('pon_state', ponStateRows)"));
+assert(serverSource.includes("appendSheet('payment_breakdown_adjustments', firstBillAdjustmentRows)"));
 assert(serverSource.includes('const exportIntegrity = deduplicateCustomerFullTables({'));
-assert(serverSource.includes('backup_schema_version: 2'));
+assert(serverSource.includes('backup_schema_version: 3'));
 assert(serverSource.includes('duplicatesSkipped.payment_entries += 1'));
 assert(serverSource.includes('CUSTOMER_MANAGEMENT_WEB_ROOT'));
 assert(!serverSource.includes("path.join(__dirname, 'public', 'customer-draft-queue.html')"));
@@ -248,7 +249,16 @@ const jsonImportResult = buildCustomerFullJsonImport({
     jobs: [],
     sms_messages: [],
     sms_automation_runs: [],
-    'pon-state': {}
+    'pon-state': {},
+    payment_breakdown_adjustments: {
+      1: {
+        100000001: {
+          firstBill: { previousBalance: 900 },
+          planChanges: [{ effectiveMonth: '2026-08', planAmount: 1200 }],
+          updatedAt: '2026-08-01T00:00:00.000Z'
+        }
+      }
+    }
   },
   tables: {
     plans: [
@@ -269,6 +279,18 @@ const jsonImportResult = buildCustomerFullJsonImport({
         recorded_at: '2026-07-29T08:00:00.000Z'
       },
       { id: 'payment-missing-customer', account_number: '999999999', amount: 50 }
+    ],
+    payment_breakdown_adjustments: [
+      {
+        account_number: '100000001',
+        first_bill_previous_balance: 500,
+        first_bill_advance: 25
+      },
+      {
+        account_number: '100000002',
+        previous_balance: 150,
+        advance_payment: 40
+      }
     ],
     tickets: [{ id: 1, account_number: '100000001', subject: 'No Internet' }],
     jobs: [{ id: 2, ticket_id: 1, type: 'repair', status: 'open' }],
@@ -315,6 +337,7 @@ assert.strictEqual(jsonImportResult.imported.jobs, 1);
 assert.strictEqual(jsonImportResult.imported.sms_messages, 1);
 assert.strictEqual(jsonImportResult.imported.sms_automation_runs, 1);
 assert.strictEqual(jsonImportResult.imported.pon_nap_connections, 1);
+assert.strictEqual(jsonImportResult.imported.payment_breakdown_adjustments, 2);
 assert.deepStrictEqual(jsonImportResult.touchedKeys, [
   'plans',
   'customers',
@@ -323,7 +346,8 @@ assert.deepStrictEqual(jsonImportResult.touchedKeys, [
   'jobs',
   'sms_messages',
   'sms_automation_runs',
-  'pon-state'
+  'pon-state',
+  'payment_breakdown_adjustments'
 ]);
 const updatedCustomer = jsonImportResult.stores.customers.find((customer) => customer.accountNumber === '100000001');
 assert.strictEqual(updatedCustomer.name, 'Updated Name');
@@ -345,6 +369,22 @@ assert.strictEqual(
   jsonImportResult.stores['pon-state'].branches['1'].naps[0].connections[0].customerId,
   '100000001'
 );
+assert.strictEqual(
+  jsonImportResult.stores.payment_breakdown_adjustments['1']['100000001'].firstBill.previousBalance,
+  900
+);
+assert.strictEqual(
+  jsonImportResult.stores.payment_breakdown_adjustments['1']['100000001'].firstBill.advance,
+  25
+);
+assert.strictEqual(
+  jsonImportResult.stores.payment_breakdown_adjustments['1']['100000001'].planChanges[0].planAmount,
+  1200
+);
+assert.deepStrictEqual(
+  jsonImportResult.stores.payment_breakdown_adjustments['1']['100000002'].firstBill,
+  { previousBalance: 150, advance: 40 }
+);
 assert(jsonImportResult.warnings.some((message) => message.includes('account number is missing')));
 assert(jsonImportResult.warnings.some((message) => message.includes('999999999')));
 
@@ -360,7 +400,19 @@ const repeatedJsonImportResult = buildCustomerFullJsonImport({
       amount: 75,
       kind: 'payment',
       recorded_at: '2026-07-29T08:00:00.000Z'
-    }]
+    }],
+    payment_breakdown_adjustments: [
+      {
+        account_number: '100000001',
+        first_bill_previous_balance: 500,
+        first_bill_advance: 25
+      },
+      {
+        account_number: '100000002',
+        previous_balance: 150,
+        advance_payment: 40
+      }
+    ]
   }
 });
 assert.strictEqual(
@@ -370,6 +422,38 @@ assert.strictEqual(
 assert.strictEqual(
   repeatedJsonImportResult.stores.payments['100000001'].history.filter((entry) => entry.id === 'payment-replaced').length,
   1
+);
+assert.strictEqual(repeatedJsonImportResult.imported.payment_breakdown_adjustments, 0);
+assert.strictEqual(repeatedJsonImportResult.duplicatesSkipped.payment_breakdown_adjustments, 2);
+
+const adjustmentTransfer = loadModuleBackend('billing', { required: true, fresh: true })
+  .load('firstBillAdjustmentTransfer');
+assert.deepStrictEqual(
+  adjustmentTransfer.extractLegacyFirstBillAdjustmentRows([{
+    accountNumber: '100000003',
+    firstBillAdjustment: { previousBalance: '320.50', advance: '80' }
+  }]),
+  [{
+    account_number: '100000003',
+    first_bill_previous_balance: 320.5,
+    first_bill_advance: 80
+  }]
+);
+assert.deepStrictEqual(
+  adjustmentTransfer.buildFirstBillAdjustmentExportRows({
+    branchId: 1,
+    accountNumbers: ['100000001'],
+    adjustments: jsonImportResult.stores.payment_breakdown_adjustments
+  }).map((row) => ({
+    account_number: row.account_number,
+    first_bill_previous_balance: row.first_bill_previous_balance,
+    first_bill_advance: row.first_bill_advance
+  })),
+  [{
+    account_number: '100000001',
+    first_bill_previous_balance: 900,
+    first_bill_advance: 25
+  }]
 );
 
 const existingPaymentDuplicateResult = buildCustomerFullJsonImport({
@@ -429,6 +513,7 @@ const webAppSource = fs.readFileSync(path.join(projectRoot, 'web-app/src/index.h
 assert(webAppSource.includes('../../Features/modules/customer-management/web/css/customers.css'));
 const layoutSource = fs.readFileSync(path.join(projectRoot, 'public/layout.js'), 'utf8');
 assert(layoutSource.includes('SMS runs: ${Number(imported.sms_automation_runs || 0)}'));
+assert(layoutSource.includes('First-bill adjustments: ${Number(imported.payment_breakdown_adjustments || 0)}'));
 assert(layoutSource.includes('PON: ${Number(imported.pon_nap_connections || 0)}'));
 assert(layoutSource.includes('Duplicates skipped: ${duplicateCount}'));
 assert(layoutSource.includes("fetch('/api/system-backup/export'"));

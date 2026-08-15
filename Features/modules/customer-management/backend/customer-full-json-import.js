@@ -1,4 +1,7 @@
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const {
+    mergeFirstBillAdjustmentRows
+} = require('../../billing/backend/first-bill-adjustment-transfer');
 
 const STORE_KEYS = Object.freeze({
     customers: 'customers',
@@ -8,7 +11,8 @@ const STORE_KEYS = Object.freeze({
     jobs: 'jobs',
     smsMessages: 'sms_messages',
     smsAutomationRuns: 'sms_automation_runs',
-    ponState: 'pon-state'
+    ponState: 'pon-state',
+    paymentBreakdownAdjustments: 'payment_breakdown_adjustments'
 });
 
 const IMPORTED_TEMPLATE = Object.freeze({
@@ -19,7 +23,8 @@ const IMPORTED_TEMPLATE = Object.freeze({
     jobs: 0,
     sms_messages: 0,
     sms_automation_runs: 0,
-    pon_nap_connections: 0
+    pon_nap_connections: 0,
+    payment_breakdown_adjustments: 0
 });
 
 const CUSTOMER_FULL_TABLE_NAMES = Object.freeze([
@@ -31,7 +36,8 @@ const CUSTOMER_FULL_TABLE_NAMES = Object.freeze([
     'sms_messages',
     'sms_automation_runs',
     'pon_nap_connections',
-    'pon_state'
+    'pon_state',
+    'payment_breakdown_adjustments'
 ]);
 
 const DUPLICATES_TEMPLATE = Object.freeze(Object.fromEntries(
@@ -84,7 +90,8 @@ const primaryIdentityForImportRow = (tableName, row = {}) => {
         sms_messages: ['id'],
         sms_automation_runs: ['id'],
         pon_nap_connections: ['id'],
-        pon_state: ['chunk_index', 'chunkIndex']
+        pon_state: ['chunk_index', 'chunkIndex'],
+        payment_breakdown_adjustments: ['account_number', 'accountNumber']
     };
     const keys = identities[tableName] || [];
     const raw = keys.map((key) => row?.[key]).find((value) => identityText(value));
@@ -698,6 +705,18 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
         }
     });
 
+    const firstBillMerge = mergeFirstBillAdjustmentRows({
+        adjustments: stores.payment_breakdown_adjustments,
+        branchId: scopedBranchId,
+        rows: asRows(importTables.payment_breakdown_adjustments),
+        validAccountNumbers: [...branchAccounts.keys()],
+        now
+    });
+    imported.payment_breakdown_adjustments = firstBillMerge.imported;
+    duplicatesSkipped.payment_breakdown_adjustments += firstBillMerge.skipped;
+    firstBillMerge.warnings.forEach(pushWarning);
+    const paymentBreakdownAdjustments = firstBillMerge.adjustments;
+
     const sourcePayments = stores.payments && typeof stores.payments === 'object' && !Array.isArray(stores.payments)
         ? stores.payments
         : {};
@@ -892,7 +911,8 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             jobs,
             sms_messages: smsMessages,
             sms_automation_runs: smsAutomationRuns,
-            'pon-state': ponState
+            'pon-state': ponState,
+            payment_breakdown_adjustments: paymentBreakdownAdjustments
         },
         imported,
         duplicatesSkipped,
@@ -907,7 +927,8 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             ...(imported.jobs ? [STORE_KEYS.jobs] : []),
             ...(imported.sms_messages ? [STORE_KEYS.smsMessages] : []),
             ...(imported.sms_automation_runs ? [STORE_KEYS.smsAutomationRuns] : []),
-            ...(ponStateTouched ? [STORE_KEYS.ponState] : [])
+            ...(ponStateTouched ? [STORE_KEYS.ponState] : []),
+            ...(imported.payment_breakdown_adjustments ? [STORE_KEYS.paymentBreakdownAdjustments] : [])
         ]
     };
 };
@@ -919,7 +940,7 @@ const importCustomerFullJsonData = async ({
     readStore = readJson,
     writeStore = writeJson
 } = {}) => {
-    const [customers, plans, payments, tickets, jobs, smsMessages, smsAutomationRuns, ponState] = await Promise.all([
+    const [customers, plans, payments, tickets, jobs, smsMessages, smsAutomationRuns, ponState, paymentBreakdownAdjustments] = await Promise.all([
         readStore(STORE_KEYS.customers, []),
         readStore(STORE_KEYS.plans, []),
         readStore(STORE_KEYS.payments, {}),
@@ -927,7 +948,8 @@ const importCustomerFullJsonData = async ({
         readStore(STORE_KEYS.jobs, []),
         readStore(STORE_KEYS.smsMessages, []),
         readStore(STORE_KEYS.smsAutomationRuns, []),
-        readStore(STORE_KEYS.ponState, {})
+        readStore(STORE_KEYS.ponState, {}),
+        readStore(STORE_KEYS.paymentBreakdownAdjustments, {})
     ]);
     const result = buildCustomerFullJsonImport({
         branchId,
@@ -940,7 +962,8 @@ const importCustomerFullJsonData = async ({
             jobs,
             sms_messages: smsMessages,
             sms_automation_runs: smsAutomationRuns,
-            'pon-state': ponState
+            'pon-state': ponState,
+            payment_breakdown_adjustments: paymentBreakdownAdjustments
         },
         now
     });
@@ -952,7 +975,8 @@ const importCustomerFullJsonData = async ({
         jobs,
         sms_messages: smsMessages,
         sms_automation_runs: smsAutomationRuns,
-        'pon-state': ponState
+        'pon-state': ponState,
+        payment_breakdown_adjustments: paymentBreakdownAdjustments
     };
     const writtenKeys = [];
     try {

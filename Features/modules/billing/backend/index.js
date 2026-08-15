@@ -2,6 +2,7 @@ const entries = Object.freeze({
   billingScheduler: './billing-scheduler',
   disconnectionStore: './disconnection-store',
   disconnections: './disconnections',
+  firstBillAdjustmentTransfer: './first-bill-adjustment-transfer',
   paymentBreakdownBalance: './payment-breakdown-balance',
   paymentConfirmationQueueStore: './payment-confirmation-queue-store',
   paymentConfirmations: './payment-confirmations',

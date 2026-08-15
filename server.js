@@ -53,6 +53,11 @@ const {
     importCustomerFullJsonData
 } = customerManagementBackend.load('customerFullJsonImport');
 const paymentRecordsRouter = billingBackend.load('paymentRecords');
+const {
+    buildFirstBillAdjustmentExportRows,
+    extractLegacyFirstBillAdjustmentRows,
+    mergeFirstBillAdjustmentRows
+} = billingBackend.load('firstBillAdjustmentTransfer');
 const disconnectionsRouter = billingBackend.load('disconnections');
 const referralsRouter = customerManagementBackend.load('referrals');
 const coverageRouter = customerManagementBackend.load('coverage');
@@ -1589,6 +1594,13 @@ const toNonEmptyString = (value) => {
     const text = String(value == null ? '' : value).trim();
     return text || '';
 };
+const resolveMysqlStoreTableName = () => {
+    const tableName = String(process.env.MYSQL_STORE_TABLE || 'app_store').trim() || 'app_store';
+    if (!/^[A-Za-z0-9_]+$/.test(tableName)) {
+        throw new Error('MYSQL_STORE_TABLE contains unsupported characters.');
+    }
+    return tableName;
+};
 const toNullableString = (value) => {
     const text = toNonEmptyString(value);
     return text || null;
@@ -1650,8 +1662,15 @@ const loadExportTablesFromWorkbook = (workbook) => {
         }
         return [];
     };
+    const customers = readSheet('customers', 'customer_all_data', 'customers_full');
+    const explicitFirstBillAdjustments = readSheet('payment_breakdown_adjustments');
+    const legacyFirstBillAdjustments = extractLegacyFirstBillAdjustmentRows([
+        ...readSheet('customers'),
+        ...readSheet('customer_all_data'),
+        ...readSheet('customers_full')
+    ]);
     return {
-        customers: readSheet('customers', 'customer_all_data', 'customers_full'),
+        customers,
         plans: readSheet('plans'),
         payment_entries: readSheet('payment_entries'),
         tickets: readSheet('tickets'),
@@ -1659,7 +1678,10 @@ const loadExportTablesFromWorkbook = (workbook) => {
         sms_messages: readSheet('sms_messages'),
         sms_automation_runs: readSheet('sms_automation_runs'),
         pon_nap_connections: readSheet('pon_nap_connections'),
-        pon_state: readSheet('pon_state')
+        pon_state: readSheet('pon_state'),
+        payment_breakdown_adjustments: explicitFirstBillAdjustments.length
+            ? explicitFirstBillAdjustments
+            : legacyFirstBillAdjustments
     };
 };
 const parseImportTablesFromBuffer = (buffer, filename = '') => {
@@ -1676,10 +1698,14 @@ const parseImportTablesFromBuffer = (buffer, filename = '') => {
         if (!tablesRoot || typeof tablesRoot !== 'object') {
             throw new Error('Invalid JSON import format.');
         }
+        const customers = ensureArrayOfObjects(tablesRoot.customers);
+        const explicitFirstBillAdjustments = ensureArrayOfObjects(
+            tablesRoot.payment_breakdown_adjustments || tablesRoot.paymentBreakdownAdjustments
+        );
         return {
             source: 'json',
             tables: {
-                customers: ensureArrayOfObjects(tablesRoot.customers),
+                customers,
                 plans: ensureArrayOfObjects(tablesRoot.plans),
                 payment_entries: ensureArrayOfObjects(tablesRoot.payment_entries || tablesRoot.payments),
                 tickets: ensureArrayOfObjects(tablesRoot.tickets),
@@ -1687,7 +1713,10 @@ const parseImportTablesFromBuffer = (buffer, filename = '') => {
                 sms_messages: ensureArrayOfObjects(tablesRoot.sms_messages),
                 sms_automation_runs: ensureArrayOfObjects(tablesRoot.sms_automation_runs),
                 pon_nap_connections: ensureArrayOfObjects(tablesRoot.pon_nap_connections),
-                pon_state: ensureArrayOfObjects(tablesRoot.pon_state)
+                pon_state: ensureArrayOfObjects(tablesRoot.pon_state),
+                payment_breakdown_adjustments: explicitFirstBillAdjustments.length
+                    ? explicitFirstBillAdjustments
+                    : extractLegacyFirstBillAdjustmentRows(customers)
             }
         };
     };
@@ -6498,6 +6527,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         let smsAutomationRuns = [];
         let ponNapConnections = [];
         let ponStateRows = [];
+        let firstBillAdjustmentRows = [];
 
         if (isJsonStorageMode()) {
             const jsonExportData = await readJsonCustomerFullExportData(branchId);
@@ -6530,6 +6560,11 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
                 .map((entry) => String(entry?.account_number || '').trim())
                 .filter(Boolean)
         )];
+        firstBillAdjustmentRows = buildFirstBillAdjustmentExportRows({
+            adjustments: await readJson('payment_breakdown_adjustments', {}),
+            branchId,
+            accountNumbers
+        });
 
         if (!isJsonStorageMode()) {
             const [loadedPlanRows] = await query(
@@ -6617,7 +6652,8 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
             sms_messages: smsMessages,
             sms_automation_runs: smsAutomationRuns,
             pon_nap_connections: ponNapConnections,
-            pon_state: ponStateRows
+            pon_state: ponStateRows,
+            payment_breakdown_adjustments: firstBillAdjustmentRows
         });
         if (exportIntegrity.conflictCount) {
             return res.status(409).json({
@@ -6636,6 +6672,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         smsAutomationRuns = exportIntegrity.tables.sms_automation_runs;
         ponNapConnections = exportIntegrity.tables.pon_nap_connections;
         ponStateRows = exportIntegrity.tables.pon_state;
+        firstBillAdjustmentRows = exportIntegrity.tables.payment_breakdown_adjustments;
 
         const paymentsByAccount = groupRowsByKey(paymentEntries, 'account_number');
         const ticketsByAccount = groupRowsByKey(tickets, 'account_number');
@@ -6757,7 +6794,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         };
 
         appendSheet('metadata', [{
-            backup_schema_version: 2,
+            backup_schema_version: 3,
             exported_at: exportedAt,
             branch_id: branch?.id || branchId,
             branch_name: branch?.name || '',
@@ -6776,6 +6813,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
             sms_automation_runs: smsAutomationRuns.length,
             pon_nap_connections: ponNapConnections.length,
             pon_state_rows: ponStateRows.length,
+            payment_breakdown_adjustments: firstBillAdjustmentRows.length,
             duplicate_rows_removed: exportIntegrity.duplicateCount,
             import_identity_policy: 'upsert stable IDs; skip exact duplicates; reject conflicting identities'
         }]);
@@ -6793,6 +6831,7 @@ app.get('/api/export/customers-full', requireAuth, async (req, res) => {
         appendSheet('sms_automation_runs', smsAutomationRuns);
         appendSheet('pon_nap_connections', ponNapConnections);
         appendSheet('pon_state', ponStateRows);
+        appendSheet('payment_breakdown_adjustments', firstBillAdjustmentRows);
 
         const workbookBuffer = xlsxModule.write(workbook, {
             type: 'buffer',
@@ -6875,6 +6914,7 @@ app.post(
         const importSmsAutomationRuns = ensureArrayOfObjects(tables.sms_automation_runs);
         const importPonConnections = ensureArrayOfObjects(tables.pon_nap_connections);
         const importPonState = ensureArrayOfObjects(tables.pon_state);
+        const importFirstBillAdjustments = ensureArrayOfObjects(tables.payment_breakdown_adjustments);
 
         if (
             !importCustomers.length &&
@@ -6884,7 +6924,8 @@ app.post(
             !importSmsMessages.length &&
             !importSmsAutomationRuns.length &&
             !importPonConnections.length &&
-            !importPonState.length
+            !importPonState.length &&
+            !importFirstBillAdjustments.length
         ) {
             return res.status(400).json({
                 ok: false,
@@ -6900,7 +6941,8 @@ app.post(
             jobs: 0,
             sms_messages: 0,
             sms_automation_runs: 0,
-            pon_nap_connections: 0
+            pon_nap_connections: 0,
+            payment_breakdown_adjustments: 0
         };
         const duplicatesSkipped = { ...importIntegrity.duplicatesSkipped };
         const warnings = [];
@@ -6946,6 +6988,9 @@ app.post(
 
         let connection = null;
         try {
+            if (importFirstBillAdjustments.length) {
+                await readJson('payment_breakdown_adjustments', {});
+            }
             const pool = await getPool();
             if (!pool) {
                 return res.status(503).json({
@@ -7107,6 +7152,10 @@ app.post(
                 const account = toNonEmptyString(pickRowValue(row, ['customer_account_number', 'customerAccountNumber', 'account_number', 'accountNumber']));
                 if (account) referencedAccounts.add(account);
             });
+            importFirstBillAdjustments.forEach((row) => {
+                const account = toNonEmptyString(pickRowValue(row, ['account_number', 'accountNumber', 'customer_account_number', 'customerAccountNumber']));
+                if (account) referencedAccounts.add(account);
+            });
 
             const toCheck = [...referencedAccounts].filter((account) => !importedAccounts.has(account));
             for (const chunk of chunkArray(toCheck, 200)) {
@@ -7117,6 +7166,46 @@ app.post(
                     [branchId, ...chunk]
                 );
                 (rows || []).forEach((row) => importedAccounts.add(String(row.account_number || '').trim()));
+            }
+
+            if (importFirstBillAdjustments.length) {
+                const storeTableName = resolveMysqlStoreTableName();
+                await connection.query(
+                    `INSERT IGNORE INTO \`${storeTableName}\` (store_key, payload) VALUES (?, ?)`,
+                    ['payment_breakdown_adjustments', '{}']
+                );
+                const [storeRows] = await connection.query(
+                    `SELECT payload FROM \`${storeTableName}\` WHERE store_key = ? LIMIT 1 FOR UPDATE`,
+                    ['payment_breakdown_adjustments']
+                );
+                let storedAdjustments = {};
+                try {
+                    storedAdjustments = storeRows?.[0]?.payload
+                        ? JSON.parse(storeRows[0].payload)
+                        : {};
+                } catch {
+                    throw new Error('The existing first-bill adjustment store is invalid; import stopped without changing records.');
+                }
+                const firstBillMerge = mergeFirstBillAdjustmentRows({
+                    adjustments: storedAdjustments,
+                    branchId,
+                    rows: importFirstBillAdjustments,
+                    validAccountNumbers: [...importedAccounts],
+                    now: new Date(`${nowDateTime.replace(' ', 'T')}Z`)
+                });
+                imported.payment_breakdown_adjustments = firstBillMerge.imported;
+                duplicatesSkipped.payment_breakdown_adjustments = Number(
+                    duplicatesSkipped.payment_breakdown_adjustments || 0
+                ) + firstBillMerge.skipped;
+                firstBillMerge.warnings.forEach(pushWarning);
+                if (firstBillMerge.imported) {
+                    await connection.query(
+                        `INSERT INTO \`${storeTableName}\` (store_key, payload)
+                         VALUES (?, ?)
+                         ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = CURRENT_TIMESTAMP`,
+                        ['payment_breakdown_adjustments', JSON.stringify(firstBillMerge.adjustments)]
+                    );
+                }
             }
 
             const [existingPaymentIdentityRows] = await connection.query(

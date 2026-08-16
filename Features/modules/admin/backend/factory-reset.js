@@ -30,7 +30,9 @@ const STORE_RESETTERS = Object.freeze({
     updatedAt: now
   }),
   'billing-clock-guard': () => ({}),
+  collector_client_exclusions: (now) => ({ version: 1, branches: {}, updatedAt: now }),
   collector_followups: (now) => ({ records: [], updatedAt: now }),
+  collector_priority_assignments: (now) => ({ records: [], updatedAt: now }),
   collector_remittances: (now) => ({ records: [], updatedAt: now }),
   collectors: () => ({ assignments: {} }),
   coverage: () => [],

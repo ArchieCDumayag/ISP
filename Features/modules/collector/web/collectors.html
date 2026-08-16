@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.12">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.16">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -37,6 +37,25 @@
                     </div>
                 </header>
 
+                <nav class="card collector-workspace-tabs" aria-label="Collector workspace views">
+                    <div class="nav nav-tabs card-header-tabs" role="tablist">
+                        <button class="nav-link active" type="button" role="tab" id="collectorOperationsTab" data-collector-workspace-tab="operations" aria-controls="collectorOperationsPanel" aria-selected="true">
+                            <i class="ti ti-layout-dashboard" aria-hidden="true"></i>
+                            <span>Operations</span>
+                        </button>
+                        <button class="nav-link" type="button" role="tab" id="collectorPaymentsRemittanceTab" data-collector-workspace-tab="payments" aria-controls="collectorPaymentsRemittancePanel" aria-selected="false">
+                            <i class="ti ti-cash-banknote" aria-hidden="true"></i>
+                            <span>Payments &amp; Remittance</span>
+                        </button>
+                        <button class="nav-link" type="button" role="tab" id="collectorExcludedClientsTab" data-collector-workspace-tab="excluded" aria-controls="collectorExcludedClientsPanel" aria-selected="false">
+                            <i class="ti ti-user-off" aria-hidden="true"></i>
+                            <span>Excluded Clients</span>
+                            <span class="badge bg-secondary-lt text-secondary" id="collectorExcludedTabCount">0</span>
+                        </button>
+                    </div>
+                </nav>
+
+                <div class="collector-workspace-panel" id="collectorOperationsPanel" role="tabpanel" aria-labelledby="collectorOperationsTab">
                 <section class="card collectors-kpi-grid" aria-label="Collector operations summary">
                     <article class="collectors-kpi-card">
                         <span class="avatar bg-primary-lt text-primary" aria-hidden="true"><i class="ti ti-users"></i></span>
@@ -248,7 +267,7 @@
                         </section>
                     </div>
 
-                    <aside class="collectors-side-column" aria-label="Customer payment approval, cash remittance, and collector assignments">
+                    <aside class="collectors-side-column" aria-label="Collector assignments">
                         <section class="card collectors-board collectors-section-card collectors-payments-card" aria-labelledby="collectorApprovalTitle">
                             <div class="card-status-top bg-warning"></div>
                             <div class="collector-approval-panel">
@@ -348,6 +367,7 @@
                                     <button class="btn btn-sm btn-primary" type="button" data-collector-remittance-filter="pending" aria-pressed="true">Pending <span id="collectorRemittancePendingCount">0</span></button>
                                     <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="remitted" aria-pressed="false">Remitted <span id="collectorRemittanceCompletedCount">0</span></button>
                                     <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="rejected" aria-pressed="false">Rejected <span id="collectorRemittanceRejectedCount">0</span></button>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="archived" aria-pressed="false">Archived <span id="collectorRemittanceArchivedCount">0</span></button>
                                 </div>
                                 <div class="collector-remittance-list" id="collectorRemittanceList" role="list" aria-live="polite"></div>
                                 <div class="empty-state p-3" id="collectorRemittanceEmptyState" style="display:none;">
@@ -397,7 +417,112 @@
                         </section>
                     </aside>
                 </div>
+                </div>
+
+                <section class="collector-workspace-panel" id="collectorPaymentsRemittancePanel" role="tabpanel" aria-labelledby="collectorPaymentsRemittanceTab" hidden>
+                    <div class="collector-payments-remittance-grid" id="collectorPaymentsRemittanceGrid" aria-label="Customer payment approval and collector cash remittance"></div>
+                </section>
+
+                <section class="card collectors-board collectors-section-card collector-excluded-card collector-workspace-panel" id="collectorExcludedClientsPanel" role="tabpanel" aria-labelledby="collectorExcludedClientsTab" hidden>
+                    <div class="card-status-top bg-secondary"></div>
+                    <div class="card-header collector-section-header">
+                        <div class="collector-section-heading">
+                            <span class="avatar avatar-sm bg-secondary-lt text-secondary" aria-hidden="true"><i class="ti ti-user-off"></i></span>
+                            <div>
+                                <h2 class="card-title mb-0">Excluded Clients</h2>
+                                <p class="text-secondary mb-0">Hidden from Collector App clients, maps, priority visits, receipts, and active schedules. Billing and payment records remain unchanged.</p>
+                            </div>
+                        </div>
+                        <div class="btn-list">
+                            <span class="badge bg-secondary-lt text-secondary" id="collectorExcludedCount">0 excluded</span>
+                            <button class="btn btn-outline-success btn-sm" type="button" id="collectorRestoreSelected" disabled>
+                                <i class="ti ti-user-check" aria-hidden="true"></i>
+                                <span>Restore Selected</span>
+                            </button>
+                            <button class="btn btn-primary btn-sm" type="button" id="collectorExcludeClientCreate">
+                                <i class="ti ti-user-minus" aria-hidden="true"></i>
+                                <span>Exclude Clients</span>
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" id="collectorExcludedRefresh" title="Refresh excluded clients" aria-label="Refresh excluded clients">
+                                <i class="ti ti-refresh" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body collector-excluded-toolbar">
+                        <label class="input-icon" for="collectorExcludedSearch">
+                            <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                            <input class="form-control form-control-sm" type="search" id="collectorExcludedSearch" placeholder="Search client, account, or area" autocomplete="off">
+                        </label>
+                        <span class="badge bg-success-lt text-success" id="collectorExcludedSelectedCount">0 selected</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-vcenter table-sm collectors-table collector-excluded-table">
+                            <thead>
+                                <tr>
+                                    <th class="collector-excluded-check-column">
+                                        <input class="form-check-input" type="checkbox" id="collectorExcludedSelectAll" aria-label="Select all visible excluded clients">
+                                    </th>
+                                    <th>Client</th>
+                                    <th>Area</th>
+                                    <th>Excluded by</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="collectorExcludedList"></tbody>
+                        </table>
+                        <div class="empty-state p-4" id="collectorExcludedEmptyState" hidden>
+                            <i class="ti ti-users-plus" aria-hidden="true"></i>
+                            <p>No clients are excluded from the Collector App.</p>
+                        </div>
+                    </div>
+                </section>
             </main>
+        </div>
+    </div>
+
+    <!-- Exclude or restore Collector App client visibility -->
+    <div id="collectorExclusionModal" class="modal modal-blur tabler-form-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title" id="collectorExclusionModalTitle">Exclude Clients</h2>
+                        <p class="modal-subtitle mb-0" id="collectorExclusionModalSubtitle">Selected clients will disappear after collectors log in or sync.</p>
+                    </div>
+                    <button class="btn-close" type="button" id="closeCollectorExclusionModal" aria-label="Close"></button>
+                </div>
+                <form class="tabler-modal-form" id="collectorExclusionForm">
+                    <div class="modal-body">
+                        <input type="hidden" id="collectorExclusionMode" value="exclude">
+                        <div id="collectorExclusionCustomerField">
+                            <div class="collector-exclusion-picker-heading">
+                                <label class="form-label mb-0" for="collectorExclusionCustomerSearch">Customer Accounts</label>
+                                <div class="btn-list">
+                                    <span class="badge bg-primary-lt text-primary" id="collectorExclusionSelectedCount">0 selected</span>
+                                    <button class="btn btn-outline-primary btn-sm" type="button" id="collectorExclusionSelectAllVisible">Select All Visible</button>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button" id="collectorExclusionClearSelected">Clear</button>
+                                </div>
+                            </div>
+                            <label class="input-icon mb-2" for="collectorExclusionCustomerSearch">
+                                <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
+                                <input class="form-control form-control-sm" type="search" id="collectorExclusionCustomerSearch" placeholder="Search client, account, or area" autocomplete="off">
+                            </label>
+                            <div class="collector-exclusion-customer-list" id="collectorExclusionCustomerList" role="group" aria-label="Select customer accounts"></div>
+                            <div class="form-hint">Already excluded clients are not listed.</div>
+                        </div>
+                        <div class="alert alert-info mt-3 mb-0" id="collectorExclusionRestoreSummary" hidden></div>
+                        <div class="alert alert-secondary mt-3 mb-0 py-2">Admin account, action, selected clients, date, and time are recorded automatically.</div>
+                        <p class="form-hint mt-3 mb-0" id="collectorExclusionMessage" role="status" aria-live="polite"></p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-link link-secondary btn-sm" type="button" id="cancelCollectorExclusionModal">Cancel</button>
+                        <button class="btn btn-primary btn-sm" type="submit" id="collectorExclusionSave">
+                            <i class="ti ti-user-minus" aria-hidden="true"></i>
+                            <span>Exclude Selected</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -705,7 +830,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=3.12"></script>
+    <script src="js/collectors-page.js?v=3.16"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

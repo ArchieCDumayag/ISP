@@ -12,6 +12,7 @@ const { accountHasRole } = require('../../../../core/security/role-utils');
 const paymentRecordsRouter = require('../../billing/backend/payment-records');
 const collectorReschedulesRouter = require('./collector-reschedules');
 const collectorPrioritiesRouter = require('./collector-priorities');
+const { getActiveCollectorExclusionAccountSet } = require('./collector-client-exclusions');
 const {
   notifyCollectorMutation,
   resolveCollectorPaymentMutationTopics
@@ -1722,6 +1723,9 @@ router.get('/reprint', async (req, res, next) => {
   try {
     const lookup = resolveReceiptLookup(req);
     const branchId = req.collector?.branchId || req.user?.branchId || null;
+    const excludedAccounts = req.collector
+      ? await getActiveCollectorExclusionAccountSet(branchId || '1')
+      : new Set();
     if (!branchId && await isRelationalReady()) {
       return next(createError(400, 'Branch assignment missing for the authenticated account.'));
     }
@@ -1796,6 +1800,7 @@ router.get('/reprint', async (req, res, next) => {
         const targetPayment = mapReceiptPaymentRow(row);
         if (!isReceiptPaymentEntry(targetPayment)) continue;
         const customer = buildReceiptCustomerFromRow(row);
+        if (req.collector && excludedAccounts.has(String(customer.accountNumber || '').trim())) continue;
         if (req.collector && !await isCollectorAssignedToCustomer(branchId, req.collector.id, customer)) {
           continue;
         }
@@ -1819,6 +1824,7 @@ router.get('/reprint', async (req, res, next) => {
       const accountNumber = String(customer?.accountNumber || '').trim();
       if (!accountNumber) continue;
       if (lookup.accountNumber && accountNumber !== lookup.accountNumber) continue;
+      if (req.collector && excludedAccounts.has(accountNumber)) continue;
       if (req.collector && !isJsonCollectorAssignedToCustomer(collectorId, assignments, customer)) continue;
       const rawHistory = Array.isArray(payments?.[accountNumber]?.history) ? payments[accountNumber].history : [];
       const history = rawHistory.map(mapReceiptPaymentRow);
@@ -1843,6 +1849,7 @@ router.get('/remittances', async (req, res, next) => {
     const records = Array.isArray(payload?.records) ? payload.records : [];
     const scoped = records.filter((record) => {
       if (req.collector && remittanceText(record.collectorId) !== actor.id) return false;
+      if (req.collector && record?.archivedAt) return false;
       return !actor.branchId || !record?.branchId || remittanceText(record.branchId) === remittanceText(actor.branchId);
     });
     res.json({ ok: true, records: await hydrateRemittanceRecords(scoped) });
@@ -2041,6 +2048,71 @@ router.post('/remittances/:id/reject', async (req, res, next) => {
     res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to reject remittance.'));
+  }
+});
+
+// POST /api/collector/payments/remittances/:id/archive
+// Admin-only, non-destructive archive for completed or rejected remittance records.
+router.post('/remittances/:id/archive', async (req, res, next) => {
+  try {
+    const admin = getApprovalActor(req);
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const record = records.find((item) => remittanceText(item.id) === remittanceText(req.params.id));
+    if (!record) return next(createError(404, 'Remittance not found.'));
+    if (admin?.branchId && record?.branchId && remittanceText(admin.branchId) !== remittanceText(record.branchId)) {
+      return next(createError(404, 'Remittance not found.'));
+    }
+    if (record.archivedAt) {
+      return res.json({ ok: true, replayed: true, record: await hydrateRemittanceRecord(record) });
+    }
+    if (remittanceStatus(record.status) === 'pending') {
+      return next(createError(409, 'Pending remittance cannot be archived. Complete or reject it first.'));
+    }
+
+    const actor = getRemittanceActor(req);
+    const archivedAt = new Date().toISOString();
+    const auditEntry = { action: 'archived', at: archivedAt, by: actor };
+    record.archivedAt = archivedAt;
+    record.archivedBy = actor;
+    record.archiveHistory = [...(Array.isArray(record.archiveHistory) ? record.archiveHistory : []), auditEntry];
+    record.updatedAt = archivedAt;
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: archivedAt });
+    res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to archive remittance.'));
+  }
+});
+
+// POST /api/collector/payments/remittances/:id/restore
+// Admin-only restore that preserves the archive audit history and financial record.
+router.post('/remittances/:id/restore', async (req, res, next) => {
+  try {
+    const admin = getApprovalActor(req);
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const record = records.find((item) => remittanceText(item.id) === remittanceText(req.params.id));
+    if (!record) return next(createError(404, 'Remittance not found.'));
+    if (admin?.branchId && record?.branchId && remittanceText(admin.branchId) !== remittanceText(record.branchId)) {
+      return next(createError(404, 'Remittance not found.'));
+    }
+    if (!record.archivedAt) {
+      return res.json({ ok: true, replayed: true, record: await hydrateRemittanceRecord(record) });
+    }
+
+    const actor = getRemittanceActor(req);
+    const restoredAt = new Date().toISOString();
+    const auditEntry = { action: 'restored', at: restoredAt, by: actor };
+    record.archivedAt = null;
+    record.archivedBy = null;
+    record.restoredAt = restoredAt;
+    record.restoredBy = actor;
+    record.archiveHistory = [...(Array.isArray(record.archiveHistory) ? record.archiveHistory : []), auditEntry];
+    record.updatedAt = restoredAt;
+    await writeJson(STORE_KEYS.remittances, { records, updatedAt: restoredAt });
+    res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to restore remittance.'));
   }
 });
 

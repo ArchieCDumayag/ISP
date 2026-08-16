@@ -310,6 +310,14 @@ async function run() {
     assert.equal(pendingRemittances.body.records[0].paymentSummary.rejected, 1);
 
     const remittanceId = pendingRemittances.body.records[0].id;
+    const pendingCannotArchive = await request(`/remittances/${encodeURIComponent(remittanceId)}/archive`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(pendingCannotArchive.status, 409);
+    assert.equal(stores.collector_remittances.records[0].archivedAt, undefined);
+
     const collectorCannotConfirm = await request(`/remittances/${encodeURIComponent(remittanceId)}/confirm`, {
       method: 'POST'
     });
@@ -359,6 +367,65 @@ async function run() {
     });
     assert.equal(confirmedReplay.status, 200);
     assert.equal(confirmedReplay.body.replayed, true);
+
+    const collectorCannotArchive = await request(`/remittances/${encodeURIComponent(remittanceId)}/archive`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    assert.equal(collectorCannotArchive.status, 403);
+
+    const archivedRemittance = await request(`/remittances/${encodeURIComponent(remittanceId)}/archive`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(archivedRemittance.status, 200);
+    assert.equal(archivedRemittance.body.replayed, false);
+    assert.equal(archivedRemittance.body.record.status, 'remitted');
+    assert.ok(archivedRemittance.body.record.archivedAt);
+    assert.equal(archivedRemittance.body.record.archivedBy.id, 'admin-1');
+    assert.equal(archivedRemittance.body.record.totalAmount, 2000);
+    assert.equal(archivedRemittance.body.record.payments.length, 3);
+    assert.equal(archivedRemittance.body.record.archiveHistory.length, 1);
+    assert.equal(archivedRemittance.body.record.archiveHistory[0].action, 'archived');
+
+    const collectorArchivedList = await request('/remittances');
+    assert.equal(collectorArchivedList.status, 200);
+    assert.equal(collectorArchivedList.body.records.length, 0);
+    const adminArchivedList = await request('/remittances', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(adminArchivedList.status, 200);
+    assert.equal(adminArchivedList.body.records.length, 1);
+    assert.ok(adminArchivedList.body.records[0].archivedAt);
+
+    const archivedReplay = await request(`/remittances/${encodeURIComponent(remittanceId)}/archive`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(archivedReplay.status, 200);
+    assert.equal(archivedReplay.body.replayed, true);
+    assert.equal(archivedReplay.body.record.archiveHistory.length, 1);
+
+    const restoredRemittance = await request(`/remittances/${encodeURIComponent(remittanceId)}/restore`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(restoredRemittance.status, 200);
+    assert.equal(restoredRemittance.body.replayed, false);
+    assert.equal(restoredRemittance.body.record.status, 'remitted');
+    assert.equal(restoredRemittance.body.record.archivedAt, null);
+    assert.equal(restoredRemittance.body.record.totalAmount, 2000);
+    assert.equal(restoredRemittance.body.record.payments.length, 3);
+    assert.equal(restoredRemittance.body.record.archiveHistory.length, 2);
+    assert.equal(restoredRemittance.body.record.archiveHistory[1].action, 'restored');
+    assert.equal(restoredRemittance.body.record.restoredBy.id, 'admin-1');
+
+    const collectorRestoredList = await request('/remittances');
+    assert.equal(collectorRestoredList.status, 200);
+    assert.equal(collectorRestoredList.body.records.length, 1);
 
     relationalPaymentRows.push({
       id: 'rel-pay-001',

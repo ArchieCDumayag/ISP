@@ -8,6 +8,12 @@ const {
   notifyCollectorMutation,
   subscribeCollectorLiveUpdates
 } = require('./collector-live-updates');
+const {
+  readCollectorClientExclusions,
+  excludeCollectorClients,
+  restoreCollectorClients,
+  restoreCollectorClient
+} = require('./collector-client-exclusions');
 
 const STORE_KEYS = {
   collectors: 'collectors',
@@ -53,6 +59,178 @@ const normalizeAssignmentsMap = (assignments = {}) => {
   });
   return normalized;
 };
+
+const normalizeBranchId = (value) => String(value == null ? '' : value).trim();
+const normalizeAccountNumber = (value) => String(value == null ? '' : value).trim();
+const MAX_EXCLUSION_BATCH_SIZE = 1000;
+
+function normalizeExclusionAccountNumbers(body = {}) {
+  const values = Array.isArray(body.accountNumbers) ? body.accountNumbers : [body.accountNumber];
+  return [...new Set(values.map(normalizeAccountNumber).filter(Boolean))];
+}
+
+function requireExclusionAdmin(req, res) {
+  if (!req.user || !accountHasRole(req.user, 'Admin')) {
+    res.status(403).json({ ok: false, error: 'Admin access required to manage excluded clients.' });
+    return null;
+  }
+  return req.user;
+}
+
+async function loadExclusionCustomers(req, accountNumbers) {
+  const adminBranchId = normalizeBranchId(req.user?.branchId);
+  if (await isRelationalReady()) {
+    if (!adminBranchId) {
+      const error = new Error('Branch assignment missing for this Admin account.');
+      error.status = 400;
+      throw error;
+    }
+    const placeholders = accountNumbers.map(() => '?').join(', ');
+    const [rows] = await query(
+      `SELECT account_number AS accountNumber, name, first_name AS firstName,
+              last_name AS lastName, area, branch_id AS branchId
+       FROM customers
+       WHERE branch_id = ? AND account_number IN (${placeholders})`,
+      [adminBranchId, ...accountNumbers]
+    );
+    const customersByAccount = new Map(
+      (Array.isArray(rows) ? rows : []).map((customer) => [normalizeAccountNumber(customer.accountNumber), customer])
+    );
+    const missingAccounts = accountNumbers.filter((accountNumber) => !customersByAccount.has(accountNumber));
+    if (missingAccounts.length) {
+      const error = new Error('Customer was not found in this branch.');
+      error.status = 404;
+      throw error;
+    }
+    return {
+      branchId: adminBranchId,
+      targets: accountNumbers.map((accountNumber) => ({
+        accountNumber,
+        customer: customersByAccount.get(accountNumber)
+      }))
+    };
+  }
+
+  const payload = await readJson(STORE_KEYS.customers, []);
+  const customers = Array.isArray(payload) ? payload : (Array.isArray(payload?.customers) ? payload.customers : []);
+  const customersByAccount = new Map();
+  customers.forEach((item) => {
+    const accountNumber = normalizeAccountNumber(item?.accountNumber);
+    if (!accountNumbers.includes(accountNumber)) return;
+    const customerBranchId = normalizeBranchId(item?.branchId);
+    if (!adminBranchId || !customerBranchId || customerBranchId === adminBranchId) {
+      customersByAccount.set(accountNumber, item);
+    }
+  });
+  const missingAccounts = accountNumbers.filter((accountNumber) => !customersByAccount.has(accountNumber));
+  if (missingAccounts.length) {
+    const error = new Error('Customer was not found in this branch.');
+    error.status = 404;
+    throw error;
+  }
+  const branchIds = [...new Set(accountNumbers
+    .map((accountNumber) => normalizeBranchId(customersByAccount.get(accountNumber)?.branchId))
+    .filter(Boolean))];
+  if (!adminBranchId && branchIds.length > 1) {
+    const error = new Error('Selected customers must belong to the same branch.');
+    error.status = 400;
+    throw error;
+  }
+  return {
+    branchId: adminBranchId || branchIds[0] || '1',
+    targets: accountNumbers.map((accountNumber) => ({
+      accountNumber,
+      customer: customersByAccount.get(accountNumber)
+    }))
+  };
+}
+
+// GET /api/collectors/exclusions - active clients hidden from Collector App work queues.
+router.get('/exclusions', async (req, res) => {
+  const admin = requireExclusionAdmin(req, res);
+  if (!admin) return;
+  const branchId = normalizeBranchId(admin.branchId) || '1';
+  const records = await readCollectorClientExclusions(branchId);
+  res.json({ ok: true, records, count: records.length });
+});
+
+// POST /api/collectors/exclusions - add one or more reversible, audited Collector App exclusions.
+router.post('/exclusions', async (req, res) => {
+  const admin = requireExclusionAdmin(req, res);
+  if (!admin) return;
+  const accountNumbers = normalizeExclusionAccountNumbers(req.body);
+  if (!accountNumbers.length) return res.status(400).json({ ok: false, error: 'Select at least one customer account.' });
+  if (accountNumbers.length > MAX_EXCLUSION_BATCH_SIZE) {
+    return res.status(400).json({ ok: false, error: `Select up to ${MAX_EXCLUSION_BATCH_SIZE} customer accounts at a time.` });
+  }
+  try {
+    const target = await loadExclusionCustomers(req, accountNumbers);
+    const result = await excludeCollectorClients({
+      branchId: target.branchId,
+      targets: target.targets,
+      actor: admin
+    });
+    if (!result.changed) {
+      return res.status(409).json({ ok: false, error: 'All selected clients are already excluded.', records: [] });
+    }
+    return res.status(201).json({
+      ok: true,
+      records: result.records,
+      record: result.records.length === 1 ? result.records[0] : undefined,
+      count: result.records.length,
+      skippedCount: result.unchangedRecords.length
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      ok: false,
+      error: error.status ? error.message : 'Failed to exclude the selected clients.'
+    });
+  }
+});
+
+// POST /api/collectors/exclusions/restore - restore one or more selected clients.
+router.post('/exclusions/restore', async (req, res) => {
+  const admin = requireExclusionAdmin(req, res);
+  if (!admin) return;
+  const accountNumbers = normalizeExclusionAccountNumbers(req.body);
+  if (!accountNumbers.length) return res.status(400).json({ ok: false, error: 'Select at least one excluded client.' });
+  if (accountNumbers.length > MAX_EXCLUSION_BATCH_SIZE) {
+    return res.status(400).json({ ok: false, error: `Select up to ${MAX_EXCLUSION_BATCH_SIZE} excluded clients at a time.` });
+  }
+  try {
+    const branchId = normalizeBranchId(admin.branchId) || '1';
+    const result = await restoreCollectorClients({ branchId, accountNumbers, actor: admin });
+    if (!result.changed) {
+      return res.status(404).json({ ok: false, error: 'No active exclusions were found for the selected clients.' });
+    }
+    return res.json({
+      ok: true,
+      records: result.records,
+      count: result.records.length,
+      skippedCount: result.unchangedRecords.length
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Failed to restore the selected clients.' });
+  }
+});
+
+// POST /api/collectors/exclusions/:accountNumber/restore - compatibility route for one-client restore.
+router.post('/exclusions/:accountNumber/restore', async (req, res) => {
+  const admin = requireExclusionAdmin(req, res);
+  if (!admin) return;
+  const accountNumber = normalizeAccountNumber(req.params?.accountNumber);
+  if (!accountNumber) return res.status(400).json({ ok: false, error: 'Customer account is required.' });
+  try {
+    const branchId = normalizeBranchId(admin.branchId) || '1';
+    const result = await restoreCollectorClient({ branchId, accountNumber, actor: admin });
+    if (!result.changed) {
+      return res.status(404).json({ ok: false, error: 'Active client exclusion was not found.' });
+    }
+    return res.json({ ok: true, record: result.record });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Failed to restore the client.' });
+  }
+});
 
 // GET /api/collectors - return current assignments and available collectors
 router.get('/', async (req, res) => {

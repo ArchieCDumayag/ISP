@@ -42,6 +42,7 @@
   const collectorRemittancePendingCount = document.getElementById('collectorRemittancePendingCount');
   const collectorRemittanceCompletedCount = document.getElementById('collectorRemittanceCompletedCount');
   const collectorRemittanceRejectedCount = document.getElementById('collectorRemittanceRejectedCount');
+  const collectorRemittanceArchivedCount = document.getElementById('collectorRemittanceArchivedCount');
   const collectorRemittanceFilterButtons = document.querySelectorAll('[data-collector-remittance-filter]');
   const collectorRemittanceReviewModal = document.getElementById('collectorRemittanceReviewModal');
   const collectorRemittanceReviewForm = document.getElementById('collectorRemittanceReviewForm');
@@ -147,6 +148,39 @@
   const collectorStatsPending = document.getElementById('collectorStatsPending');
   const collectorStatsReschedules = document.getElementById('collectorStatsReschedules');
   const collectorAutoRefreshStatus = document.getElementById('collectorAutoRefreshStatus');
+  const collectorWorkspaceTabs = document.querySelectorAll('[data-collector-workspace-tab]');
+  const collectorOperationsPanel = document.getElementById('collectorOperationsPanel');
+  const collectorPaymentsRemittancePanel = document.getElementById('collectorPaymentsRemittancePanel');
+  const collectorPaymentsRemittanceGrid = document.getElementById('collectorPaymentsRemittanceGrid');
+  const collectorExcludedClientsPanel = document.getElementById('collectorExcludedClientsPanel');
+  const collectorExcludedTabCount = document.getElementById('collectorExcludedTabCount');
+  const collectorExcludedCount = document.getElementById('collectorExcludedCount');
+  const collectorExcludedList = document.getElementById('collectorExcludedList');
+  const collectorExcludedEmptyState = document.getElementById('collectorExcludedEmptyState');
+  const collectorExcludedSearch = document.getElementById('collectorExcludedSearch');
+  const collectorExcludedRefresh = document.getElementById('collectorExcludedRefresh');
+  const collectorExcludedSelectedCount = document.getElementById('collectorExcludedSelectedCount');
+  const collectorExcludedSelectAll = document.getElementById('collectorExcludedSelectAll');
+  const collectorRestoreSelected = document.getElementById('collectorRestoreSelected');
+  const collectorExcludeClientCreate = document.getElementById('collectorExcludeClientCreate');
+  const collectorExclusionModal = document.getElementById('collectorExclusionModal');
+  const collectorExclusionForm = document.getElementById('collectorExclusionForm');
+  const collectorExclusionMode = document.getElementById('collectorExclusionMode');
+  const collectorExclusionModalTitle = document.getElementById('collectorExclusionModalTitle');
+  const collectorExclusionModalSubtitle = document.getElementById('collectorExclusionModalSubtitle');
+  const collectorExclusionCustomerField = document.getElementById('collectorExclusionCustomerField');
+  const collectorExclusionCustomerSearch = document.getElementById('collectorExclusionCustomerSearch');
+  const collectorExclusionCustomerList = document.getElementById('collectorExclusionCustomerList');
+  const collectorExclusionSelectedCount = document.getElementById('collectorExclusionSelectedCount');
+  const collectorExclusionSelectAllVisible = document.getElementById('collectorExclusionSelectAllVisible');
+  const collectorExclusionClearSelected = document.getElementById('collectorExclusionClearSelected');
+  const collectorExclusionRestoreSummary = document.getElementById('collectorExclusionRestoreSummary');
+  const collectorExclusionMessage = document.getElementById('collectorExclusionMessage');
+  const collectorExclusionSave = document.getElementById('collectorExclusionSave');
+  const closeCollectorExclusionModal = document.getElementById('closeCollectorExclusionModal');
+  const cancelCollectorExclusionModal = document.getElementById('cancelCollectorExclusionModal');
+  const collectorPaymentApprovalCard = document.querySelector('.collectors-payments-card');
+  const collectorCashRemittanceCard = document.querySelector('.collector-remittance-card');
   const assignmentModal = document.getElementById('assignmentModal');
   const assignmentForm = document.getElementById('assignmentForm');
   const modalCollectorSelect = document.getElementById('modalCollectorSelect');
@@ -202,6 +236,14 @@
   let collectorPriorityCustomerCandidates = [];
   const collectorPrioritySelectedAccounts = new Set();
   let collectorRescheduleRecords = [];
+  let collectorExcludedRecords = [];
+  let collectorExcludedAccountNumbers = new Set();
+  const collectorExcludedSelectedAccounts = new Set();
+  const collectorExclusionPickerSelectedAccounts = new Set();
+  const collectorExclusionRestoreAccounts = new Set();
+  let collectorExclusionCustomers = [];
+  let collectorExclusionCustomersLoaded = false;
+  let collectorWorkspaceView = 'operations';
   let collectorReschedulePage = 1;
   const collectorReschedulePageSize = 10;
   let collectorScheduleViewMode = false;
@@ -223,6 +265,12 @@
   let collectorLiveConnected = false;
   let collectorLiveLastVersion = null;
   const collectorLivePendingTopics = new Set();
+
+  if (collectorPaymentsRemittanceGrid) {
+    [collectorCashRemittanceCard, collectorPaymentApprovalCard]
+      .filter(Boolean)
+      .forEach((card) => collectorPaymentsRemittanceGrid.append(card));
+  }
 
   const getCurrentMonthKey = () => {
     const now = new Date();
@@ -421,6 +469,290 @@
       sensitivity: 'base',
       numeric: true,
     });
+  }
+
+  function collectorExclusionAccount(record = {}) {
+    return String(record?.accountNumber || '').trim();
+  }
+
+  function isCollectorClientExcluded(accountNumber = '') {
+    return collectorExcludedAccountNumbers.has(String(accountNumber || '').trim());
+  }
+
+  function setCollectorWorkspaceView(view = 'operations') {
+    collectorWorkspaceView = ['operations', 'payments', 'excluded'].includes(view) ? view : 'operations';
+    if (collectorOperationsPanel) collectorOperationsPanel.hidden = collectorWorkspaceView !== 'operations';
+    if (collectorPaymentsRemittancePanel) collectorPaymentsRemittancePanel.hidden = collectorWorkspaceView !== 'payments';
+    if (collectorExcludedClientsPanel) collectorExcludedClientsPanel.hidden = collectorWorkspaceView !== 'excluded';
+    collectorWorkspaceTabs.forEach((button) => {
+      const active = button.getAttribute('data-collector-workspace-tab') === collectorWorkspaceView;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    if (collectorWorkspaceView === 'excluded') {
+      Promise.all([loadCollectorExclusions(), loadCollectorExclusionCustomers()])
+        .then(() => collectorExcludedSearch?.focus())
+        .catch(() => {});
+    }
+  }
+
+  function visibleCollectorExclusions() {
+    const search = String(collectorExcludedSearch?.value || '').trim().toLowerCase();
+    if (!search) return collectorExcludedRecords;
+    return collectorExcludedRecords.filter((record) => (
+      [record?.customerName, record?.accountNumber, record?.area, record?.excludedByName]
+        .some((value) => String(value || '').toLowerCase().includes(search))
+    ));
+  }
+
+  function updateCollectorExcludedSelectionUi(records = visibleCollectorExclusions()) {
+    const activeAccounts = new Set(collectorExcludedRecords.map(collectorExclusionAccount).filter(Boolean));
+    [...collectorExcludedSelectedAccounts].forEach((accountNumber) => {
+      if (!activeAccounts.has(accountNumber)) collectorExcludedSelectedAccounts.delete(accountNumber);
+    });
+    const selectedCount = collectorExcludedSelectedAccounts.size;
+    if (collectorExcludedSelectedCount) collectorExcludedSelectedCount.textContent = `${selectedCount} selected`;
+    if (collectorRestoreSelected) collectorRestoreSelected.disabled = selectedCount === 0;
+    if (collectorExcludedSelectAll) {
+      const visibleAccounts = records.map(collectorExclusionAccount).filter(Boolean);
+      const selectedVisibleCount = visibleAccounts.filter((accountNumber) => collectorExcludedSelectedAccounts.has(accountNumber)).length;
+      collectorExcludedSelectAll.checked = visibleAccounts.length > 0 && selectedVisibleCount === visibleAccounts.length;
+      collectorExcludedSelectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleAccounts.length;
+      collectorExcludedSelectAll.disabled = visibleAccounts.length === 0;
+    }
+  }
+
+  function renderCollectorExclusions() {
+    if (!collectorExcludedList) return;
+    const records = visibleCollectorExclusions();
+    const count = collectorExcludedRecords.length;
+    if (collectorExcludedTabCount) collectorExcludedTabCount.textContent = String(count);
+    if (collectorExcludedCount) collectorExcludedCount.textContent = `${count} excluded`;
+    collectorExcludedList.innerHTML = records.map((record) => {
+      const accountNumber = collectorExclusionAccount(record);
+      const auditLabel = [
+        String(record?.excludedByName || record?.excludedByUsername || 'Admin').trim(),
+        formatCollectorPaymentDate(record?.excludedAt)
+      ].filter(Boolean).join(' · ');
+      return `
+        <tr>
+          <td data-label="Select" class="collector-excluded-check-column">
+            <input class="form-check-input" type="checkbox" data-collector-excluded-select="${escapeHtml(accountNumber)}" aria-label="Select ${escapeHtml(record?.customerName || accountNumber || 'client')}" ${collectorExcludedSelectedAccounts.has(accountNumber) ? 'checked' : ''}>
+          </td>
+          <td data-label="Client">
+            <strong>${escapeHtml(record?.customerName || accountNumber || 'Client')}</strong>
+            <span class="collector-excluded-meta">${escapeHtml(accountNumber)}</span>
+          </td>
+          <td data-label="Area">${escapeHtml(record?.area || 'Unassigned')}</td>
+          <td data-label="Excluded by"><span class="collector-excluded-audit">${escapeHtml(auditLabel)}</span></td>
+          <td data-label="Action" class="text-center">
+            <button class="btn btn-outline-primary btn-sm" type="button" data-collector-exclusion-action="restore" data-account-number="${escapeHtml(accountNumber)}">
+              <i class="ti ti-user-check" aria-hidden="true"></i>
+              <span>Restore</span>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+    updateCollectorExcludedSelectionUi(records);
+    if (collectorExcludedEmptyState) {
+      collectorExcludedEmptyState.hidden = records.length > 0;
+      const copy = collectorExcludedEmptyState.querySelector('p');
+      if (copy) {
+        copy.textContent = count && !records.length
+          ? 'No excluded clients match this search.'
+          : 'No clients are excluded from the Collector App.';
+      }
+    }
+  }
+
+  async function loadCollectorExclusions({ preserveOnError = false } = {}) {
+    if (!collectorExcludedList) return true;
+    if (collectorExcludedRefresh) collectorExcludedRefresh.disabled = true;
+    try {
+      const response = await fetch('/api/collectors/exclusions', {
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const error = new Error(payload?.error || payload?.message || 'Failed to load excluded clients.');
+        error.status = response.status;
+        throw error;
+      }
+      collectorExcludedRecords = Array.isArray(payload?.records) ? payload.records : [];
+      collectorExcludedAccountNumbers = new Set(
+        collectorExcludedRecords.map(collectorExclusionAccount).filter(Boolean)
+      );
+      renderCollectorExclusions();
+      return true;
+    } catch (error) {
+      console.warn('Failed to load Collector App exclusions', error);
+      if (!preserveOnError) {
+        collectorExcludedRecords = [];
+        collectorExcludedAccountNumbers = new Set();
+        collectorExcludedList.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">${escapeHtml(error?.message || 'Failed to load excluded clients.')}</td></tr>`;
+        updateCollectorExcludedSelectionUi([]);
+      }
+      return false;
+    } finally {
+      if (collectorExcludedRefresh) collectorExcludedRefresh.disabled = false;
+    }
+  }
+
+  async function loadCollectorExclusionCustomers(forceRefresh = false) {
+    if (collectorExclusionCustomersLoaded && !forceRefresh) return collectorExclusionCustomers;
+    const response = await fetch('/api/customers', { credentials: 'include', cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || payload?.message || 'Unable to load client accounts.');
+    collectorExclusionCustomers = Array.isArray(payload?.customers)
+      ? payload.customers
+      : (Array.isArray(payload) ? payload : []);
+    collectorExclusionCustomersLoaded = true;
+    return collectorExclusionCustomers;
+  }
+
+  function visibleCollectorExclusionCustomers() {
+    const search = String(collectorExclusionCustomerSearch?.value || '').trim().toLowerCase();
+    return collectorExclusionCustomers
+      .filter((customer) => {
+        const accountNumber = getClientAccountNumber(customer);
+        if (!accountNumber || isCollectorClientExcluded(accountNumber)) return false;
+        if (!search) return true;
+        return [getClientDisplayName(customer), accountNumber, getClientArea(customer)]
+          .some((value) => String(value || '').toLowerCase().includes(search));
+      })
+      .sort(compareClientRecords);
+  }
+
+  function renderCollectorExclusionCustomerOptions() {
+    if (!collectorExclusionCustomerList) return;
+    const customers = visibleCollectorExclusionCustomers();
+    collectorExclusionCustomerList.innerHTML = customers.map((customer) => {
+      const accountNumber = getClientAccountNumber(customer);
+      const area = getClientArea(customer);
+      return `
+        <label class="collector-exclusion-customer-option">
+          <input class="form-check-input" type="checkbox" data-collector-exclusion-candidate="${escapeHtml(accountNumber)}" ${collectorExclusionPickerSelectedAccounts.has(accountNumber) ? 'checked' : ''}>
+          <span class="collector-exclusion-customer-copy">
+            <strong>${escapeHtml(getClientDisplayName(customer))}</strong>
+            <small>${escapeHtml(accountNumber)}${area ? ` &middot; ${escapeHtml(area)}` : ''}</small>
+          </span>
+        </label>
+      `;
+    }).join('');
+    if (!customers.length) {
+      collectorExclusionCustomerList.innerHTML = '<div class="empty-state py-4"><p class="mb-0">No available clients match this search.</p></div>';
+    }
+    if (collectorExclusionSelectedCount) collectorExclusionSelectedCount.textContent = `${collectorExclusionPickerSelectedAccounts.size} selected`;
+  }
+
+  function setCollectorExclusionMessage(message = '', tone = 'info') {
+    if (!collectorExclusionMessage) return;
+    collectorExclusionMessage.className = `form-hint mt-3 mb-0 text-${tone === 'danger' ? 'danger' : (tone === 'success' ? 'success' : 'secondary')}`;
+    collectorExclusionMessage.textContent = message;
+  }
+
+  async function openCollectorExclusionEditor(recordsToRestore = []) {
+    if (!collectorExclusionModal || !collectorExclusionForm) return;
+    const restoreRecords = Array.isArray(recordsToRestore)
+      ? recordsToRestore.filter(Boolean)
+      : (recordsToRestore ? [recordsToRestore] : []);
+    const restoring = restoreRecords.length > 0;
+    collectorExclusionForm.reset();
+    collectorExclusionPickerSelectedAccounts.clear();
+    collectorExclusionRestoreAccounts.clear();
+    restoreRecords.forEach((record) => {
+      const accountNumber = collectorExclusionAccount(record);
+      if (accountNumber) collectorExclusionRestoreAccounts.add(accountNumber);
+    });
+    if (collectorExclusionMode) collectorExclusionMode.value = restoring ? 'restore' : 'exclude';
+    if (collectorExclusionModalTitle) collectorExclusionModalTitle.textContent = restoring ? 'Restore Client Visibility' : 'Exclude Clients';
+    if (collectorExclusionModalSubtitle) {
+      collectorExclusionModalSubtitle.textContent = restoring
+        ? 'Selected clients will return to Collector App work queues after login or sync.'
+        : 'Selected clients will disappear from Collector App work queues after login or sync.';
+    }
+    if (collectorExclusionCustomerField) collectorExclusionCustomerField.hidden = restoring;
+    if (collectorExclusionRestoreSummary) {
+      collectorExclusionRestoreSummary.hidden = !restoring;
+      collectorExclusionRestoreSummary.textContent = restoring
+        ? `${restoreRecords.length} client${restoreRecords.length === 1 ? '' : 's'} selected for restoration.`
+        : '';
+    }
+    if (collectorExclusionSave) {
+      collectorExclusionSave.classList.toggle('btn-primary', !restoring);
+      collectorExclusionSave.classList.toggle('btn-success', restoring);
+      collectorExclusionSave.innerHTML = restoring
+        ? '<i class="ti ti-user-check" aria-hidden="true"></i><span>Restore Selected</span>'
+        : '<i class="ti ti-user-minus" aria-hidden="true"></i><span>Exclude Selected</span>';
+    }
+    if (collectorExclusionCustomerSearch) collectorExclusionCustomerSearch.value = '';
+    setCollectorExclusionMessage(restoring ? 'Confirm restoration of the selected clients.' : 'Loading client accounts...');
+    collectorExclusionModal.classList.add('show');
+    collectorExclusionModal.setAttribute('aria-hidden', 'false');
+    try {
+      if (!restoring) {
+        await Promise.all([loadCollectorExclusionCustomers(true), loadCollectorExclusions({ preserveOnError: true })]);
+        renderCollectorExclusionCustomerOptions();
+        setCollectorExclusionMessage(visibleCollectorExclusionCustomers().length
+          ? 'Select one or more clients.'
+          : 'No additional clients are available to exclude.');
+      }
+      setTimeout(() => (restoring ? collectorExclusionSave : collectorExclusionCustomerSearch)?.focus(), 50);
+    } catch (error) {
+      setCollectorExclusionMessage(error?.message || 'Unable to load client accounts.', 'danger');
+    }
+  }
+
+  function closeCollectorExclusionEditor() {
+    if (!collectorExclusionModal) return;
+    collectorExclusionModal.classList.remove('show');
+    collectorExclusionModal.setAttribute('aria-hidden', 'true');
+    setCollectorExclusionMessage('');
+  }
+
+  async function saveCollectorExclusion() {
+    if (!collectorExclusionForm?.reportValidity()) return;
+    const restoring = String(collectorExclusionMode?.value || '') === 'restore';
+    const accountNumbers = [...(restoring ? collectorExclusionRestoreAccounts : collectorExclusionPickerSelectedAccounts)];
+    if (!accountNumbers.length) {
+      setCollectorExclusionMessage(`Select at least one client to ${restoring ? 'restore' : 'exclude'}.`, 'danger');
+      return;
+    }
+    if (collectorExclusionSave) collectorExclusionSave.disabled = true;
+    setCollectorExclusionMessage(restoring ? 'Restoring client visibility...' : 'Excluding client...');
+    try {
+      const response = await fetch(restoring
+        ? '/api/collectors/exclusions/restore'
+        : '/api/collectors/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ accountNumbers })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload?.error || payload?.message || 'Failed to update client visibility.');
+      }
+      closeCollectorExclusionEditor();
+      accountNumbers.forEach((accountNumber) => collectorExcludedSelectedAccounts.delete(accountNumber));
+      await Promise.all([
+        loadCollectorExclusions(),
+        loadCollectorPriorities({ preserveOnError: true }),
+        loadCollectorReschedules({ preserveOnError: true })
+      ]);
+      const changedCount = Number(payload?.count || accountNumbers.length);
+      toast(restoring
+        ? `${changedCount} client${changedCount === 1 ? '' : 's'} restored to Collector App visibility.`
+        : `${changedCount} client${changedCount === 1 ? '' : 's'} excluded from Collector App work queues.`, 'ok');
+    } catch (error) {
+      setCollectorExclusionMessage(error?.message || 'Failed to update client visibility.', 'danger');
+    } finally {
+      if (collectorExclusionSave) collectorExclusionSave.disabled = false;
+    }
   }
 
   function rebuildClientReviewIndex() {
@@ -936,6 +1268,10 @@
     return 'pending';
   }
 
+  function collectorRemittanceViewStatus(record = {}) {
+    return record?.archivedAt ? 'archived' : normalizeCollectorRemittanceStatus(record?.status);
+  }
+
   function collectorRemittanceStatusMeta(value = '') {
     const status = normalizeCollectorRemittanceStatus(value);
     if (status === 'remitted') return { label: 'Remitted', badge: 'bg-green-lt text-green' };
@@ -990,13 +1326,14 @@
 
   function renderCollectorRemittances() {
     if (!collectorRemittanceList) return;
-    const counts = { pending: 0, remitted: 0, rejected: 0 };
+    const counts = { pending: 0, remitted: 0, rejected: 0, archived: 0 };
     collectorRemittanceRecords.forEach((record) => {
-      counts[normalizeCollectorRemittanceStatus(record?.status)] += 1;
+      counts[collectorRemittanceViewStatus(record)] += 1;
     });
     if (collectorRemittancePendingCount) collectorRemittancePendingCount.textContent = String(counts.pending);
     if (collectorRemittanceCompletedCount) collectorRemittanceCompletedCount.textContent = String(counts.remitted);
     if (collectorRemittanceRejectedCount) collectorRemittanceRejectedCount.textContent = String(counts.rejected);
+    if (collectorRemittanceArchivedCount) collectorRemittanceArchivedCount.textContent = String(counts.archived);
     if (collectorRemittanceCount) {
       collectorRemittanceCount.textContent = counts.pending === 1 ? '1 pending' : `${counts.pending} pending`;
     }
@@ -1008,7 +1345,7 @@
     });
 
     const filtered = collectorRemittanceRecords
-      .filter((record) => normalizeCollectorRemittanceStatus(record?.status) === collectorRemittanceFilter)
+      .filter((record) => collectorRemittanceViewStatus(record) === collectorRemittanceFilter)
       .sort((left, right) => {
         const leftTime = Date.parse(left?.updatedAt || left?.submittedAt || collectorRemittanceDate(left)) || 0;
         const rightTime = Date.parse(right?.updatedAt || right?.submittedAt || collectorRemittanceDate(right)) || 0;
@@ -1025,12 +1362,17 @@
 
     filtered.forEach((record) => {
       const recordId = String(record?.id || '').trim();
-      const statusMeta = collectorRemittanceStatusMeta(record?.status);
+      const viewStatus = collectorRemittanceViewStatus(record);
+      const statusMeta = viewStatus === 'archived'
+        ? { label: 'Archived', badge: 'bg-secondary-lt text-secondary' }
+        : collectorRemittanceStatusMeta(record?.status);
       const summary = collectorRemittanceSummary(record);
       const collectorName = String(record?.collectorName || record?.submittedBy?.name || record?.submittedBy?.username || 'Collector').trim();
       const submittedAt = formatCollectorPaymentDate(record?.submittedAt || collectorRemittanceDate(record));
       const reviewedAt = record?.reviewedAt ? formatCollectorPaymentDate(record.reviewedAt) : '';
       const reviewer = String(record?.reviewedBy?.name || record?.reviewedBy?.username || '').trim();
+      const archivedAt = record?.archivedAt ? formatCollectorPaymentDate(record.archivedAt) : '';
+      const archivedBy = String(record?.archivedBy?.name || record?.archivedBy?.username || '').trim();
       const verifiedAmount = collectorRemittanceVerifiedAmount(record);
       const confirmationState = collectorRemittanceConfirmationState(record);
       const paymentRows = (Array.isArray(record?.payments) ? record.payments : []).map((payment) => {
@@ -1060,7 +1402,7 @@
           <span class="badge ${statusMeta.badge}">${statusMeta.label}</span>
         </div>
         <div class="collector-remittance-record__totals">
-          <div><span>${collectorRemittanceFilter === 'pending' ? 'Approved cash' : 'Confirmed'}</span><strong>PHP ${fmtMoney(collectorRemittanceFilter === 'pending' ? verifiedAmount : record?.totalAmount)}</strong></div>
+          <div><span>${viewStatus === 'pending' ? 'Approved cash' : (viewStatus === 'remitted' ? 'Confirmed' : 'Record total')}</span><strong>PHP ${fmtMoney(viewStatus === 'pending' ? verifiedAmount : record?.totalAmount)}</strong></div>
           <div><span>Pending approval</span><strong>${summary.pending}</strong></div>
           <div><span>Approved</span><strong>${summary.approved}</strong></div>
           <div><span>Rejected</span><strong>${summary.rejected}</strong></div>
@@ -1075,13 +1417,18 @@
             ${record?.adminNote ? `<span>Note: ${escapeHtml(record.adminNote)}</span>` : ''}
           </div>
         ` : ''}
-        ${normalizeCollectorRemittanceStatus(record?.status) === 'pending' && !confirmationState.allowed ? `
+        ${viewStatus === 'archived' ? `
+          <div class="collector-remittance-review-audit">
+            <span>Archived ${escapeHtml(archivedAt || 'date unavailable')}${archivedBy ? ` by ${escapeHtml(archivedBy)}` : ''}</span>
+          </div>
+        ` : ''}
+        ${viewStatus === 'pending' && !confirmationState.allowed ? `
           <div class="collector-remittance-gate text-warning" role="status">
             <i class="ti ti-lock" aria-hidden="true"></i>
             <span>${escapeHtml(confirmationState.reason)}</span>
           </div>
         ` : ''}
-        ${normalizeCollectorRemittanceStatus(record?.status) === 'pending' ? `
+        ${viewStatus === 'pending' ? `
           <div class="collector-remittance-record__actions">
             <button class="btn btn-outline-danger btn-sm" type="button" data-collector-remittance-action="reject" data-remittance-id="${escapeHtml(recordId)}">
               <i class="ti ti-x" aria-hidden="true"></i><span>Reject</span>
@@ -1090,7 +1437,19 @@
               <i class="ti ti-check" aria-hidden="true"></i><span>Confirm Remitted</span>
             </button>
           </div>
-        ` : ''}
+        ` : viewStatus === 'archived' ? `
+          <div class="collector-remittance-record__actions collector-remittance-record__actions--single">
+            <button class="btn btn-outline-primary btn-sm" type="button" data-collector-remittance-action="restore" data-remittance-id="${escapeHtml(recordId)}">
+              <i class="ti ti-restore" aria-hidden="true"></i><span>Restore</span>
+            </button>
+          </div>
+        ` : `
+          <div class="collector-remittance-record__actions collector-remittance-record__actions--single">
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-collector-remittance-action="archive" data-remittance-id="${escapeHtml(recordId)}">
+              <i class="ti ti-archive" aria-hidden="true"></i><span>Archive</span>
+            </button>
+          </div>
+        `}
       `;
       collectorRemittanceList.appendChild(card);
     });
@@ -1132,6 +1491,49 @@
       return false;
     } finally {
       if (collectorRemittanceRefresh) collectorRemittanceRefresh.disabled = false;
+    }
+  }
+
+  async function updateCollectorRemittanceArchive(record, action, triggerButton = null) {
+    const remittanceId = String(record?.id || '').trim();
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    if (!remittanceId || !['archive', 'restore'].includes(normalizedAction)) return false;
+    const archiving = normalizedAction === 'archive';
+    const confirmed = window.appConfirm
+      ? await window.appConfirm(
+        archiving
+          ? 'Archive this old remittance? It will be hidden from active lists, but its financial record and audit history will remain unchanged.'
+          : 'Restore this remittance to its previous status list?',
+        {
+          title: archiving ? 'Archive Remittance' : 'Restore Remittance',
+          okText: archiving ? 'Archive' : 'Restore',
+          type: archiving ? 'warning' : 'primary'
+        }
+      )
+      : window.confirm(archiving
+        ? 'Archive this old remittance while keeping its financial record?'
+        : 'Restore this remittance?');
+    if (!confirmed) return false;
+    if (triggerButton) triggerButton.disabled = true;
+    try {
+      const response = await fetch(`/api/collector/payments/remittances/${encodeURIComponent(remittanceId)}/${normalizedAction}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({})
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload?.error || payload?.message || `Failed to ${normalizedAction} remittance.`);
+      }
+      await loadCollectorRemittances();
+      toast(archiving ? 'Remittance archived.' : 'Remittance restored.', 'ok');
+      return true;
+    } catch (error) {
+      toast(error?.message || `Failed to ${normalizedAction} remittance.`, 'danger');
+      if (triggerButton) triggerButton.disabled = false;
+      return false;
     }
   }
 
@@ -1489,6 +1891,7 @@
       const accountNumber = getClientAccountNumber(customer);
       const balance = priorityCustomerBalance(customer);
       if (!accountNumber || activeAccounts.has(accountNumber)) return false;
+      if (accountNumber !== selectedAccount && isCollectorClientExcluded(accountNumber)) return false;
       return accountNumber === selectedAccount || (balance !== null && balance > 0.009);
     });
     if (selectedAccount && !candidates.some((customer) => getClientAccountNumber(customer) === selectedAccount)) {
@@ -1976,7 +2379,9 @@
     const byAccount = new Map();
     clientReviewCustomers.forEach((customer) => {
       const accountNumber = getClientAccountNumber(customer);
-      if (accountNumber) byAccount.set(accountNumber, customer);
+      if (accountNumber && (accountNumber === selected || !isCollectorClientExcluded(accountNumber))) {
+        byAccount.set(accountNumber, customer);
+      }
     });
     collectorScheduleCustomer.innerHTML = '<option value="">Select client</option>';
     [...byAccount.entries()]
@@ -3313,7 +3718,7 @@
 
   async function loadAssignmentsAndReport({ showLoading = true } = {}) {
     try {
-      await loadCollectors();
+      await Promise.all([loadCollectors(), loadCollectorExclusions({ preserveOnError: !showLoading })]);
       await loadReport({ showLoading });
       return true;
     } catch (err) {
@@ -3349,7 +3754,8 @@
       collectorApprovalRefresh,
       collectorRemittanceRefresh,
       collectorPriorityRefresh,
-      collectorRescheduleRefresh
+      collectorRescheduleRefresh,
+      collectorExcludedRefresh
     ].filter(Boolean);
     if (refreshButtons.some((button) => button.disabled)) return 'refresh already in progress';
     return '';
@@ -3391,7 +3797,7 @@
       remittances: 'remittances',
       priorities: 'priority clients',
       reschedules: 'reschedules',
-      assignments: 'assignments and totals'
+      assignments: 'assignments, exclusions, and totals'
     };
 
     collectorAutoRefreshInFlight = true;
@@ -3629,6 +4035,83 @@
     assignmentModal.setAttribute('aria-hidden', 'true');
     setModalMessage('');
   }
+
+  collectorWorkspaceTabs.forEach((button) => {
+    button.addEventListener('click', () => {
+      setCollectorWorkspaceView(button.getAttribute('data-collector-workspace-tab'));
+    });
+  });
+  collectorExcludedSearch?.addEventListener('input', renderCollectorExclusions);
+  collectorExcludedRefresh?.addEventListener('click', () => runCollectorManualRefresh(loadCollectorExclusions).catch(() => {}));
+  collectorExcludeClientCreate?.addEventListener('click', () => openCollectorExclusionEditor().catch(() => {}));
+  collectorExclusionCustomerSearch?.addEventListener('input', renderCollectorExclusionCustomerOptions);
+  collectorExclusionCustomerList?.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-collector-exclusion-candidate]');
+    if (!checkbox) return;
+    const accountNumber = String(checkbox.getAttribute('data-collector-exclusion-candidate') || '').trim();
+    if (!accountNumber) return;
+    if (checkbox.checked && collectorExclusionPickerSelectedAccounts.size >= 1000) {
+      checkbox.checked = false;
+      setCollectorExclusionMessage('Select up to 1,000 clients per action.', 'danger');
+      return;
+    }
+    if (checkbox.checked) collectorExclusionPickerSelectedAccounts.add(accountNumber);
+    else collectorExclusionPickerSelectedAccounts.delete(accountNumber);
+    if (collectorExclusionSelectedCount) collectorExclusionSelectedCount.textContent = `${collectorExclusionPickerSelectedAccounts.size} selected`;
+  });
+  collectorExclusionSelectAllVisible?.addEventListener('click', () => {
+    visibleCollectorExclusionCustomers().forEach((customer) => {
+      if (collectorExclusionPickerSelectedAccounts.size >= 1000) return;
+      collectorExclusionPickerSelectedAccounts.add(getClientAccountNumber(customer));
+    });
+    renderCollectorExclusionCustomerOptions();
+  });
+  collectorExclusionClearSelected?.addEventListener('click', () => {
+    collectorExclusionPickerSelectedAccounts.clear();
+    renderCollectorExclusionCustomerOptions();
+  });
+  closeCollectorExclusionModal?.addEventListener('click', closeCollectorExclusionEditor);
+  cancelCollectorExclusionModal?.addEventListener('click', closeCollectorExclusionEditor);
+  collectorExclusionForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveCollectorExclusion().catch(() => {});
+  });
+  collectorExcludedList?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-collector-exclusion-action="restore"]');
+    if (!button) return;
+    const accountNumber = String(button.getAttribute('data-account-number') || '').trim();
+    const record = collectorExcludedRecords.find((item) => collectorExclusionAccount(item) === accountNumber);
+    if (record) openCollectorExclusionEditor(record).catch(() => {});
+  });
+  collectorExcludedList?.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-collector-excluded-select]');
+    if (!checkbox) return;
+    const accountNumber = String(checkbox.getAttribute('data-collector-excluded-select') || '').trim();
+    if (!accountNumber) return;
+    if (checkbox.checked && collectorExcludedSelectedAccounts.size >= 1000) {
+      checkbox.checked = false;
+      toast('Select up to 1,000 excluded clients per restore action.', 'danger');
+      return;
+    }
+    if (checkbox.checked) collectorExcludedSelectedAccounts.add(accountNumber);
+    else collectorExcludedSelectedAccounts.delete(accountNumber);
+    updateCollectorExcludedSelectionUi();
+  });
+  collectorExcludedSelectAll?.addEventListener('change', () => {
+    const visibleAccounts = visibleCollectorExclusions().map(collectorExclusionAccount).filter(Boolean);
+    if (collectorExcludedSelectAll.checked) {
+      visibleAccounts.forEach((accountNumber) => {
+        if (collectorExcludedSelectedAccounts.size < 1000) collectorExcludedSelectedAccounts.add(accountNumber);
+      });
+    } else {
+      visibleAccounts.forEach((accountNumber) => collectorExcludedSelectedAccounts.delete(accountNumber));
+    }
+    renderCollectorExclusions();
+  });
+  collectorRestoreSelected?.addEventListener('click', () => {
+    const records = collectorExcludedRecords.filter((record) => collectorExcludedSelectedAccounts.has(collectorExclusionAccount(record)));
+    if (records.length) openCollectorExclusionEditor(records).catch(() => {});
+  });
 
   newAssignmentBtn?.addEventListener('click', openAssignmentModal);
   closeAssignmentModalBtn?.addEventListener('click', closeAssignmentModal);
@@ -3873,6 +4356,8 @@
       const record = collectorRemittanceRecords.find((item) => String(item?.id || '') === remittanceId);
       if (record && ['confirm', 'reject'].includes(action)) {
         openCollectorRemittanceReview(record, action, remittanceActionButton);
+      } else if (record && ['archive', 'restore'].includes(action)) {
+        updateCollectorRemittanceArchive(record, action, remittanceActionButton).catch(() => {});
       }
       return;
     }

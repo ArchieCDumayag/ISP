@@ -17,6 +17,7 @@ const { issueToken, storeSession, verifyTokenDetailed, isEphemeralSessionSecret 
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { hashPassword, verifyPassword, isHashedPassword } = require('../../../../core/security/passwords');
 const { resolveCollectorNextDue } = require('../../collector/backend/collector-next-due');
+const { filterCollectorVisibleCustomers } = require('../../collector/backend/collector-client-exclusions');
 const { normalizePaymentEntry } = require('../../billing/backend/payment-entry-normalizer');
 const paymentRecordsRouter = require('../../billing/backend/payment-records');
 const { calculatePaymentBreakdownEndingBalance } = require('../../billing/backend/payment-breakdown-balance');
@@ -829,9 +830,10 @@ async function readAssignedCustomersForCollector(collector) {
         [scopedBranchId, ...normalizedAreaParams]
       );
 
-      return (customerRows || [])
+      const assignedCustomers = (customerRows || [])
         .map(mapCollectorCustomerRow)
         .filter((row) => row.accountNumber);
+      return filterCollectorVisibleCustomers(assignedCustomers, scopedBranchId);
     }
 
     const collectorsFile = await readJson(COLLECTORS_STORE_KEY, { assignments: {} });
@@ -859,9 +861,13 @@ async function readAssignedCustomersForCollector(collector) {
 
     const areaSet = new Set(assignedAreas);
     const customers = await readJson(CUSTOMERS_STORE_KEY, []);
-    return (Array.isArray(customers) ? customers : [])
+    const assignedCustomers = (Array.isArray(customers) ? customers : [])
       .map((row) => mapCollectorCustomerRow(row))
       .filter((row) => row.accountNumber && areaSet.has(row.area.toLowerCase()));
+    return filterCollectorVisibleCustomers(
+      assignedCustomers,
+      resolveBranchId(collector?.branchId) || '1'
+    );
   } catch (error) {
     console.warn('Unable to read collector assigned customers:', error?.message || error);
     return [];

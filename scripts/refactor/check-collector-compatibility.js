@@ -78,6 +78,20 @@ const collectorsHtml = fs.readFileSync(path.join(webRoot, 'collectors.html'), 'u
   'id="collectorRescheduleTodayCount"',
   'id="collectorRescheduleUpcomingCount"',
   'id="collectorReschedulePagination"',
+  'id="collectorPaymentsRemittanceTab"',
+  'id="collectorPaymentsRemittancePanel"',
+  'id="collectorPaymentsRemittanceGrid"',
+  'id="collectorRemittanceArchivedCount"',
+  'data-collector-remittance-filter="archived"',
+  'id="collectorExcludedClientsTab"',
+  'id="collectorExcludedClientsPanel"',
+  'id="collectorExcludeClientCreate"',
+  'id="collectorRestoreSelected"',
+  'id="collectorExcludedSelectAll"',
+  'id="collectorExclusionModal"',
+  'id="collectorExclusionCustomerList"',
+  'id="collectorExclusionSelectAllVisible"',
+  'id="collectorExclusionClearSelected"',
   'class="collector-assignment-list"',
   'id="assignmentSearch"',
   'id="newAssignmentBtn"'
@@ -115,6 +129,22 @@ assert(collectorsClientSource.includes("record?.accountNumber"));
 assert(collectorsClientSource.includes('allCollectors.length <= 5'));
 assert(collectorsClientSource.includes("card.className = `collector-assignment-item"));
 assert(collectorsClientSource.includes('data-assign-action="view-collector-areas"'));
+assert(collectorsClientSource.includes("document.getElementById('collectorPaymentsRemittancePanel')"));
+assert(collectorsClientSource.includes('collectorPaymentsRemittanceGrid.append(card)'));
+assert(collectorsClientSource.includes('[collectorCashRemittanceCard, collectorPaymentApprovalCard]'));
+assert(collectorsClientSource.includes('function collectorRemittanceViewStatus(record = {})'));
+assert(collectorsClientSource.includes('data-collector-remittance-action="archive"'));
+assert(collectorsClientSource.includes('data-collector-remittance-action="restore"'));
+assert(collectorsClientSource.includes('function updateCollectorRemittanceArchive('));
+assert(collectorsClientSource.includes("['operations', 'payments', 'excluded'].includes(view)"));
+assert(collectorsClientSource.includes("fetch('/api/collectors/exclusions'"));
+assert(collectorsClientSource.includes("'/api/collectors/exclusions/restore'"));
+assert(collectorsClientSource.includes('data-collector-exclusion-action="restore"'));
+assert(collectorsClientSource.includes('data-collector-exclusion-candidate'));
+assert(collectorsClientSource.includes('collectorExclusionPickerSelectedAccounts'));
+assert(collectorsClientSource.includes('function loadCollectorExclusions('));
+assert(collectorsClientSource.includes('function saveCollectorExclusion('));
+assert(!collectorsHtml.includes('id="collectorExclusionReason"'));
 const collectorsLayoutSource = fs.readFileSync(path.join(webRoot, 'css/collectors-tabler.css'), 'utf8');
 assert(collectorsLayoutSource.includes('grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);'));
 assert(collectorsLayoutSource.includes('.collectors-kpi-card:nth-child(-n + 2)'));
@@ -130,6 +160,12 @@ assert(collectorsLayoutSource.includes('.collectors-board .collector-approval-pa
 assert(collectorsLayoutSource.includes('.collectors-board .collector-payment-pagination'));
 assert(collectorsLayoutSource.includes('.collectors-payments-card .collector-approval-action-menu__dropdown'));
 assert(collectorsLayoutSource.includes('.collectors-payments-card .collector-payment-filters'));
+assert(collectorsLayoutSource.includes('.collector-workspace-tabs .nav-link'));
+assert(collectorsLayoutSource.includes('.collector-payments-remittance-grid'));
+assert(collectorsLayoutSource.includes('grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);'));
+assert(collectorsLayoutSource.includes('grid-template-columns: repeat(4, minmax(0, 1fr));'));
+assert(collectorsLayoutSource.includes('.collector-payments-remittance-grid .collector-remittance-card .collector-approval-panel__header'));
+assert(collectorsLayoutSource.includes('.collector-excluded-table'));
 assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-row.is-overdue > td'));
 assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-row.is-upcoming > td'));
 assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-row.is-history'));
@@ -145,7 +181,7 @@ assert(!collectorsHtml.includes('assignmentsFooter'));
 assert(!collectorsHtml.includes('id="collectorAreaAssignmentTitle"'));
 assert(!collectorsHtml.includes('class="collector-payment-summary"'));
 assert(!collectorsHtml.includes('<th>Paid Client</th>'));
-console.log('PASS compact right-rail payment review, Collector assignment cards, and prioritized reschedule contracts');
+console.log('PASS remittance-first Payments & Remittance tab, audited archive controls, Collector assignment cards, and prioritized reschedule contracts');
 
 const collectorHistoryHtml = fs.readFileSync(path.join(webRoot, 'collectors-history.html'), 'utf8');
 [
@@ -204,6 +240,11 @@ assert(collectorPaymentsSource.includes('../../billing/backend/payment-service-r
 assert(collectorPaymentsSource.includes('../../billing/backend/payment-records'));
 assert(collectorPaymentsSource.includes('../../../../core/data/data-store'));
 assert(collectorPaymentsSource.includes('../../../../core/security/role-utils'));
+assert(collectorPaymentsSource.includes("router.post('/remittances/:id/archive'"));
+assert(collectorPaymentsSource.includes("router.post('/remittances/:id/restore'"));
+assert(collectorPaymentsSource.includes("action: 'archived'"));
+assert(collectorPaymentsSource.includes("action: 'restored'"));
+assert(collectorPaymentsSource.includes('if (req.collector && record?.archivedAt) return false;'));
 
 const collectorsSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/collector/backend/collectors.js'),
@@ -211,6 +252,31 @@ const collectorsSource = fs.readFileSync(
 );
 assert(collectorsSource.includes('../../admin/backend/accounts-store'));
 assert(collectorsSource.includes('../../../../core/data/db'));
+assert(collectorsSource.includes("router.post('/exclusions'"));
+assert(collectorsSource.includes("router.post('/exclusions/restore'"));
+assert(collectorsSource.includes("router.post('/exclusions/:accountNumber/restore'"));
+const collectorExclusionsSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/collector/backend/collector-client-exclusions.js'),
+  'utf8'
+);
+assert(collectorExclusionsSource.includes("const STORE_KEY = 'collector_client_exclusions'"));
+assert(collectorExclusionsSource.includes('filterCollectorVisibleCustomers'));
+assert(collectorExclusionsSource.includes('auditHistory'));
+assert(collectorExclusionsSource.includes('excludeCollectorClients'));
+assert(collectorExclusionsSource.includes('restoreCollectorClients'));
+assert(collectorExclusionsSource.includes("const ADMIN_DECISION_REASON = 'Admin decision'"));
+const collectorReschedulesSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/collector/backend/collector-reschedules.js'),
+  'utf8'
+);
+assert(collectorReschedulesSource.includes('getActiveCollectorExclusionAccountSet'));
+assert(collectorReschedulesSource.includes('excludedAccounts.has(normalizeAccountNumber(record.accountNumber))'));
+const collectorPrioritiesSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/collector/backend/collector-priorities.js'),
+  'utf8'
+);
+assert(collectorPrioritiesSource.includes('getActiveCollectorExclusionAccountSet'));
+assert(collectorPrioritiesSource.includes('Restore excluded clients before assigning priority'));
 const legacyRoutesSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/collector/backend/routes/collectors.js'),
   'utf8'
@@ -221,6 +287,12 @@ assert(legacyRoutesSource.includes('../../../../../core/data/db'));
   const source = fs.readFileSync(path.join(projectRoot, 'Features/modules/admin/backend', fileName), 'utf8');
   assert(source.includes('../../collector/backend/collector-next-due'));
 });
+const adminAuthSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/admin/backend/auth.js'),
+  'utf8'
+);
+assert(adminAuthSource.includes("'../../collector/backend/collector-client-exclusions'"));
+assert(adminAuthSource.includes('filterCollectorVisibleCustomers(assignedCustomers'));
 console.log('PASS canonical Core, Admin, Billing, and Admin-to-Collector dependencies');
 
 const { resolveCollectorNextDue } = backend.load('collectorNextDue');

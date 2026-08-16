@@ -6,6 +6,7 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { accountHasRole } = require('../../../../core/security/role-utils');
+const { getActiveCollectorExclusionAccountSet } = require('./collector-client-exclusions');
 
 const router = express.Router();
 const STORE_KEY = 'collector_priority_assignments';
@@ -168,6 +169,19 @@ async function loadAdminCustomers(req, accountNumbers) {
       };
     });
   }
+  const exclusionsByBranch = new Map();
+  for (const target of targets) {
+    const branchKey = normalizeBranchId(target.branchId) || '1';
+    if (!exclusionsByBranch.has(branchKey)) {
+      exclusionsByBranch.set(branchKey, await getActiveCollectorExclusionAccountSet(branchKey));
+    }
+  }
+  const excludedAccounts = targets
+    .filter((target) => exclusionsByBranch.get(normalizeBranchId(target.branchId) || '1')?.has(target.accountNumber))
+    .map((target) => target.accountNumber);
+  if (excludedAccounts.length) {
+    throw createError(409, `Restore excluded clients before assigning priority: ${excludedAccounts.join(', ')}.`);
+  }
   return targets;
 }
 
@@ -281,8 +295,12 @@ router.get('/', async (req, res, next) => {
     const requestedLimit = Number(req.query?.limit);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 1000) : 500;
     const order = { urgent: 0, high: 1, normal: 2, low: 3 };
+    const excludedAccounts = actor.isCollector
+      ? await getActiveCollectorExclusionAccountSet(actor.branchId || '1')
+      : new Set();
     const records = readRecords(payload)
       .filter((record) => recordMatchesBranch(record, actor.branchId))
+      .filter((record) => !actor.isCollector || !excludedAccounts.has(normalizeAccountNumber(record.accountNumber)))
       .filter((record) => status === 'all' || (status === 'history' ? !isActiveRecord(record) : isActiveRecord(record)))
       .sort((left, right) => {
         if (isActiveRecord(left) !== isActiveRecord(right)) return isActiveRecord(left) ? -1 : 1;

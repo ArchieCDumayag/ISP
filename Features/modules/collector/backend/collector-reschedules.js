@@ -7,6 +7,7 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { accountHasRole } = require('../../../../core/security/role-utils');
+const { getActiveCollectorExclusionAccountSet, isCollectorClientExcluded } = require('./collector-client-exclusions');
 
 const router = express.Router();
 const STORE_KEY = 'collector_followups';
@@ -256,13 +257,15 @@ async function loadAssignedCustomer(req, accountNumber) {
   });
   if (!customer) throw createError(404, 'Customer not found.');
 
+  const branchId = actor.branchId || normalizeBranchId(customer.branchId);
+
   const assignedIds = getJsonAssignmentIds(collectorData?.assignments || {}, customer.area);
   if (assignedIds.length && !assignedIds.includes(actor.id)) {
     throw createError(403, 'Collector not assigned to this customer area.');
   }
   return {
     customer,
-    branchId: actor.branchId || normalizeBranchId(customer.branchId),
+    branchId,
     actor
   };
 }
@@ -308,6 +311,9 @@ async function loadAdminScheduleTarget(req, accountNumber, requestedCollectorId)
 
     const branchId = requestedBranchId || normalizeBranchId(customer.branchId);
     if (!branchId) throw createError(400, 'Branch assignment missing for this schedule.');
+    if (await isCollectorClientExcluded(branchId, accountNumber)) {
+      throw createError(409, 'Restore this client from Excluded Clients before creating a schedule.');
+    }
     if (collector.branchId && collector.branchId !== branchId) {
       throw createError(403, 'Collector and customer belong to different branches.');
     }
@@ -339,6 +345,9 @@ async function loadAdminScheduleTarget(req, accountNumber, requestedCollectorId)
 
   const branchId = requestedBranchId || normalizeBranchId(customer.branchId);
   const customerBranchId = normalizeBranchId(customer.branchId);
+  if (await isCollectorClientExcluded(branchId || '1', accountNumber)) {
+    throw createError(409, 'Restore this client from Excluded Clients before creating a schedule.');
+  }
   if (collector.branchId && customerBranchId && collector.branchId !== customerBranchId) {
     throw createError(403, 'Collector and customer belong to different branches.');
   }
@@ -575,7 +584,13 @@ router.get('/', async (req, res, next) => {
     const scopedRecords = readRecords(payload)
       .filter((record) => recordMatchesBranch(record, actor.branchId))
       .filter((record) => !collectorId || cleanText(record.collectorId, 120) === collectorId);
-    const matchingRecords = scopedRecords
+    const excludedAccounts = actor.isCollector
+      ? await getActiveCollectorExclusionAccountSet(actor.branchId || '1')
+      : new Set();
+    const visibleScopedRecords = actor.isCollector
+      ? scopedRecords.filter((record) => !excludedAccounts.has(normalizeAccountNumber(record.accountNumber)))
+      : scopedRecords;
+    const matchingRecords = visibleScopedRecords
       .filter((record) => {
         if (status === 'all') return true;
         if (status === 'history') return !isActiveRecord(record);
@@ -598,7 +613,10 @@ router.get('/', async (req, res, next) => {
 
     const collectorTombstones = actor.isCollector
       ? scopedRecords
-          .filter((record) => !isActiveRecord(record))
+          .filter((record) => (
+            !isActiveRecord(record)
+            || excludedAccounts.has(normalizeAccountNumber(record.accountNumber))
+          ))
           .slice(0, limit)
           .map(buildCollectorRemovalTombstone)
           .filter((record) => record.id || record.clientRecordId)

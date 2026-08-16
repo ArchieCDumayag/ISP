@@ -14,7 +14,7 @@ body.layout-fluid-vertical .collectors-page {
 
 .collector-remittance-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
 }
 
@@ -126,6 +126,10 @@ body.layout-fluid-vertical .collectors-page {
 
 .collector-remittance-record__actions {
     justify-content: flex-end;
+}
+
+.collector-remittance-record__actions--single .btn {
+    min-width: 6.25rem;
 }
 
 .collector-remittance-gate {
@@ -2889,6 +2893,219 @@ body.layout-fluid-vertical .collectors-page--compact {
     gap: .5rem;
 }
 
+body.layout-fluid-vertical .collectors-page .collector-workspace-tabs,
+body.layout-fluid-vertical .collectors-page .collector-workspace-panel,
+body.layout-fluid-vertical .collectors-page .collector-excluded-card {
+    width: min(100%, 1440px);
+}
+
+.collector-workspace-tabs {
+    padding: 0 .75rem;
+    box-shadow: none;
+}
+
+.collector-workspace-tabs .nav-tabs {
+    gap: .25rem;
+    margin: 0;
+}
+
+.collector-workspace-tabs .nav-link {
+    align-items: center;
+    display: inline-flex;
+    gap: .375rem;
+    min-height: 2.25rem;
+    padding: .375rem .625rem;
+    font-size: .75rem;
+}
+
+.collector-workspace-panel {
+    display: grid;
+    gap: .5rem;
+}
+
+.collector-workspace-panel[hidden] {
+    display: none !important;
+}
+
+.collector-payments-remittance-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);
+    align-items: start;
+    gap: .5rem;
+    min-width: 0;
+}
+
+.collector-payments-remittance-grid > .card {
+    width: 100%;
+    min-width: 0;
+}
+
+.collector-payments-remittance-grid .collectors-payments-card .collector-approval-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+.collector-payments-remittance-grid .collectors-payments-card .collector-approval-panel__actions {
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.collector-payments-remittance-grid .collectors-payments-card .collector-approval-total {
+    margin-right: auto;
+}
+
+.collector-payments-remittance-grid .collectors-payments-card .collector-payment-filters {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.collector-payments-remittance-grid .collectors-payments-card .collector-payment-clear {
+    width: 100%;
+}
+
+.collector-payments-remittance-grid .collector-remittance-card .collector-approval-panel__header {
+    align-items: center;
+    flex-direction: row;
+}
+
+.collector-payments-remittance-grid .collector-remittance-card .collector-approval-panel__actions {
+    justify-content: flex-end;
+    width: auto;
+}
+
+.collector-payments-remittance-grid .collector-remittance-card .collector-approval-total {
+    margin-right: 0;
+}
+
+.collector-payments-remittance-grid .collector-remittance-list {
+    max-height: 34rem;
+}
+
+.collector-excluded-card .card-header {
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    min-height: auto;
+    padding: .625rem .75rem;
+}
+
+.collector-excluded-card .card-header .btn-list {
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.collector-excluded-toolbar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .5rem .75rem;
+    border-bottom: 1px solid var(--app-border, #e6e7e9);
+}
+
+.collector-excluded-toolbar .input-icon {
+    flex: 1 1 24rem;
+    max-width: 28rem;
+}
+
+.collector-excluded-toolbar .badge {
+    margin-left: auto;
+}
+
+.collector-excluded-table {
+    table-layout: fixed;
+    margin: 0;
+}
+
+.collector-excluded-table th:nth-child(1) { width: 5%; }
+.collector-excluded-table th:nth-child(2) { width: 30%; }
+.collector-excluded-table th:nth-child(3) { width: 20%; }
+.collector-excluded-table th:nth-child(4) { width: 32%; }
+.collector-excluded-table th:nth-child(5) { width: 13%; }
+
+.collector-excluded-table th,
+.collector-excluded-table td {
+    padding: .5rem .625rem;
+    vertical-align: middle;
+}
+
+.collector-excluded-table td > strong,
+.collector-excluded-meta,
+.collector-excluded-audit {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collector-excluded-meta,
+.collector-excluded-audit {
+    color: var(--app-muted, #64748b);
+    font-size: .6875rem;
+}
+
+.collector-excluded-check-column {
+    text-align: center;
+}
+
+.collector-exclusion-picker-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .5rem;
+}
+
+.collector-exclusion-customer-list {
+    display: grid;
+    max-height: 20rem;
+    min-height: 12rem;
+    overflow-y: auto;
+    border: 1px solid var(--app-border, #d9dce1);
+    border-radius: var(--tblr-border-radius, .25rem);
+    font-size: .75rem;
+}
+
+.collector-exclusion-customer-option {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    min-width: 0;
+    padding: .5rem .625rem;
+    border-bottom: 1px solid var(--app-border, #e6e7e9);
+    cursor: pointer;
+}
+
+.collector-exclusion-customer-option:last-child {
+    border-bottom: 0;
+}
+
+.collector-exclusion-customer-option:hover {
+    background: var(--tblr-bg-surface-secondary, #f6f8fb);
+}
+
+.collector-exclusion-customer-copy,
+.collector-exclusion-customer-copy strong,
+.collector-exclusion-customer-copy small {
+    display: block;
+    min-width: 0;
+}
+
+.collector-exclusion-customer-copy {
+    flex: 1 1 auto;
+}
+
+.collector-exclusion-customer-copy strong,
+.collector-exclusion-customer-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collector-exclusion-customer-copy small {
+    color: var(--app-muted, #64748b);
+}
+
 body.layout-fluid-vertical .collectors-page--compact .collector-page-heading {
     gap: .625rem;
     padding: 0;
@@ -3105,6 +3322,10 @@ body.layout-fluid-vertical .collectors-page--compact .empty-state {
     body.layout-fluid-vertical .collectors-page--compact .collectors-side-column {
         position: static;
     }
+
+    .collector-payments-remittance-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 @media (max-width: 767.98px) {
@@ -3122,6 +3343,126 @@ body.layout-fluid-vertical .collectors-page--compact .empty-state {
     body.layout-fluid-vertical .collectors-page--compact .collector-assignment-header-actions .btn:not(.btn-icon) {
         flex: 1 1 auto;
         justify-content: center;
+    }
+
+    .collector-workspace-tabs {
+        padding: 0 .5rem;
+    }
+
+    .collector-workspace-tabs .nav-link {
+        flex: 1 1 0;
+        justify-content: center;
+    }
+
+    .collector-workspace-tabs .nav-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
+    .collector-workspace-tabs .nav-link {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .collector-payments-remittance-grid .collectors-payments-card .collector-approval-panel__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .collector-payments-remittance-grid .collectors-payments-card .collector-approval-panel__actions {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .collector-payments-remittance-grid .collectors-payments-card .collector-approval-total {
+        margin-right: auto;
+    }
+
+    .collector-payments-remittance-grid .collectors-payments-card .collector-payment-filters {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .collector-payments-remittance-grid .collectors-payments-card .collector-payment-clear {
+        width: 100%;
+    }
+
+    .collector-payments-remittance-grid .collector-remittance-card .collector-approval-panel__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .collector-payments-remittance-grid .collector-remittance-card .collector-approval-panel__actions {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .collector-payments-remittance-grid .collector-remittance-card .collector-approval-total {
+        margin-right: auto;
+    }
+
+    .collector-excluded-card .card-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .collector-excluded-card .card-header .btn-list,
+    .collector-excluded-card .card-header .btn:not(.btn-icon) {
+        width: 100%;
+    }
+
+    .collector-excluded-toolbar,
+    .collector-exclusion-picker-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .collector-excluded-toolbar .input-icon,
+    .collector-excluded-toolbar .badge {
+        width: 100%;
+        max-width: none;
+        margin-left: 0;
+    }
+
+    .collector-exclusion-picker-heading .btn-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .collector-exclusion-picker-heading .badge {
+        grid-column: 1 / -1;
+    }
+
+    .collector-excluded-table,
+    .collector-excluded-table tbody,
+    .collector-excluded-table tr,
+    .collector-excluded-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .collector-excluded-table thead {
+        display: none;
+    }
+
+    .collector-excluded-table tr {
+        padding: .5rem;
+        border-bottom: 1px solid var(--app-border, #e6e7e9);
+    }
+
+    .collector-excluded-table td {
+        display: grid;
+        grid-template-columns: 6.5rem minmax(0, 1fr);
+        gap: .5rem;
+        padding: .25rem 0;
+        text-align: left !important;
+    }
+
+    .collector-excluded-table td::before {
+        color: var(--app-muted, #64748b);
+        content: attr(data-label);
+        font-size: .6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
     }
 
     body.layout-fluid-vertical .collectors-page--compact .collector-priority-table-wrapper,

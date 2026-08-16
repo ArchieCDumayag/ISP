@@ -20,6 +20,8 @@ const {
     finalizeGcashTransactionAllocations,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
+    lockGcashTransactionPosting,
+    unlockGcashTransactionPosting,
     normalizeReference: normalizeGcashReference
 } = require('./gcash-transaction-history-store');
 const {
@@ -519,6 +521,49 @@ router.put('/gcash-history/:reference/remark', async (req, res, next) => {
     }
 });
 
+router.post('/gcash-history/:reference/lock-posting', async (req, res, next) => {
+    try {
+        const locked = await lockGcashTransactionPosting({
+            branchId: req.branchId,
+            reference: req.params?.reference,
+            remark: req.body?.remark,
+            lockedBy: req.user
+        });
+        return res.status(locked.idempotent ? 200 : 201).json({
+            ok: true,
+            idempotent: locked.idempotent,
+            message: locked.idempotent
+                ? 'This imported GCash credit is already marked Not for Posting.'
+                : 'Imported GCash credit marked Not for Posting.',
+            transaction: locked.transaction,
+            postingLock: locked.postingLock
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+router.post('/gcash-history/:reference/unlock-posting', async (req, res, next) => {
+    try {
+        const unlocked = await unlockGcashTransactionPosting({
+            branchId: req.branchId,
+            reference: req.params?.reference,
+            unlockedBy: req.user
+        });
+        return res.json({
+            ok: true,
+            idempotent: unlocked.idempotent,
+            message: unlocked.idempotent
+                ? 'This imported GCash credit is already available for posting.'
+                : 'Imported GCash credit unlocked and available for posting.',
+            transaction: unlocked.transaction,
+            postingLock: null
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
 router.post('/gcash-history/:reference/post-payment', async (req, res, next) => {
     let claimedGcash = null;
     let claimCreated = false;
@@ -568,6 +613,12 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
             normalizeGcashReference(row?.reference) === reference
         ));
         if (!transaction) throw createError(404, 'Reference is not in the imported GCash history.');
+        if (transaction.postingLock) {
+            const error = createError(409, 'This imported GCash credit is marked Not for Posting. Unlock it before assigning a customer payment.');
+            error.code = 'GCASH_TRANSACTION_POSTING_LOCKED';
+            error.postingLock = transaction.postingLock;
+            throw error;
+        }
         const importedAmount = toFiniteNumber(transaction.credit);
         if (String(transaction.status || '').toLowerCase() !== 'received' || importedAmount == null || importedAmount <= 0) {
             const error = createError(409, 'Only an imported incoming GCash credit can be posted as a payment.');

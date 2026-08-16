@@ -30,6 +30,9 @@ const normalizeIdentity = (value) => normalizeText(value).replace(/[^a-z0-9]+/g,
 const isEffectivePaymentStatus = (entry = {}) => {
   const status = normalizeText(entry.status || entry.paymentStatus || entry.payment_status);
   return ![
+    'pending_gcash_verification',
+    'pending-gcash-verification',
+    'pending gcash verification',
     'pending_approval',
     'pending-approval',
     'pending approval',

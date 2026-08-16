@@ -1,6 +1,6 @@
 # Customer App Module Context
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-16
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -24,7 +24,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - `backend/firebase-push.js`: Firebase Admin integration with credential paths anchored to the repository root.
 - `backend/sms.js`, `backend/sms-delivery.js`, `backend/sms-scheduler.js`, and `backend/sms-schema.js`: `/api/sms`, provider dispatch, schedules, automations, and relational schema.
 - `backend/messenger-bot.js`: verification and delivery under `/webhooks/messenger`.
-- `backend/messenger-reminders.js`: `/api/messenger-reminders` queue generation from Billing's canonical payment records, branch/collector-area authorization, deterministic duplicate-resistant reminder keys, Messenger preferences/consent, manual open/copy/send auditing, skip/reopen history, and payment confirmations. Active Billing-owned Complimentary accounts are excluded. It never bulk-sends through the Meta API.
+- `backend/messenger-reminders.js`: `/api/messenger-reminders` queue generation from Billing's canonical payment records, branch/collector-area authorization, deterministic duplicate-resistant reminder keys, Messenger preferences/consent, manual open/copy/send auditing, skip/reopen history, and payment confirmations. Active Billing-owned Complimentary accounts are excluded. Manual GCash entries with `pending_gcash_verification` are also excluded from payment-confirmation reminders until Billing binds official imported proof. It never bulk-sends through the Meta API.
 - `backend/customer-upstream.js`: development stub, normally port `4101` in this checkout; production remains opt-in through `ENABLE_CUSTOMER_UPSTREAM_STUB=true`.
 - The former ten repository-root backend shims were retired in Phase 11.
 
@@ -73,8 +73,11 @@ All API prefixes, authentication requirements, feature gates, scheduler startup 
 - The HTTP suite covers unchanged public/legal/customer/SMS pages and assets, customer/admin guards, upstream isolation, and unauthenticated Customer App/SMS denials on ports `3190`/`4190`.
 - Acceptance checks do not authenticate as a real customer, write notification/token state, run schedulers, send provider messages, or call Messenger/Firebase/SMS/email services.
 - Messenger queue UI validation covers HTML parsing, JavaScript syntax, static ID uniqueness, balanced page CSS, native Tabler header/summary/filter/table/dialog hooks, `btn-sm` on every static and generated action, responsive reminder-card hooks, unchanged API/action bindings, and absence of browser-side Meta delivery.
+- `npm run refactor:customer-app` verifies that Messenger payment-confirmation detection treats `pending_gcash_verification` as ineffective until Billing verifies it against imported proof.
 
 ## Latest meaningful changes
+
+- 2026-08-16: Messenger payment-confirmation detection now excludes Billing's `pending_gcash_verification` entries; a manual GCash entry cannot generate a paid confirmation before exact imported proof is bound.
 
 - 2026-08-14: Reorganized `messenger-reminders.html` into a compact responsive Tabler queue with small controls, fitted columns, mobile reminder cards, and compact consent/message dialogs. Replaced legacy button and modal styling with focused page-scoped Tabler layout additions; reminder generation, consent, Messenger links, manual sending, status/audit actions, authorization, APIs, and records are unchanged.
 - 2026-08-11: Removed captured-app matching and reservation from Screenshot Analysis. The page continues to show official-history matching, extracted reference/date defaults, warnings, and Pending Review status without any payment-posting capability.

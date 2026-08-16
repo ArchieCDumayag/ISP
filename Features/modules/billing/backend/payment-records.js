@@ -799,6 +799,70 @@ const buildCanonicalBillingSummary = (record = {}, fallbackBalance = 0) => {
     }
 };
 
+const isPendingGcashVerificationEntry = (entry = {}) => {
+    const status = String(entry?.status || entry?.paymentStatus || entry?.payment_status || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+    const kind = String(entry?.kind || entry?.type || '').trim().toLowerCase();
+    const method = String(entry?.paymentMethod || entry?.payment_method || '').trim().toLowerCase();
+    return status === 'pending_gcash_verification'
+        && kind === 'payment'
+        && method === 'gcash'
+        && Number(entry?.amount) > 0;
+};
+
+const serializePendingGcashPayments = (history = []) => (Array.isArray(history) ? history : [])
+    .filter(isPendingGcashVerificationEntry)
+    .map((entry) => {
+        const date = String(entry?.date || entry?.recordedAt || '').trim();
+        const dateKey = /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : toBillingDateKey(date);
+        return {
+            entryId: String(entry?.id || '').trim(),
+            amount: Math.abs(Number(entry?.amount) || 0),
+            date: dateKey || null,
+            billingMonthKey: dateKey ? dateKey.slice(0, 7) : '',
+            mode: 'GCash',
+            reference: String(entry?.reference || '').trim(),
+            status: 'pending',
+            statusLabel: 'Pending',
+            note: 'Awaiting imported GCash proof'
+        };
+    });
+
+const attachPendingGcashPayments = (billingSummary = {}, history = []) => {
+    const pendingGcashPayments = serializePendingGcashPayments(history);
+    const sourceRows = Array.isArray(billingSummary?.rows) ? billingSummary.rows : [];
+    if (!pendingGcashPayments.length || !sourceRows.length) {
+        return { ...billingSummary, pendingGcashPayments };
+    }
+    const rows = sourceRows.map((row) => ({ ...row }));
+    pendingGcashPayments.forEach((pendingPayment) => {
+        let targetIndex = -1;
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+            if (rows[index]?.billingMonthKey === pendingPayment.billingMonthKey) {
+                targetIndex = index;
+                break;
+            }
+        }
+        if (targetIndex < 0) targetIndex = rows.length - 1;
+        const existing = Array.isArray(rows[targetIndex].pendingPaymentDetails)
+            ? rows[targetIndex].pendingPaymentDetails
+            : [];
+        rows[targetIndex].pendingPaymentDetails = [...existing, pendingPayment];
+    });
+    const currentCycleKey = billingSummary?.currentCycle?.billingMonthKey || '';
+    const currentCycle = currentCycleKey
+        ? [...rows].reverse().find((row) => row.billingMonthKey === currentCycleKey) || billingSummary.currentCycle
+        : billingSummary?.currentCycle || null;
+    return {
+        ...billingSummary,
+        rows,
+        currentCycle,
+        pendingGcashPayments
+    };
+};
+
 const buildPlanHistory = (record = {}, planChanges = [], now = new Date()) => {
     const changes = sanitizePlanChangeAdjustments(planChanges);
     const currentMonth = getCurrentBillingMonthKey(now);
@@ -861,7 +925,10 @@ const buildPaymentRecord = (
         ...summary,
         history: paymentHistory
     };
-    const billingSummary = buildCanonicalBillingSummary(recordBase, summary.balance);
+    const billingSummary = attachPendingGcashPayments(
+        buildCanonicalBillingSummary(recordBase, summary.balance),
+        paymentHistory
+    );
     const endingBalance = billingSummary.endingBalance;
     const complimentaryAccount = billingSummary.complimentaryAccount
         || buildComplimentaryAccountSummary(paymentBreakdownAdjustment?.complimentaryPeriods || [], { planType: planCategory });

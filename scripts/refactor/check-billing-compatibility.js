@@ -93,6 +93,7 @@ console.log(`PASS Billing web root (${webFiles.length} files)`);
 
 const paymentsHtmlSource = fs.readFileSync(path.join(webRoot, 'payments.html'), 'utf8');
 const paymentsBrowserSource = fs.readFileSync(path.join(webRoot, 'payments.js'), 'utf8');
+const paymentsCssSource = fs.readFileSync(path.join(webRoot, 'css/payments.css'), 'utf8');
 const breakdownHtmlSource = fs.readFileSync(path.join(webRoot, 'payment-breakdown.html'), 'utf8');
 const breakdownBrowserSource = fs.readFileSync(path.join(webRoot, 'js/payment-breakdown.js'), 'utf8');
 const breakdownCssSource = fs.readFileSync(path.join(webRoot, 'css/payment-breakdown.css'), 'utf8');
@@ -100,6 +101,11 @@ assert(paymentsHtmlSource.includes('id="paymentBreakdownModal"'));
 assert(paymentsHtmlSource.includes('id="paymentBreakdownModalTableBody"'));
 assert(paymentsHtmlSource.includes('id="paymentBreakdownModalAddPayment"'));
 assert(paymentsHtmlSource.includes('js/payment-breakdown-table.js'));
+assert(paymentsHtmlSource.includes('id="paymentCustomerSearch"'));
+assert(paymentsHtmlSource.includes('aria-controls="paymentCustomerSuggestions"'));
+assert(paymentsHtmlSource.includes('id="paymentCustomerSuggestions"'));
+assert(paymentsHtmlSource.includes('role="listbox" aria-label="Customer suggestions"'));
+assert(paymentsHtmlSource.includes('id="customerSelect" name="accountNumber" required hidden'));
 assert(breakdownHtmlSource.includes('js/payment-breakdown-table.js'));
 assert(breakdownHtmlSource.includes('id="breakdownPlanReason"'));
 assert(breakdownHtmlSource.includes('id="breakdownPlanConfirmed"'));
@@ -127,6 +133,13 @@ assert(!breakdownHtmlSource.includes('id="breakdownAdjustmentReferral"'));
 assert(paymentsBrowserSource.includes('openPaymentBreakdownModal(accountNumber, breakdownLink)'));
 assert(paymentsBrowserSource.includes('openPaymentModalForAccount(targetAccount, { lockCustomer: true })'));
 assert(paymentsBrowserSource.includes('refreshPaymentBreakdown: true'));
+assert(paymentsBrowserSource.includes('function renderPaymentCustomerSuggestions()'));
+assert(paymentsBrowserSource.includes('function selectPaymentCustomer(accountNumber)'));
+assert(paymentsBrowserSource.includes("paymentCustomerSearch?.addEventListener('input'"));
+assert(paymentsBrowserSource.includes("paymentCustomerSearch?.addEventListener('keydown'"));
+assert(paymentsBrowserSource.includes('Amount due ${formatCurrency(amountDue)}'));
+assert(paymentsCssSource.includes('.payment-customer-suggestions'));
+assert(paymentsCssSource.includes('.payment-customer-option__amount'));
 assert(paymentsBrowserSource.includes('/api/payment-records/${encodeURIComponent(accountNumber)}'));
 assert(!paymentsBrowserSource.includes('window.location.assign(buildPaymentBreakdownUrl(accountNumber))'));
 assert(breakdownBrowserSource.includes('breakdownTableRenderer.render({'));
@@ -183,6 +196,27 @@ assert(mockTableBody.innerHTML.includes('Aug 2026'));
 assert(mockTableBody.innerHTML.includes('Every 1st of the month'));
 assert(mockTableBody.innerHTML.includes('is-paid'));
 assert(mockTableBody.innerHTML.includes('Cash'));
+const pendingDisplayRows = tableRenderer.createDisplayRows(
+  { planName: 'Test Plan', billingCycle: 'Every 1st of the month' },
+  [{
+    billDate: '2026-08-01',
+    planType: 'prepaid',
+    planAmount: 1000,
+    previousBalance: 0,
+    advance: 0,
+    referral: 0,
+    due: 1000,
+    amountPaid: 0,
+    paymentStatus: 'unpaid',
+    balanceAfterPayment: 1000,
+    pendingPaymentDetails: [{ amount: 1000, mode: 'GCash', date: '2026-08-16', statusLabel: 'Pending' }]
+  }]
+);
+const pendingMockTableBody = { innerHTML: '' };
+tableRenderer.render({ tbody: pendingMockTableBody, rows: pendingDisplayRows });
+assert(pendingMockTableBody.innerHTML.includes('₱1,000.00'));
+assert(pendingMockTableBody.innerHTML.includes('GCash · Pending'));
+assert(!pendingMockTableBody.innerHTML.includes('<span class="badge bg-warning-lt text-warning ms-1">Pending</span>'));
 console.log('PASS shared Payment Breakdown table renderer and Payments modal wiring');
 
 const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
@@ -214,12 +248,32 @@ const proofStoreSource = fs.readFileSync(
 assert(proofStoreSource.includes("path.join(PUBLIC_ROOT, 'uploads', ...relativePath.split('/'))"));
 const paymentQueueHtmlSource = fs.readFileSync(path.join(webRoot, 'gcash-transaction.html'), 'utf8');
 const paymentQueueBrowserSource = fs.readFileSync(path.join(webRoot, 'payment-confirmation-queue.js'), 'utf8');
+const paymentConfirmationsSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/billing/backend/payment-confirmations.js'),
+  'utf8'
+);
+const gcashHistoryStoreSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/billing/backend/gcash-transaction-history-store.js'),
+  'utf8'
+);
 assert(!fs.existsSync(path.join(webRoot, 'payment-confirmation-queue.html')));
 assert(!fs.existsSync(path.join(webRoot, 'payment-confirmation-queue-history.html')));
 assert(!fs.existsSync(path.join(webRoot, 'payment-confirmation-queue-history.js')));
 assert(!fs.existsSync(path.join(webRoot, 'css/payment-confirmation-queue-history.css')));
 assert(paymentQueueHtmlSource.includes('<title>GCash Transactions'));
 assert(paymentQueueHtmlSource.includes('<h1>GCash Transactions</h1>'));
+assert(paymentQueueHtmlSource.includes('id="queueLockGcashModal"'));
+assert(paymentQueueHtmlSource.includes('id="queueGcashPendingTab"'));
+assert(paymentQueueHtmlSource.includes('id="queueBindPendingGcashModal"'));
+assert(paymentQueueHtmlSource.includes('<option value="remarked">Not for Posting</option>'));
+assert(paymentQueueBrowserSource.includes('data-action="lock-gcash"'));
+assert(paymentQueueBrowserSource.includes('data-action="unlock-gcash"'));
+assert(paymentQueueBrowserSource.includes("fetch('/api/payments/gcash-pending'"));
+assert(paymentQueueBrowserSource.includes('data-action="bind-pending-gcash"'));
+assert(paymentConfirmationsSource.includes("'/gcash-history/:reference/lock-posting'"));
+assert(paymentConfirmationsSource.includes("'/gcash-history/:reference/unlock-posting'"));
+assert(gcashHistoryStoreSource.includes("error.code = 'GCASH_TRANSACTION_POSTING_LOCKED'"));
+assert(gcashHistoryStoreSource.includes('if (postingLock) throw createPostingLockConflictError(postingLock)'));
 const sidebarSource = fs.readFileSync(path.join(projectRoot, 'public/sidebar.html'), 'utf8');
 assert(sidebarSource.includes('href="gcash-transaction.html"'));
 assert(sidebarSource.includes('GCash Transactions'));
@@ -237,11 +291,15 @@ const paymentsSource = fs.readFileSync(
 );
 assert(paymentsSource.includes("path.join(DATA_DIR, 'payment-backups')"));
 assert(paymentsSource.includes("path.join(PROJECT_ROOT, '.cloudflared', 'config.yml')"));
+assert(paymentsSource.includes("router.get('/gcash-pending'"));
+assert(paymentsSource.includes("router.post('/gcash-pending/:accountNumber/:entryId/bind'"));
+assert(paymentsSource.includes("const PENDING_GCASH_STATUS = 'pending_gcash_verification'"));
 console.log('PASS repository-root proof uploads, backups, and tunnel configuration paths');
 
 const normalizer = backend.load('paymentEntryNormalizer');
 assert.strictEqual(normalizer.normalizePaymentEntryDirection({ kind: 'payment' }), 'credit');
 assert.strictEqual(normalizer.normalizePaymentEntryDirection({ kind: 'bill' }), 'debit');
+assert.strictEqual(normalizer.isEffectivePaymentEntryStatus({ status: 'pending_gcash_verification' }), false);
 assert.deepStrictEqual(
   normalizer.normalizePaymentEntry({ direction: 'credit', amount: 250 }),
   { direction: 'credit', amount: 250, kind: 'payment', type: 'payment' }

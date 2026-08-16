@@ -72,6 +72,59 @@ const sanitizeRemark = (value) => {
     };
 };
 
+const sanitizeAuditActor = (value) => ({
+    id: toSafeText(value?.id, 32) || null,
+    username: toSafeText(value?.username, 100) || null,
+    name: toSafeText(value?.name, 120) || null
+});
+
+const sanitizePostingLock = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const remark = toSafeText(value.remark, 500);
+    const lockedAt = toSafeText(value.lockedAt, 40);
+    if (!remark || !lockedAt) return null;
+    return {
+        remark,
+        lockedAt,
+        lockedBy: sanitizeAuditActor(value.lockedBy)
+    };
+};
+
+const sanitizePostingLockAuditEntry = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const id = toSafeText(value.id, 64);
+    const action = value.action === 'unlocked' ? 'unlocked' : (value.action === 'locked' ? 'locked' : '');
+    const at = toSafeText(value.at, 40);
+    if (!id || !action || !at) return null;
+    return {
+        id,
+        action,
+        remark: toSafeText(value.remark, 500) || null,
+        at,
+        by: sanitizeAuditActor(value.by)
+    };
+};
+
+const sanitizePostingLockAudit = (value) => (Array.isArray(value) ? value : [])
+    .map(sanitizePostingLockAuditEntry)
+    .filter(Boolean)
+    .slice(-100);
+
+const appendPostingLockAudit = (transaction, value) => {
+    const entry = sanitizePostingLockAuditEntry(value);
+    if (!entry) return;
+    const history = sanitizePostingLockAudit(transaction?.postingLockAudit);
+    if (!history.some((item) => item.id === entry.id)) history.push(entry);
+    transaction.postingLockAudit = history.slice(-100);
+};
+
+const createPostingLockConflictError = (postingLock) => {
+    const error = createError(409, 'This imported GCash credit is marked Not for Posting. Unlock it before assigning a customer payment.');
+    error.code = 'GCASH_TRANSACTION_POSTING_LOCKED';
+    error.postingLock = sanitizePostingLock(postingLock);
+    return error;
+};
+
 const buildRemark = (category, updatedBy, updatedAt = new Date().toISOString()) => sanitizeRemark({
     category,
     updatedAt,
@@ -229,6 +282,8 @@ const normalizeImportedTransaction = (row, batchId) => ({
     pageNumber: Number(row?.pageNumber) || 1,
     assignment: null,
     assignmentAudit: [],
+    postingLock: null,
+    postingLockAudit: [],
     remark: null
 });
 
@@ -340,6 +395,8 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false 
         recipientLabel: getGcashRecipientLabel(transaction?.recipient) || null,
         assignment: sanitizeAssignment(transaction?.assignment),
         assignmentAudit: sanitizeAssignmentAudit(transaction?.assignmentAudit),
+        postingLock: sanitizePostingLock(transaction?.postingLock),
+        postingLockAudit: sanitizePostingLockAudit(transaction?.postingLockAudit),
         remark: getTransactionRemark(transaction)
     })).sort((a, b) => String(b.transactionAt).localeCompare(String(a.transactionAt)));
     return {
@@ -348,6 +405,113 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false 
         totalTransactions: bucket.transactions.length,
         updatedAt: bucket.updatedAt || null
     };
+};
+
+const lockGcashTransactionPosting = async ({ branchId, reference, remark, lockedBy } = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeReference = normalizeReference(reference);
+    const safeRemark = toSafeText(remark, 500);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeReference) throw createError(400, 'GCash reference number is required.');
+    if (!safeRemark) throw createError(400, 'A remark is required before locking this GCash credit.');
+
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
+        if (!transaction) throw createError(404, 'Reference is not in the imported GCash history.');
+        if (String(transaction.status || '').toLowerCase() !== 'received' || Number(transaction.credit) <= 0) {
+            const error = createError(409, 'Only an incoming GCash credit can be marked Not for Posting.');
+            error.code = 'GCASH_INCOMING_CREDIT_REQUIRED';
+            throw error;
+        }
+        if (sanitizeAssignment(transaction.assignment)) {
+            throw createError(409, 'An assigned GCash transaction cannot be marked Not for Posting.');
+        }
+        const currentLock = sanitizePostingLock(transaction.postingLock);
+        if (currentLock) {
+            if (currentLock.remark === safeRemark) {
+                return {
+                    transaction: {
+                        ...transaction,
+                        postingLock: currentLock,
+                        postingLockAudit: sanitizePostingLockAudit(transaction.postingLockAudit)
+                    },
+                    postingLock: currentLock,
+                    idempotent: true
+                };
+            }
+            throw createPostingLockConflictError(currentLock);
+        }
+
+        const lockedAt = new Date().toISOString();
+        const postingLock = sanitizePostingLock({ remark: safeRemark, lockedAt, lockedBy });
+        transaction.postingLock = postingLock;
+        appendPostingLockAudit(transaction, {
+            id: `gcl-${crypto.randomUUID()}`,
+            action: 'locked',
+            remark: safeRemark,
+            at: lockedAt,
+            by: lockedBy
+        });
+        bucket.updatedAt = lockedAt;
+        return {
+            transaction: {
+                ...transaction,
+                postingLock,
+                postingLockAudit: sanitizePostingLockAudit(transaction.postingLockAudit)
+            },
+            postingLock,
+            idempotent: false
+        };
+    });
+};
+
+const unlockGcashTransactionPosting = async ({ branchId, reference, unlockedBy } = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeReference = normalizeReference(reference);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeReference) throw createError(400, 'GCash reference number is required.');
+
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
+        if (!transaction) throw createError(404, 'Reference is not in the imported GCash history.');
+        if (sanitizeAssignment(transaction.assignment)) {
+            throw createError(409, 'An assigned GCash transaction cannot be unlocked from this action.');
+        }
+        const currentLock = sanitizePostingLock(transaction.postingLock);
+        if (!currentLock) {
+            return {
+                transaction: {
+                    ...transaction,
+                    postingLock: null,
+                    postingLockAudit: sanitizePostingLockAudit(transaction.postingLockAudit)
+                },
+                postingLock: null,
+                idempotent: true
+            };
+        }
+
+        const unlockedAt = new Date().toISOString();
+        appendPostingLockAudit(transaction, {
+            id: `gcu-${crypto.randomUUID()}`,
+            action: 'unlocked',
+            remark: currentLock.remark,
+            at: unlockedAt,
+            by: unlockedBy
+        });
+        transaction.postingLock = null;
+        bucket.updatedAt = unlockedAt;
+        return {
+            transaction: {
+                ...transaction,
+                postingLock: null,
+                postingLockAudit: sanitizePostingLockAudit(transaction.postingLockAudit)
+            },
+            postingLock: null,
+            idempotent: false
+        };
+    });
 };
 
 const updateGcashTransactionRemark = async ({ branchId, reference, category, updatedBy } = {}) => {
@@ -391,7 +555,8 @@ const matchResult = (status, message, checks = {}, transaction = null) => ({
         recipient: transaction.recipient,
         recipientLabel: getGcashRecipientLabel(transaction.recipient) || null,
         batchId: transaction.batchId,
-        assignment: sanitizeAssignment(transaction.assignment)
+        assignment: sanitizeAssignment(transaction.assignment),
+        postingLock: sanitizePostingLock(transaction.postingLock)
     } : null
 });
 
@@ -409,6 +574,16 @@ const evaluateGcashTransactionMatch = ({
     if (!normalizedReference) return matchResult('reference_missing', 'Reference number is required.');
     const transaction = transactions.find((row) => normalizeReference(row?.reference) === normalizedReference);
     if (!transaction) return matchResult('reference_not_found', 'Reference is not in the imported GCash history.');
+
+    const postingLock = sanitizePostingLock(transaction.postingLock);
+    if (postingLock) {
+        return matchResult(
+            'posting_locked',
+            'This imported GCash credit is marked Not for Posting.',
+            { assignmentAvailable: false, postingAllowed: false },
+            transaction
+        );
+    }
 
     const assignment = sanitizeAssignment(transaction.assignment);
     const claimantAccount = toSafeText(accountNumber, 20);
@@ -519,6 +694,8 @@ const claimGcashTransactionAllocations = async ({
         const bucket = getBranchBucket(store, safeBranchId);
         const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
         if (!transaction) throw createError(409, 'Reference is not in the imported GCash history.');
+        const postingLock = sanitizePostingLock(transaction.postingLock);
+        if (postingLock) throw createPostingLockConflictError(postingLock);
         const currentAssignment = sanitizeAssignment(transaction.assignment);
         if (currentAssignment) {
             const sameAllocation = currentAssignment.submissionId === safeSubmissionId
@@ -573,6 +750,8 @@ const claimGcashTransaction = async ({
         const bucket = getBranchBucket(store, safeBranchId);
         const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
         if (!transaction) throw createError(409, 'Reference is not in the imported GCash history.');
+        const postingLock = sanitizePostingLock(transaction.postingLock);
+        if (postingLock) throw createPostingLockConflictError(postingLock);
         const currentAssignment = sanitizeAssignment(transaction.assignment);
         if (currentAssignment) {
             if (
@@ -732,6 +911,8 @@ const replaceGcashTransactionPaymentBinding = async ({
         if (!oldTransaction || !newTransaction) {
             throw createError(409, 'The previous or replacement reference is missing from imported GCash history.');
         }
+        const newPostingLock = sanitizePostingLock(newTransaction.postingLock);
+        if (newPostingLock) throw createPostingLockConflictError(newPostingLock);
 
         const oldAssignment = sanitizeAssignment(oldTransaction.assignment);
         const newAssignment = sanitizeAssignment(newTransaction.assignment);
@@ -850,9 +1031,13 @@ module.exports = {
     replaceGcashTransactionPaymentBinding,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
+    lockGcashTransactionPosting,
+    unlockGcashTransactionPosting,
     sanitizeAssignment,
     sanitizeAssignmentAudit,
     sanitizeRemark,
+    sanitizePostingLock,
+    sanitizePostingLockAudit,
     normalizeRemarkCategory,
     normalizeReference,
     normalizePhone,

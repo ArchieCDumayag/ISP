@@ -16,6 +16,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const pendingPaymentAccounts = new Set();
     const customerSelect = document.getElementById('customerSelect');
     const paymentCustomerField = document.getElementById('paymentCustomerField');
+    const paymentCustomerPicker = document.getElementById('paymentCustomerPicker');
+    const paymentCustomerSearch = document.getElementById('paymentCustomerSearch');
+    const paymentCustomerSuggestions = document.getElementById('paymentCustomerSuggestions');
+    const paymentCustomerHint = document.getElementById('paymentCustomerHint');
     const paymentLockedCustomer = document.getElementById('paymentLockedCustomer');
     const paymentLockedCustomerAvatar = document.getElementById('paymentLockedCustomerAvatar');
     const paymentLockedCustomerName = document.getElementById('paymentLockedCustomerName');
@@ -25,6 +29,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const paymentKindSelect = document.getElementById('paymentKind');
     const paymentMethodField = document.getElementById('paymentMethodField');
     const paymentMethodSelect = document.getElementById('paymentMethod');
+    const paymentMethodHint = document.getElementById('paymentMethodHint');
     const paymentReferenceField = document.getElementById('paymentReferenceField');
     const paymentReferenceInput = document.getElementById('paymentReference');
     const paymentAmountField = document.getElementById('paymentAmountField');
@@ -162,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let pendingCustomerFormRequest = null;
     let areaFilterInitialized = false;
     let paymentModalIgnoreCloseUntil = 0;
+    let paymentCustomerSuggestionIndex = -1;
 
     const applyAccountInfoMikrotikVisibility = () => {
         if (accountInfoMikrotikPanel && !mikrotikEnabled) {
@@ -1081,6 +1087,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const isEffectivePaymentStatusForPayments = (entry = {}) => {
         const status = String(entry?.status || entry?.paymentStatus || entry?.payment_status || '').trim().toLowerCase();
         return ![
+            'pending_gcash_verification',
+            'pending-gcash-verification',
+            'pending gcash verification',
             'pending_approval',
             'pending-approval',
             'pending approval',
@@ -2576,6 +2585,103 @@ document.addEventListener('DOMContentLoaded', function () {
             : '';
     }
 
+    const normalizePaymentCustomerSearch = (value) => String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    const getPaymentCustomerAmountDue = (customer) => {
+        const currentBillState = resolveCurrentBillState(customer);
+        if (currentBillState.billingUnavailable) return null;
+        const amount = Number(currentBillState.payableAmount);
+        return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+    };
+
+    const getPaymentCustomerMatches = () => {
+        const terms = normalizePaymentCustomerSearch(paymentCustomerSearch?.value).split(' ').filter(Boolean);
+        return [...allCustomers]
+            .filter((customer) => {
+                const searchable = normalizePaymentCustomerSearch(
+                    `${formatCustomerName(customer)} ${normalizeAccountNumber(customer?.accountNumber)}`
+                );
+                return terms.every((term) => searchable.includes(term));
+            })
+            .sort((left, right) => formatCustomerName(left).localeCompare(formatCustomerName(right)));
+    };
+
+    function closePaymentCustomerSuggestions() {
+        paymentCustomerSuggestionIndex = -1;
+        if (paymentCustomerSuggestions) {
+            paymentCustomerSuggestions.hidden = true;
+            paymentCustomerSuggestions.querySelectorAll('[data-payment-customer-option]').forEach((option) => {
+                option.classList.remove('active');
+                option.setAttribute('aria-selected', 'false');
+            });
+        }
+        paymentCustomerSearch?.setAttribute('aria-expanded', 'false');
+        paymentCustomerSearch?.removeAttribute('aria-activedescendant');
+    }
+
+    function setActivePaymentCustomerSuggestion(index) {
+        if (!paymentCustomerSuggestions) return;
+        const options = Array.from(paymentCustomerSuggestions.querySelectorAll('[data-payment-customer-option]'));
+        if (!options.length) {
+            paymentCustomerSuggestionIndex = -1;
+            return;
+        }
+        paymentCustomerSuggestionIndex = Math.max(0, Math.min(index, options.length - 1));
+        options.forEach((option, optionIndex) => {
+            const active = optionIndex === paymentCustomerSuggestionIndex;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-selected', active ? 'true' : 'false');
+            if (active) {
+                paymentCustomerSearch?.setAttribute('aria-activedescendant', option.id);
+                option.scrollIntoView({ block: 'nearest' });
+            }
+        });
+    }
+
+    function renderPaymentCustomerSuggestions() {
+        if (!paymentCustomerSearch || !paymentCustomerSuggestions || paymentCustomerSearch.disabled) return;
+        const matches = getPaymentCustomerMatches();
+        const visibleMatches = matches.slice(0, 8);
+        paymentCustomerSuggestionIndex = -1;
+        paymentCustomerSuggestions.innerHTML = visibleMatches.length
+            ? visibleMatches.map((customer, index) => {
+                const accountNumber = normalizeAccountNumber(customer?.accountNumber);
+                const amountDue = getPaymentCustomerAmountDue(customer);
+                const amountLabel = amountDue === null ? 'Amount due unavailable' : `Amount due ${formatCurrency(amountDue)}`;
+                return `<button type="button" class="payment-customer-option" role="option"
+                    id="paymentCustomerOption${index + 1}" data-payment-customer-option
+                    data-account-number="${escapeHtml(accountNumber)}" aria-selected="false">
+                    <span class="payment-customer-option__name">${escapeHtml(formatCustomerName(customer))}</span>
+                    <span class="payment-customer-option__amount">${escapeHtml(amountLabel)}</span>
+                </button>`;
+            }).join('')
+            : '<div class="payment-customer-empty" role="status">No matching client.</div>';
+        if (matches.length > visibleMatches.length) {
+            paymentCustomerSuggestions.insertAdjacentHTML(
+                'beforeend',
+                `<div class="payment-customer-more">Keep typing to narrow ${matches.length} clients.</div>`
+            );
+        }
+        paymentCustomerSuggestions.hidden = false;
+        paymentCustomerSearch.setAttribute('aria-expanded', 'true');
+        paymentCustomerSearch.removeAttribute('aria-activedescendant');
+    }
+
+    function selectPaymentCustomer(accountNumber) {
+        const targetAccount = normalizeAccountNumber(accountNumber);
+        const customer = findCustomerByAccount(allCustomers, targetAccount)
+            || findCustomerByAccount(window.allCustomers, targetAccount);
+        if (!customer || !customerSelect) return false;
+        customerSelect.value = targetAccount;
+        if (paymentCustomerSearch) paymentCustomerSearch.value = formatCustomerName(customer);
+        customerSelect.dispatchEvent(new Event('change'));
+        closePaymentCustomerSuggestions();
+        return true;
+    }
+
     function showToast(message) {
         if (typeof window.appToast === 'function') {
             window.appToast(message, { type: 'info' });
@@ -2682,6 +2788,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function syncPaymentMethodVisibility() {
         const showPaymentMethod = String(paymentKindSelect?.value || '').trim().toLowerCase() === 'payment';
+        const isPendingGcash = showPaymentMethod
+            && String(paymentMethodSelect?.value || '').trim().toLowerCase() === 'gcash';
         if (paymentMethodField) {
             paymentMethodField.hidden = !showPaymentMethod;
             paymentMethodField.style.display = showPaymentMethod ? '' : 'none';
@@ -2700,6 +2808,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (paymentReferenceInput) {
             paymentReferenceInput.disabled = !showPaymentMethod;
         }
+        if (paymentMethodHint) paymentMethodHint.hidden = !isPendingGcash;
+        const submitLabel = paymentFormSubmitBtn?.querySelector('[data-payment-submit-label]');
+        if (submitLabel) submitLabel.textContent = isPendingGcash ? 'Save Pending GCash' : 'Record Payment';
     }
 
     function setPaymentCustomerLock(customer = null) {
@@ -2728,18 +2839,27 @@ document.addEventListener('DOMContentLoaded', function () {
             paymentLockedAccountInput.value = isLocked ? accountNumber : '';
             paymentLockedAccountInput.disabled = !isLocked;
         }
+        if (paymentCustomerPicker) paymentCustomerPicker.hidden = isLocked;
+        if (paymentCustomerHint) paymentCustomerHint.hidden = isLocked;
+        if (paymentCustomerSearch) {
+            paymentCustomerSearch.disabled = isLocked;
+            paymentCustomerSearch.required = !isLocked;
+            paymentCustomerSearch.setAttribute('aria-hidden', isLocked ? 'true' : 'false');
+        }
         if (customerSelect) {
-            customerSelect.hidden = isLocked;
+            customerSelect.hidden = true;
             customerSelect.disabled = isLocked;
             customerSelect.required = !isLocked;
-            customerSelect.setAttribute('aria-hidden', isLocked ? 'true' : 'false');
+            customerSelect.setAttribute('aria-hidden', 'true');
         }
+        if (isLocked) closePaymentCustomerSuggestions();
     }
 
     function openModal(options = {}) {
         paymentForm.reset();
         document.getElementById('paymentDate').valueAsDate = new Date();
         selectedCustomer = null;
+        closePaymentCustomerSuggestions();
         setPaymentCustomerLock(null);
         ensureTransactionAmountFieldVisible();
         syncPaymentMethodVisibility();
@@ -2751,7 +2871,7 @@ document.addEventListener('DOMContentLoaded', function () {
         syncModalScrollLock();
         updateRecorderHint();
         if (options.focusCustomer !== false) {
-            customerSelect.focus();
+            paymentCustomerSearch?.focus();
         }
     }
 
@@ -2775,8 +2895,7 @@ document.addEventListener('DOMContentLoaded', function () {
         openModal({ focusCustomer: !shouldLockCustomer });
 
         // Pre-select customer and trigger the existing auto-fill logic.
-        customerSelect.value = targetAccount;
-        customerSelect.dispatchEvent(new Event('change'));
+        selectPaymentCustomer(targetAccount);
         if (shouldLockCustomer) {
             setPaymentCustomerLock(customer);
             paymentAmountInput?.focus();
@@ -2861,6 +2980,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const unpaidRows = Math.max(0, rows.length - paidRows - pendingRows);
         const endingBalance = Number(summary.endingBalance ?? summary.balance ?? record.balance) || 0;
         const reconciliation = summary.reconciliation;
+        const pendingGcashCount = Array.isArray(summary.pendingGcashPayments)
+            ? summary.pendingGcashPayments.length
+            : 0;
 
         if (paymentBreakdownModalSubtitle) {
             paymentBreakdownModalSubtitle.textContent = [
@@ -2891,6 +3013,9 @@ document.addEventListener('DOMContentLoaded', function () {
         ];
         if (pendingRows) {
             summaryParts.push(`${pendingRows} postpaid bill${pendingRows === 1 ? '' : 's'} not generated yet.`);
+        }
+        if (pendingGcashCount) {
+            summaryParts.push(`${pendingGcashCount} GCash payment${pendingGcashCount === 1 ? '' : 's'} pending imported proof and excluded from this balance.`);
         }
         if (Number(reconciliation?.issueCount) > 0) {
             summaryParts.push(`Reconciliation: ${Number(reconciliation.issueCount)} issue${Number(reconciliation.issueCount) === 1 ? '' : 's'} detected.`);
@@ -2994,6 +3119,7 @@ document.addEventListener('DOMContentLoaded', function () {
             breakdownAccount && paymentBreakdownModal?.classList.contains('show')
         );
         paymentBreakdownPaymentAccount = '';
+        closePaymentCustomerSuggestions();
         paymentModal.classList.remove('show');
         paymentModal.setAttribute('aria-hidden', 'true');
         setPaymentBreakdownPaymentLayer(false);
@@ -3464,6 +3590,7 @@ document.addEventListener('DOMContentLoaded', function () {
     paymentKindSelect?.addEventListener('change', () => {
         syncPaymentMethodVisibility();
     });
+    paymentMethodSelect?.addEventListener('change', syncPaymentMethodVisibility);
     openCustomerAddBtn?.addEventListener('click', () => {
         openCustomerAddModal();
     });
@@ -3816,8 +3943,71 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    paymentCustomerSearch?.addEventListener('focus', () => {
+        renderPaymentCustomerSuggestions();
+    });
+
+    paymentCustomerSearch?.addEventListener('input', () => {
+        if (customerSelect?.value) {
+            customerSelect.value = '';
+            customerSelect.dispatchEvent(new Event('change'));
+        }
+        renderPaymentCustomerSuggestions();
+    });
+
+    paymentCustomerSearch?.addEventListener('keydown', (event) => {
+        if (!paymentCustomerSuggestions) return;
+        const optionCount = paymentCustomerSuggestions.querySelectorAll('[data-payment-customer-option]').length;
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            if (paymentCustomerSuggestions.hidden) renderPaymentCustomerSuggestions();
+            setActivePaymentCustomerSuggestion(paymentCustomerSuggestionIndex + 1);
+            return;
+        }
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (paymentCustomerSuggestions.hidden) renderPaymentCustomerSuggestions();
+            setActivePaymentCustomerSuggestion(
+                paymentCustomerSuggestionIndex <= 0 ? Math.max(0, optionCount - 1) : paymentCustomerSuggestionIndex - 1
+            );
+            return;
+        }
+        if (event.key === 'Enter' && !paymentCustomerSuggestions.hidden) {
+            const options = Array.from(paymentCustomerSuggestions.querySelectorAll('[data-payment-customer-option]'));
+            const selectedOption = paymentCustomerSuggestionIndex >= 0
+                ? options[paymentCustomerSuggestionIndex]
+                : (paymentCustomerSearch.value.trim() ? options[0] : null);
+            if (selectedOption) {
+                event.preventDefault();
+                selectPaymentCustomer(selectedOption.dataset.accountNumber);
+            }
+            return;
+        }
+        if (event.key === 'Escape' && !paymentCustomerSuggestions.hidden) {
+            event.preventDefault();
+            event.stopPropagation();
+            closePaymentCustomerSuggestions();
+        }
+    });
+
+    paymentCustomerSuggestions?.addEventListener('mousedown', (event) => {
+        if (event.target.closest('[data-payment-customer-option]')) event.preventDefault();
+    });
+
+    paymentCustomerSuggestions?.addEventListener('click', (event) => {
+        const option = event.target.closest('[data-payment-customer-option]');
+        if (!option) return;
+        selectPaymentCustomer(option.dataset.accountNumber);
+        paymentCustomerSearch?.focus();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (paymentCustomerPicker?.contains(event.target)) return;
+        closePaymentCustomerSuggestions();
+    });
+
     // Auto-fill amount based on selected customer's balance
-    customerSelect.addEventListener('change', () => {
+    customerSelect?.addEventListener('change', () => {
         const accountNumber = normalizeAccountNumber(customerSelect.value);
 
         if (!accountNumber) {
@@ -3916,6 +4106,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         if (currentVal) {
             customerSelect.value = currentVal;
+            const selectedRecord = findCustomerByAccount(allCustomers, currentVal);
+            if (selectedRecord && paymentCustomerSearch && !paymentCustomerSearch.disabled) {
+                paymentCustomerSearch.value = formatCustomerName(selectedRecord);
+            }
         }
     }
 
@@ -3956,6 +4150,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const accountNumber = normalizeAccountNumber(formData.get('accountNumber'));
         if (!accountNumber) {
             showToast('Select a customer to continue.');
+            paymentCustomerSearch?.focus();
+            renderPaymentCustomerSuggestions();
             return;
         }
         if (pendingPaymentAccounts.has(accountNumber)) {
@@ -4010,7 +4206,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
                 const responseData = await response.json();
                 if (!response.ok) throw new Error(responseData.message || `Failed to add transaction`);
-                showToast(`Transaction added successfully!`);
+                const savedPendingGcash = String(responseData?.status || '').trim().toLowerCase() === 'pending_gcash_verification';
+                showToast(savedPendingGcash
+                    ? 'GCash payment saved as Pending. Bind imported proof before it affects billing.'
+                    : 'Transaction added successfully!');
                 closeModal({ force: true, refreshPaymentBreakdown: true });
                 // Reload all data to reflect changes
                 init();

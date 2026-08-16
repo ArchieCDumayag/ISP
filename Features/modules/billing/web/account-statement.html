@@ -1120,7 +1120,7 @@
                     if (context?.paymentHistory) {
                         return Array.isArray(context.paymentHistory) ? context.paymentHistory : [];
                     }
-                    const response = await fetch(`/api/payments/${encodeURIComponent(account)}`, {
+                    const response = await fetch(`/api/payments/${encodeURIComponent(account)}?effective=true`, {
                         credentials: 'include',
                         cache: 'no-store'
                     });

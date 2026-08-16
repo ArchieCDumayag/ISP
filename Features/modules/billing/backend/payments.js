@@ -13,7 +13,11 @@ const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = req
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const customersModule = require('../../customer-management/backend/customers');
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
-const { getEffectivePaymentEntries, normalizePaymentEntry } = require('./payment-entry-normalizer');
+const {
+    getEffectivePaymentEntries,
+    isEffectivePaymentEntryStatus,
+    normalizePaymentEntry
+} = require('./payment-entry-normalizer');
 const { auditMikrotikPppoeCommand } = require('../../network/backend/mikrotik-audit-log');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const { DATA_DIR, PROJECT_ROOT } = require('../../../../core/runtime/paths');
@@ -109,9 +113,21 @@ const isPositiveCreditEntry = (entry = {}) => {
 
 const isCollectedPaymentEntry = (entry = {}) => {
     if (!isPositiveCreditEntry(entry)) return false;
+    if (!isEffectivePaymentEntryStatus(entry)) return false;
     const kind = String(entry?.kind || entry?.type || '').trim().toLowerCase();
     return kind === 'payment' || !kind;
 };
+
+const PENDING_GCASH_STATUS = 'pending_gcash_verification';
+const normalizePaymentStatus = (entry = {}) => String(
+    entry?.status || entry?.paymentStatus || entry?.payment_status || ''
+).trim().toLowerCase().replace(/[\s-]+/g, '_');
+const isPendingGcashPaymentEntry = (entry = {}) => (
+    normalizePaymentStatus(entry) === PENDING_GCASH_STATUS
+    && String(entry?.kind || entry?.type || '').trim().toLowerCase() === 'payment'
+    && String(entry?.paymentMethod || entry?.payment_method || '').trim().toLowerCase() === 'gcash'
+    && Number(entry?.amount) > 0
+);
 
 const getRawBody = (req) => {
     if (typeof req.rawBody === 'string') return req.rawBody;
@@ -1861,6 +1877,9 @@ const buildPaymentImportGcashReconciliationPlan = ({
         if (group.ambiguousReference) {
             return finish('conflict', 'This numeric reference matches multiple official GCash references after leading-zero normalization.');
         }
+        if (group.transaction?.postingLock) {
+            return finish('conflict', 'This official GCash reference is marked Not for Posting and cannot be imported as a customer payment.');
+        }
         if (
             group.records.length < 1
             || group.records.length > 3
@@ -2031,6 +2050,11 @@ const buildExistingPaymentHistoryGcashReconciliationPlan = ({
             officialDate,
             submissionId
         });
+
+        if (transaction?.postingLock) {
+            groups.push(finish('not_for_posting', 'This official GCash reference is marked Not for Posting.'));
+            return;
+        }
 
         if (assignment?.status === 'posted') {
             groups.push(finish('assigned', 'This official GCash reference is already posted.'));
@@ -3032,6 +3056,7 @@ const getPaymentHistoryEditBindOptions = async ({ branchId, accountNumber, entry
             && getGcashAssignmentPaymentEntryIds(transaction.assignment).has(safeEntryId);
         return Boolean(reference)
             && String(transaction?.status || '').trim().toLowerCase() === 'received'
+            && !transaction?.postingLock
             && (!transaction?.assignment || pendingOwnClaim)
             && transactionAmount === locked.amount
             && transactionDate === locked.paymentDate
@@ -3364,6 +3389,463 @@ const editAndBindPaymentHistoryEntry = async ({
             oldReference,
             officialReference
         },
+        backup
+    };
+};
+
+const buildPendingGcashSubmissionId = ({ branchId, entryId, reference } = {}) => (
+    `pending-gcash-${paymentImportHash(`${branchId}|${entryId}|${normalizeGcashReference(reference)}`, 38)}`
+);
+
+const getPendingGcashPaymentMatches = (payments = {}, entryId = '') => {
+    const safeEntryId = String(entryId || '').trim();
+    return Object.entries(payments && typeof payments === 'object' ? payments : {}).flatMap(([accountNumber, record]) => (
+        (Array.isArray(record?.history) ? record.history : []).flatMap((entry) => {
+            if (!isPendingGcashPaymentEntry(entry)) return [];
+            if (safeEntryId && String(entry?.id || '').trim() !== safeEntryId) return [];
+            return [{ accountNumber: String(accountNumber || '').trim(), entry }];
+        })
+    ));
+};
+
+const toPendingGcashPaymentRecord = ({ accountNumber, entry }, customer = {}) => ({
+    entryId: String(entry?.id || '').trim(),
+    accountNumber: String(accountNumber || '').trim(),
+    customerName: getPaymentImportCustomerDisplayName(customer, accountNumber),
+    amount: paymentImportMoney(entry?.amount) || 0,
+    paymentDate: toPaymentDateOnly(entry?.date || entry?.recordedAt),
+    enteredReference: String(entry?.reference || '').trim(),
+    paymentMethod: 'GCash',
+    status: PENDING_GCASH_STATUS,
+    statusLabel: 'Pending',
+    notes: sanitizeString(entry?.description),
+    recordedAt: entry?.recordedAt || entry?.date || null,
+    recordedBy: entry?.recordedBy || null
+});
+
+const listPendingGcashPayments = async ({ branchId } = {}) => {
+    const scopedBranchId = Number(branchId);
+    if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+    const [payments, customers] = await Promise.all([
+        readPayments(scopedBranchId),
+        readCustomers(scopedBranchId)
+    ]);
+    const customerByAccount = new Map((Array.isArray(customers) ? customers : []).map((customer) => [
+        String(customer?.accountNumber || '').trim(),
+        customer
+    ]));
+    return getPendingGcashPaymentMatches(payments)
+        .map((match) => toPendingGcashPaymentRecord(match, customerByAccount.get(match.accountNumber) || {}))
+        .sort((left, right) => String(right.recordedAt || right.paymentDate || '')
+            .localeCompare(String(left.recordedAt || left.paymentDate || '')));
+};
+
+const getPendingGcashBindContext = async ({ branchId, accountNumber, entryId } = {}) => {
+    const scopedBranchId = Number(branchId);
+    const safeAccountNumber = formatPaymentImportAccountNumber(accountNumber);
+    const safeEntryId = String(entryId || '').trim();
+    if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
+        throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+    if (!safeAccountNumber || !safeEntryId) {
+        throw createError(400, 'Pending GCash payment account and entry ID are required.');
+    }
+
+    const [payments, customers, history] = await Promise.all([
+        readPayments(scopedBranchId),
+        readCustomers(scopedBranchId),
+        listGcashTransactionHistory({ branchId: scopedBranchId, all: true })
+    ]);
+    const allEntryMatches = getPaymentHistoryEntryMatches(payments, safeEntryId);
+    const match = allEntryMatches.find((item) => item.accountNumber === safeAccountNumber);
+    if (!match) throw createError(404, 'Pending GCash payment was not found for this customer.');
+    if (allEntryMatches.length !== 1) {
+        throw createError(409, 'The pending payment entry ID is duplicated and cannot be bound safely.');
+    }
+    const customer = (Array.isArray(customers) ? customers : []).find((item) => (
+        String(item?.accountNumber || '').trim() === safeAccountNumber
+    ));
+    if (!customer) throw createError(404, 'Customer was not found in this branch.');
+
+    const amount = paymentImportMoney(match.entry?.amount);
+    const paymentDate = toPaymentDateOnly(match.entry?.date || match.entry?.recordedAt);
+    if (amount == null || amount <= 0 || !paymentDate) {
+        throw createError(409, 'The pending GCash payment is missing a valid amount or payment date.');
+    }
+    const billingMonth = paymentDate.slice(0, 7);
+    const transactions = (Array.isArray(history?.transactions) ? history.transactions : []).filter((transaction) => {
+        const reference = normalizeGcashReference(transaction?.reference);
+        const transactionAmount = paymentImportMoney(transaction?.credit);
+        const transactionDate = toPaymentDateOnly(transaction?.transactionDate || transaction?.transactionAt);
+        const submissionId = buildPendingGcashSubmissionId({
+            branchId: scopedBranchId,
+            entryId: safeEntryId,
+            reference
+        });
+        const ownClaim = transaction?.assignment?.status === 'claimed'
+            && transaction.assignment.submissionId === submissionId
+            && getGcashAssignmentPaymentEntryIds(transaction.assignment).has(safeEntryId);
+        const duplicatePostedReference = getPaymentHistoryReferenceMatches(payments, reference, safeEntryId)
+            .some(({ entry }) => isCollectedPaymentEntry(entry));
+        return Boolean(reference)
+            && String(transaction?.status || '').trim().toLowerCase() === 'received'
+            && !transaction?.postingLock
+            && (!transaction?.assignment || ownClaim)
+            && transactionAmount === amount
+            && transactionDate === paymentDate
+            && !duplicatePostedReference;
+    }).map((transaction) => toPaymentHistoryEditBindTransaction(transaction, {
+        pendingBinding: transaction?.assignment?.status === 'claimed'
+    }));
+
+    return {
+        branchId: scopedBranchId,
+        accountNumber: safeAccountNumber,
+        entryId: safeEntryId,
+        entry: match.entry,
+        customer,
+        amount,
+        paymentDate,
+        billingMonth,
+        enteredReference: String(match.entry?.reference || '').trim(),
+        transactions,
+        payments,
+        history
+    };
+};
+
+const getPendingGcashBindOptions = async (payload = {}) => {
+    const context = await getPendingGcashBindContext(payload);
+    if (!isPendingGcashPaymentEntry(context.entry)) {
+        const binding = getPaymentHistoryEntryPostedGcashAssignment(
+            context.history.transactions,
+            context.entryId
+        );
+        if (binding) throw createPaymentHistoryGcashBindingLockedError();
+        throw createError(409, 'This GCash payment is no longer pending verification.');
+    }
+    return {
+        payment: toPendingGcashPaymentRecord(
+            { accountNumber: context.accountNumber, entry: context.entry },
+            context.customer
+        ),
+        transactions: context.transactions
+    };
+};
+
+const buildVerifiedPendingGcashDescription = ({ description, reference } = {}) => {
+    const cleanDescription = String(description || '')
+        .replace(/\s*-?\s*Pending GCash verification\s*/ig, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    return [cleanDescription, `Verified against imported GCash reference ${reference}`]
+        .filter(Boolean)
+        .join(' - ');
+};
+
+const bindPendingGcashPayment = async ({
+    branchId,
+    accountNumber,
+    entryId,
+    gcashReference,
+    assignmentConfirmed,
+    verifiedBy
+} = {}) => {
+    const officialReference = normalizeGcashReference(gcashReference);
+    if (!officialReference) throw createError(400, 'Select an imported GCash transaction.');
+    if (assignmentConfirmed !== true) {
+        throw createError(400, 'Confirm the customer, amount, date, and imported GCash transaction before posting.');
+    }
+
+    const context = await getPendingGcashBindContext({ branchId, accountNumber, entryId });
+    const selectedTransaction = (Array.isArray(context.history.transactions) ? context.history.transactions : [])
+        .find((transaction) => normalizeGcashReference(transaction?.reference) === officialReference);
+    if (!selectedTransaction) throw createError(404, 'The selected reference is not in Imported GCash Transactions.');
+    const submissionId = buildPendingGcashSubmissionId({
+        branchId: context.branchId,
+        entryId: context.entryId,
+        reference: officialReference
+    });
+    const existingBinding = getPaymentHistoryEntryPostedGcashAssignment(
+        context.history.transactions,
+        context.entryId
+    );
+    if (existingBinding) {
+        if (normalizeGcashReference(existingBinding.reference) !== officialReference) {
+            throw createPaymentHistoryGcashBindingLockedError();
+        }
+        return {
+            idempotent: true,
+            entry: context.entry,
+            reference: officialReference,
+            assignment: existingBinding.assignment || selectedTransaction.assignment || null
+        };
+    }
+
+    const officialAmount = paymentImportMoney(selectedTransaction?.credit);
+    const officialDate = toPaymentDateOnly(selectedTransaction?.transactionDate || selectedTransaction?.transactionAt);
+    const officialReceivedAt = normalizeGcashReceivedAt(selectedTransaction?.transactionAt);
+    if (String(selectedTransaction?.status || '').trim().toLowerCase() !== 'received' || officialAmount == null || officialAmount <= 0) {
+        throw createError(409, 'Only an incoming imported GCash credit can verify this payment.');
+    }
+    if (selectedTransaction?.postingLock) {
+        throw createError(409, 'This imported GCash credit is marked Not for Posting.');
+    }
+    if (officialAmount !== context.amount) {
+        throw createError(409, 'The imported GCash credit amount does not match the pending payment.');
+    }
+    if (!officialDate || officialDate !== context.paymentDate) {
+        throw createError(409, 'The imported GCash transaction date does not match the pending payment date.');
+    }
+    if (!officialReceivedAt) {
+        throw createError(409, 'The imported GCash transaction is missing its official date and time.');
+    }
+    const duplicateReference = getPaymentHistoryReferenceMatches(
+        context.payments,
+        officialReference,
+        context.entryId
+    ).find(({ entry }) => isCollectedPaymentEntry(entry));
+    if (duplicateReference) {
+        throw createError(409, 'This GCash reference already belongs to another posted payment.');
+    }
+
+    const reviewer = {
+        id: String(verifiedBy?.id || '').trim() || null,
+        username: sanitizeString(verifiedBy?.username) || null,
+        name: sanitizeString(verifiedBy?.name) || null,
+        role: sanitizeString(verifiedBy?.role) || null
+    };
+    const requestedAllocation = {
+        accountNumber: context.accountNumber,
+        customerName: getPaymentImportCustomerDisplayName(context.customer, context.accountNumber),
+        amount: context.amount,
+        billingMonth: context.billingMonth,
+        paymentEntryId: context.entryId
+    };
+    const assignment = selectedTransaction?.assignment || null;
+    const ownClaim = assignment?.status === 'claimed'
+        && assignment.submissionId === submissionId
+        && getGcashAssignmentPaymentEntryIds(assignment).has(context.entryId);
+    if (assignment && !ownClaim) {
+        throw createError(409, 'This imported GCash transaction is already reserved or posted.');
+    }
+
+    if (!isPendingGcashPaymentEntry(context.entry)) {
+        if (!ownClaim || normalizeGcashReference(context.entry?.reference) !== officialReference) {
+            throw createError(409, 'This GCash payment is no longer pending verification.');
+        }
+        const recovered = await finalizeGcashTransactionAllocations({
+            branchId: context.branchId,
+            reference: officialReference,
+            submissionId,
+            paymentEntries: [{
+                accountNumber: context.accountNumber,
+                billingMonth: context.billingMonth,
+                paymentEntryId: context.entryId
+            }]
+        });
+        await applyReenableOnPaid(context.accountNumber, context.branchId, context.payments, context.entry);
+        await maybeExtendPrepaidExpiryOnPayment(context.accountNumber, context.entry, context.branchId);
+        triggerBranchServiceRefresh(context.branchId, 'payments-gcash-pending-posted');
+        return {
+            idempotent: true,
+            recovered: true,
+            entry: context.entry,
+            reference: officialReference,
+            assignment: recovered.assignment
+        };
+    }
+
+    const backup = await createPaymentRecordsBackup(context.payments, {
+        branchId: context.branchId,
+        user: verifiedBy,
+        reason: 'before-pending-gcash-bind'
+    });
+    let claimCreated = false;
+    let ledgerUpdated = false;
+    const claim = await claimGcashTransactionAllocations({
+        branchId: context.branchId,
+        reference: officialReference,
+        submissionId,
+        allocations: [requestedAllocation],
+        amount: context.amount,
+        paymentDate: context.paymentDate,
+        claimedBy: reviewer
+    });
+    claimCreated = !claim.idempotent;
+
+    const description = appendGcashReceivedAtAudit(buildVerifiedPendingGcashDescription({
+        description: context.entry?.description,
+        reference: officialReference
+    }), officialReceivedAt);
+    const fingerprint = appendGcashReceivedAtAudit(
+        `${context.accountNumber}|${officialReference}|gcash-verified|${context.amount.toFixed(2)}|${context.entryId}`,
+        officialReceivedAt,
+        200
+    );
+    let updatedEntry;
+    try {
+        if (await isRelationalReady()) {
+            await withTransaction(async (connection) => {
+                const [rows] = await connection.query(
+                    `SELECT
+                        id,
+                        account_number AS accountNumber,
+                        amount,
+                        date,
+                        kind,
+                        direction,
+                        reference,
+                        or_number AS orNumber,
+                        description,
+                        type,
+                        recorded_at AS recordedAt,
+                        recorded_by_user_id AS recordedByUserId,
+                        recorded_by_username AS recordedByUsername,
+                        recorded_by_name AS recordedByName,
+                        recorded_by_role AS recordedByRole,
+                        payer,
+                        status,
+                        payment_method AS paymentMethod,
+                        fingerprint,
+                        xendit_id AS xenditId
+                     FROM payment_entries
+                     WHERE branch_id = ? AND account_number = ? AND id = ?
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [context.branchId, context.accountNumber, context.entryId]
+                );
+                const lockedEntry = rows?.[0] ? mapPaymentRow(rows[0]) : null;
+                if (!lockedEntry || !isPendingGcashPaymentEntry(lockedEntry)) {
+                    throw createError(409, 'The pending GCash payment changed before it could be posted.');
+                }
+                const [referenceRows] = await connection.query(
+                    `SELECT
+                        id,
+                        amount,
+                        kind,
+                        direction,
+                        reference,
+                        or_number AS orNumber,
+                        status,
+                        payment_method AS paymentMethod
+                     FROM payment_entries
+                     WHERE branch_id = ? AND id <> ?
+                     FOR UPDATE`,
+                    [context.branchId, context.entryId]
+                );
+                const hasPostedDuplicate = (referenceRows || []).map(mapPaymentRow).some((entry) => (
+                    isCollectedPaymentEntry(entry)
+                    && [entry?.reference, entry?.orNumber]
+                        .map(paymentImportGcashComparableReference)
+                        .filter(Boolean)
+                        .includes(paymentImportGcashComparableReference(officialReference))
+                ));
+                if (hasPostedDuplicate) {
+                    throw createError(409, 'This GCash reference was posted while verification was open.');
+                }
+                const [updateResult] = await connection.query(
+                    `UPDATE payment_entries
+                     SET date = ?, reference = ?, description = ?, status = ?, payment_method = ?, fingerprint = ?
+                     WHERE branch_id = ? AND account_number = ? AND id = ?`,
+                    [
+                        officialDate,
+                        officialReference,
+                        description || null,
+                        'Approved',
+                        'GCash',
+                        fingerprint,
+                        context.branchId,
+                        context.accountNumber,
+                        context.entryId
+                    ]
+                );
+                if (!updateResult?.affectedRows) {
+                    throw createError(409, 'The pending GCash payment changed before it could be saved.');
+                }
+                updatedEntry = {
+                    ...lockedEntry,
+                    date: officialDate,
+                    reference: officialReference,
+                    description,
+                    status: 'Approved',
+                    paymentMethod: 'GCash',
+                    fingerprint,
+                    paymentReceivedAt: officialReceivedAt
+                };
+            });
+        } else {
+            const latestPayments = await readPayments(context.branchId);
+            const matches = getPaymentHistoryEntryMatches(latestPayments, context.entryId);
+            const latest = matches.find((item) => item.accountNumber === context.accountNumber);
+            if (!latest || matches.length !== 1 || !isPendingGcashPaymentEntry(latest.entry)) {
+                throw createError(409, 'The pending GCash payment changed before it could be posted.');
+            }
+            const hasPostedDuplicate = getPaymentHistoryReferenceMatches(
+                latestPayments,
+                officialReference,
+                context.entryId
+            ).some(({ entry }) => isCollectedPaymentEntry(entry));
+            if (hasPostedDuplicate) {
+                throw createError(409, 'This GCash reference was posted while verification was open.');
+            }
+            updatedEntry = {
+                ...latest.entry,
+                date: officialDate,
+                reference: officialReference,
+                description,
+                status: 'Approved',
+                paymentMethod: 'GCash',
+                fingerprint,
+                paymentReceivedAt: officialReceivedAt
+            };
+            latestPayments[context.accountNumber].history = latestPayments[context.accountNumber].history
+                .map((entry) => String(entry?.id || '').trim() === context.entryId ? updatedEntry : entry);
+            await writePayments(latestPayments);
+        }
+        ledgerUpdated = true;
+    } catch (error) {
+        if (claimCreated && !ledgerUpdated) {
+            await releaseGcashTransactionClaim({
+                branchId: context.branchId,
+                reference: officialReference,
+                submissionId
+            }).catch(() => false);
+        }
+        throw error;
+    }
+
+    let finalized;
+    try {
+        finalized = await finalizeGcashTransactionAllocations({
+            branchId: context.branchId,
+            reference: officialReference,
+            submissionId,
+            paymentEntries: [{
+                accountNumber: context.accountNumber,
+                billingMonth: context.billingMonth,
+                paymentEntryId: context.entryId
+            }]
+        });
+    } catch (error) {
+        const pendingError = createError(
+            503,
+            `${error?.message || 'GCash verification finalization failed'} The ledger entry was updated once; reload and retry to finish locking the imported reference.`
+        );
+        pendingError.code = 'PENDING_GCASH_FINALIZATION_REQUIRED';
+        throw pendingError;
+    }
+
+    await applyReenableOnPaid(context.accountNumber, context.branchId, null, updatedEntry);
+    await maybeExtendPrepaidExpiryOnPayment(context.accountNumber, updatedEntry, context.branchId);
+    triggerBranchServiceRefresh(context.branchId, 'payments-gcash-pending-posted');
+    return {
+        idempotent: false,
+        entry: updatedEntry,
+        reference: officialReference,
+        assignment: finalized.assignment,
         backup
     };
 };
@@ -4580,6 +5062,56 @@ router.get('/gcash-bindings', async (req, res, next) => {
     }
 });
 
+// GET /api/payments/gcash-pending - List manual GCash payments awaiting official proof
+router.get('/gcash-pending', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const payments = await listPendingGcashPayments({ branchId: user.branchId || null });
+        res.json({ ok: true, payments });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to load pending GCash payments.'));
+    }
+});
+
+// GET /api/payments/gcash-pending/:accountNumber/:entryId/options - List exact imported proof matches
+router.get('/gcash-pending/:accountNumber/:entryId/options', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const result = await getPendingGcashBindOptions({
+            branchId: user.branchId || null,
+            accountNumber: req.params.accountNumber,
+            entryId: req.params.entryId
+        });
+        res.json({ ok: true, ...result });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to load imported GCash proof matches.'));
+    }
+});
+
+// POST /api/payments/gcash-pending/:accountNumber/:entryId/bind - Verify and post one pending GCash payment
+router.post('/gcash-pending/:accountNumber/:entryId/bind', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const result = await bindPendingGcashPayment({
+            branchId: user.branchId || null,
+            accountNumber: req.params.accountNumber,
+            entryId: req.params.entryId,
+            gcashReference: req.body?.gcashReference,
+            assignmentConfirmed: req.body?.assignmentConfirmed === true,
+            verifiedBy: user
+        });
+        res.status(result.idempotent ? 200 : 201).json({
+            ok: true,
+            message: result.idempotent
+                ? 'This pending GCash payment is already verified and posted.'
+                : 'Pending GCash payment verified and posted from the imported transaction.',
+            ...result
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to verify and post the pending GCash payment.'));
+    }
+});
+
 // GET /api/payments/:accountNumber/:entryId/edit-bind-options - List exact available GCash matches
 router.get('/:accountNumber/:entryId/edit-bind-options', async (req, res, next) => {
     try {
@@ -4626,7 +5158,15 @@ router.get('/:accountNumber', async (req, res, next) => {
         const branchId = req.user?.branchId || null;
         const payments = await readPayments(branchId);
         const accountHistory = payments[req.params.accountNumber] || { history: [] };
-        res.json(accountHistory);
+        const effectiveOnly = ['1', 'true', 'yes'].includes(
+            String(req.query?.effective || '').trim().toLowerCase()
+        );
+        res.json(effectiveOnly
+            ? {
+                ...accountHistory,
+                history: getEffectivePaymentEntries(accountHistory?.history || [])
+            }
+            : accountHistory);
     } catch (error) {
         next(createError(500, 'Failed to retrieve account history.'));
     }
@@ -4646,8 +5186,13 @@ router.post('/:accountNumber', async (req, res, next) => {
         // Ensure 'kind' is one of the allowed values, default to 'payment' if not.
         const kind = allowedKinds.has(requestedKind) ? requestedKind : 'payment';
         const direction = (kind === 'charge' || kind === 'bill') ? 'debit' : 'credit';
+        const paymentMethod = sanitizeString(paymentEntry?.paymentMethod || paymentEntry?.payment_method);
+        const isPendingGcashPayment = kind === 'payment' && paymentMethod.toLowerCase() === 'gcash';
         if (!Number.isFinite(amountValue) || amountValue <= 0) {
             return next(createError(400, 'Amount must be greater than 0.'));
+        }
+        if (isPendingGcashPayment && !toPaymentDateOnly(paymentEntry?.date)) {
+            return next(createError(400, 'Payment date is required for pending GCash verification.'));
         }
 
         const sessionUser = req.user || await getUserFromSession(req);
@@ -4731,8 +5276,12 @@ router.post('/:accountNumber', async (req, res, next) => {
             kind,
             type: kind,
             direction,
+            status: isPendingGcashPayment ? PENDING_GCASH_STATUS : paymentEntry?.status,
+            paymentMethod: paymentMethod || undefined,
             reference: relational ? (providedReference || undefined) : fallbackReference,
-            description: description || undefined,
+            description: isPendingGcashPayment
+                ? [description, 'Pending GCash verification'].filter(Boolean).join(' - ')
+                : (description || undefined),
             recordedAt: resolveRecordedAtValue(paymentEntry.recordedAt, paymentEntry.date),
             recordedBy: recorder,
             payer: recorderLabel || paymentEntry.payer || null
@@ -4763,11 +5312,13 @@ router.post('/:accountNumber', async (req, res, next) => {
             payments[accountNumber].history.unshift(newEntry);
             await writePayments(payments);
         }
-        if (isPositiveCreditEntry(newEntry)) {
+        if (isCollectedPaymentEntry(newEntry)) {
             await applyReenableOnPaid(accountNumber, branchId, payments, newEntry);
+            await maybeExtendPrepaidExpiryOnPayment(accountNumber, newEntry, branchId);
         }
-        await maybeExtendPrepaidExpiryOnPayment(accountNumber, newEntry, branchId);
-        triggerBranchServiceRefresh(branchId, 'payments-manual');
+        triggerBranchServiceRefresh(branchId, isPendingGcashPayment
+            ? 'payments-gcash-pending'
+            : 'payments-manual');
         res.status(201).json(newEntry);
     } catch (error) {
         next(error?.status ? error : createError(500, 'Failed to add payment entry.'));
@@ -5793,3 +6344,7 @@ module.exports.getPostedGcashPaymentBindings = getPostedGcashPaymentBindings;
 module.exports.listPostedGcashPaymentBindings = listPostedGcashPaymentBindings;
 module.exports.getPaymentHistoryEditBindOptions = getPaymentHistoryEditBindOptions;
 module.exports.editAndBindPaymentHistoryEntry = editAndBindPaymentHistoryEntry;
+module.exports.isPendingGcashPaymentEntry = isPendingGcashPaymentEntry;
+module.exports.listPendingGcashPayments = listPendingGcashPayments;
+module.exports.getPendingGcashBindOptions = getPendingGcashBindOptions;
+module.exports.bindPendingGcashPayment = bindPendingGcashPayment;

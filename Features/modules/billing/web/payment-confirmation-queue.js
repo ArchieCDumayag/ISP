@@ -12,8 +12,16 @@
     const gcashHistoryStatAvailableMeta = document.getElementById('queueGcashStatAvailableMeta');
     const gcashHistoryStatPosted = document.getElementById('queueGcashStatPosted');
     const gcashHistoryStatPostedMeta = document.getElementById('queueGcashStatPostedMeta');
+    const gcashHistoryStatRemarked = document.getElementById('queueGcashStatRemarked');
+    const gcashHistoryStatRemarkedMeta = document.getElementById('queueGcashStatRemarkedMeta');
     const gcashHistoryStatDebit = document.getElementById('queueGcashStatDebit');
     const gcashHistoryStatDebitMeta = document.getElementById('queueGcashStatDebitMeta');
+    const gcashPageTabButtons = Array.from(document.querySelectorAll('[data-gcash-page-tab]'));
+    const gcashImportedTab = document.getElementById('queueGcashImportedTab');
+    const gcashPendingTab = document.getElementById('queueGcashPendingTab');
+    const pendingGcashCount = document.getElementById('queuePendingGcashCount');
+    const pendingGcashSummary = document.getElementById('queuePendingGcashSummary');
+    const pendingGcashBody = document.getElementById('queuePendingGcashBody');
     const pageSizeSelect = document.getElementById('queuePageSize');
     const footerSummary = document.getElementById('queueTableSummary');
     const footerPageInfo = document.getElementById('queueTablePageInfo');
@@ -58,6 +66,22 @@
     const postGcashAllocationTotal = document.getElementById('queuePostGcashAllocationTotal');
     const postGcashAssignmentConfirmed = document.getElementById('queuePostGcashAssignmentConfirmed');
     const postGcashSubmitButton = document.getElementById('queuePostGcashSubmitBtn');
+    const bindPendingGcashModal = document.getElementById('queueBindPendingGcashModal');
+    const bindPendingGcashForm = document.getElementById('queueBindPendingGcashForm');
+    const bindPendingGcashCustomer = document.getElementById('queueBindPendingGcashCustomer');
+    const bindPendingGcashAmount = document.getElementById('queueBindPendingGcashAmount');
+    const bindPendingGcashDate = document.getElementById('queueBindPendingGcashDate');
+    const bindPendingGcashEnteredReference = document.getElementById('queueBindPendingGcashEnteredReference');
+    const bindPendingGcashReference = document.getElementById('queueBindPendingGcashReference');
+    const bindPendingGcashNotice = document.getElementById('queueBindPendingGcashNotice');
+    const bindPendingGcashConfirmed = document.getElementById('queueBindPendingGcashConfirmed');
+    const bindPendingGcashSubmitButton = document.getElementById('queueBindPendingGcashSubmitBtn');
+    const lockGcashModal = document.getElementById('queueLockGcashModal');
+    const lockGcashForm = document.getElementById('queueLockGcashForm');
+    const lockGcashReferenceInput = document.getElementById('queueLockGcashReference');
+    const lockGcashAmountInput = document.getElementById('queueLockGcashAmount');
+    const lockGcashRemarkInput = document.getElementById('queueLockGcashRemark');
+    const lockGcashSubmitButton = document.getElementById('queueLockGcashSubmitBtn');
     const approveModal = document.getElementById('queueApproveModal');
     const approveMeta = document.getElementById('queueApproveMeta');
     const approveGcashMatch = document.getElementById('queueApproveGcashMatch');
@@ -113,8 +137,12 @@
         gcashHistoryTotalTransactions: 0,
         gcashHistorySearchTerm: '',
         gcashHistoryFilter: 'all',
+        gcashPageTab: 'imported',
+        pendingGcashPayments: [],
+        activePendingGcash: null,
         paymentRecords: [],
         activeGcashReference: '',
+        activeLockGcashReference: '',
         renderedItems: [],
         activeApprovalId: '',
         activeRejectId: '',
@@ -179,6 +207,34 @@
     };
 
     const normalizeGcashReference = (value) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '');
+
+    const setGcashPageTab = (tabName) => {
+        const nextTab = tabName === 'pending' ? 'pending' : 'imported';
+        state.gcashPageTab = nextTab;
+        if (gcashImportedTab) gcashImportedTab.hidden = nextTab !== 'imported';
+        if (gcashPendingTab) gcashPendingTab.hidden = nextTab !== 'pending';
+        gcashPageTabButtons.forEach((button) => {
+            const active = button.dataset.gcashPageTab === nextTab;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+    };
+
+    const closeBindPendingGcashModal = () => {
+        if (!bindPendingGcashModal) return;
+        bindPendingGcashModal.classList.remove('show');
+        bindPendingGcashModal.setAttribute('aria-hidden', 'true');
+        bindPendingGcashForm?.reset();
+        state.activePendingGcash = null;
+        if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-active');
+    };
+
+    const syncBindPendingGcashSubmit = () => {
+        if (!bindPendingGcashSubmitButton) return;
+        bindPendingGcashSubmitButton.disabled = state.loading
+            || !String(bindPendingGcashReference?.value || '').trim()
+            || bindPendingGcashConfirmed?.checked !== true;
+    };
 
     const formatBillingMonth = (value) => {
         const match = String(value || '').trim().match(/^(\d{4})-(\d{2})$/);
@@ -446,6 +502,31 @@
         importGcashModal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('modal-active');
         window.setTimeout(() => importGcashFileInput?.focus({ preventScroll: true }), 0);
+    };
+
+    const closeLockGcashModal = () => {
+        if (!lockGcashModal) return;
+        lockGcashModal.classList.remove('show');
+        lockGcashModal.setAttribute('aria-hidden', 'true');
+        lockGcashForm?.reset();
+        state.activeLockGcashReference = '';
+        if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-active');
+    };
+
+    const openLockGcashModal = (transaction) => {
+        if (!lockGcashModal || !transaction) return;
+        const reference = normalizeGcashReference(transaction.reference);
+        const isReceived = String(transaction.status || '').toLowerCase() === 'received'
+            && Number(transaction.credit) > 0;
+        if (!reference || !isReceived || transaction.assignment || transaction.postingLock) return;
+        state.activeLockGcashReference = reference;
+        if (lockGcashReferenceInput) lockGcashReferenceInput.value = reference;
+        if (lockGcashAmountInput) lockGcashAmountInput.value = formatCurrency(Number(transaction.credit));
+        if (lockGcashRemarkInput) lockGcashRemarkInput.value = '';
+        lockGcashModal.classList.add('show');
+        lockGcashModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-active');
+        window.setTimeout(() => lockGcashRemarkInput?.focus({ preventScroll: true }), 0);
     };
 
     const getPostGcashAllocationRows = () => Array.from(
@@ -755,7 +836,7 @@
     const openPostGcashModal = async (transaction) => {
         if (!postGcashModal || !transaction) return;
         const reference = normalizeGcashReference(transaction.reference);
-        if (!reference || transaction.assignment || String(transaction.status || '').toLowerCase() !== 'received') return;
+        if (!reference || transaction.assignment || transaction.postingLock || String(transaction.status || '').toLowerCase() !== 'received') return;
         resetPostGcashAllocations();
         state.activeGcashReference = reference;
         if (postGcashReferenceInput) postGcashReferenceInput.value = reference;
@@ -1355,10 +1436,34 @@
         return data;
     };
 
+    const lockGcashHistoryPosting = async (reference, remark) => {
+        const response = await fetch(`/api/payment-confirmations/gcash-history/${encodeURIComponent(reference)}/lock-posting`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ remark })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Unable to mark this GCash credit Not for Posting.');
+        return data;
+    };
+
+    const unlockGcashHistoryPosting = async (reference) => {
+        const response = await fetch(`/api/payment-confirmations/gcash-history/${encodeURIComponent(reference)}/unlock-posting`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Unable to unlock this GCash credit.');
+        return data;
+    };
+
     const getGcashHistoryCategory = (transaction = {}) => {
         const isReceived = String(transaction.status || '').toLowerCase() === 'received'
             && Number(transaction.credit) > 0;
         if (!isReceived) return 'debit';
+        if (transaction.postingLock) return 'remarked';
         const assignment = transaction.assignment && typeof transaction.assignment === 'object'
             ? transaction.assignment
             : null;
@@ -1384,6 +1489,9 @@
             transaction.recipientLabel,
             transaction.status,
             transaction.remark?.category,
+            transaction.postingLock?.remark,
+            transaction.postingLock?.lockedBy?.name,
+            transaction.postingLock?.lockedBy?.username,
             ...allocations.flatMap((allocation) => [allocation?.customerName, allocation?.accountNumber]),
             ...paymentHistoryAllocations.flatMap((allocation) => [allocation?.customerName, allocation?.accountNumber])
         ].map((value) => String(value || '').trim()).filter(Boolean).join(' ').toLowerCase();
@@ -1398,6 +1506,7 @@
         const grouped = {
             available: [],
             posted: [],
+            remarked: [],
             debit: []
         };
         transactions.forEach((transaction) => {
@@ -1419,6 +1528,10 @@
         if (gcashHistoryStatPostedMeta) {
             gcashHistoryStatPostedMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.posted, 'credit'))})`;
         }
+        if (gcashHistoryStatRemarked) gcashHistoryStatRemarked.textContent = String(grouped.remarked.length);
+        if (gcashHistoryStatRemarkedMeta) {
+            gcashHistoryStatRemarkedMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.remarked, 'credit'))})`;
+        }
         if (gcashHistoryStatDebit) gcashHistoryStatDebit.textContent = String(grouped.debit.length);
         if (gcashHistoryStatDebitMeta) {
             gcashHistoryStatDebitMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.debit, 'debit'))})`;
@@ -1426,10 +1539,10 @@
     };
 
     const setGcashHistoryStatsUnavailable = () => {
-        [gcashHistoryStatTotal, gcashHistoryStatAvailable, gcashHistoryStatPosted, gcashHistoryStatDebit]
+        [gcashHistoryStatTotal, gcashHistoryStatAvailable, gcashHistoryStatPosted, gcashHistoryStatRemarked, gcashHistoryStatDebit]
             .filter(Boolean)
             .forEach((element) => { element.textContent = '—'; });
-        [gcashHistoryStatTotalMeta, gcashHistoryStatAvailableMeta, gcashHistoryStatPostedMeta, gcashHistoryStatDebitMeta]
+        [gcashHistoryStatTotalMeta, gcashHistoryStatAvailableMeta, gcashHistoryStatPostedMeta, gcashHistoryStatRemarkedMeta, gcashHistoryStatDebitMeta]
             .filter(Boolean)
             .forEach((element) => { element.textContent = 'History unavailable'; });
     };
@@ -1508,6 +1621,9 @@
             const assignment = transaction.assignment && typeof transaction.assignment === 'object'
                 ? transaction.assignment
                 : null;
+            const postingLock = transaction.postingLock && typeof transaction.postingLock === 'object'
+                ? transaction.postingLock
+                : null;
             const assignmentAllocations = assignment
                 ? (Array.isArray(assignment.allocations) && assignment.allocations.length
                     ? assignment.allocations
@@ -1527,6 +1643,7 @@
                 </div>`;
             }).join('');
             const paymentHistoryMatch = !assignment
+                && !postingLock
                 && transaction.paymentHistoryMatch
                 && typeof transaction.paymentHistoryMatch === 'object'
                 ? transaction.paymentHistoryMatch
@@ -1542,13 +1659,27 @@
                     <span class="gcash-match-amount">${escapeHtml(Number.isFinite(amount) ? formatCurrency(amount) : '-')}</span>
                 </div>`;
             }).join('');
-            const matchBadge = assignment
-                ? `<div class="gcash-match-list">${assignmentDetails}</div>`
+            const postingLockAdmin = String(
+                postingLock?.lockedBy?.name
+                || postingLock?.lockedBy?.username
+                || ''
+            ).trim();
+            const postingLockAudit = postingLock?.lockedAt
+                ? `Locked ${formatDateTime(postingLock.lockedAt)}${postingLockAdmin ? ` by ${postingLockAdmin}` : ''}`
+                : '';
+            const matchBadge = postingLock
+                ? `<div class="gcash-posting-lock-detail">
+                       <span class="badge bg-purple-lt text-purple">Not for Posting</span>
+                       <span class="gcash-posting-lock-remark">${escapeHtml(postingLock.remark || '-')}</span>
+                       ${postingLockAudit ? `<small class="text-secondary">${escapeHtml(postingLockAudit)}</small>` : ''}
+                   </div>`
+                : (assignment
+                    ? `<div class="gcash-match-list">${assignmentDetails}</div>`
                 : (suggestionDetails
                     ? `<div class="gcash-match-list" title="${escapeHtml(paymentHistoryMatch.reason || 'Suggested from Payment History for Admin review.')}">${suggestionDetails}</div>`
                     : (isReceived
                         ? '<span class="badge bg-green-lt text-green">Available</span>'
-                        : '<span class="text-secondary">-</span>'));
+                        : '<span class="text-secondary">-</span>')));
             const recipientLabel = String(transaction.recipientLabel || '').trim();
             const recipient = String(transaction.recipient || '').trim();
             const recipientCell = recipientLabel
@@ -1586,11 +1717,23 @@
                     </button>
                     ${remarkAudit ? `<small class="text-secondary gcash-remark-audit">${escapeHtml(remarkAudit)}</small>` : ''}
                 </div>`;
-            const creditAction = !assignment
-                ? `<button type="button" class="btn btn-icon btn-primary btn-sm" data-action="post-gcash" data-reference="${escapeHtml(transaction.reference || '')}" title="Bind &amp; Post" aria-label="Bind and post GCash reference ${escapeHtml(transaction.reference || '')}">
-                       <i class="ti ti-link" aria-hidden="true"></i>
-                   </button>`
-                : `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Posted' : 'Reserved'}</span>`;
+            const creditAction = postingLock
+                ? `<div class="gcash-credit-actions">
+                       <span class="badge bg-purple-lt text-purple">Not for Posting</span>
+                       <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" data-action="unlock-gcash" data-reference="${escapeHtml(transaction.reference || '')}" title="Unlock for posting" aria-label="Unlock GCash reference ${escapeHtml(transaction.reference || '')} for posting">
+                           <i class="ti ti-lock-open" aria-hidden="true"></i>
+                       </button>
+                   </div>`
+                : (!assignment
+                    ? `<div class="gcash-credit-actions">
+                           <button type="button" class="btn btn-icon btn-primary btn-sm" data-action="post-gcash" data-reference="${escapeHtml(transaction.reference || '')}" title="Bind &amp; Post" aria-label="Bind and post GCash reference ${escapeHtml(transaction.reference || '')}">
+                               <i class="ti ti-link" aria-hidden="true"></i>
+                           </button>
+                           <button type="button" class="btn btn-icon btn-outline-warning btn-sm" data-action="lock-gcash" data-reference="${escapeHtml(transaction.reference || '')}" title="Remark &amp; Lock" aria-label="Remark and lock GCash reference ${escapeHtml(transaction.reference || '')} as not for posting">
+                               <i class="ti ti-message-lock" aria-hidden="true"></i>
+                           </button>
+                       </div>`
+                    : `<span class="badge ${assignment.status === 'posted' ? 'bg-blue-lt text-blue' : 'bg-orange-lt text-orange'}">${assignment.status === 'posted' ? 'Posted' : 'Reserved'}</span>`);
             const actionCell = isReceived ? creditAction : debitRemarkAction;
             return `
                 <tr>
@@ -1621,6 +1764,162 @@
             renderGcashHistoryError(error.message || 'Unable to load imported GCash transactions.');
         } finally {
             if (gcashHistoryRefreshButton) gcashHistoryRefreshButton.disabled = false;
+        }
+    };
+
+    const renderPendingGcashPayments = (payments = []) => {
+        const rows = Array.isArray(payments) ? payments : [];
+        state.pendingGcashPayments = rows;
+        if (pendingGcashCount) pendingGcashCount.textContent = String(rows.length);
+        if (pendingGcashSummary) {
+            pendingGcashSummary.textContent = rows.length
+                ? `${rows.length} manual GCash payment${rows.length === 1 ? '' : 's'} awaiting exact imported proof. No pending amount is included in billing.`
+                : 'No manual GCash payments are awaiting imported proof.';
+        }
+        if (!pendingGcashBody) return;
+        if (!rows.length) {
+            pendingGcashBody.innerHTML = '<tr><td colspan="6" class="queue-empty">No pending GCash payments.</td></tr>';
+            return;
+        }
+        pendingGcashBody.innerHTML = rows.map((payment) => `
+            <tr>
+                <td>${escapeHtml(payment.paymentDate || '-')}</td>
+                <td>
+                    <div class="fw-semibold">${escapeHtml(payment.customerName || 'Customer')}</div>
+                    <small class="text-secondary">Account ${escapeHtml(payment.accountNumber || '-')}</small>
+                </td>
+                <td class="queue-amount-cell"><span class="fw-bold text-warning">${escapeHtml(formatCurrency(payment.amount))}</span></td>
+                <td class="gcash-history-reference">${escapeHtml(payment.enteredReference || 'No entered reference')}</td>
+                <td><span class="badge bg-warning-lt text-warning">Pending</span><small class="d-block text-secondary mt-1">Not posted</small></td>
+                <td>
+                    <button type="button" class="btn btn-primary btn-sm" data-action="bind-pending-gcash" data-account-number="${escapeHtml(payment.accountNumber || '')}" data-entry-id="${escapeHtml(payment.entryId || '')}">
+                        <i class="ti ti-link" aria-hidden="true"></i> Bind proof
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    };
+
+    const renderPendingGcashError = (message) => {
+        if (pendingGcashCount) pendingGcashCount.textContent = '—';
+        if (pendingGcashSummary) pendingGcashSummary.textContent = 'Pending GCash payments are unavailable.';
+        if (pendingGcashBody) {
+            pendingGcashBody.innerHTML = `<tr><td colspan="6" class="queue-empty">${escapeHtml(message || 'Unable to load pending GCash payments.')}</td></tr>`;
+        }
+    };
+
+    const fetchPendingGcashPayments = async () => {
+        try {
+            const response = await fetch('/api/payments/gcash-pending', {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.message || data.error || 'Unable to load pending GCash payments.');
+            renderPendingGcashPayments(data.payments || []);
+        } catch (error) {
+            renderPendingGcashError(error.message);
+        }
+    };
+
+    const openBindPendingGcashModal = async (payment) => {
+        if (!bindPendingGcashModal || !payment) return;
+        state.activePendingGcash = payment;
+        bindPendingGcashForm?.reset();
+        if (bindPendingGcashCustomer) {
+            bindPendingGcashCustomer.value = `${payment.customerName || 'Customer'} | ${payment.accountNumber || '-'}`;
+        }
+        if (bindPendingGcashAmount) bindPendingGcashAmount.value = formatCurrency(payment.amount);
+        if (bindPendingGcashDate) bindPendingGcashDate.value = payment.paymentDate || '-';
+        if (bindPendingGcashEnteredReference) bindPendingGcashEnteredReference.value = payment.enteredReference || 'No entered reference';
+        if (bindPendingGcashReference) {
+            bindPendingGcashReference.disabled = true;
+            bindPendingGcashReference.innerHTML = '<option value="">Loading exact matches...</option>';
+        }
+        if (bindPendingGcashNotice) {
+            bindPendingGcashNotice.className = 'alert alert-warning mb-0';
+            bindPendingGcashNotice.textContent = 'This pending entry has not changed the customer\'s billing balance.';
+        }
+        syncBindPendingGcashSubmit();
+        bindPendingGcashModal.classList.add('show');
+        bindPendingGcashModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-active');
+
+        try {
+            const response = await fetch(
+                `/api/payments/gcash-pending/${encodeURIComponent(payment.accountNumber)}/${encodeURIComponent(payment.entryId)}/options`,
+                { credentials: 'include', cache: 'no-store' }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.message || data.error || 'Unable to load exact imported matches.');
+            if (state.activePendingGcash?.entryId !== payment.entryId) return;
+            const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+            if (bindPendingGcashReference) {
+                bindPendingGcashReference.innerHTML = transactions.length
+                    ? '<option value="">Select exact imported proof</option>' + transactions.map((transaction) => (
+                        `<option value="${escapeHtml(transaction.reference || '')}">${escapeHtml(transaction.reference || '')} · ${escapeHtml(formatDateTime(transaction.transactionAt || transaction.transactionDate))} · ${escapeHtml(formatCurrency(transaction.amount))}</option>`
+                    )).join('')
+                    : '<option value="">No exact imported match available</option>';
+                const enteredReference = normalizeGcashReference(payment.enteredReference);
+                const exactReference = transactions.find((transaction) => (
+                    normalizeGcashReference(transaction.reference) === enteredReference
+                ));
+                if (exactReference) bindPendingGcashReference.value = exactReference.reference;
+                bindPendingGcashReference.disabled = !transactions.length;
+            }
+            if (bindPendingGcashNotice) {
+                bindPendingGcashNotice.className = transactions.length
+                    ? 'alert alert-info mb-0'
+                    : 'alert alert-warning mb-0';
+                bindPendingGcashNotice.textContent = transactions.length
+                    ? `${transactions.length} exact imported match${transactions.length === 1 ? '' : 'es'} found. Select the official proof before posting.`
+                    : 'No unassigned imported incoming credit has the exact amount and payment date. Import the official statement or correct the pending entry first.';
+            }
+            syncBindPendingGcashSubmit();
+            bindPendingGcashReference?.focus({ preventScroll: true });
+        } catch (error) {
+            if (bindPendingGcashNotice) {
+                bindPendingGcashNotice.className = 'alert alert-danger mb-0';
+                bindPendingGcashNotice.textContent = error.message || 'Unable to load exact imported matches.';
+            }
+            if (bindPendingGcashReference) bindPendingGcashReference.disabled = true;
+            syncBindPendingGcashSubmit();
+        }
+    };
+
+    const submitBindPendingGcash = async (event) => {
+        event.preventDefault();
+        const payment = state.activePendingGcash;
+        const reference = String(bindPendingGcashReference?.value || '').trim();
+        if (!payment || !reference || bindPendingGcashConfirmed?.checked !== true || state.loading) return;
+        setLoadingState(true);
+        syncBindPendingGcashSubmit();
+        try {
+            const response = await fetch(
+                `/api/payments/gcash-pending/${encodeURIComponent(payment.accountNumber)}/${encodeURIComponent(payment.entryId)}/bind`,
+                {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gcashReference: reference,
+                        assignmentConfirmed: true
+                    })
+                }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.message || data.error || 'Unable to verify and post this GCash payment.');
+            closeBindPendingGcashModal();
+            notify(data.message || 'Pending GCash payment verified and posted.', 'success');
+            await Promise.all([fetchPendingGcashPayments(), fetchGcashHistory(), fetchQueue()]);
+        } catch (error) {
+            if (bindPendingGcashNotice) {
+                bindPendingGcashNotice.className = 'alert alert-danger mb-0';
+                bindPendingGcashNotice.textContent = error.message || 'Unable to verify and post this GCash payment.';
+            }
+        } finally {
+            setLoadingState(false);
+            syncBindPendingGcashSubmit();
         }
     };
 
@@ -1968,7 +2267,7 @@
             accountNumber: String(row.querySelector('[data-gcash-allocation-account]')?.value || '').trim(),
             amount: Number(row.querySelector('[data-gcash-allocation-amount]')?.value)
         }));
-        if (!transaction || transaction.assignment) {
+        if (!transaction || transaction.assignment || transaction.postingLock) {
             notify('This imported GCash transaction is no longer available.', 'error');
             closePostGcashModal();
             await fetchGcashHistory();
@@ -2069,6 +2368,39 @@
         }
     };
 
+    const onLockGcashSubmit = async (event) => {
+        event.preventDefault();
+        if (state.loading) return;
+        const reference = normalizeGcashReference(state.activeLockGcashReference);
+        const transaction = state.gcashTransactionsByReference.get(reference) || null;
+        const remark = String(lockGcashRemarkInput?.value || '').trim();
+        if (!transaction || transaction.assignment || transaction.postingLock) {
+            notify('This imported GCash credit is no longer available to remark and lock.', 'error');
+            closeLockGcashModal();
+            await fetchGcashHistory();
+            return;
+        }
+        if (!remark) {
+            notify('Enter a remark before locking this GCash credit.', 'error');
+            lockGcashRemarkInput?.focus();
+            return;
+        }
+
+        setLoadingState(true);
+        if (lockGcashSubmitButton) lockGcashSubmitButton.disabled = true;
+        try {
+            await lockGcashHistoryPosting(reference, remark);
+            closeLockGcashModal();
+            notify('GCash credit marked Not for Posting.', 'success');
+            await Promise.all([fetchQueue(), fetchGcashHistory()]);
+        } catch (error) {
+            notify(error.message || 'Unable to mark this GCash credit Not for Posting.', 'error');
+        } finally {
+            if (lockGcashSubmitButton) lockGcashSubmitButton.disabled = false;
+            setLoadingState(false);
+        }
+    };
+
     const onViewRejectReason = (item) => {
         if (!item) {
             notify('Unable to load rejection details.', 'error');
@@ -2131,6 +2463,48 @@
             } catch (error) {
                 notify(error.message || 'Unable to save the transaction remark.', 'error');
                 remarkButton.disabled = false;
+            }
+            return;
+        }
+
+        const lockButton = event.target.closest('button[data-action="lock-gcash"][data-reference]');
+        if (lockButton) {
+            if (state.loading) return;
+            const reference = normalizeGcashReference(lockButton.getAttribute('data-reference'));
+            const transaction = state.gcashTransactionsByReference.get(reference) || null;
+            if (!transaction) {
+                notify('Unable to load this imported transaction.', 'error');
+                return;
+            }
+            openLockGcashModal(transaction);
+            return;
+        }
+
+        const unlockButton = event.target.closest('button[data-action="unlock-gcash"][data-reference]');
+        if (unlockButton) {
+            if (state.loading) return;
+            const reference = normalizeGcashReference(unlockButton.getAttribute('data-reference'));
+            const transaction = state.gcashTransactionsByReference.get(reference) || null;
+            if (!transaction?.postingLock) {
+                notify('This GCash credit is already available for posting.', 'error');
+                await fetchGcashHistory();
+                return;
+            }
+            const confirmed = window.confirm(
+                `Unlock GCash reference ${reference} and allow it to be assigned as a customer payment?`
+            );
+            if (!confirmed) return;
+            setLoadingState(true);
+            unlockButton.disabled = true;
+            try {
+                await unlockGcashHistoryPosting(reference);
+                notify('GCash credit unlocked and available for posting.', 'success');
+                await Promise.all([fetchQueue(), fetchGcashHistory()]);
+            } catch (error) {
+                notify(error.message || 'Unable to unlock this GCash credit.', 'error');
+                unlockButton.disabled = false;
+            } finally {
+                setLoadingState(false);
             }
             return;
         }
@@ -2362,7 +2736,28 @@
     createForm?.addEventListener('submit', onCreateRequestSubmit);
 
     importGcashButton?.addEventListener('click', openImportGcashModal);
-    gcashHistoryRefreshButton?.addEventListener('click', fetchGcashHistory);
+    gcashHistoryRefreshButton?.addEventListener('click', () => {
+        Promise.all([fetchGcashHistory(), fetchPendingGcashPayments()]);
+    });
+    gcashPageTabButtons.forEach((button) => {
+        button.addEventListener('click', () => setGcashPageTab(button.dataset.gcashPageTab));
+    });
+    pendingGcashBody?.addEventListener('click', (event) => {
+        const bindButton = event.target.closest('button[data-action="bind-pending-gcash"]');
+        if (!bindButton) return;
+        const payment = state.pendingGcashPayments.find((item) => (
+            String(item?.accountNumber || '') === String(bindButton.dataset.accountNumber || '')
+            && String(item?.entryId || '') === String(bindButton.dataset.entryId || '')
+        ));
+        if (payment) openBindPendingGcashModal(payment);
+    });
+    bindPendingGcashReference?.addEventListener('change', syncBindPendingGcashSubmit);
+    bindPendingGcashConfirmed?.addEventListener('change', syncBindPendingGcashSubmit);
+    bindPendingGcashForm?.addEventListener('submit', submitBindPendingGcash);
+    bindPendingGcashModal?.addEventListener('click', (event) => {
+        const dismissTarget = event.target.closest('[data-dismiss="queue-bind-pending-gcash-modal"]');
+        if (dismissTarget || event.target === bindPendingGcashModal) closeBindPendingGcashModal();
+    });
     gcashHistorySearch?.addEventListener('input', () => {
         state.gcashHistorySearchTerm = String(gcashHistorySearch.value || '').trim().toLowerCase();
         renderGcashHistory({
@@ -2383,6 +2778,11 @@
     importGcashModal?.addEventListener('click', (event) => {
         const dismissTarget = event.target.closest('[data-dismiss="queue-import-gcash-modal"]');
         if (dismissTarget) closeImportGcashModal();
+    });
+    lockGcashForm?.addEventListener('submit', onLockGcashSubmit);
+    lockGcashModal?.addEventListener('click', (event) => {
+        const dismissTarget = event.target.closest('[data-dismiss="queue-lock-gcash-modal"]');
+        if (dismissTarget) closeLockGcashModal();
     });
     postGcashAddAllocationButton?.addEventListener('click', addPostGcashAllocation);
     postGcashAllocations?.addEventListener('focusin', (event) => {
@@ -2488,6 +2888,26 @@
 
     window.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') return;
+        if (bindPendingGcashModal?.classList.contains('show')) {
+            event.preventDefault();
+            closeBindPendingGcashModal();
+            return;
+        }
+        if (lockGcashModal?.classList.contains('show')) {
+            event.preventDefault();
+            closeLockGcashModal();
+            return;
+        }
+        if (postGcashModal?.classList.contains('show')) {
+            event.preventDefault();
+            closePostGcashModal();
+            return;
+        }
+        if (importGcashModal?.classList.contains('show')) {
+            event.preventDefault();
+            closeImportGcashModal();
+            return;
+        }
         if (approveModal?.classList.contains('show')) {
             event.preventDefault();
             closeApproveModal();
@@ -2515,6 +2935,8 @@
     });
 
     applyQueueFilters();
+    setGcashPageTab('imported');
     fetchQueue();
     fetchGcashHistory();
+    fetchPendingGcashPayments();
 });

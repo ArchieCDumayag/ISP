@@ -97,6 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const formatCount = (value) => countFormatter.format(Number(value) || 0);
     const normalizeText = (value) => String(value || '').trim().toLowerCase();
     const INEFFECTIVE_PAYMENT_HISTORY_STATUSES = new Set([
+        'pending_gcash_verification',
+        'pending-gcash-verification',
+        'pending gcash verification',
         'pending_approval',
         'pending-approval',
         'pending approval',
@@ -109,6 +112,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const isEffectivePaymentHistoryEntry = (entry = {}) => {
         const status = normalizeText(entry?.status || entry?.paymentStatus || entry?.payment_status);
         return !status || !INEFFECTIVE_PAYMENT_HISTORY_STATUSES.has(status);
+    };
+    const isPendingGcashHistoryEntry = (entry = {}) => {
+        const status = normalizeText(entry?.status || entry?.paymentStatus || entry?.payment_status)
+            .replace(/[\s-]+/g, '_');
+        const kind = normalizeText(entry?.kind || entry?.type);
+        const method = normalizeText(entry?.paymentMethod || entry?.payment_method);
+        return status === 'pending_gcash_verification' && kind === 'payment' && method === 'gcash';
     };
     const hideAllocationMetadata = (value) => String(value ?? '')
         .replace(/\s*\[ALLOC:\s*[\s\S]*?\]\s*/gi, ' ')
@@ -1072,7 +1082,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const area = getCustomerArea(customer) || 'Unassigned';
 
             (paymentRecord?.history || []).forEach((entry, index) => {
-                if (!isEffectivePaymentHistoryEntry(entry)) return;
+                const isPendingGcash = isPendingGcashHistoryEntry(entry);
+                if (!isEffectivePaymentHistoryEntry(entry) && !isPendingGcash) return;
                 const rawDate = getPaymentReceivedAt(entry) || entry?.recordedAt || entry?.date || '';
                 const dateObj = safeDate(rawDate);
                 const dateKey = dateObj ? toDateKey(dateObj) : String(rawDate || '').slice(0, 10);
@@ -1109,6 +1120,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     displayDate,
                     dateKey,
                     isImportedPayment,
+                    isPendingGcash,
                     isGcashBound: boundGcashEntryIds.has(entryId),
                     timestamp: dateObj ? dateObj.getTime() : 0
                 });
@@ -1140,7 +1152,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateMetrics(rows) {
         const entries = Array.isArray(rows) ? rows.length : 0;
-        const paymentsCollected = (Array.isArray(rows) ? rows : []).reduce((sum, row) => sum + row.amount, 0);
+        const paymentsCollected = (Array.isArray(rows) ? rows : []).reduce((sum, row) => (
+            row.isPendingGcash ? sum : sum + row.amount
+        ), 0);
         const referencedEntries = (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
             return row.reference || row.orNumber ? sum + 1 : sum;
         }, 0);
@@ -1211,14 +1225,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `<span class="text-secondary">OR: ${escapeHtml(row.orNumber)}</span>`
                     : '<span class="text-secondary">OR: N/A</span>';
                 const methodLine = row.paymentMethodLabel
-                    ? `<span class="badge bg-secondary-lt text-secondary">${escapeHtml(row.paymentMethodLabel)}</span>`
+                    ? `<span class="badge ${row.isPendingGcash ? 'bg-warning-lt text-warning' : 'bg-secondary-lt text-secondary'}">${escapeHtml(row.paymentMethodLabel)}${row.isPendingGcash ? ' · Pending' : ''}</span>`
                     : '';
                 const noteLine = row.notes
                     ? `<span class="payment-history-note text-secondary">${escapeHtml(row.notes)}</span>`
                     : '';
-                const printButton = row.accountNumber
+                const printButton = row.accountNumber && !row.isPendingGcash
                     ? `<button type="button" class="payment-history-print btn btn-icon btn-ghost-secondary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" data-reference="${escapeHtml(row.reference || row.orNumber || '')}" aria-label="Reprint thermal receipt" title="Reprint thermal receipt"><i class="ti ti-receipt"></i></button>`
-                    : '';
+                    : (row.isPendingGcash
+                        ? '<button type="button" class="btn btn-icon btn-ghost-secondary btn-sm" aria-label="Pending imported GCash proof" title="Pending imported GCash proof" disabled><i class="ti ti-clock-dollar"></i></button>'
+                        : '');
                 const editBindButton = row.entryId && row.isImportedPayment
                     ? (row.isGcashBound
                         ? '<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-secondary btn-sm" aria-label="Locked—this GCash transaction is already posted" title="Locked—this GCash transaction is already posted" disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'
@@ -1248,7 +1264,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         </td>
                         <td>${escapeHtml(row.area)}</td>
-                        <td class="is-num"><span class="payment-history-amount text-success fw-semibold">${escapeHtml(signedAmount)}</span></td>
+                        <td class="is-num"><span class="payment-history-amount ${row.isPendingGcash ? 'text-warning' : 'text-success'} fw-semibold">${escapeHtml(signedAmount)}</span>${row.isPendingGcash ? '<span class="badge bg-warning-lt text-warning d-block mt-1">Pending</span>' : ''}</td>
                         <td>
                             <div class="payment-history-stack">
                                 ${referenceLine}

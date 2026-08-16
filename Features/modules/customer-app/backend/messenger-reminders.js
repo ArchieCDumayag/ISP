@@ -16,6 +16,9 @@ const MAX_REASON_LENGTH = 240;
 const MAX_HISTORY_RESULTS = 1000;
 const BLOCKED_PAYMENT_STATUSES = new Set([
     'pending',
+    'pending_gcash_verification',
+    'pending-gcash-verification',
+    'pending gcash verification',
     'pending_approval',
     'pending-approval',
     'pending approval',

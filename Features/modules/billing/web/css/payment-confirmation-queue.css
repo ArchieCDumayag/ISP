@@ -1490,6 +1490,27 @@ body.theme-dark .queue-duplicate-modal__footer {
     gap: 1.5rem;
 }
 
+.queue-gcash-page-tabs {
+    margin-bottom: .75rem;
+}
+
+.queue-gcash-page-tabs .nav-link {
+    font-size: .8125rem;
+    padding: .5rem .75rem;
+}
+
+.queue-pending-gcash-table {
+    table-layout: fixed;
+    min-width: 760px;
+}
+
+.queue-pending-gcash-table th:nth-child(1) { width: 13%; }
+.queue-pending-gcash-table th:nth-child(2) { width: 25%; }
+.queue-pending-gcash-table th:nth-child(3) { width: 13%; }
+.queue-pending-gcash-table th:nth-child(4) { width: 24%; }
+.queue-pending-gcash-table th:nth-child(5) { width: 13%; }
+.queue-pending-gcash-table th:nth-child(6) { width: 12%; }
+
 .queue-page-header {
     align-items: center !important;
     justify-content: space-between !important;
@@ -1729,6 +1750,27 @@ body.theme-dark .queue-duplicate-modal__footer {
     white-space: nowrap;
 }
 
+.gcash-posting-lock-detail {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.gcash-posting-lock-detail .badge {
+    justify-self: start;
+}
+
+.gcash-posting-lock-remark {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.gcash-credit-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+}
+
 .gcash-remark-editor {
     display: grid;
     grid-template-columns: minmax(7rem, 1fr) auto;
@@ -1769,11 +1811,21 @@ body.theme-dark .queue-duplicate-modal__footer {
     --app-form-modal-width: 640px;
 }
 
+#queueLockGcashModal {
+    --app-form-modal-width: 640px;
+}
+
 #queuePostGcashModal {
     --app-form-modal-width: 1000px;
 }
 
 #queueImportGcashModal .modal-dialog {
+    --app-form-modal-width: 640px !important;
+    width: min(640px, calc(100vw - 2rem)) !important;
+    max-width: min(640px, calc(100vw - 2rem)) !important;
+}
+
+#queueLockGcashModal .modal-dialog {
     --app-form-modal-width: 640px !important;
     width: min(640px, calc(100vw - 2rem)) !important;
     max-width: min(640px, calc(100vw - 2rem)) !important;

@@ -187,6 +187,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const isEffectivePaymentStatus = (entry = {}) => {
         const status = normalizeText(entry.status || entry.paymentStatus || entry.payment_status);
         return ![
+            'pending_gcash_verification',
+            'pending-gcash-verification',
+            'pending gcash verification',
             'pending_approval',
             'pending-approval',
             'pending approval',
@@ -2330,6 +2333,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (metrics.balance) metrics.balance.textContent = formatBalance(endingBalance);
 
         const referralCount = Number(context.referralDiscounts?.length || context.referredCustomers?.length) || 0;
+        const pendingGcashCount = Array.isArray(state.record?.billingSummary?.pendingGcashPayments)
+            ? state.record.billingSummary.pendingGcashPayments.length
+            : 0;
         const summaryParts = [
             `Showing ${formatCount(rows.length)} bill breakdown${rows.length === 1 ? '' : 's'}.`,
             `${formatCount(paidRows)} paid, ${formatCount(unpaidRows)} unpaid.`,
@@ -2339,6 +2345,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
         if (pendingRows) {
             summaryParts.push(`${formatCount(pendingRows)} postpaid bill${pendingRows === 1 ? '' : 's'} not generated yet.`);
+        }
+        if (pendingGcashCount) {
+            summaryParts.push(`${formatCount(pendingGcashCount)} GCash payment${pendingGcashCount === 1 ? '' : 's'} pending imported proof and excluded from this balance.`);
         }
         if (context.usedSyntheticBills) {
             summaryParts.push('Monthly plan rows were generated because no posted bill charges were found.');
@@ -2895,6 +2904,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...detail,
                 dateLabel: formatDate(safeDate(detail?.date), '-')
             }));
+            const pendingPaymentDetails = (Array.isArray(rawRow?.pendingPaymentDetails) ? rawRow.pendingPaymentDetails : []).map((detail) => ({
+                ...detail,
+                dateLabel: formatDate(safeDate(detail?.date), '-'),
+                statusLabel: detail?.statusLabel || 'Pending'
+            }));
             const disconnection = getRowDisconnectionState(record, billDate);
             const sourceType = rawRow?.sourceType || 'monthly';
             const planAmount = Number(rawRow?.planAmount) || 0;
@@ -2921,6 +2935,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 planAmount,
                 billingCycle: rawRow?.billingCycle || resolveBillingCycleLabel(record, billDate),
                 paymentDetails,
+                pendingPaymentDetails,
                 paymentMode: rawRow?.paymentMode || '-',
                 paymentDateLabel: rawRow?.paymentDateLabel || '-',
                 paymentStatusLabel: rawRow?.paymentStatusLabel || rawRow?.paymentStatus || 'unpaid',

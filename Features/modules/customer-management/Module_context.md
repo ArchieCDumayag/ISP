@@ -59,6 +59,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
 - Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- Customer-derived payment summaries consume Billing's shared effective-entry normalizer, so `pending_gcash_verification` records remain available in raw history but cannot reduce a customer balance, increase collected totals, or become the latest effective payment before imported proof is bound.
 - Referral relationships are registered once per referred account. New and edited records return to Pending. Admin approval immediately locks the proposed discount and places a customer referral in the unlimited FIFO Billing queue; the referred customer's first payment is not required. The optional registry `applyFromMonth` is an Admin-controlled current/future earliest month, with blank meaning next available. Approved records without an active application may be rescheduled with a required reason; an active application must be reversed first. Applied referrals cannot be cancelled, and records with billing-application history cannot be edited, preserving their audit chain. Legacy customer referral fields remain readable but are materialized into the registry when approved.
 - `updateCustomerRecord` accepts an internal `planChangeEffectiveAt` option for Billing-owned effective plan changes. A future timestamp preserves the active subscriber plan and writes the canonical scheduled plan/profile snapshot; a current/past change updates the subscriber plan and resolves/synchronizes the router-specific PPPoE profile immediately. The existing Billing scheduler applies due snapshots and retries when MikroTik synchronization cannot complete.
 - The Customers page loads Billing payment records before rendering canonical balance and cycle state and requires backend `billingSummary` version 2 for balances, prepaid/postpaid cycle dates, status, and reactivation balance checks. The compact table and Outstanding summary display backend results only; they show Billing unavailable rather than calculating from stored customer dates or balances. Postpaid generation remains month-end only.
@@ -74,6 +75,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 ## Verification contract
 
 - `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, the referral store/registry workflow, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
+- The compatibility run also confirms customer-derived balances, collected totals, and last-payment fields consume Billing's effective-entry contract, which excludes `pending_gcash_verification` until imported proof is bound.
 - Customer-page validation covers inline-script syntax, static ID uniqueness, balanced CSS, compact summary/filter/table hooks, and the responsive card breakpoint without changing customer or Billing APIs.
 - Coverage-page validation covers inline-script syntax, HTML parsing, static ID uniqueness, balanced page-scoped CSS, native Tabler header/table/footer/form hooks, `btn-sm` on every static/generated action, absence of duplicated map and legacy footer rules, responsive coverage cards, the explicit-close Add/Edit modal with inline errors and submit locking, and the unchanged `/api/coverage` and `/api/customers` reads.
 - The focused check verifies valid decimal/Google Maps coordinate normalization, invalid Map Pin rejection, and the Customers form validation contract.
@@ -101,6 +103,8 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Vision AI is disabled unless the operator configures Billing's environment opt-in. Provider failures degrade to local OCR/manual review and never prevent a customer from submitting evidence or turn the screenshot into confirmed payment.
 
 ## Latest meaningful changes
+
+- 2026-08-16: Billing's shared effective-entry contract now excludes `pending_gcash_verification`, so customer-derived balances, collected totals, and last-payment fields remain Admin-record authoritative until imported GCash proof is bound.
 
 - 2026-08-16: Extended customer-focused export/import schema version 3 with a branch-scoped `payment_breakdown_adjustments` sheet. JSON and MySQL imports now restore first-bill Previous Balance and Advance, migrate recognized legacy customer fields when the sheet is absent, preserve newer Billing adjustments field by field, reject conflicting duplicate account rows before writes, and report imported/skipped adjustment counts.
 

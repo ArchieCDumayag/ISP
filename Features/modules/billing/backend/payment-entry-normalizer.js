@@ -2,6 +2,9 @@ const DEBIT_KINDS = new Set(['charge', 'bill', 'debit']);
 const CREDIT_KINDS = new Set(['payment', 'rebate', 'discount', 'credit']);
 const KNOWN_KINDS = new Set([...DEBIT_KINDS, ...CREDIT_KINDS]);
 const INEFFECTIVE_STATUSES = new Set([
+  'pending_gcash_verification',
+  'pending-gcash-verification',
+  'pending gcash verification',
   'pending_approval',
   'pending-approval',
   'pending approval',

@@ -48,6 +48,8 @@ const {
     finalizeGcashTransactionAllocations,
     releaseGcashTransactionClaim,
     updateGcashTransactionRemark,
+    lockGcashTransactionPosting,
+    unlockGcashTransactionPosting,
     listGcashTransactionHistory,
     getGcashRecipientLabel,
     GCASH_TRANSACTION_REMARKS
@@ -229,6 +231,9 @@ const paymentsSource = fs.readFileSync(
 assert(routeSource.includes("'/gcash-history/import'"));
 assert(routeSource.includes("'/gcash-history/:reference/post-payment'"));
 assert(routeSource.includes("'/gcash-history/:reference/remark'"));
+assert(routeSource.includes("'/gcash-history/:reference/lock-posting'"));
+assert(routeSource.includes("'/gcash-history/:reference/unlock-posting'"));
+assert(routeSource.includes("code = 'GCASH_TRANSACTION_POSTING_LOCKED'"));
 assert(routeSource.includes("code: 'GCASH_IMPORTED_AMOUNT_MISMATCH'"));
 assert(routeSource.includes("code: 'GCASH_ALLOCATION_TOTAL_MISMATCH'"));
 assert(routeSource.includes('claimGcashTransactionAllocations'));
@@ -260,7 +265,7 @@ assert(htmlSource.includes('id="queueGcashHistoryBody"'));
 assert(htmlSource.includes('Imported GCash Transactions'));
 assert(htmlSource.includes('<title>GCash Transactions'));
 assert(htmlSource.includes('<h1>GCash Transactions</h1>'));
-assert(htmlSource.includes('Import statements, bind credits, and classify debits.'));
+assert(htmlSource.includes('Import statements, bind credits, classify debits, or retain credits as not for posting.'));
 assert(!htmlSource.includes('Admin verification is required'));
 assert(!htmlSource.includes('Imported rows never post automatically.'));
 assert(htmlSource.includes('class="card gcash-history-panel"'));
@@ -292,6 +297,7 @@ assert(htmlSource.includes('class="card card-sm queue-summary-bar"'));
 assert(htmlSource.includes('id="queueGcashStatTotal"'));
 assert(htmlSource.includes('id="queueGcashStatAvailable"'));
 assert(htmlSource.includes('id="queueGcashStatPosted"'));
+assert(htmlSource.includes('id="queueGcashStatRemarked"'));
 assert(htmlSource.includes('id="queueGcashStatDebit"'));
 assert(htmlSource.includes('class="btn btn-outline-secondary btn-sm" id="queueGcashHistoryRefreshBtn"'));
 assert(htmlSource.includes('class="btn btn-primary btn-sm" id="queueImportGcashHistoryBtn"'));
@@ -299,7 +305,11 @@ assert(htmlSource.includes('id="queueGcashHistorySearch"'));
 assert(htmlSource.includes('id="queueGcashHistoryFilter"'));
 assert(htmlSource.includes('<option value="available">Available credits</option>'));
 assert(htmlSource.includes('<option value="posted">Posted credits</option>'));
+assert(htmlSource.includes('<option value="remarked">Not for Posting</option>'));
 assert(htmlSource.includes('<option value="debit">Debit records</option>'));
+assert(htmlSource.includes('id="queueLockGcashModal"'));
+assert(htmlSource.includes('id="queueLockGcashRemark"'));
+assert(htmlSource.includes('Remark &amp; Lock GCash Credit'));
 assert(htmlSource.includes('id="queueGcashVisibleCount"'));
 assert(htmlSource.includes('<col class="gcash-col-description">'));
 assert(htmlSource.includes('<col class="gcash-col-match">'));
@@ -318,6 +328,12 @@ assert(browserSource.includes("fetch('/api/payment-confirmations/gcash-history?l
 assert(browserSource.includes('/post-payment`'));
 assert(browserSource.includes('Bind &amp; Post'));
 assert(browserSource.includes('class="btn btn-icon btn-primary btn-sm" data-action="post-gcash"'));
+assert(browserSource.includes('data-action="lock-gcash"'));
+assert(browserSource.includes('data-action="unlock-gcash"'));
+assert(browserSource.includes('/lock-posting`'));
+assert(browserSource.includes('/unlock-posting`'));
+assert(browserSource.includes("if (transaction.postingLock) return 'remarked'"));
+assert(browserSource.includes('Not for Posting'));
 assert(browserSource.includes('transaction.recipientLabel'));
 assert(browserSource.includes('transaction.description'));
 assert(browserSource.includes('No pending customer proof submissions. Imported GCash transactions are shown below.'));
@@ -383,6 +399,8 @@ assert(paymentsSource.includes('buildPaymentImportGcashReconciliationPlan'));
 assert(paymentsSource.includes('claimGcashTransactionAllocations'));
 assert(paymentsSource.includes('finalizeGcashTransactionAllocations'));
 assert(paymentsSource.includes('gcashReconciliation'));
+assert(paymentsSource.includes('This official GCash reference is marked Not for Posting'));
+assert(paymentsSource.includes('&& !transaction?.postingLock'));
 const paymentHistoryBrowserSource = fs.readFileSync(
     path.join(projectRoot, 'Features/modules/billing/web/js/payment-history.js'),
     'utf8'
@@ -468,6 +486,158 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         }),
         (error) => error?.status === 400
     );
+
+    await importGcashTransactionBatch({
+        branchId: 11,
+        fileName: 'posting-lock-fixture.pdf',
+        pdfSha256: 'e'.repeat(64),
+        parsed,
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    const postingLockBefore = (await listGcashTransactionHistory({ branchId: 11, all: true }))
+        .transactions.find((row) => row.reference === '1043753606767');
+    const immutablePostingLockFields = {
+        reference: postingLockBefore.reference,
+        transactionAt: postingLockBefore.transactionAt,
+        description: postingLockBefore.description,
+        sender: postingLockBefore.sender,
+        recipient: postingLockBefore.recipient,
+        credit: postingLockBefore.credit,
+        debit: postingLockBefore.debit
+    };
+    const postingLock = await lockGcashTransactionPosting({
+        branchId: 11,
+        reference: '1043-7536 06767',
+        remark: 'Personal transfer; no customer account required.',
+        lockedBy: { id: 'admin-lock', username: 'lock-admin', name: 'Lock Admin' }
+    });
+    assert.strictEqual(postingLock.idempotent, false);
+    assert.strictEqual(postingLock.postingLock.remark, 'Personal transfer; no customer account required.');
+    assert.strictEqual(postingLock.postingLock.lockedBy.name, 'Lock Admin');
+    const postingLockReplay = await lockGcashTransactionPosting({
+        branchId: 11,
+        reference: '1043753606767',
+        remark: 'Personal transfer; no customer account required.',
+        lockedBy: { id: 'admin-other', username: 'other-admin', name: 'Other Admin' }
+    });
+    assert.strictEqual(postingLockReplay.idempotent, true);
+    await assert.rejects(
+        () => lockGcashTransactionPosting({
+            branchId: 11,
+            reference: '1043753606767',
+            remark: 'Trying to replace the locked audit.',
+            lockedBy: { id: 'admin-other' }
+        }),
+        (error) => error?.code === 'GCASH_TRANSACTION_POSTING_LOCKED'
+    );
+    await assert.rejects(
+        () => lockGcashTransactionPosting({
+            branchId: 11,
+            reference: '1043753606701',
+            remark: 'Debit rows use classifications.',
+            lockedBy: { id: 'admin-lock' }
+        }),
+        (error) => error?.code === 'GCASH_INCOMING_CREDIT_REQUIRED'
+    );
+    const lockedBranchHistory = await listGcashTransactionHistory({ branchId: 11, all: true });
+    const lockedCredit = lockedBranchHistory.transactions.find((row) => row.reference === '1043753606767');
+    assert.deepStrictEqual({
+        reference: lockedCredit.reference,
+        transactionAt: lockedCredit.transactionAt,
+        description: lockedCredit.description,
+        sender: lockedCredit.sender,
+        recipient: lockedCredit.recipient,
+        credit: lockedCredit.credit,
+        debit: lockedCredit.debit
+    }, immutablePostingLockFields);
+    assert.strictEqual(lockedCredit.postingLockAudit.length, 1);
+    assert.strictEqual(lockedCredit.postingLockAudit[0].action, 'locked');
+    assert.strictEqual(evaluateGcashTransactionMatch({
+        transactions: lockedBranchHistory.transactions,
+        reference: '1043753606767',
+        amount: 1000,
+        paymentDate: '2026-08-08',
+        merchantNumber: '09999999999'
+    }).status, 'posting_locked');
+    await assert.rejects(
+        () => claimGcashTransactionAllocations({
+            branchId: 11,
+            reference: '1043753606767',
+            submissionId: 'locked-payment-history-bind',
+            allocations: [{
+                accountNumber: 'ACC-LOCKED',
+                customerName: 'Locked Customer',
+                amount: 1000,
+                billingMonth: '2026-08'
+            }],
+            amount: 1000,
+            paymentDate: '2026-08-08',
+            claimedBy: { id: 'admin-lock' }
+        }),
+        (error) => error?.code === 'GCASH_TRANSACTION_POSTING_LOCKED'
+    );
+    const lockedDuplicateImport = await importGcashTransactionBatch({
+        branchId: 11,
+        fileName: 'posting-lock-duplicate.pdf',
+        pdfSha256: 'f'.repeat(64),
+        parsed,
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    assert.strictEqual(lockedDuplicateImport.batch.importedCount, 0);
+    assert.strictEqual(lockedDuplicateImport.duplicateCount, 2);
+    const duplicateLockedHistory = await listGcashTransactionHistory({ branchId: 11, all: true });
+    assert.strictEqual(duplicateLockedHistory.totalTransactions, 2);
+    assert.strictEqual(
+        duplicateLockedHistory.transactions.find((row) => row.reference === '1043753606767').postingLock.remark,
+        'Personal transfer; no customer account required.'
+    );
+
+    await importGcashTransactionBatch({
+        branchId: 12,
+        fileName: 'posting-lock-branch-isolation.pdf',
+        pdfSha256: 'e'.repeat(64),
+        parsed,
+        importedBy: { id: 'admin-12', username: 'branch-admin', name: 'Branch Admin' }
+    });
+    const otherBranchHistory = await listGcashTransactionHistory({ branchId: 12, all: true });
+    assert.strictEqual(
+        otherBranchHistory.transactions.find((row) => row.reference === '1043753606767').postingLock,
+        null
+    );
+
+    const postingUnlock = await unlockGcashTransactionPosting({
+        branchId: 11,
+        reference: '1043753606767',
+        unlockedBy: { id: 'admin-unlock', username: 'unlock-admin', name: 'Unlock Admin' }
+    });
+    assert.strictEqual(postingUnlock.idempotent, false);
+    assert.strictEqual(postingUnlock.postingLock, null);
+    const unlockedBranchHistory = await listGcashTransactionHistory({ branchId: 11, all: true });
+    const unlockedCredit = unlockedBranchHistory.transactions.find((row) => row.reference === '1043753606767');
+    assert.strictEqual(unlockedCredit.postingLock, null);
+    assert.deepStrictEqual(unlockedCredit.postingLockAudit.map((entry) => entry.action), ['locked', 'unlocked']);
+    const postUnlockClaim = await claimGcashTransactionAllocations({
+        branchId: 11,
+        reference: '1043753606767',
+        submissionId: 'post-unlock-claim',
+        allocations: [{
+            accountNumber: 'ACC-UNLOCKED',
+            customerName: 'Unlocked Customer',
+            amount: 1000,
+            billingMonth: '2026-08'
+        }],
+        amount: 1000,
+        paymentDate: '2026-08-08',
+        claimedBy: { id: 'admin-unlock' }
+    });
+    assert.strictEqual(postUnlockClaim.idempotent, false);
+    assert.strictEqual(await releaseGcashTransactionClaim({
+        branchId: 11,
+        reference: '1043753606767',
+        submissionId: 'post-unlock-claim',
+        accountNumber: 'ACC-UNLOCKED'
+    }), true);
+
     const duplicateImport = await importGcashTransactionBatch({
         branchId: 2,
         fileName: 'duplicate-reference-fixture.pdf',
@@ -669,13 +839,25 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
                     reference: 'DIRECT-ADVANCE-1002',
                     credit: 500,
                     recipient: '09361565251'
+                },
+                {
+                    ...transaction,
+                    reference: 'DIRECT-LOCK-1003',
+                    credit: 750,
+                    recipient: '09361565251'
                 }
             ]
         },
         importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
     });
+    await lockGcashTransactionPosting({
+        branchId: 3,
+        reference: 'DIRECT-LOCK-1003',
+        remark: 'Personal transfer with no customer account.',
+        lockedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
 
-    const batchCustomers = ['ACC-5001', 'ACC-5002', 'ACC-5003'].map((accountNumber, index) => ({
+    const batchCustomers = ['ACC-5001', 'ACC-5002', 'ACC-5003', 'ACC-PENDING'].map((accountNumber, index) => ({
         accountNumber,
         branchId: 5,
         name: `Batch Customer ${index + 1}`,
@@ -814,6 +996,63 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     });
     assert.strictEqual(plannerConflict.conflictGroups.length, 1);
     assert(plannerConflict.conflictGroups[0].reason.includes('does not equal'));
+    const plannerPostingLocked = actualPaymentsRouter.buildPaymentImportGcashReconciliationPlan({
+        branchId: 5,
+        records: [makeImportedPaymentRecord({
+            reference: 'LOCKED-AUTO-PLAN-5005',
+            accountNumber: 'ACC-5001',
+            amount: 1000
+        })],
+        transactions: [{
+            reference: 'LOCKED AUTO PLAN 5005',
+            status: 'received',
+            credit: 1000,
+            transactionDate: '2026-08-08',
+            assignment: null,
+            postingLock: {
+                remark: 'Personal transfer',
+                lockedAt: '2026-08-09T00:00:00.000Z',
+                lockedBy: { id: 'admin-1' }
+            }
+        }],
+        payments: {}
+    });
+    assert.strictEqual(plannerPostingLocked.insertGroups.length, 0);
+    assert.strictEqual(plannerPostingLocked.conflictGroups.length, 1);
+    assert(plannerPostingLocked.conflictGroups[0].reason.includes('Not for Posting'));
+    const existingPostingLockedPlan = actualPaymentsRouter.buildExistingPaymentHistoryGcashReconciliationPlan({
+        branchId: 5,
+        transactions: [{
+            reference: 'LOCKED-EXISTING-5005',
+            status: 'received',
+            credit: 1000,
+            transactionDate: '2026-08-08',
+            assignment: null,
+            postingLock: {
+                remark: 'Non-customer transfer',
+                lockedAt: '2026-08-09T00:00:00.000Z',
+                lockedBy: { id: 'admin-1' }
+            }
+        }],
+        payments: {
+            'ACC-5001': {
+                history: [{
+                    id: 'locked-existing-entry-5005',
+                    reference: 'LOCKED EXISTING 5005',
+                    amount: 1000,
+                    date: '2026-08-08',
+                    paymentMethod: 'GCash',
+                    kind: 'payment',
+                    type: 'payment',
+                    direction: 'credit'
+                }]
+            }
+        },
+        customers: [{ accountNumber: 'ACC-5001', name: 'Batch Customer 1' }]
+    });
+    assert.strictEqual(existingPostingLockedPlan.groups[0].action, 'not_for_posting');
+    assert.strictEqual(existingPostingLockedPlan.bindExistingGroups.length, 0);
+    assert.strictEqual(existingPostingLockedPlan.suggestionGroups.length, 0);
 
     const leadingZeroPlanner = actualPaymentsRouter.buildPaymentImportGcashReconciliationPlan({
         branchId: 5,
@@ -888,6 +1127,104 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     };
     const originalMkdir = fs.promises.mkdir;
     const originalWriteFile = fs.promises.writeFile;
+    await importGcashTransactionBatch({
+        branchId: 5,
+        fileName: 'pending-gcash-verification.pdf',
+        pdfSha256: 'b'.repeat(64),
+        parsed: {
+            ...parsed,
+            transactions: [{
+                ...transaction,
+                reference: 'PENDING-VERIFY-5005',
+                credit: 650,
+                recipient: '09361565251'
+            }]
+        },
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    const manualPaymentLayer = actualPaymentsRouter.stack.find((layer) => (
+        layer.route?.path === '/:accountNumber' && layer.route?.methods?.post
+    ));
+    assert(manualPaymentLayer, 'manual payment route must be registered');
+    const manualPaymentHandler = manualPaymentLayer.route.stack[manualPaymentLayer.route.stack.length - 1].handle;
+    const manualPaymentResponse = { statusCode: 200, payload: null };
+    await manualPaymentHandler({
+        params: { accountNumber: 'ACC-PENDING' },
+        body: {
+            amount: 650,
+            date: '2026-08-08',
+            kind: 'payment',
+            paymentMethod: 'GCash',
+            reference: 'WRONG-ENTERED-REF'
+        },
+        user: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin', branchId: 5 }
+    }, {
+        status(code) {
+            manualPaymentResponse.statusCode = code;
+            return this;
+        },
+        json(payload) {
+            manualPaymentResponse.payload = payload;
+            return this;
+        }
+    }, (error) => {
+        throw error;
+    });
+    assert.strictEqual(manualPaymentResponse.statusCode, 201);
+    assert.strictEqual(manualPaymentResponse.payload.status, 'pending_gcash_verification');
+    assert.strictEqual(manualPaymentResponse.payload.paymentMethod, 'GCash');
+    const pendingEntryId = manualPaymentResponse.payload.id;
+    const pendingBeforeBind = await actualPaymentsRouter.listPendingGcashPayments({ branchId: 5 });
+    assert.strictEqual(pendingBeforeBind.length, 1);
+    assert.strictEqual(pendingBeforeBind[0].accountNumber, 'ACC-PENDING');
+    const pendingBindOptions = await actualPaymentsRouter.getPendingGcashBindOptions({
+        branchId: 5,
+        accountNumber: 'ACC-PENDING',
+        entryId: pendingEntryId
+    });
+    assert.deepStrictEqual(pendingBindOptions.transactions.map((row) => row.reference), ['PENDINGVERIFY5005']);
+    const entryCountBeforePendingBind = Object.values(paymentStoreMemory).reduce((count, record) => (
+        count + (Array.isArray(record?.history) ? record.history.length : 0)
+    ), 0);
+    fs.promises.mkdir = async () => {};
+    fs.promises.writeFile = async () => {};
+    let pendingBindResult;
+    try {
+        pendingBindResult = await actualPaymentsRouter.bindPendingGcashPayment({
+            branchId: 5,
+            accountNumber: 'ACC-PENDING',
+            entryId: pendingEntryId,
+            gcashReference: 'PENDING-VERIFY-5005',
+            assignmentConfirmed: true,
+            verifiedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' }
+        });
+    } finally {
+        fs.promises.mkdir = originalMkdir;
+        fs.promises.writeFile = originalWriteFile;
+    }
+    assert.strictEqual(pendingBindResult.idempotent, false);
+    assert.strictEqual(pendingBindResult.entry.id, pendingEntryId);
+    assert.strictEqual(pendingBindResult.entry.status, 'Approved');
+    assert.strictEqual(pendingBindResult.entry.reference, 'PENDINGVERIFY5005');
+    assert.strictEqual(pendingBindResult.entry.paymentReceivedAt, officialTransactionAt);
+    assert.strictEqual(Object.values(paymentStoreMemory).reduce((count, record) => (
+        count + (Array.isArray(record?.history) ? record.history.length : 0)
+    ), 0), entryCountBeforePendingBind, 'binding must update the same ledger entry instead of inserting a duplicate');
+    const pendingAfterBind = await actualPaymentsRouter.listPendingGcashPayments({ branchId: 5 });
+    assert.strictEqual(pendingAfterBind.length, 0);
+    const pendingPostedHistory = await listGcashTransactionHistory({ branchId: 5, all: true });
+    const pendingPostedTransaction = pendingPostedHistory.transactions.find((row) => row.reference === 'PENDINGVERIFY5005');
+    assert.strictEqual(pendingPostedTransaction.assignment.status, 'posted');
+    assert.strictEqual(pendingPostedTransaction.assignment.paymentEntryId, pendingEntryId);
+    const pendingBindRetry = await actualPaymentsRouter.bindPendingGcashPayment({
+        branchId: 5,
+        accountNumber: 'ACC-PENDING',
+        entryId: pendingEntryId,
+        gcashReference: 'PENDING-VERIFY-5005',
+        assignmentConfirmed: true,
+        verifiedBy: { id: 'admin-1', username: 'admin', name: 'Admin', role: 'Admin' }
+    });
+    assert.strictEqual(pendingBindRetry.idempotent, true);
     fs.promises.mkdir = async () => {};
     fs.promises.writeFile = async () => {};
     try {
@@ -1681,6 +2018,16 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         });
         return result;
     };
+
+    await assert.rejects(
+        () => invokeDirectPost({
+            accountNumber: 'ACC-3003',
+            amount: 750,
+            assignmentConfirmed: true
+        }, 'DIRECT-LOCK-1003'),
+        (error) => error?.code === 'GCASH_TRANSACTION_POSTING_LOCKED'
+    );
+    assert.strictEqual(paymentWriteCount, 0);
 
     const amountMismatch = await invokeDirectPost({
         accountNumber: 'ACC-3003',

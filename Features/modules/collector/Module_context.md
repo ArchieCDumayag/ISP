@@ -54,6 +54,7 @@ All API prefixes, collector/admin authentication requirements, feature gates, an
 - Depends directly on migrated Billing for canonical payment records, entry numbering, balances, and service refresh.
 - JSON mode retains approval/rejection audit fields on the collector payment entry. Relational mode stores the same decision in the Collector-owned `collector_payment_reviews` table, created on first review, while `payment_entries.status` remains Billing's effective-entry gate.
 - Collector client review uses Billing's canonical Complimentary flag: active exempt subscribers are labeled Complimentary and excluded from area unpaid totals so they are not treated as collection targets. Other collector payment/reschedule contracts are unchanged.
+- Collector browser-side monthly/detail reports treat Billing's `pending_gcash_verification` status as non-reportable, matching the canonical ledger gate so an unverified Admin GCash entry cannot inflate collected amounts before imported proof is bound.
 - Remittance and approval data may be consumed by Finance reporting.
 
 ## Known risks and follow-up
@@ -77,6 +78,7 @@ All API prefixes, collector/admin authentication requirements, feature gates, an
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Collector asset/page URLs and unauthenticated assignment, payment, and collector-session denials on ports `3190`/`4190`.
 - Acceptance tests do not submit, approve, reject, reprint, or remit payments.
+- `node Features/modules/collector/tests/collector-monthly-totals.test.js` and `npm run refactor:collector` verify that `pending_gcash_verification` is excluded from Collector Operations and Collector History totals/details while existing approval, remittance, assignment, and schedule contracts remain intact.
 - 2026-08-04 focused validation covered router load/date normalization and an in-memory HTTP flow for authenticated create, duplicate idempotency, automatic history, Admin/collector listing, and paid resolution. Android `assembleDebug` and `testDebugUnitTest`, Collector compatibility, and the full `npm test` package/smoke gate passed.
 - 2026-08-05 frontend validation covered the Collector compatibility check, unique IDs, required workflow hooks, absence of hidden tab panels, and focused responsive/dark-mode stylesheet review. Interactive browser review was unavailable because no browser instance was connected.
 - `node Features/modules/collector/tests/collector-reschedules-admin.test.js` covers JSON and relational Admin creation paths, assignment/branch enforcement, collector visibility, Admin-only editing, updated collector download, audited deletion, active-to-history tombstone synchronization, and the linked partial-payment create/idempotent retry/Admin edit/delete lifecycle with isolated storage.
@@ -115,6 +117,8 @@ All API prefixes, collector/admin authentication requirements, feature gates, an
 - 2026-08-16 area-only assignment-modal validation covers removal of the client-review markup, rendering, customer/payment fetch on assignment open, and obsolete CSS while retaining collector selection, area search/filter/checklist, bulk selection, selected count, save payload, JavaScript syntax, compatibility, and live explicit-close review without saving.
 
 ## Latest meaningful changes
+
+- 2026-08-16: Collector Operations and Collector History now exclude Billing's `pending_gcash_verification` records from browser-side payment totals/details until imported proof is bound and the canonical entry becomes effective.
 
 - 2026-08-16: Simplified **Assign Areas** to area management only. Removed the read-only client cards and their assignment-open customer/payment fetch; collector selection, area search, All/Selected/Unassigned/Assigned filters, bulk selection, selected count, existing assignment payload, and Save action are unchanged.
 - 2026-08-16: Swapped the combined tab so **Collector Cash Remittance** is the primary card and **Customer Payment Approval** is the compact secondary card. Added Admin-only Archive/Restore for completed or rejected remittances; archive is non-destructive, preserves all financial fields, records Admin/time history, hides archived records from collectors, and exposes them to Admins through an Archived filter.

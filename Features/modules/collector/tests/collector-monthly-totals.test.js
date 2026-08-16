@@ -45,6 +45,7 @@ const JSON_PAYMENTS = {
     history: [
       APPROVED_PREPAID,
       { ...APPROVED_PREPAID, id: 'payment-pending', amount: 900, status: 'pending_approval' },
+      { ...APPROVED_PREPAID, id: 'payment-pending-gcash', amount: 650, status: 'pending_gcash_verification', paymentMethod: 'GCash' },
       { ...APPROVED_PREPAID, id: 'payment-rejected', amount: 700, status: 'rejected' },
       { ...APPROVED_PREPAID, id: 'credit-adjustment', amount: 50, kind: 'adjustment', type: 'adjustment' },
       { ...APPROVED_PREPAID, id: 'renewal-debit', amount: 800, kind: 'billing', type: 'billing', direction: 'debit' }
@@ -86,6 +87,7 @@ replaceModule('../../../../core/data/db', {
         APPROVED_PREPAID,
         APPROVED_POSTPAID,
         { ...APPROVED_PREPAID, id: 'rel-pending', amount: 900, status: 'pending_approval' },
+        { ...APPROVED_PREPAID, id: 'rel-pending-gcash', amount: 650, status: 'pending_gcash_verification', paymentMethod: 'GCash' },
         { ...APPROVED_PREPAID, id: 'rel-adjustment', amount: 50, kind: 'adjustment', type: 'adjustment' }
       ].map((entry) => ({ ...entry, recordedBy: undefined }))];
     }
@@ -134,6 +136,12 @@ async function run() {
       /function getCollectorMonthTotal[\s\S]*loadReport\.lastReport\?\.\[String\(collectorId\)\]\?\.\[monthKey\]/,
       'collector cards should use the collector report total by actual recorder identity'
     );
+    assert.match(pageSource, /pending_gcash_verification/, 'Collector Operations must exclude unverified Admin GCash entries');
+    const historySource = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'web', 'js', 'collectors-history.js'),
+      'utf8'
+    );
+    assert.match(historySource, /pending_gcash_verification/, 'Collector History must exclude unverified Admin GCash entries');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

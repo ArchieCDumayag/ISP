@@ -104,6 +104,11 @@
             ...(detail && typeof detail === 'object' ? detail : {}),
             dateLabel: String(detail?.dateLabel || '').trim() || formatDate(detail?.date)
         }));
+        const pendingPaymentDetails = (Array.isArray(row.pendingPaymentDetails) ? row.pendingPaymentDetails : []).map((detail) => ({
+            ...(detail && typeof detail === 'object' ? detail : {}),
+            dateLabel: String(detail?.dateLabel || '').trim() || formatDate(detail?.date),
+            statusLabel: String(detail?.statusLabel || 'Pending').trim() || 'Pending'
+        }));
 
         return {
             ...row,
@@ -115,6 +120,7 @@
             planAmount,
             billingCycle: resolveBillingCycle(record, row),
             paymentDetails,
+            pendingPaymentDetails,
             paymentMode: String(row.paymentMode || '-').trim() || '-',
             paymentDateLabel: String(row.paymentDateLabel || '').trim() || '-',
             paymentStatus: classToken(row.paymentStatus, 'unpaid'),
@@ -184,14 +190,21 @@
 
     const renderPaymentAmountCell = (row, options) => {
         const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        if (!details.length) {
+        const pendingDetails = Array.isArray(row.pendingPaymentDetails) ? row.pendingPaymentDetails : [];
+        if (!details.length && !pendingDetails.length) {
             return `<span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${options.formatCurrency(row.amountPaid)}</span>`;
         }
         return `
             <span class="breakdown-payment-stack">
+                ${!details.length ? `<span class="breakdown-payment-line"><span class="breakdown-amount ${getCreditClass(row.amountPaid)}">${options.formatCurrency(row.amountPaid)}</span></span>` : ''}
                 ${details.map((detail) => `
                     <span class="breakdown-payment-line">
                         <span class="breakdown-amount ${getCreditClass(detail.amount)}">${options.formatCurrency(detail.amount)}</span>
+                    </span>
+                `).join('')}
+                ${pendingDetails.map((detail) => `
+                    <span class="breakdown-payment-line">
+                        <span class="breakdown-amount text-warning">${options.formatCurrency(detail.amount)}</span>
                     </span>
                 `).join('')}
             </span>
@@ -200,11 +213,15 @@
 
     const renderPaymentModeCell = (row) => {
         const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        if (!details.length) return `<span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span>`;
+        const pendingDetails = Array.isArray(row.pendingPaymentDetails) ? row.pendingPaymentDetails : [];
+        if (!details.length && !pendingDetails.length) return `<span class="breakdown-mode">${escapeHtml(row.paymentMode || '-')}</span>`;
         return `
             <span class="breakdown-payment-stack">
                 ${details.map((detail) => `
                     <span class="breakdown-payment-line"><span class="breakdown-mode">${escapeHtml(detail.mode || '-')}</span></span>
+                `).join('')}
+                ${pendingDetails.map((detail) => `
+                    <span class="breakdown-payment-line"><span class="breakdown-mode text-warning">${escapeHtml(detail.mode || 'GCash')} · Pending</span></span>
                 `).join('')}
             </span>
         `;
@@ -212,11 +229,15 @@
 
     const renderPaymentDateCell = (row) => {
         const details = Array.isArray(row.paymentDetails) ? row.paymentDetails : [];
-        if (!details.length) return `<span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span>`;
+        const pendingDetails = Array.isArray(row.pendingPaymentDetails) ? row.pendingPaymentDetails : [];
+        if (!details.length && !pendingDetails.length) return `<span class="breakdown-date">${escapeHtml(row.paymentDateLabel || '-')}</span>`;
         return `
             <span class="breakdown-payment-stack">
                 ${details.map((detail) => `
                     <span class="breakdown-payment-line"><span class="breakdown-date">${escapeHtml(detail.dateLabel || '-')}</span></span>
+                `).join('')}
+                ${pendingDetails.map((detail) => `
+                    <span class="breakdown-payment-line"><span class="breakdown-date text-warning">${escapeHtml(detail.dateLabel || '-')}</span></span>
                 `).join('')}
             </span>
         `;

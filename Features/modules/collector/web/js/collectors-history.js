@@ -78,6 +78,9 @@
   const isReportableCollectorPaymentEntry = (entry = {}) => {
     const status = String(entry?.status || entry?.paymentStatus || '').trim().toLowerCase();
     return ![
+      'pending_gcash_verification',
+      'pending-gcash-verification',
+      'pending gcash verification',
       'pending_approval',
       'pending-approval',
       'pending approval',

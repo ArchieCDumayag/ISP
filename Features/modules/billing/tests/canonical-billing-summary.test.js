@@ -87,6 +87,47 @@ const payment = (id, amount, day) => ({
 }
 
 {
+  const accountNumber = 'CANONICAL-PENDING-GCASH';
+  const pendingEntry = {
+    ...payment('pending-gcash-one', 1000, 4),
+    paymentMethod: 'GCash',
+    reference: 'ENTERED-REFERENCE',
+    status: 'pending_gcash_verification',
+    description: 'Pending GCash verification'
+  };
+  const record = buildPaymentRecord({
+    accountNumber,
+    firstName: 'Pending',
+    lastName: 'GCash',
+    status: 'active',
+    planCategory: 'prepaid',
+    billingCycle: 'Every first of the month',
+    planName: 'Prepaid 1000',
+    planAmount: 1000,
+    activationDate: `${monthKey}-01`,
+    billDate: `${monthKey}-01`,
+    dueDate: `${monthKey}-01`
+  }, {
+    [accountNumber]: {
+      history: [
+        charge('pending-gcash-bill', 1000, `${monthKey}-01`),
+        pendingEntry
+      ]
+    }
+  });
+
+  assert.equal(record.history.length, 2, 'pending GCash must remain visible in raw Payment History');
+  assert.equal(record.totalCredits, 0, 'pending GCash must not count as collected');
+  assert.equal(record.billingSummary.currentCycle.amountPaid, 0, 'pending GCash must not increase Amount Paid');
+  assert.equal(record.billingSummary.currentCycle.balanceAfterPayment, 1000, 'pending GCash must not reduce the balance');
+  assert.equal(record.billingSummary.currentCycle.paymentStatus, 'unpaid');
+  assert.equal(record.billingSummary.endingBalance, 1000);
+  assert.equal(record.billingSummary.pendingGcashPayments.length, 1);
+  assert.equal(record.billingSummary.currentCycle.pendingPaymentDetails.length, 1);
+  assert.equal(record.billingSummary.currentCycle.pendingPaymentDetails[0].statusLabel, 'Pending');
+}
+
+{
   const accountNumber = 'CANONICAL-POSTPAID';
   const previousMonth = currentMonth === 1 ? 12 : currentMonth - 1;
   const previousYear = currentMonth === 1 ? currentYear - 1 : currentYear;

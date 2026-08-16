@@ -137,6 +137,15 @@ assert(collectorsClientSource.includes('data-collector-remittance-action="archiv
 assert(collectorsClientSource.includes('data-collector-remittance-action="restore"'));
 assert(collectorsClientSource.includes('function updateCollectorRemittanceArchive('));
 assert(collectorsClientSource.includes("['operations', 'payments', 'excluded'].includes(view)"));
+assert(!collectorsClientSource.includes('renderAssignmentClientReview'));
+assert(!collectorsClientSource.includes('assignment-client-review'));
+const openAssignmentModalSource = collectorsClientSource.slice(
+  collectorsClientSource.indexOf('function openAssignmentModal('),
+  collectorsClientSource.indexOf('function closeAssignmentModal(')
+);
+assert(openAssignmentModalSource.includes('loadCollectors()'));
+assert(openAssignmentModalSource.includes('loadAreas()'));
+assert(!openAssignmentModalSource.includes('loadClientReviewCustomers('));
 assert(collectorsClientSource.includes("fetch('/api/collectors/exclusions'"));
 assert(collectorsClientSource.includes("'/api/collectors/exclusions/restore'"));
 assert(collectorsClientSource.includes('data-collector-exclusion-action="restore"'));
@@ -166,6 +175,7 @@ assert(collectorsLayoutSource.includes('grid-template-columns: minmax(0, 2fr) mi
 assert(collectorsLayoutSource.includes('grid-template-columns: repeat(4, minmax(0, 1fr));'));
 assert(collectorsLayoutSource.includes('.collector-payments-remittance-grid .collector-remittance-card .collector-approval-panel__header'));
 assert(collectorsLayoutSource.includes('.collector-excluded-table'));
+assert(!collectorsLayoutSource.includes('.assignment-client-review'));
 assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-row.is-overdue > td'));
 assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-row.is-upcoming > td'));
 assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-row.is-history'));
@@ -177,11 +187,13 @@ assert(collectorsLayoutSource.includes('.collectors-board .collector-reschedule-
 assert(collectorsLayoutSource.includes('@media (max-width: 1100px)'));
 assert(!collectorsLayoutSource.includes('grid-template-areas:'));
 assert(!collectorsHtml.includes('collector-assignment-table'));
+assert(!collectorsHtml.includes('id="assignmentClientReview"'));
+assert(!collectorsHtml.includes('Clients per selected area'));
 assert(!collectorsHtml.includes('assignmentsFooter'));
 assert(!collectorsHtml.includes('id="collectorAreaAssignmentTitle"'));
 assert(!collectorsHtml.includes('class="collector-payment-summary"'));
 assert(!collectorsHtml.includes('<th>Paid Client</th>'));
-console.log('PASS remittance-first Payments & Remittance tab, audited archive controls, Collector assignment cards, and prioritized reschedule contracts');
+console.log('PASS remittance-first Payments & Remittance tab, area-only assignment modal, audited archive controls, Collector assignment cards, and prioritized reschedule contracts');
 
 const collectorHistoryHtml = fs.readFileSync(path.join(webRoot, 'collectors-history.html'), 'utf8');
 [

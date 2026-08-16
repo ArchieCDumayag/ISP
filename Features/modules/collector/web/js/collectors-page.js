@@ -186,7 +186,6 @@
   const modalCollectorSelect = document.getElementById('modalCollectorSelect');
   const assignmentAreaSearch = document.getElementById('assignmentAreaSearch');
   const assignmentAreaList = document.getElementById('assignmentAreaList');
-  const assignmentClientReview = document.getElementById('assignmentClientReview');
   const assignmentAreaCount = document.getElementById('assignmentAreaCount');
   const assignmentFilterTabs = document.getElementById('assignmentFilterTabs');
   const assignmentSelectAllVisibleBtn = document.getElementById('assignmentSelectAllVisible');
@@ -210,10 +209,7 @@
   let availableAreas = [];
   let modalSelectedAreas = new Set();
   let clientReviewCustomers = [];
-  let clientReviewByArea = new Map();
   let clientReviewLoaded = false;
-  let clientReviewLoading = false;
-  let clientReviewError = '';
   let clientReviewPromise = null;
   let activeAssignmentFilter = 'all';
   let areaTotalsCache = {};
@@ -441,22 +437,6 @@
       || getClientAccountNumber(customer)
       || 'Unnamed client'
     ).trim();
-  }
-
-  function getClientPlanLabel(customer) {
-    return String(customer?.planName || customer?.plan_name || customer?.plan || customer?.packageName || '').trim();
-  }
-
-  function getClientStatusLabel(customer) {
-    if (customer?.complimentaryAccount?.active === true) return 'Complimentary';
-    const label = String(
-      customer?.accountStatusLabel
-      || customer?.statusLabel
-      || customer?.statusText
-      || customer?.status
-      || ''
-    ).trim();
-    return label ? label.charAt(0).toUpperCase() + label.slice(1) : '';
   }
 
   function compareClientRecords(left, right) {
@@ -755,119 +735,10 @@
     }
   }
 
-  function rebuildClientReviewIndex() {
-    const next = new Map();
-    clientReviewCustomers.forEach((customer) => {
-      const area = getClientArea(customer);
-      const areaKey = normalizeAreaKey(area);
-      if (!areaKey) return;
-      const bucket = next.get(areaKey) || [];
-      bucket.push(customer);
-      next.set(areaKey, bucket);
-    });
-    next.forEach((clients) => clients.sort(compareClientRecords));
-    clientReviewByArea = next;
-  }
-
-  function getClientsForArea(area) {
-    return clientReviewByArea.get(normalizeAreaKey(area)) || [];
-  }
-
-  function clientCountLabel(count) {
-    return count === 1 ? '1 client' : `${count} clients`;
-  }
-
-  function renderClientReviewRows(clients) {
-    const visible = clients.slice(0, 12);
-    const rows = visible.map((client) => {
-      const accountNumber = getClientAccountNumber(client);
-      const planLabel = getClientPlanLabel(client);
-      const statusLabel = getClientStatusLabel(client);
-      const metaParts = [accountNumber ? `#${accountNumber}` : '', planLabel, statusLabel].filter(Boolean);
-      return `
-        <li class="assignment-client-review__item">
-          <span class="assignment-client-review__name">${escapeHtml(getClientDisplayName(client))}</span>
-          <span class="assignment-client-review__meta">${escapeHtml(metaParts.join(' - ') || 'Client record')}</span>
-        </li>
-      `;
-    }).join('');
-    const moreCount = clients.length - visible.length;
-    const moreRow = moreCount > 0
-      ? `<li class="assignment-client-review__more">+${moreCount} more ${moreCount === 1 ? 'client' : 'clients'}</li>`
-      : '';
-    return `<ul class="assignment-client-review__list">${rows}${moreRow}</ul>`;
-  }
-
-  function renderAssignmentClientReview() {
-    if (!assignmentClientReview) return;
-    const selectedAreas = getSelectedModalAreas();
-    if (!selectedAreas.length) {
-      assignmentClientReview.innerHTML = `
-        <div class="assignment-client-review__empty">
-          <i class="ti ti-users" aria-hidden="true"></i>
-          <span>Select coverage areas to review clients per area.</span>
-        </div>
-      `;
-      return;
-    }
-
-    if (clientReviewLoading && !clientReviewLoaded) {
-      assignmentClientReview.innerHTML = `
-        <div class="assignment-client-review__empty">
-          <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-          <span>Loading clients for review...</span>
-        </div>
-      `;
-      return;
-    }
-
-    if (clientReviewError && !clientReviewLoaded) {
-      assignmentClientReview.innerHTML = `
-        <div class="assignment-client-review__empty assignment-client-review__empty--error">
-          <i class="ti ti-alert-circle" aria-hidden="true"></i>
-          <span>${escapeHtml(clientReviewError)}</span>
-        </div>
-      `;
-      return;
-    }
-
-    const groups = selectedAreas.map((area) => ({
-      area,
-      clients: getClientsForArea(area),
-    }));
-    const totalClients = groups.reduce((sum, group) => sum + group.clients.length, 0);
-
-    assignmentClientReview.innerHTML = `
-      <div class="assignment-client-review__header">
-        <div>
-          <span class="assignment-client-review__eyebrow">Review only</span>
-          <strong>Clients per selected area</strong>
-        </div>
-        <span class="badge bg-secondary-lt text-secondary">${clientCountLabel(totalClients)}</span>
-      </div>
-      <div class="assignment-client-review__groups">
-        ${groups.map((group) => `
-          <section class="assignment-client-review__group">
-            <div class="assignment-client-review__group-head">
-              <strong title="${escapeHtml(group.area)}">${escapeHtml(group.area)}</strong>
-              <span>${clientCountLabel(group.clients.length)}</span>
-            </div>
-            ${group.clients.length
-              ? renderClientReviewRows(group.clients)
-              : '<p class="assignment-client-review__no-clients">No clients found in this area.</p>'}
-          </section>
-        `).join('')}
-      </div>
-    `;
-  }
-
   async function loadClientReviewCustomers(forceRefresh = false) {
     if (forceRefresh && !clientReviewPromise) clientReviewLoaded = false;
     if (clientReviewLoaded) return clientReviewCustomers;
     if (clientReviewPromise) return clientReviewPromise;
-    clientReviewLoading = true;
-    clientReviewError = '';
-    renderAssignmentClientReview();
 
     clientReviewPromise = Promise.all([
       fetch('/api/customers', { credentials: 'include', cache: 'no-store' }),
@@ -895,17 +766,10 @@
           };
         });
         clientReviewLoaded = true;
-        rebuildClientReviewIndex();
         return clientReviewCustomers;
       })
-      .catch((err) => {
-        clientReviewError = err?.message || 'Unable to load clients for review.';
-        throw err;
-      })
       .finally(() => {
-        clientReviewLoading = false;
         clientReviewPromise = null;
-        renderAssignmentClientReview();
       });
 
     return clientReviewPromise;
@@ -3007,7 +2871,6 @@
       assignmentSelectAllVisibleBtn.disabled = !collectorId || visibleAreas.length === 0;
     }
     updateAreaCount();
-    renderAssignmentClientReview();
   }
 
   function buildCollectorTotals(reportCache) {
@@ -4010,10 +3873,8 @@
     activeAssignmentFilter = 'all';
     syncAssignmentFilterTabs();
     setModalMessage('');
-    renderAssignmentClientReview();
     assignmentModal.classList.add('show');
     assignmentModal.setAttribute('aria-hidden', 'false');
-    loadClientReviewCustomers().catch(() => {});
     loadCollectors()
       .then(() => {
         if (initialCollectorId && modalCollectorSelect) {

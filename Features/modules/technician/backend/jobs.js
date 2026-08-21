@@ -35,6 +35,7 @@ const STORE_KEYS = {
   tickets: 'tickets'
 };
 const MYSQL_DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+let jsonTechnicianMutationQueue = Promise.resolve();
 
 router.use((req, res, next) => {
   if (!accountHasRole(req.user, 'Admin')) {
@@ -68,6 +69,7 @@ const mapJobRow = (row) => {
   );
   return {
     id: Number(row.id) || row.id,
+    branchId: row.branchId ?? row.branch_id ?? null,
     jobNumber: toJobNumberLabel(row),
     type: row.type || '',
     technician,
@@ -99,6 +101,30 @@ const mapJobRow = (row) => {
   };
 };
 
+const hasBranchId = (value) => value !== null && value !== undefined && String(value).trim() !== '';
+const isSameBranch = (row, branchId) => (
+  hasBranchId(branchId)
+  && hasBranchId(row?.branchId ?? row?.branch_id)
+  && String(row.branchId ?? row.branch_id) === String(branchId)
+);
+const readAllJobsJson = async () => {
+  const parsed = await readJson(STORE_KEYS.jobs, []);
+  return Array.isArray(parsed) ? parsed : [];
+};
+const withJsonTechnicianMutation = async (work) => {
+  const previous = jsonTechnicianMutationQueue;
+  let release;
+  jsonTechnicianMutationQueue = new Promise((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+  }
+};
+
 const readJobs = async (branchId = null) => {
   try {
     if (await isRelationalReady()) {
@@ -115,10 +141,11 @@ const readJobs = async (branchId = null) => {
       const hydratedRows = await hydrateJobRows(branchId, rows || []);
       return hydratedRows.map(mapJobRow);
     }
-    const parsed = await readJson(STORE_KEYS.jobs, []);
-    return Array.isArray(parsed)
-      ? parsed.map((row) => ({ ...row, ...mapJobRow(row) }))
-      : [];
+    if (!hasBranchId(branchId)) return [];
+    const parsed = await readAllJobsJson();
+    return parsed
+      .filter((row) => isSameBranch(row, branchId))
+      .map((row) => ({ ...row, ...mapJobRow(row) }));
   } catch (err) {
     console.error('Failed to read jobs:', err);
     return [];
@@ -248,7 +275,8 @@ const resolveCustomerSnapshot = async (branchId, payload = {}) => {
   }
   const customers = await readCustomers(branchId);
   const customer = (Array.isArray(customers) ? customers : []).find((entry) =>
-    String(entry?.accountNumber || '').trim() === accountNumber
+    isSameBranch(entry, branchId)
+    && String(entry?.accountNumber || '').trim() === accountNumber
   );
   if (!customer) {
     const error = new Error('Selected customer was not found in this branch.');
@@ -364,7 +392,9 @@ const getTechnicianLookupValues = (technician) => {
 };
 
 const ORIGIN_TICKET = 'ticket';
+const ORIGIN_TICKET_WORK_ORDER = 'ticket_work_order';
 const ORIGIN_JOB = 'job';
+const ACTIVE_LINKED_JOB_TERMINAL_STATUSES = new Set(['completed', 'cancelled']);
 
 const readTicketsData = async () => {
   try {
@@ -381,7 +411,7 @@ const writeTicketsData = async (tickets) => {
 };
 
 const revertTicketStatus = async (ticketId, branchId = null) => {
-  if (!ticketId) return null;
+  if (!ticketId || !hasBranchId(branchId)) return null;
   if (await isRelationalReady()) {
     if (!branchId) return null;
     const [rows] = await query(
@@ -401,7 +431,9 @@ const revertTicketStatus = async (ticketId, branchId = null) => {
     return ticket;
   }
   const tickets = await readTicketsData();
-  const idx = tickets.findIndex((t) => Number(t.id) === Number(ticketId));
+  const idx = tickets.findIndex((ticket) => (
+    Number(ticket.id) === Number(ticketId) && isSameBranch(ticket, branchId)
+  ));
   if (idx < 0) return null;
   const ticket = tickets[idx];
   ticket.status = 'in-progress';
@@ -412,7 +444,8 @@ const revertTicketStatus = async (ticketId, branchId = null) => {
   return ticket;
 };
 
-const addJobEntry = async (job, branchId = null) => {
+const addJobEntry = async (job, branchId = null, options = {}) => {
+  if (!hasBranchId(branchId)) throw new Error('Branch assignment missing for this job.');
   const dispatch = normalizeDispatchFields(job, job);
   Object.assign(job, dispatch, {
     schedule: dispatch.appointmentStart || job.schedule,
@@ -459,15 +492,20 @@ const addJobEntry = async (job, branchId = null) => {
     job.jobNumber = toJobNumberLabel(job);
     return job;
   }
-  const jobs = await readJobs();
-  job.id = nextId(jobs);
-  job.branchId = Number(branchId) || job.branchId || null;
-  jobs.unshift(job);
-  await writeJobs(jobs);
-  return job;
+  const persistJsonJob = async () => {
+    const jobs = await readAllJobsJson();
+    job.id = nextId(jobs);
+    job.branchId = Number(branchId) || String(branchId);
+    jobs.unshift(job);
+    await writeJobs(jobs);
+    return job;
+  };
+  return options.alreadySerialized
+    ? persistJsonJob()
+    : withJsonTechnicianMutation(persistJsonJob);
 };
 
-const createJobFromTicket = async (ticket, branchId = null) => {
+const createJobFromTicket = async (ticket, branchId = null, options = {}) => {
   if (!ticket) return null;
   const now = new Date().toISOString();
   const notesArray = [
@@ -494,7 +532,7 @@ const createJobFromTicket = async (ticket, branchId = null) => {
     ticketSubject: sanitizeText(ticket.subject, 200),
     origin: ORIGIN_TICKET
   };
-  return addJobEntry(job, branchId);
+  return addJobEntry(job, branchId, options);
 };
 
 const removeHistoryJobForTicket = async (ticket, branchId = null) => {
@@ -528,8 +566,10 @@ const removeHistoryJobForTicket = async (ticket, branchId = null) => {
     return false;
   }
 
-  const jobs = await readJobs(branchId);
+  if (!hasBranchId(branchId)) return false;
+  const jobs = await readAllJobsJson();
   const nextJobs = jobs.filter((job) => {
+    if (!isSameBranch(job, branchId)) return true;
     const isTicketOrigin = String(job?.origin || '').toLowerCase() === ORIGIN_TICKET;
     if (!isTicketOrigin) return true;
     if (historyJobId > 0 && Number(job?.id) === historyJobId) return false;
@@ -542,6 +582,437 @@ const removeHistoryJobForTicket = async (ticket, branchId = null) => {
     return true;
   }
   return false;
+};
+
+const isTicketWorkOrder = (job = {}) =>
+  sanitizeText(job.origin, 50).toLowerCase() === ORIGIN_TICKET_WORK_ORDER;
+
+const isActiveTicketWorkOrder = (job = {}) => {
+  if (!isTicketWorkOrder(job)) return false;
+  const workflowStatus = normalizeDispatchStatus(job.workflowStatus || job.status, {
+    technician: job.technician
+  });
+  return !ACTIVE_LINKED_JOB_TERMINAL_STATUSES.has(workflowStatus);
+};
+
+const readTicketWorkOrders = async (branchId = null) => {
+  const jobs = await readJobs(branchId);
+  return jobs
+    .filter(isTicketWorkOrder)
+    .sort((left, right) => {
+      const dateDifference = new Date(right.createdAt || 0) - new Date(left.createdAt || 0);
+      return dateDifference || (Number(right.id) || 0) - (Number(left.id) || 0);
+    });
+};
+
+const findTicketWorkOrder = async (ticketId, branchId = null, options = {}) => {
+  const normalizedTicketId = Number(ticketId);
+  if (!Number.isFinite(normalizedTicketId) || normalizedTicketId <= 0) return null;
+  const jobs = await readTicketWorkOrders(branchId);
+  return jobs.find((job) => {
+    if (Number(job.ticketId) !== normalizedTicketId) return false;
+    if (options.activeOnly && !isActiveTicketWorkOrder(job)) return false;
+    if (options.completedOnly) {
+      const status = normalizeDispatchStatus(job.workflowStatus || job.status, {
+        technician: job.technician
+      });
+      if (status !== 'completed') return false;
+    }
+    return true;
+  }) || null;
+};
+
+const createWorkOrderFromTicket = async (ticket, payload = {}, branchId = null, actor = null) => {
+  const ticketId = Number(ticket?.id);
+  if (!Number.isFinite(ticketId) || ticketId <= 0) {
+    const error = new Error('Ticket is required to create a work order.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!hasBranchId(branchId)) {
+    const error = new Error('Branch assignment missing for this job.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const buildWorkOrder = async (currentTicket) => {
+    const now = new Date().toISOString();
+    let customerSnapshot = {};
+    if (currentTicket.accountNumber) {
+      try {
+        customerSnapshot = await resolveCustomerSnapshot(branchId, {
+          customerAccountNumber: currentTicket.accountNumber
+        });
+      } catch (error) {
+        if (Number(error?.statusCode) !== 400) throw error;
+      }
+    }
+    const requestPayload = mergeCustomerSnapshot({
+      ...payload,
+      type: sanitizeText(payload.type, 80) || 'repair',
+      technician: sanitizeText(payload.technician || payload.assignedTo || currentTicket.assignedTo, 120),
+      priority: sanitizeText(payload.priority, 40) || 'normal',
+      appointmentStart: payload.appointmentStart || payload.schedule || now,
+      customerAccountNumber: sanitizeText(currentTicket.accountNumber, 20),
+      customerName: sanitizeText(currentTicket.customerName, 200),
+      customerPhone: sanitizeText(currentTicket.contact, 50),
+      notes: sanitizeText(payload.notes || currentTicket.description || currentTicket.subject, 400),
+      description: sanitizeText(payload.description || currentTicket.description || currentTicket.subject, 4000),
+      details: {
+        ...(payload.details && typeof payload.details === 'object' ? payload.details : {}),
+        instructions: sanitizeText(
+          payload.instructions || payload.details?.instructions || currentTicket.description,
+          4000
+        )
+      }
+    }, customerSnapshot);
+    const { fields, error } = buildEditableJobFields(requestPayload, { requireTechnician: false });
+    if (error) {
+      const validationError = new Error(error);
+      validationError.statusCode = 400;
+      throw validationError;
+    }
+
+    const workflowStatus = hasAssignedTechnician(fields.technician) ? 'assigned' : 'unassigned';
+    const job = {
+      ...fields,
+      schedule: fields.appointmentStart,
+      workflowStatus,
+      status: toLegacyJobStatus(workflowStatus),
+      doneAt: null,
+      version: 1,
+      ticketId,
+      ticketNumber: sanitizeText(currentTicket.ticketNumber, 50),
+      ticketSubject: sanitizeText(currentTicket.subject, 200),
+      origin: ORIGIN_TICKET_WORK_ORDER,
+      createdAt: now,
+      updatedAt: now
+    };
+    return job;
+  };
+
+  const assertTicketCanCreateWorkOrder = (currentTicket) => {
+    if (currentTicket.archivedAt || currentTicket.archived_at) {
+      const error = new Error('Restore this ticket before creating a work order.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const status = String(currentTicket.status || '').trim().toLowerCase();
+    if (['resolved', 'closed', 'done', 'completed', 'cancelled', 'canceled'].includes(status)) {
+      const error = new Error('Reopen this ticket before creating a work order.');
+      error.statusCode = 409;
+      throw error;
+    }
+  };
+
+  let saved;
+  let updatedTicket;
+  if (await isRelationalReady()) {
+      const { useJobNumberColumn, sql } = await buildJobInsertStatement();
+      const selectFields = await getJobSelectFields();
+      const result = await withTransaction(async (connection) => {
+        const [ticketRows] = await connection.query(
+          `SELECT id, ticket_number AS ticketNumber, subject, description,
+                  customer_name AS customerName, account_number AS accountNumber, contact, status,
+                  assigned_to AS assignedTo, source, created_at AS createdAt, updated_at AS updatedAt,
+                  history_job_id AS historyJobId, history_job_created_at AS historyJobCreatedAt,
+                  archived_at AS archivedAt, archived_by AS archivedBy
+           FROM tickets WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE`,
+          [ticketId, branchId]
+        );
+        if (!ticketRows?.length) {
+          const error = new Error('Ticket not found.');
+          error.statusCode = 404;
+          throw error;
+        }
+        const currentTicket = ticketRows[0];
+        assertTicketCanCreateWorkOrder(currentTicket);
+        const [existingRows] = await connection.query(
+          `SELECT ${selectFields}
+           FROM jobs
+           WHERE branch_id = ? AND ticket_id = ? AND origin = ?
+             AND LOWER(COALESCE(workflow_status, '')) NOT IN ('completed', 'cancelled')
+             AND LOWER(COALESCE(status, '')) NOT IN ('done', 'closed', 'resolved', 'completed', 'cancelled')
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1`,
+          [branchId, ticketId, ORIGIN_TICKET_WORK_ORDER]
+        );
+        if (existingRows?.length) {
+          const error = new Error('This ticket already has an active work order.');
+          error.statusCode = 409;
+          error.currentJob = mapJobRow(existingRows[0]);
+          throw error;
+        }
+
+        const job = await buildWorkOrder(currentTicket);
+        const storedJobNumber = useJobNumberColumn
+          ? await nextManualJobNumberValue(connection, branchId)
+          : null;
+        const [result] = await connection.query(
+          sql,
+          buildJobInsertValues(job, branchId, storedJobNumber, useJobNumberColumn)
+        );
+        job.id = result?.insertId || job.id;
+        const fallbackJobNumber = useJobNumberColumn
+          ? storedJobNumber
+          : await assignFallbackManualJobNumber(connection, branchId, job.id);
+        job.jobNumber = toJobNumberLabel({ ...job, jobNumber: fallbackJobNumber });
+        const ticketUpdatedAt = new Date().toISOString();
+        const linkedTicket = {
+          ...currentTicket,
+          branchId: Number(branchId) || branchId,
+          assignedTo: sanitizeText(job.technician, 120),
+          status: 'in-progress',
+          historyJobId: job.id || null,
+          historyJobCreatedAt: job.createdAt || ticketUpdatedAt,
+          updatedAt: ticketUpdatedAt
+        };
+        await connection.query(
+          `UPDATE tickets
+           SET status = ?, assigned_to = ?, history_job_id = ?, history_job_created_at = ?, updated_at = ?
+           WHERE id = ? AND branch_id = ?`,
+          [
+            linkedTicket.status,
+            linkedTicket.assignedTo || null,
+            linkedTicket.historyJobId,
+            toMysqlDateTime(linkedTicket.historyJobCreatedAt),
+            toMysqlDateTime(linkedTicket.updatedAt),
+            ticketId,
+            branchId
+          ]
+        );
+        return { job, ticket: linkedTicket };
+      });
+      saved = result.job;
+      updatedTicket = result.ticket;
+  } else {
+    const result = await withJsonTechnicianMutation(async () => {
+      const tickets = await readTicketsData();
+      const ticketIndex = tickets.findIndex((entry) => (
+        Number(entry?.id) === ticketId && isSameBranch(entry, branchId)
+      ));
+      if (ticketIndex < 0) {
+        const error = new Error('Ticket not found.');
+        error.statusCode = 404;
+        throw error;
+      }
+      const currentTicket = tickets[ticketIndex];
+      assertTicketCanCreateWorkOrder(currentTicket);
+      const jobs = await readAllJobsJson();
+      const existing = jobs.find((entry) => (
+        isSameBranch(entry, branchId)
+        && Number(entry?.ticketId ?? entry?.ticket_id) === ticketId
+        && isActiveTicketWorkOrder(entry)
+      ));
+      if (existing) {
+        const error = new Error('This ticket already has an active work order.');
+        error.statusCode = 409;
+        error.currentJob = mapJobRow(existing);
+        throw error;
+      }
+      const job = await buildWorkOrder(currentTicket);
+      job.id = nextId(jobs);
+      job.branchId = Number(branchId) || String(branchId);
+      job.jobNumber = toJobNumberLabel(job);
+      jobs.unshift(job);
+      const ticketUpdatedAt = new Date().toISOString();
+      currentTicket.assignedTo = sanitizeText(job.technician, 120);
+      currentTicket.status = 'in-progress';
+      currentTicket.historyJobId = job.id || null;
+      currentTicket.historyJobCreatedAt = job.createdAt || ticketUpdatedAt;
+      currentTicket.updatedAt = ticketUpdatedAt;
+      currentTicket.branchId = Number(branchId) || String(branchId);
+      tickets[ticketIndex] = currentTicket;
+      await writeJobs(jobs);
+      await writeTicketsData(tickets);
+      return { job, ticket: currentTicket };
+    });
+    saved = result.job;
+    updatedTicket = result.ticket;
+  }
+
+  await recordJobEvent(saved, {
+    branchId,
+    eventType: 'created',
+    toStatus: saved.workflowStatus,
+    actorType: 'admin',
+    actor,
+    clientEventId: payload.clientEventId,
+    payload: {
+      ticketId,
+      ticketNumber: saved.ticketNumber,
+      origin: ORIGIN_TICKET_WORK_ORDER,
+      version: saved.version || 1
+    }
+  });
+  return { job: mapJobRow(saved), ticket: updatedTicket };
+};
+
+const applyLinkedJobStateToTicket = (ticket, job) => {
+  const workflowStatus = normalizeDispatchStatus(job.workflowStatus || job.status, {
+    technician: job.technician
+  });
+  const now = new Date().toISOString();
+  const closedTicketStatuses = new Set(['resolved', 'closed', 'done', 'completed', 'cancelled', 'canceled']);
+  const linkedToThisJob = Number(ticket.historyJobId ?? ticket.history_job_id) === Number(job.id);
+  const shouldReopen = workflowStatus !== 'completed'
+    && linkedToThisJob
+    && closedTicketStatuses.has(String(ticket.status || '').trim().toLowerCase());
+  ticket.assignedTo = sanitizeText(job.technician, 120);
+  if (workflowStatus === 'completed') ticket.status = 'resolved';
+  else if (shouldReopen) ticket.status = 'in-progress';
+  ticket.historyJobId = Number(job.id) || job.id || null;
+  ticket.historyJobCreatedAt = job.createdAt || ticket.historyJobCreatedAt || ticket.history_job_created_at || now;
+  ticket.updatedAt = now;
+  return ticket;
+};
+
+const syncLinkedTicketFromJob = async (job, branchId = null, options = {}) => {
+  if (!isTicketWorkOrder(job) || !job.ticketId || !hasBranchId(branchId)) return null;
+
+  const mutateTickets = async (tickets, persist) => {
+    const index = tickets.findIndex((ticket) => (
+      Number(ticket?.id) === Number(job.ticketId) && isSameBranch(ticket, branchId)
+    ));
+    if (index < 0) return null;
+    const ticket = applyLinkedJobStateToTicket(tickets[index], job);
+    tickets[index] = ticket;
+    if (persist) await writeTicketsData(tickets);
+    return ticket;
+  };
+
+  if (Array.isArray(options.tickets)) {
+    return mutateTickets(options.tickets, false);
+  }
+
+  if (options.connection) {
+    const [rows] = await options.connection.query(
+      `SELECT id, status, assigned_to AS assignedTo, history_job_id AS historyJobId,
+              history_job_created_at AS historyJobCreatedAt, created_at AS createdAt
+       FROM tickets WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE`,
+      [job.ticketId, branchId]
+    );
+    if (!rows?.length) return null;
+    const ticket = applyLinkedJobStateToTicket(rows[0], job);
+    await options.connection.query(
+      `UPDATE tickets
+       SET status = ?, assigned_to = ?, history_job_id = ?, history_job_created_at = ?, updated_at = ?
+       WHERE id = ? AND branch_id = ?`,
+      [
+        ticket.status || null,
+        ticket.assignedTo || null,
+        ticket.historyJobId || null,
+        toMysqlDateTime(ticket.historyJobCreatedAt),
+        toMysqlDateTime(ticket.updatedAt),
+        job.ticketId,
+        branchId
+      ]
+    );
+    return ticket;
+  }
+
+  if (await isRelationalReady()) {
+    return withTransaction((connection) => syncLinkedTicketFromJob(job, branchId, { connection }));
+  }
+  return withJsonTechnicianMutation(async () => mutateTickets(await readTicketsData(), true));
+};
+
+const applyTicketStateToLinkedJob = (job, ticket) => {
+  const technician = sanitizeText(ticket.assignedTo ?? ticket.assigned_to, 120);
+  const previousTechnician = sanitizeText(job.technician, 120);
+  const technicianChanged = previousTechnician.toLowerCase() !== technician.toLowerCase();
+  const previousStatus = normalizeDispatchStatus(job.workflowStatus || job.status, {
+    technician: previousTechnician
+  });
+  const workflowStatus = technicianChanged && !ACTIVE_LINKED_JOB_TERMINAL_STATUSES.has(previousStatus)
+    ? (hasAssignedTechnician(technician) ? 'assigned' : 'unassigned')
+    : previousStatus;
+  const now = new Date().toISOString();
+  return {
+    ...job,
+    technician,
+    workflowStatus,
+    status: toLegacyJobStatus(workflowStatus),
+    doneAt: workflowStatus === 'completed' ? job.doneAt : null,
+    ticketSubject: sanitizeText(ticket.subject, 200),
+    description: sanitizeText(ticket.description || ticket.subject, 4000),
+    customerAccountNumber: sanitizeText(ticket.accountNumber ?? ticket.account_number, 20),
+    customerName: sanitizeText(ticket.customerName ?? ticket.customer_name, 200),
+    customerPhone: sanitizeText(ticket.contact, 50),
+    version: Number(job.version || job.record_version || 1) + 1,
+    updatedAt: now
+  };
+};
+
+const syncActiveLinkedJobFromTicket = async (ticket, branchId = null, options = {}) => {
+  if (!ticket?.id || !hasBranchId(branchId)) return null;
+
+  const mutateJobs = async (jobs, persist) => {
+    const index = jobs.findIndex((job) => (
+      isSameBranch(job, branchId)
+      && Number(job?.ticketId ?? job?.ticket_id) === Number(ticket.id)
+      && isActiveTicketWorkOrder(job)
+    ));
+    if (index < 0) return null;
+    const updated = applyTicketStateToLinkedJob(mapJobRow(jobs[index]), ticket);
+    jobs[index] = { ...jobs[index], ...updated, branchId: Number(branchId) || String(branchId) };
+    if (persist) await writeJobs(jobs);
+    return updated;
+  };
+
+  if (Array.isArray(options.jobs)) return mutateJobs(options.jobs, false);
+
+  if (options.connection) {
+    const [rows] = await options.connection.query(
+      `SELECT id, type, technician, priority, schedule, appointment_end AS appointmentEnd,
+              sla_due_at AS slaDueAt, status, workflow_status AS workflowStatus, done_at AS doneAt,
+              notes, description, customer_account_number AS customerAccountNumber,
+              customer_name AS customerName, customer_phone AS customerPhone,
+              service_address AS serviceAddress, latitude, longitude, plan_name AS planName,
+              dispatch_payload_json AS dispatchPayloadJson, record_version AS version,
+              created_at AS createdAt, updated_at AS updatedAt, ticket_id AS ticketId,
+              ticket_number AS ticketNumber, ticket_subject AS ticketSubject, origin
+       FROM jobs
+       WHERE branch_id = ? AND ticket_id = ? AND origin = ?
+         AND LOWER(COALESCE(workflow_status, '')) NOT IN ('completed', 'cancelled')
+         AND LOWER(COALESCE(status, '')) NOT IN ('done', 'closed', 'resolved', 'completed', 'cancelled')
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1 FOR UPDATE`,
+      [branchId, ticket.id, ORIGIN_TICKET_WORK_ORDER]
+    );
+    if (!rows?.length) return null;
+    const updated = applyTicketStateToLinkedJob(mapJobRow(rows[0]), ticket);
+    await options.connection.query(
+      `UPDATE jobs
+       SET technician = ?, workflow_status = ?, status = ?, done_at = ?,
+           ticket_subject = ?, description = ?, customer_account_number = ?, customer_name = ?,
+           customer_phone = ?, record_version = ?, updated_at = ?
+       WHERE id = ? AND branch_id = ? AND record_version = ?`,
+      [
+        updated.technician || null,
+        updated.workflowStatus,
+        updated.status,
+        toMysqlDateTime(updated.doneAt),
+        updated.ticketSubject || null,
+        updated.description || null,
+        updated.customerAccountNumber || null,
+        updated.customerName || null,
+        updated.customerPhone || null,
+        updated.version,
+        toMysqlDateTime(updated.updatedAt),
+        updated.id,
+        branchId,
+        Number(rows[0].version || 1)
+      ]
+    );
+    return updated;
+  }
+
+  if (await isRelationalReady()) {
+    return withTransaction((connection) => syncActiveLinkedJobFromTicket(ticket, branchId, { connection }));
+  }
+  return withJsonTechnicianMutation(async () => mutateJobs(await readAllJobsJson(), true));
 };
 
 const readJobsForTechnician = async (branchId = null, technician = null, options = {}) => {
@@ -603,10 +1074,9 @@ async function readJobById(branchId, id) {
     const [hydrated] = await hydrateJobRows(branchId, rows.slice(0, 1));
     return mapJobRow(hydrated);
   }
-  const jobs = await readJobs();
+  const jobs = await readJobs(branchId);
   const job = jobs.find((entry) => Number(entry?.id) === jobId);
   if (!job) return null;
-  if (branchId && job.branchId && Number(job.branchId) !== Number(branchId)) return null;
   return mapJobRow(job);
 }
 
@@ -662,81 +1132,133 @@ async function changeJobWorkflowStatus({
     }
   }
 
-  const job = await readJobById(branchId, jobId);
-  if (!job) return null;
+  const buildMutation = (job) => {
+    if (technician) {
+      const identifiers = new Set(getTechnicianLookupValues(technician));
+      const assignedKey = String(job.technician || '').trim().toLowerCase();
+      if (!identifiers.has(assignedKey)) return null;
+    }
 
-  if (technician) {
-    const identifiers = new Set(getTechnicianLookupValues(technician));
-    const assignedKey = String(job.technician || '').trim().toLowerCase();
-    if (!identifiers.has(assignedKey)) return null;
-  }
+    const currentStatus = normalizeDispatchStatus(job.workflowStatus || job.status, {
+      technician: job.technician
+    });
+    if (!isDispatchStatusValue(status)) {
+      const error = new Error('Job status is invalid.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const nextStatus = normalizeDispatchStatus(status, {
+      technician: job.technician,
+      fallback: currentStatus
+    });
+    if (!allowOverride && currentStatus !== nextStatus && !canTechnicianTransition(currentStatus, nextStatus)) {
+      const error = new Error(`Job cannot move from ${currentStatus} to ${nextStatus}.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    const currentVersion = Number(job.version || 1);
+    if (expectedVersion != null && Number(expectedVersion) !== currentVersion) {
+      const error = new Error('Job changed on the server. Refresh and try again.');
+      error.statusCode = 409;
+      error.currentJob = job;
+      throw error;
+    }
 
-  const currentStatus = normalizeDispatchStatus(job.workflowStatus || job.status, {
-    technician: job.technician
-  });
-  if (!isDispatchStatusValue(status)) {
-    const error = new Error('Job status is invalid.');
-    error.statusCode = 400;
-    throw error;
-  }
-  const nextStatus = normalizeDispatchStatus(status, {
-    technician: job.technician,
-    fallback: currentStatus
-  });
-  if (!allowOverride && currentStatus !== nextStatus && !canTechnicianTransition(currentStatus, nextStatus)) {
-    const error = new Error(`Job cannot move from ${currentStatus} to ${nextStatus}.`);
-    error.statusCode = 409;
-    throw error;
-  }
-  if (expectedVersion != null && Number(expectedVersion) !== Number(job.version || 1)) {
-    const error = new Error('Job changed on the server. Refresh and try again.');
-    error.statusCode = 409;
-    error.currentJob = job;
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  const nextPayload = normalizeDispatchPayload(details, job.dispatchPayload);
-  const nextVersion = Number(job.version || 1) + 1;
-  const nextTechnician = ['rejected'].includes(nextStatus) && actorType === 'technician'
-    ? ''
-    : job.technician;
-  const updated = {
-    ...job,
-    technician: nextTechnician,
-    workflowStatus: nextStatus,
-    status: toLegacyJobStatus(nextStatus),
-    doneAt: nextStatus === 'completed' ? now : null,
-    dispatchPayload: nextPayload,
-    version: nextVersion,
-    updatedAt: now
+    const now = new Date().toISOString();
+    const nextPayload = normalizeDispatchPayload(details, job.dispatchPayload);
+    const nextVersion = currentVersion + 1;
+    const nextTechnician = nextStatus === 'rejected' && actorType === 'technician'
+      ? ''
+      : job.technician;
+    return {
+      currentStatus,
+      nextStatus,
+      nextPayload,
+      currentVersion,
+      nextVersion,
+      updated: {
+        ...job,
+        technician: nextTechnician,
+        workflowStatus: nextStatus,
+        status: toLegacyJobStatus(nextStatus),
+        doneAt: nextStatus === 'completed' ? now : null,
+        dispatchPayload: nextPayload,
+        version: nextVersion,
+        updatedAt: now
+      }
+    };
   };
 
+  let mutation;
   if (await isRelationalReady()) {
-    await query(
-      `UPDATE jobs
-       SET technician = ?, workflow_status = ?, status = ?, done_at = ?,
-           dispatch_payload_json = ?, record_version = ?, updated_at = ?
-       WHERE id = ? AND branch_id = ?`,
-      [
-        updated.technician || null,
-        updated.workflowStatus,
-        updated.status,
-        toMysqlDateTime(updated.doneAt),
-        JSON.stringify(updated.dispatchPayload || {}),
-        updated.version,
-        toMysqlDateTime(updated.updatedAt),
-        jobId,
-        branchId
-      ]
-    );
+    const preliminary = await readJobById(branchId, jobId);
+    if (!preliminary) return null;
+    const selectFields = await getJobSelectFields();
+    mutation = await withTransaction(async (connection) => {
+      if (isTicketWorkOrder(preliminary) && preliminary.ticketId) {
+        await connection.query(
+          'SELECT id FROM tickets WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE',
+          [preliminary.ticketId, branchId]
+        );
+      }
+      const [rows] = await connection.query(
+        `SELECT ${selectFields} FROM jobs WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE`,
+        [jobId, branchId]
+      );
+      if (!rows?.length) return null;
+      const state = buildMutation(mapJobRow({ ...rows[0], branchId }));
+      if (!state) return null;
+      const [updateResult] = await connection.query(
+        `UPDATE jobs
+         SET technician = ?, workflow_status = ?, status = ?, done_at = ?,
+             dispatch_payload_json = ?, record_version = ?, updated_at = ?
+         WHERE id = ? AND branch_id = ? AND record_version = ?`,
+        [
+          state.updated.technician || null,
+          state.updated.workflowStatus,
+          state.updated.status,
+          toMysqlDateTime(state.updated.doneAt),
+          JSON.stringify(state.updated.dispatchPayload || {}),
+          state.updated.version,
+          toMysqlDateTime(state.updated.updatedAt),
+          jobId,
+          branchId,
+          state.currentVersion
+        ]
+      );
+      if (Number.isFinite(Number(updateResult?.affectedRows)) && Number(updateResult.affectedRows) !== 1) {
+        const error = new Error('Job changed on the server. Refresh and try again.');
+        error.statusCode = 409;
+        error.currentJob = state.updated;
+        throw error;
+      }
+      await syncLinkedTicketFromJob(state.updated, branchId, { connection });
+      return state;
+    });
   } else {
-    const jobs = await readJobs();
-    const index = jobs.findIndex((entry) => Number(entry?.id) === jobId);
-    if (index < 0) return null;
-    jobs[index] = { ...jobs[index], ...updated, branchId: jobs[index].branchId || branchId };
-    await writeJobs(jobs);
+    mutation = await withJsonTechnicianMutation(async () => {
+      const jobs = await readAllJobsJson();
+      const index = jobs.findIndex((entry) => (
+        Number(entry?.id) === jobId && isSameBranch(entry, branchId)
+      ));
+      if (index < 0) return null;
+      const state = buildMutation(mapJobRow({ ...jobs[index], branchId }));
+      if (!state) return null;
+      jobs[index] = {
+        ...jobs[index],
+        ...state.updated,
+        branchId: Number(branchId) || String(branchId)
+      };
+      const tickets = await readTicketsData();
+      const linkedTicket = await syncLinkedTicketFromJob(state.updated, branchId, { tickets });
+      await writeJobs(jobs);
+      if (linkedTicket) await writeTicketsData(tickets);
+      return state;
+    });
   }
+  if (!mutation) return null;
+
+  const { updated, currentStatus, nextStatus, nextPayload, nextVersion } = mutation;
 
   const eventResult = await recordJobEvent(updated, {
     branchId,
@@ -970,13 +1492,35 @@ router.patch('/:id', async (req, res) => {
     };
 
     if (await isRelationalReady()) {
-      await query(
+      await withTransaction(async (connection) => {
+        if (isTicketWorkOrder(current) && current.ticketId) {
+          await connection.query(
+            'SELECT id FROM tickets WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE',
+            [current.ticketId, branchId]
+          );
+        }
+        const [lockedRows] = await connection.query(
+          'SELECT record_version AS version FROM jobs WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE',
+          [id, branchId]
+        );
+        if (!lockedRows?.length) {
+          const notFound = new Error('Job not found');
+          notFound.statusCode = 404;
+          throw notFound;
+        }
+        if (Number(lockedRows[0].version || 1) !== Number(current.version || 1)) {
+          const conflict = new Error('Job changed on the server. Refresh and try again.');
+          conflict.statusCode = 409;
+          conflict.currentJob = current;
+          throw conflict;
+        }
+        const [updateResult] = await connection.query(
         `UPDATE jobs
          SET type = ?, technician = ?, priority = ?, schedule = ?, appointment_end = ?, sla_due_at = ?,
              status = ?, workflow_status = ?, done_at = ?, notes = ?, description = ?,
              customer_account_number = ?, customer_name = ?, customer_phone = ?, service_address = ?,
              latitude = ?, longitude = ?, plan_name = ?, dispatch_payload_json = ?, record_version = ?, updated_at = ?
-         WHERE id = ? AND branch_id = ?`,
+         WHERE id = ? AND branch_id = ? AND record_version = ?`,
         [
           updated.type || null,
           updated.technician || null,
@@ -1000,15 +1544,38 @@ router.patch('/:id', async (req, res) => {
           updated.version,
           toMysqlDateTime(updated.updatedAt),
           id,
-          branchId
+          branchId,
+          Number(current.version || 1)
         ]
-      );
+        );
+        if (Number.isFinite(Number(updateResult?.affectedRows)) && Number(updateResult.affectedRows) !== 1) {
+          const conflict = new Error('Job changed on the server. Refresh and try again.');
+          conflict.statusCode = 409;
+          throw conflict;
+        }
+        await syncLinkedTicketFromJob(updated, branchId, { connection });
+      });
     } else {
-      const jobs = await readJobs();
-      const index = jobs.findIndex((job) => Number(job?.id) === id);
-      if (index < 0) return res.status(404).json({ ok: false, error: 'Job not found' });
-      jobs[index] = { ...jobs[index], ...updated, branchId: jobs[index].branchId || branchId };
-      await writeJobs(jobs);
+      await withJsonTechnicianMutation(async () => {
+        const jobs = await readAllJobsJson();
+        const index = jobs.findIndex((job) => Number(job?.id) === id && isSameBranch(job, branchId));
+        if (index < 0) {
+          const notFound = new Error('Job not found');
+          notFound.statusCode = 404;
+          throw notFound;
+        }
+        if (Number(jobs[index].version || jobs[index].record_version || 1) !== Number(current.version || 1)) {
+          const conflict = new Error('Job changed on the server. Refresh and try again.');
+          conflict.statusCode = 409;
+          conflict.currentJob = mapJobRow(jobs[index]);
+          throw conflict;
+        }
+        jobs[index] = { ...jobs[index], ...updated, branchId: Number(branchId) || String(branchId) };
+        const tickets = await readTicketsData();
+        const linkedTicket = await syncLinkedTicketFromJob(updated, branchId, { tickets });
+        await writeJobs(jobs);
+        if (linkedTicket) await writeTicketsData(tickets);
+      });
     }
 
     await recordJobEvent(updated, {
@@ -1089,11 +1656,33 @@ router.patch('/:id/assign', async (req, res) => {
     };
 
     if (await isRelationalReady()) {
-      await query(
+      await withTransaction(async (connection) => {
+        if (isTicketWorkOrder(current) && current.ticketId) {
+          await connection.query(
+            'SELECT id FROM tickets WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE',
+            [current.ticketId, branchId]
+          );
+        }
+        const [lockedRows] = await connection.query(
+          'SELECT record_version AS version FROM jobs WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE',
+          [id, branchId]
+        );
+        if (!lockedRows?.length) {
+          const notFound = new Error('Job not found');
+          notFound.statusCode = 404;
+          throw notFound;
+        }
+        if (Number(lockedRows[0].version || 1) !== Number(current.version || 1)) {
+          const conflict = new Error('Job changed on the server. Refresh and try again.');
+          conflict.statusCode = 409;
+          conflict.currentJob = current;
+          throw conflict;
+        }
+        const [updateResult] = await connection.query(
         `UPDATE jobs
          SET technician = ?, workflow_status = ?, status = ?, done_at = NULL,
              record_version = ?, updated_at = ?
-         WHERE id = ? AND branch_id = ?`,
+         WHERE id = ? AND branch_id = ? AND record_version = ?`,
         [
           technician || null,
           workflowStatus,
@@ -1101,15 +1690,38 @@ router.patch('/:id/assign', async (req, res) => {
           updated.version,
           toMysqlDateTime(now),
           id,
-          branchId
+          branchId,
+          Number(current.version || 1)
         ]
-      );
+        );
+        if (Number.isFinite(Number(updateResult?.affectedRows)) && Number(updateResult.affectedRows) !== 1) {
+          const conflict = new Error('Job changed on the server. Refresh and try again.');
+          conflict.statusCode = 409;
+          throw conflict;
+        }
+        await syncLinkedTicketFromJob(updated, branchId, { connection });
+      });
     } else {
-      const jobs = await readJobs();
-      const index = jobs.findIndex((job) => Number(job?.id) === id);
-      if (index < 0) return res.status(404).json({ ok: false, error: 'Job not found' });
-      jobs[index] = { ...jobs[index], ...updated, branchId: jobs[index].branchId || branchId };
-      await writeJobs(jobs);
+      await withJsonTechnicianMutation(async () => {
+        const jobs = await readAllJobsJson();
+        const index = jobs.findIndex((job) => Number(job?.id) === id && isSameBranch(job, branchId));
+        if (index < 0) {
+          const notFound = new Error('Job not found');
+          notFound.statusCode = 404;
+          throw notFound;
+        }
+        if (Number(jobs[index].version || jobs[index].record_version || 1) !== Number(current.version || 1)) {
+          const conflict = new Error('Job changed on the server. Refresh and try again.');
+          conflict.statusCode = 409;
+          conflict.currentJob = mapJobRow(jobs[index]);
+          throw conflict;
+        }
+        jobs[index] = { ...jobs[index], ...updated, branchId: Number(branchId) || String(branchId) };
+        const tickets = await readTicketsData();
+        const linkedTicket = await syncLinkedTicketFromJob(updated, branchId, { tickets });
+        await writeJobs(jobs);
+        if (linkedTicket) await writeTicketsData(tickets);
+      });
     }
 
     await recordJobEvent(updated, {
@@ -1136,21 +1748,14 @@ router.patch('/:id/assign', async (req, res) => {
 });
 
 router.patch('/:id/undo', async (req, res) => {
-  const id = Number(req.params.id);
-  if (await isRelationalReady()) {
+  try {
+    const id = Number(req.params.id);
     const branchId = req.user?.branchId || null;
     if (!branchId) {
       return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
     }
-    const selectFields = await getJobSelectFields();
-    const [rows] = await query(
-      `SELECT ${selectFields}
-       FROM jobs WHERE id = ? AND branch_id = ? LIMIT 1`,
-      [id, branchId]
-    );
-    if (!rows || !rows.length) return res.status(404).json({ ok: false, error: 'Job not found' });
-    const [hydratedRow] = await hydrateJobRows(branchId, rows.slice(0, 1));
-    const job = mapJobRow(hydratedRow);
+    const job = await readJobById(branchId, id);
+    if (!job) return res.status(404).json({ ok: false, error: 'Job not found' });
 
     if (String(job.status || '').toLowerCase() !== 'done') {
       return res.status(400).json({ ok: false, error: 'Job is not marked done' });
@@ -1167,84 +1772,71 @@ router.patch('/:id/undo', async (req, res) => {
     }
 
     if (job.origin === ORIGIN_TICKET) {
-      await revertTicketStatus(job.ticketId, branchId);
-      await query('DELETE FROM jobs WHERE id = ? AND branch_id = ?', [id, branchId]);
+      if (await isRelationalReady()) {
+        await withTransaction(async (connection) => {
+          await connection.query(
+            `UPDATE tickets
+             SET status = 'in-progress', history_job_id = NULL, history_job_created_at = NULL, updated_at = ?
+             WHERE id = ? AND branch_id = ?`,
+            [toMysqlDateTime(new Date()), job.ticketId, branchId]
+          );
+          await connection.query(
+            'DELETE FROM jobs WHERE id = ? AND branch_id = ? AND origin = ?',
+            [id, branchId, ORIGIN_TICKET]
+          );
+        });
+      } else {
+        await withJsonTechnicianMutation(async () => {
+          const jobs = await readAllJobsJson();
+          const index = jobs.findIndex((entry) => Number(entry?.id) === id && isSameBranch(entry, branchId));
+          if (index < 0) return;
+          const tickets = await readTicketsData();
+          const ticket = tickets.find((entry) => (
+            Number(entry?.id) === Number(job.ticketId) && isSameBranch(entry, branchId)
+          ));
+          if (ticket) {
+            ticket.status = 'in-progress';
+            delete ticket.historyJobId;
+            delete ticket.historyJobCreatedAt;
+            ticket.updatedAt = new Date().toISOString();
+          }
+          jobs.splice(index, 1);
+          await writeJobs(jobs);
+          if (ticket) await writeTicketsData(tickets);
+        });
+      }
       return res.json({ ok: true, job });
     }
 
-    job.status = 'scheduled';
-    job.workflowStatus = hasAssignedTechnician(job.technician) ? 'assigned' : 'unassigned';
-    job.doneAt = null;
-    job.version = Number(job.version || 1) + 1;
-    job.updatedAt = new Date().toISOString();
-    await query(
-      `UPDATE jobs
-       SET status = ?, workflow_status = ?, done_at = NULL, record_version = ?, updated_at = ?
-       WHERE id = ? AND branch_id = ?`,
-      [job.status, job.workflowStatus, job.version, toMysqlDateTime(job.updatedAt), id, branchId]
-    );
-    await recordJobEvent(job, {
+    const result = await changeJobWorkflowStatus({
       branchId,
-      eventType: 'reopened',
-      fromStatus: 'completed',
-      toStatus: job.workflowStatus,
+      id,
+      status: hasAssignedTechnician(job.technician) ? 'assigned' : 'unassigned',
+      expectedVersion: job.version,
+      allowOverride: true,
       actorType: 'admin',
       actor: req.user,
-      payload: { version: job.version }
+      clientEventId: req.body?.clientEventId,
+      details: req.body?.details || {}
     });
-    return res.json({ ok: true, job });
-  }
-
-  const jobs = await readJobs();
-  const idx = jobs.findIndex((j) => Number(j.id) === id);
-  if (idx < 0) return res.status(404).json({ ok: false, error: 'Job not found' });
-
-  if (String(jobs[idx].status || '').toLowerCase() !== 'done') {
-    return res.status(400).json({ ok: false, error: 'Job is not marked done' });
-  }
-
-  const doneAt = new Date(jobs[idx].doneAt || jobs[idx].updatedAt || Date.now());
-  if (Number.isNaN(doneAt)) {
-    return res.status(400).json({ ok: false, error: 'Cannot undo (invalid completion time)' });
-  }
-  const diffMs = Date.now() - doneAt.getTime();
-  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-  if (diffMs > threeDaysMs) {
-    return res.status(400).json({ ok: false, error: 'Undo window has expired' });
-  }
-
-  const job = jobs[idx];
-  job.status = 'scheduled';
-  job.workflowStatus = hasAssignedTechnician(job.technician) ? 'assigned' : 'unassigned';
-  job.doneAt = null;
-  job.version = Number(job.version || 1) + 1;
-  job.updatedAt = new Date().toISOString();
-  if (job.origin === ORIGIN_TICKET) {
-    await revertTicketStatus(job.ticketId);
-    jobs.splice(idx, 1);
-  }
-  await writeJobs(jobs);
-  if (job.origin !== ORIGIN_TICKET) {
-    await recordJobEvent(job, {
-      branchId: req.user?.branchId || job.branchId || null,
-      eventType: 'reopened',
-      fromStatus: 'completed',
-      toStatus: job.workflowStatus,
-      actorType: 'admin',
-      actor: req.user,
-      payload: { version: job.version }
+    if (!result) return res.status(404).json({ ok: false, error: 'Job not found' });
+    return res.json({ ok: true, job: result.job, event: result.event });
+  } catch (error) {
+    return res.status(Number(error?.statusCode || 500)).json({
+      ok: false,
+      error: error?.message || 'Unable to undo job completion.',
+      currentJob: error?.currentJob || undefined
     });
   }
-  res.json({ ok: true, job });
 });
 
 router.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
+  const branchId = req.user?.branchId || null;
+  if (!branchId) {
+    return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
+  }
   if (await isRelationalReady()) {
-    const branchId = req.user?.branchId || null;
-    if (!branchId) {
-      return res.status(400).json({ ok: false, error: 'Branch assignment missing for this admin account.' });
-    }
     const selectFields = await getJobSelectFields();
     const [rows] = await query(
       `SELECT ${selectFields}
@@ -1266,13 +1858,17 @@ router.delete('/:id', async (req, res) => {
     return res.json({ ok: true, job });
   }
 
-  const jobs = await readJobs();
-  const idx = jobs.findIndex((j) => Number(j.id) === id);
-  if (idx < 0) return res.status(404).json({ ok: false, error: 'Job not found' });
-  const removed = jobs.splice(idx, 1)[0];
-  await writeJobs(jobs);
+  const removed = await withJsonTechnicianMutation(async () => {
+    const jobs = await readAllJobsJson();
+    const idx = jobs.findIndex((job) => Number(job?.id) === id && isSameBranch(job, branchId));
+    if (idx < 0) return null;
+    const [job] = jobs.splice(idx, 1);
+    await writeJobs(jobs);
+    return job;
+  });
+  if (!removed) return res.status(404).json({ ok: false, error: 'Job not found' });
   await recordJobEvent(mapJobRow(removed), {
-    branchId: req.user?.branchId || removed.branchId || null,
+    branchId,
     eventType: 'deleted',
     fromStatus: removed.workflowStatus || removed.status,
     actorType: 'admin',
@@ -1285,6 +1881,13 @@ router.delete('/:id', async (req, res) => {
 router.addHistoryJobFromTicket = createJobFromTicket;
 router.addJobEntry = addJobEntry;
 router.removeHistoryJobForTicket = removeHistoryJobForTicket;
+router.createWorkOrderFromTicket = createWorkOrderFromTicket;
+router.findTicketWorkOrder = findTicketWorkOrder;
+router.readTicketWorkOrders = readTicketWorkOrders;
+router.isActiveTicketWorkOrder = isActiveTicketWorkOrder;
+router.syncLinkedTicketFromJob = syncLinkedTicketFromJob;
+router.syncActiveLinkedJobFromTicket = syncActiveLinkedJobFromTicket;
+router.withJsonTechnicianMutation = withJsonTechnicianMutation;
 router.readJobsForTechnician = readJobsForTechnician;
 router.isOpenJobStatus = isOpenJobStatus;
 router.deriveJobStatus = deriveJobStatus;

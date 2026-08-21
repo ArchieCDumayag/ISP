@@ -83,6 +83,7 @@
 
   const syncState = {
     loadedFromBackend: false,
+    revision: '',
     saveTimer: null,
     savePromise: null,
     saveInFlight: false,
@@ -825,6 +826,7 @@
   };
 
   const serializePonState = () => ({
+    expectedRevision: syncState.revision,
     olts: state.olts.map((item) => ({
       id: toText(item.id),
       name: toText(item.name),
@@ -883,6 +885,8 @@
       const message = toText(payload?.error?.message || payload?.error || payload?.message) || `Request failed (${response.status})`;
       const error = new Error(message);
       error.status = response.status;
+      error.code = toText(payload?.code);
+      error.currentRevision = toText(payload?.currentRevision);
       throw error;
     }
     if (!isJsonResponse) {
@@ -936,6 +940,35 @@
     });
   };
 
+  const applyBackendRevision = (payload) => {
+    const revision = toText(payload?.revision);
+    if (!revision) {
+      throw new Error('PON backend response is missing its state revision.');
+    }
+    syncState.revision = revision;
+    return revision;
+  };
+
+  const recoverFromPonRevisionConflict = async () => {
+    syncState.saveQueued = false;
+    if (syncState.saveTimer) {
+      clearTimeout(syncState.saveTimer);
+      syncState.saveTimer = null;
+    }
+    try {
+      await hydratePonStateFromBackend();
+      renderPonWorkspace();
+      syncPonMutationUi();
+      showToast('PON data changed on the server. Latest technician/admin changes were reloaded; review and retry.', 'error');
+    } catch (reloadError) {
+      syncState.loadedFromBackend = false;
+      syncState.revision = '';
+      syncState.backendUnavailableReason = `Conflict reload failed: ${reloadError.message}`;
+      syncPonMutationUi();
+      showToast('PON data changed on the server, but the latest state could not be reloaded. Editing is disabled.', 'error');
+    }
+  };
+
   const flushBackendPersist = async () => {
     if (!syncState.loadedFromBackend) return;
     if (syncState.saveInFlight) {
@@ -946,13 +979,18 @@
     const persistPromise = (async () => {
       const payload = serializePonState();
       try {
-        await requestPonApi('/state', {
+        const result = await requestPonApi('/state', {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
+        applyBackendRevision(result);
         syncState.saveErrorNotified = false;
       } catch (error) {
-        notifyBackendSyncFailure(error.message || 'Failed to sync PON data.');
+        if (error.status === 409 || error.code === 'PON_STATE_CONFLICT') {
+          await recoverFromPonRevisionConflict();
+        } else {
+          notifyBackendSyncFailure(error.message || 'Failed to sync PON data.');
+        }
         throw error;
       } finally {
         syncState.saveInFlight = false;
@@ -994,8 +1032,10 @@
   const hydratePonStateFromBackend = async () => {
     const payload = await requestPonApi('/state');
     if (payload?.schemaReady === false) {
+      syncState.revision = '';
       throw new Error(toText(payload?.message) || 'PON schema is not initialized. Run Schema Update first.');
     }
+    applyBackendRevision(payload);
     const activePppoeUsernames = Array.isArray(payload?.activePppoeUsernames) ? payload.activePppoeUsernames : [];
     state.livePppoeLookupAvailable = Boolean(payload?.subscriberStatusAvailable);
     state.activePppoeUsernamesLower = new Set(
@@ -1032,8 +1072,10 @@
       state.olts = [];
       state.naps = [];
       syncState.loadedFromBackend = false;
+      syncState.revision = '';
       throw new Error(toText(payload?.message) || 'PON schema is not initialized. Run Schema Update first.');
     }
+    applyBackendRevision(payload);
 
     const activePppoeUsernames = Array.isArray(payload?.activePppoeUsernames) ? payload.activePppoeUsernames : [];
     state.livePppoeLookupAvailable = Boolean(payload?.subscriberStatusAvailable);
@@ -1108,8 +1150,10 @@
     try {
       await persistNow();
       return true;
-    } catch {
-      await restorePonWorkspaceFromBackend();
+    } catch (error) {
+      if (error?.status !== 409 && error?.code !== 'PON_STATE_CONFLICT') {
+        await restorePonWorkspaceFromBackend();
+      }
       return false;
     }
   };
@@ -3000,6 +3044,7 @@
       loadedFromBackend = false;
       state.olts = [];
       state.naps = [];
+      syncState.revision = '';
       syncState.backendUnavailableReason = error.message || 'Failed to load PON data.';
       showToast(`PON backend unavailable: ${error.message}`, 'error');
     }

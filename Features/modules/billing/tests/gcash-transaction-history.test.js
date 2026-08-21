@@ -894,6 +894,40 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     };
     const paymentsModulePath = require.resolve('../backend/payments');
     const actualPaymentsRouter = require('../backend/payments');
+    assert.strictEqual(actualPaymentsRouter.normalizeManualPaymentReferenceKey(' OR-12 345 '), 'OR12345');
+    assert.strictEqual(actualPaymentsRouter.paymentReferencesMatch('43891500420', '0043891500420'), true);
+    assert.strictEqual(actualPaymentsRouter.paymentReferencesMatch('OR-12345', 'or 12345'), true);
+    assert.strictEqual(actualPaymentsRouter.paymentReferencesMatch('OR-12345', 'OR-54321'), false);
+    assert.deepStrictEqual(actualPaymentsRouter.findManualPaymentReferenceConflict({
+        reference: '0043891500420',
+        payments: {
+            'ACC-REFERENCE-1': {
+                history: [{
+                    id: 'pay-reference-1',
+                    reference: '43891500420',
+                    status: 'pending_gcash_verification'
+                }]
+            }
+        }
+    }), {
+        source: 'payment_history',
+        accountNumber: 'ACC-REFERENCE-1',
+        entryId: 'pay-reference-1',
+        message: 'This reference is already used in Payment History or a pending payment.'
+    });
+    assert.deepStrictEqual(actualPaymentsRouter.findManualPaymentReferenceConflict({
+        reference: 'GCASH-USED-1001',
+        gcashTransactions: [{ reference: 'gcash used 1001' }]
+    }), {
+        source: 'gcash_transaction',
+        reference: 'gcash used 1001',
+        message: 'This reference already exists in Imported GCash Transactions. Use it from GCash Transactions instead.'
+    });
+    assert.strictEqual(actualPaymentsRouter.findManualPaymentReferenceConflict({
+        reference: 'AVAILABLE-REFERENCE-1001',
+        payments: paymentStoreMemory,
+        gcashTransactions: []
+    }), null);
     const batchWrite = await actualPaymentsRouter.recordApprovedProofPayments({
         submissionId: 'batch-writer-5005',
         source: 'gcash-history',

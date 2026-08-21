@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const createError = require('http-errors');
-const { query } = require('../../../../core/data/db');
+const { getPool, query } = require('../../../../core/data/db');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const {
@@ -16,6 +16,7 @@ const INTERNAL_STATUS = new Set(['processing']);
 const ALLOWED_STATUS = new Set([...PUBLIC_STATUS, ...INTERNAL_STATUS]);
 let ensureTablePromise = null;
 let backfillDraftAccountNumbersPromise = null;
+const jsonCompletionMutationTails = new Map();
 
 const toSafeText = (value, maxLen = 0) => {
     const text = String(value == null ? '' : value).trim();
@@ -47,6 +48,55 @@ const normalizeStatusFilters = (values = []) => {
                 .filter((value) => ALLOWED_STATUS.has(value))
         )
     );
+};
+
+const withCustomerDraftStoreMutationLock = async (task) => {
+    // All branches share one JSON file, so the compare-and-set must serialize the
+    // complete read/modify/write cycle across the store rather than per branch.
+    const key = 'all';
+    const previous = jsonCompletionMutationTails.get(key) || Promise.resolve();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const tail = previous.catch(() => {}).then(() => gate);
+    jsonCompletionMutationTails.set(key, tail);
+    await previous.catch(() => {});
+    try {
+        return await task();
+    } finally {
+        release();
+        if (jsonCompletionMutationTails.get(key) === tail) {
+            jsonCompletionMutationTails.delete(key);
+        }
+    }
+};
+
+const createInstallationCompletionConflict = () => {
+    const error = createError(409, 'Installation completion was already submitted with different evidence.');
+    error.code = 'INSTALLATION_COMPLETION_CONFLICT';
+    return error;
+};
+
+const resolveInstallationCompletionCas = (existingCompletion, proposedCompletion) => {
+    const proposed = proposedCompletion && typeof proposedCompletion === 'object' && !Array.isArray(proposedCompletion)
+        ? JSON.parse(JSON.stringify(proposedCompletion))
+        : null;
+    const proposedEventId = toSafeText(proposed?.clientEventId, 100);
+    const proposedFingerprint = toSafeText(proposed?.fingerprint, 64);
+    if (!proposed || !proposedEventId || !proposedFingerprint) {
+        throw createError(400, 'Installation completion event and fingerprint are required.');
+    }
+    const existing = existingCompletion && typeof existingCompletion === 'object' && !Array.isArray(existingCompletion)
+        ? existingCompletion
+        : null;
+    if (!existing) {
+        return { action: 'insert', completion: proposed };
+    }
+    const existingEventId = toSafeText(existing.clientEventId, 100);
+    const existingFingerprint = toSafeText(existing.fingerprint, 64);
+    if (existingEventId === proposedEventId && existingFingerprint === proposedFingerprint) {
+        return { action: 'replay', completion: JSON.parse(JSON.stringify(existing)) };
+    }
+    throw createInstallationCompletionConflict();
 };
 
 const buildCustomerName = (draft = {}) => {
@@ -596,6 +646,136 @@ const findCustomerDraftSubmissionByAccountNumber = async (accountNumber, branchI
     return mapCustomerDraftSubmissionRow((rows || [])[0]);
 };
 
+const compareAndSetCustomerDraftInstallationCompletion = async (
+    accountNumber,
+    branchId,
+    completionRecord,
+    { statuses = ['pending'] } = {}
+) => {
+    await ensureCustomerDraftSubmissionsTable();
+
+    const safeAccountNumber = normalizeAccountNumber(accountNumber);
+    const safeBranchId = Number(branchId);
+    if (!safeAccountNumber) {
+        throw createError(400, 'Customer account number is required.');
+    }
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
+        throw createError(400, 'Branch ID is required.');
+    }
+    const normalizedStatuses = normalizeStatusFilters(statuses);
+    if (!normalizedStatuses.length) normalizedStatuses.push('pending');
+
+    if (!await isRelationalReady()) {
+        return withCustomerDraftStoreMutationLock(async () => {
+            const rows = await readJsonSubmissionRows();
+            const index = rows.findIndex((row) => {
+                if (Number(row.branch_id) !== safeBranchId) return false;
+                if (!normalizedStatuses.includes(normalizeStatus(row.status))) return false;
+                return normalizeAccountNumber(row.draft_account_number) === safeAccountNumber
+                    || normalizeAccountNumber(row.approved_customer_account_number) === safeAccountNumber;
+            });
+            if (index < 0) return null;
+
+            const currentDraft = parseDraftJson(rows[index].draft_json);
+            const decision = resolveInstallationCompletionCas(
+                currentDraft.installationCompletion,
+                completionRecord
+            );
+            if (decision.action === 'replay') {
+                return {
+                    item: mapCustomerDraftSubmissionRow(rows[index]),
+                    installationCompletion: decision.completion,
+                    replayed: true
+                };
+            }
+
+            const nextDraft = {
+                ...currentDraft,
+                installationCompletion: decision.completion
+            };
+            rows[index] = normalizeJsonSubmissionRow({
+                ...rows[index],
+                draft_json: JSON.stringify(nextDraft),
+                updated_at: new Date().toISOString()
+            });
+            await writeJsonSubmissionRows(rows);
+            return {
+                item: mapCustomerDraftSubmissionRow(rows[index]),
+                installationCompletion: decision.completion,
+                replayed: false
+            };
+        });
+    }
+
+    const pool = await getPool();
+    if (!pool) throw createError(500, 'MySQL connection is not available.');
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const statusSql = normalizedStatuses.map(() => '?').join(', ');
+        const [rows] = await connection.query(
+            `SELECT *
+             FROM ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
+             WHERE branch_id = ?
+               AND (
+                    COALESCE(TRIM(draft_account_number), '') = ?
+                    OR COALESCE(TRIM(approved_customer_account_number), '') = ?
+               )
+               AND status IN (${statusSql})
+             ORDER BY submitted_at DESC, id DESC
+             LIMIT 1
+             FOR UPDATE`,
+            [safeBranchId, safeAccountNumber, safeAccountNumber, ...normalizedStatuses]
+        );
+        const row = (rows || [])[0];
+        if (!row) {
+            await connection.commit();
+            return null;
+        }
+
+        const currentDraft = parseDraftJson(row.draft_json);
+        const decision = resolveInstallationCompletionCas(
+            currentDraft.installationCompletion,
+            completionRecord
+        );
+        if (decision.action === 'replay') {
+            await connection.commit();
+            return {
+                item: mapCustomerDraftSubmissionRow(row),
+                installationCompletion: decision.completion,
+                replayed: true
+            };
+        }
+
+        const nextDraft = {
+            ...currentDraft,
+            installationCompletion: decision.completion
+        };
+        const [result] = await connection.query(
+            `UPDATE ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
+             SET draft_json = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?
+               AND branch_id = ?
+               AND status IN (${statusSql})`,
+            [JSON.stringify(nextDraft), row.id, safeBranchId, ...normalizedStatuses]
+        );
+        if (!result?.affectedRows) {
+            throw createError(409, 'Customer draft changed before installation completion could be stored.');
+        }
+        await connection.commit();
+        return {
+            item: mapCustomerDraftSubmissionRow({ ...row, draft_json: JSON.stringify(nextDraft) }),
+            installationCompletion: decision.completion,
+            replayed: false
+        };
+    } catch (error) {
+        await connection.rollback().catch(() => {});
+        throw error;
+    } finally {
+        connection.release();
+    }
+};
+
 const updateCustomerDraftSubmissionDraftDataByAccountNumber = async (
     accountNumber,
     branchId,
@@ -604,29 +784,38 @@ const updateCustomerDraftSubmissionDraftDataByAccountNumber = async (
 ) => {
     await ensureCustomerDraftSubmissionsTable();
 
+    const safeAccountNumber = normalizeAccountNumber(accountNumber);
     const safeBranchId = Number(branchId);
+    if (!safeAccountNumber) {
+        throw createError(400, 'Customer account number is required.');
+    }
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
         throw createError(400, 'Branch ID is required.');
     }
-
-    const existing = await findCustomerDraftSubmissionByAccountNumber(accountNumber, safeBranchId, { statuses });
-    if (!existing) return null;
-
-    const currentDraft = existing?.draftData && typeof existing.draftData === 'object' && !Array.isArray(existing.draftData)
-        ? existing.draftData
-        : {};
+    const normalizedStatuses = normalizeStatusFilters(statuses);
+    if (!normalizedStatuses.length) normalizedStatuses.push('pending');
     const patch = draftDataPatch && typeof draftDataPatch === 'object' && !Array.isArray(draftDataPatch)
         ? draftDataPatch
         : {};
-    const nextDraft = {
-        ...currentDraft,
-        ...patch
-    };
 
     if (!await isRelationalReady()) {
+        // JSON callers must hold withCustomerDraftStoreMutationLock across this
+        // complete read/modify/write operation.
+        const existing = await findCustomerDraftSubmissionByAccountNumber(
+            safeAccountNumber,
+            safeBranchId,
+            { statuses: normalizedStatuses }
+        );
+        if (!existing) return null;
         const rows = await readJsonSubmissionRows();
-        const index = rows.findIndex((row) => row.id === toSafeText(existing.id, 64) && Number(row.branch_id) === safeBranchId);
+        const index = rows.findIndex((row) => (
+            row.id === toSafeText(existing.id, 64)
+            && Number(row.branch_id) === safeBranchId
+            && normalizedStatuses.includes(normalizeStatus(row.status))
+        ));
         if (index < 0) return null;
+        const currentDraft = parseDraftJson(rows[index].draft_json);
+        const nextDraft = { ...currentDraft, ...patch };
         rows[index] = normalizeJsonSubmissionRow({
             ...rows[index],
             customer_name: buildCustomerName(nextDraft) || existing.customerName || null,
@@ -638,33 +827,89 @@ const updateCustomerDraftSubmissionDraftDataByAccountNumber = async (
             updated_at: new Date().toISOString()
         });
         await writeJsonSubmissionRows(rows);
-        return getCustomerDraftSubmission(existing.id, safeBranchId);
+        return mapCustomerDraftSubmissionRow(rows[index]);
     }
 
-    await query(
-        `UPDATE ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
-         SET
-            customer_name = ?,
-            contact_number = ?,
-            plan_name = ?,
-            area_name = ?,
-            address_text = ?,
-            draft_json = ?
-         WHERE id = ?
-           AND branch_id = ?`,
-        [
-            buildCustomerName(nextDraft) || existing.customerName || null,
-            toSafeText(nextDraft.mobile || nextDraft.contactNumber || nextDraft.contact, 50) || existing.contactNumber || null,
-            toSafeText(nextDraft.planName, 120) || existing.planName || null,
-            toSafeText(nextDraft.area, 150) || existing.areaName || null,
-            buildAddressText(nextDraft) || existing.addressText || null,
-            JSON.stringify(nextDraft),
-            toSafeText(existing.id, 64),
-            safeBranchId
-        ]
-    );
+    const pool = await getPool();
+    if (!pool) throw createError(500, 'MySQL connection is not available.');
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const statusSql = normalizedStatuses.map(() => '?').join(', ');
+        const [rows] = await connection.query(
+            `SELECT *
+             FROM ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
+             WHERE branch_id = ?
+               AND (
+                    COALESCE(TRIM(draft_account_number), '') = ?
+                    OR COALESCE(TRIM(approved_customer_account_number), '') = ?
+               )
+               AND status IN (${statusSql})
+             ORDER BY submitted_at DESC, id DESC
+             LIMIT 1
+             FOR UPDATE`,
+            [safeBranchId, safeAccountNumber, safeAccountNumber, ...normalizedStatuses]
+        );
+        const row = (rows || [])[0];
+        if (!row) {
+            await connection.commit();
+            return null;
+        }
 
-    return getCustomerDraftSubmission(existing.id, safeBranchId);
+        const currentDraft = parseDraftJson(row.draft_json);
+        const nextDraft = { ...currentDraft, ...patch };
+        const nextValues = {
+            customerName: buildCustomerName(nextDraft) || row.customer_name || null,
+            contactNumber: toSafeText(nextDraft.mobile || nextDraft.contactNumber || nextDraft.contact, 50) || row.contact_number || null,
+            planName: toSafeText(nextDraft.planName, 120) || row.plan_name || null,
+            areaName: toSafeText(nextDraft.area, 150) || row.area_name || null,
+            addressText: buildAddressText(nextDraft) || row.address_text || null,
+            draftJson: JSON.stringify(nextDraft)
+        };
+        const [result] = await connection.query(
+            `UPDATE ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
+             SET
+                customer_name = ?,
+                contact_number = ?,
+                plan_name = ?,
+                area_name = ?,
+                address_text = ?,
+                draft_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?
+               AND branch_id = ?
+               AND status IN (${statusSql})`,
+            [
+                nextValues.customerName,
+                nextValues.contactNumber,
+                nextValues.planName,
+                nextValues.areaName,
+                nextValues.addressText,
+                nextValues.draftJson,
+                row.id,
+                safeBranchId,
+                ...normalizedStatuses
+            ]
+        );
+        if (!result?.affectedRows) {
+            throw createError(409, 'Customer draft changed before PPPoE credentials could be stored.');
+        }
+        await connection.commit();
+        return mapCustomerDraftSubmissionRow({
+            ...row,
+            customer_name: nextValues.customerName,
+            contact_number: nextValues.contactNumber,
+            plan_name: nextValues.planName,
+            area_name: nextValues.areaName,
+            address_text: nextValues.addressText,
+            draft_json: nextValues.draftJson
+        });
+    } catch (error) {
+        await connection.rollback().catch(() => {});
+        throw error;
+    } finally {
+        connection.release();
+    }
 };
 
 const updateCustomerDraftSubmissionRow = async (id, branchId, patch = {}) => {
@@ -728,6 +973,8 @@ module.exports = {
     listCustomerDraftSubmissions,
     getCustomerDraftSubmission,
     findCustomerDraftSubmissionByAccountNumber,
+    compareAndSetCustomerDraftInstallationCompletion,
+    withCustomerDraftStoreMutationLock,
     updateCustomerDraftSubmissionDraftDataByAccountNumber,
     updateCustomerDraftSubmissionRow,
     deleteCustomerDraftSubmissionRow,
@@ -735,5 +982,6 @@ module.exports = {
     buildCustomerName,
     buildAddressText,
     normalizeStatus,
+    resolveInstallationCompletionCas,
     toSafeText
 };

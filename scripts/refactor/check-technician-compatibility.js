@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -16,6 +17,7 @@ const backendPairs = [
   ['job-numbering.js', 'job-numbering'],
   ['jobs.js', 'jobs'],
   ['technician-assignments.js', 'technician-assignments'],
+  ['technician-inventory.js', 'technician-inventory'],
   ['technician-installations.js', 'technician-installations'],
   ['tickets.js', 'tickets']
 ];
@@ -157,6 +159,8 @@ const sourceChecks = [
     'Features/modules/technician/backend/technician-assignments.js',
     '../../customer-management/backend/customer-draft-submissions'
   ],
+  ['Features/modules/technician/backend/technician-inventory.js', '../../../../core/data/data-store'],
+  ['Features/modules/technician/backend/technician-inventory.js', './jobs'],
   ['Features/modules/technician/backend/technician-installations.js', '../../../../core/data/db-relational'],
   ['Features/modules/technician/backend/technician-installations.js', '../../network/backend/mikrotik-client'],
   ['Features/modules/technician/backend/technician-installations.js', '../../network/backend/pon-management-api'],
@@ -184,13 +188,17 @@ const schemaSource = fs.readFileSync(path.join(projectRoot, 'scripts/schema.sql'
   'dispatch_payload_json LONGTEXT',
   'record_version INT',
   'CREATE TABLE IF NOT EXISTS technician_job_events',
-  'uq_job_events_branch_client'
+  'uq_job_events_branch_client',
+  'archived_at DATETIME',
+  'archived_by VARCHAR(120)'
 ].forEach((contract) => {
   assert(schemaSource.includes(contract), `Technician dispatch schema must include ${contract}`);
 });
 const migrationSource = fs.readFileSync(path.join(projectRoot, 'scripts/migrate-json-to-schema.js'), 'utf8');
 assert(migrationSource.includes('async function ensureTechnicianDispatchSchema()'));
 assert(migrationSource.includes('await ensureTechnicianDispatchSchema();'));
+assert(migrationSource.includes('async function ensureTicketArchiveColumns()'));
+assert(migrationSource.includes('await ensureTicketArchiveColumns();'));
 
 const techniciansHtml = fs.readFileSync(path.join(webRoot, 'technicians.html'), 'utf8');
 [
@@ -325,7 +333,22 @@ assert.strictEqual(typeof tickets.isOpenTicketStatus, 'function');
 assert.strictEqual(typeof tickets.normalizeTicketStatus, 'function');
 assert.strictEqual(typeof tickets.updateTicketStatusForTechnician, 'function');
 assert.strictEqual(typeof backend.load('technicianAssignments'), 'function');
-assert.strictEqual(typeof backend.load('technicianInstallations'), 'function');
+const technicianInventory = backend.load('technicianInventory');
+assert.strictEqual(typeof technicianInventory, 'function');
+assert.strictEqual(typeof technicianInventory.createInventoryService, 'function');
+assert.deepStrictEqual(routeContracts(technicianInventory), [
+  'GET /',
+  'GET /stock',
+  'GET /transactions',
+  'POST /transactions',
+  'POST /use',
+  'POST /return'
+]);
+const technicianInstallations = backend.load('technicianInstallations');
+assert.strictEqual(typeof technicianInstallations, 'function');
+assert.strictEqual(typeof technicianInstallations.normalizeInstallationCompletion, 'function');
+assert.strictEqual(typeof technicianInstallations.installationCompletionFingerprint, 'function');
+assert.strictEqual(typeof technicianInstallations.assertInstallationCompletionReplay, 'function');
 assert.deepStrictEqual(routeContracts(backend.load('technicianAssignments')), [
   'GET /jobs',
   'GET /tickets',
@@ -334,5 +357,21 @@ assert.deepStrictEqual(routeContracts(backend.load('technicianAssignments')), [
   'PATCH /jobs/:id/done',
   'PATCH /tickets/:id/status'
 ]);
+const installationRoutes = routeContracts(technicianInstallations);
+[
+  'GET /pon/nearby',
+  'POST /pon/reservations',
+  'DELETE /pon/reservations/:reservationId',
+  'POST /pon/reservations/:reservationId/finalize',
+  'POST /pon/assignments'
+].forEach((contract) => {
+  assert(installationRoutes.includes(contract), `Technician installation API must include ${contract}`);
+});
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/technician/tests/technician-pon-access.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/technician/tests/technician-inventory.test.js')
+], { stdio: 'inherit' });
 console.log('PASS job-numbering, jobs, tickets, assignments, and installations contracts');
 console.log('TECHNICIAN COMPATIBILITY PASSED');

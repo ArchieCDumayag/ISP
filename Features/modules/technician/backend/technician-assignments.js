@@ -2,11 +2,13 @@ const express = require('express');
 const createError = require('http-errors');
 const jobsRouter = require('./jobs');
 const ticketsModule = require('./tickets');
+const technicianInventoryRouter = require('./technician-inventory');
 const { requireTechnicianAuth } = require('../../customer-management/backend/customer-draft-submissions');
 
 const router = express.Router();
 
 router.use(requireTechnicianAuth);
+router.use('/inventory', technicianInventoryRouter);
 
 router.get('/jobs', async (req, res, next) => {
   try {

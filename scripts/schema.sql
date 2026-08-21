@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS customers (
   plan_amount DECIMAL(12, 2) NULL,
   plan_billing VARCHAR(30) NULL,
   plan_category VARCHAR(20) NULL,
+  customer_start_type VARCHAR(20) NULL,
   scheduled_plan_id VARCHAR(80) NULL,
   scheduled_plan_name VARCHAR(120) NULL,
   scheduled_plan_amount DECIMAL(12, 2) NULL,
@@ -127,6 +128,7 @@ CREATE TABLE IF NOT EXISTS pon_olts (
   status VARCHAR(30) NULL,
   pon_ports INT NOT NULL DEFAULT 16,
   pon_code_prefix VARCHAR(40) NOT NULL DEFAULT 'PON',
+  pon_port_names_json LONGTEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_pon_olts_branch_uid (branch_id, client_uid),
@@ -173,6 +175,29 @@ CREATE TABLE IF NOT EXISTS pon_nap_connections (
   KEY idx_pon_connection_customer (customer_account_number),
   CONSTRAINT fk_pon_connections_nap FOREIGN KEY (nap_id) REFERENCES pon_naps(id) ON DELETE CASCADE,
   CONSTRAINT fk_pon_connections_customer FOREIGN KEY (customer_account_number) REFERENCES customers(account_number) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS pon_port_reservations (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  branch_id INT NOT NULL,
+  nap_id BIGINT NOT NULL,
+  port INT NOT NULL,
+  customer_ref VARCHAR(200) NOT NULL,
+  technician_user_id VARCHAR(64) NOT NULL,
+  client_event_id VARCHAR(100) NOT NULL,
+  finalize_event_id VARCHAR(100) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  active_flag TINYINT NULL DEFAULT 1,
+  optical_info VARCHAR(120) NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  finalized_at DATETIME NULL,
+  UNIQUE KEY uniq_pon_reservation_active_port (nap_id, port, active_flag),
+  UNIQUE KEY uniq_pon_reservation_event (branch_id, technician_user_id, client_event_id),
+  UNIQUE KEY uniq_pon_reservation_finalize_event (branch_id, technician_user_id, finalize_event_id),
+  KEY idx_pon_reservation_branch_status (branch_id, status, expires_at),
+  CONSTRAINT fk_pon_reservation_nap FOREIGN KEY (nap_id) REFERENCES pon_naps(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS collector_assignments (
@@ -329,6 +354,8 @@ CREATE TABLE IF NOT EXISTS tickets (
   source VARCHAR(20) NULL,
   created_at DATETIME NULL,
   updated_at DATETIME NULL,
+  archived_at DATETIME NULL,
+  archived_by VARCHAR(120) NULL,
   history_job_id BIGINT NULL,
   history_job_created_at DATETIME NULL,
   ticket_number VARCHAR(50) NULL,

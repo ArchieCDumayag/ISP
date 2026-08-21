@@ -1,6 +1,6 @@
 # Network Module Context
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-08-16
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -19,7 +19,8 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - `backend/mikrotik.js`: `/api/mikrotik` operations for tests, PPPoE, profiles, traffic, sync, and router information.
 - `backend/mikrotik-client.js` and `backend/mikrotik-endpoint.js`: RouterOS connectivity and endpoint normalization.
 - `backend/mikrotik-audit-log.js`: records network commands through the Admin activity log.
-- `backend/pon-management-api.js`: `/api/pon/state`, `/api/pon/overview`, and PON state updates.
+- `backend/pon-management-api.js`: `/api/pon/state`, `/api/pon/overview`, and PON state updates. State and overview reads expose an opaque `revision`; full-state `PUT /api/pon/state` requires the matching `expectedRevision`, returns the next revision, and rejects stale snapshots with `409 PON_STATE_CONFLICT` before changing records.
+- PON revisions hash only persisted OLT, NAP, and port-assignment fields, excluding live/derived subscriber status. JSON comparisons run under the shared branch mutation lock. MySQL saves acquire the branch row and PON rows inside one transaction before comparing, and Technician reservation/finalization mutations acquire the same branch row so a later admin snapshot cannot overwrite a completed field assignment. Before either JSON or MySQL accepts a full Admin save, active reservations are also checked against the proposed topology: their NAP cannot be removed or reduced below the reserved port, and the held port cannot be assigned through PON Management.
 - `backend/pppoe-account-utils.js`: shared PPPoE normalization, merge, and deduplication helpers.
 - The former six repository-root backend shims were retired in Phase 11; consumers use canonical Network paths or the module descriptor.
 - GenieACS and direct-device handlers currently live in shared `server.js`.
@@ -39,6 +40,7 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - The PPPoE account list defaults to 50 rows per page and uses a compact eight-column fixed-layout Tabler table. Caller ID remains available in runtime data but is hidden from the list; Username receives the largest width, long values retain native title tooltips, and the table falls back to horizontal scrolling only below its 840px readable width.
 - The missing-configuration alert uses a true `hidden` state that cannot be overridden by Tabler display utilities. An enabled integration hides the alert immediately, and any confirmed MikroTik connection also clears it while restoring the workbench.
 - Other Network pages continue consuming their existing Customer Management coverage styles, Billing helpers, and shared shell/vendor assets through unchanged root URLs.
+- `web/js/pon-management.js` retains the loaded PON revision, sends it with every debounced or immediate save, adopts the revision returned by a successful save, and reloads the latest server state on a conflict. If that reload fails, PON editing is disabled instead of retrying a stale full snapshot.
 
 ## Data and dependencies
 
@@ -55,6 +57,7 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - Router changes affect live subscriber connectivity; testing should use explicit safe targets or mocks.
 - Direct WiFi and PPPoE delete paths require strict auth, validation, and audit checks.
 - GenieACS, direct-device, public coverage-map, route-mount, and static-delivery logic in `server.js` requires Integration Codex coordination.
+- JSON PON mutation serialization is process-local, so JSON deployments should keep a single application writer process; MySQL uses the database branch-row lock for cross-process serialization.
 - Do not place integration secrets in module context, logs, fixtures, or commits.
 - Repository-root backend aliases must not be recreated.
 - Add mocked RouterOS/GenieACS adapter tests and authenticated mutation tests before changing live network behavior.
@@ -69,9 +72,13 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - 2026-08-14 PPPoE UI validation: `npm run refactor:network` and full `npm test` passed; authenticated browser checks confirmed the live summary/table, edit modal, customer assignment autocomplete, traffic modal/canvases, preserved 109-ID selector contract, focused stylesheet loading, and no console errors. Browser checks did not submit a form or mutate router/customer state.
 - 2026-08-14 compact-table validation: JavaScript syntax and `npm run refactor:network` passed; an authenticated browser check confirmed 50 rendered rows, the `Showing 1-50 of 398` footer, eight pages, fixed aligned columns, and no record-changing action.
 - 2026-08-14 warning/column validation: JavaScript syntax and `npm run refactor:network` passed; an authenticated browser check confirmed the connected-router warning is hidden, Caller ID is absent, all eight headers fit, Username is widened, and 50 rows still render without any record-changing action.
+- 2026-08-16 PON revision validation: backend/UI/test JavaScript syntax passed, the focused revision regression proved a stale JSON admin snapshot cannot erase a technician-added connection, the existing six serviceability tests passed, and `npm run refactor:network` passed. MySQL compatibility additionally asserts the shared branch-row transaction lock and revision helper contract without connecting to a live database.
+- 2026-08-16 reservation-save validation: the isolated JSON regression proves a pre-reservation Admin snapshot cannot assign a held port, while an unrelated topology edit still succeeds and preserves the reservation; the same compatibility helper runs against MySQL reservation rows locked inside the Admin transaction.
 
 ## Latest meaningful changes
 
+- 2026-08-16: Added an active-reservation compatibility guard to JSON/MySQL full-state Admin saves so PON Management cannot remove a held NAP, shrink past its held port, or assign that port while a technician reservation is live.
+- 2026-08-16: Added optimistic PON branch revisions to state/overview reads and full-state saves, required `expectedRevision`, serialized MySQL admin and Technician mutations on the same branch row, and made the PON browser reload authoritative state after a `409` conflict so a stale admin tab cannot erase a technician finalize.
 - 2026-08-14: Fixed the false MikroTik warning by removing the conflicting Tabler display utility and synchronizing its hidden state with integration/connection success; removed Caller ID from the list, widened Username, and rebalanced all eight columns without changing stored PPPoE data.
 - 2026-08-14: Compacted the PPPoE account table with Tabler `table-sm`, fixed column proportions, smaller cells/avatar/actions, ellipsis plus title tooltips, and a fresh default of 50 rows per page; PPPoE APIs and records are unchanged.
 - 2026-08-14: Rebuilt `/pppoe.html` with Tabler page, card, metric, toolbar, table, form, progress, badge, and modal components; replaced the page-wide Admin/account-view CSS dependencies with Network-owned `web/css/pppoe-tabler.css`; retained all 109 DOM IDs and all existing router/customer/payment-independent behavior; improved live-chart time-label spacing; and added focused Network compatibility assertions.

@@ -50,7 +50,7 @@ const checks = [
   { path: '/js/collectors-page.js', status: 200, bodyIncludes: 'collectorApprovalList' },
   { path: '/js/collectors-history.js', status: 200, bodyIncludes: 'historyTableBody' },
   { path: '/css/technicians.css', status: 200, bodyIncludes: '.technician-page' },
-  { path: '/css/tickets.css', status: 200, bodyIncludes: '.ticket-card' },
+  { path: '/css/tickets.css', status: 200, bodyIncludes: '.ticket-page' },
   { path: '/css/technician-customer-drafts.css', status: 200, bodyIncludes: 'body.tech-drafts-body' },
   { path: '/js/tickets.js', status: 200, bodyIncludes: 'ticketTableBody' },
   { path: '/js/technicians.js', status: 200, bodyIncludes: 'jobTableBody' },

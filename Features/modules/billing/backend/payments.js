@@ -409,6 +409,69 @@ const collectUsedReferenceTokens = (history = []) => {
     return used;
 };
 
+const normalizeManualPaymentReferenceKey = (value) => sanitizeReferenceInput(value)
+    .toUpperCase()
+    .replace(/[\s-]+/g, '');
+
+const normalizeNumericPaymentReferenceKey = (value) => {
+    const key = normalizeManualPaymentReferenceKey(value);
+    if (!/^\d+$/.test(key)) return '';
+    return key.replace(/^0+(?=\d)/, '');
+};
+
+const paymentReferencesMatch = (left, right) => {
+    const leftKey = normalizeManualPaymentReferenceKey(left);
+    const rightKey = normalizeManualPaymentReferenceKey(right);
+    if (!leftKey || !rightKey) return false;
+    if (leftKey === rightKey) return true;
+    const leftNumericKey = normalizeNumericPaymentReferenceKey(leftKey);
+    const rightNumericKey = normalizeNumericPaymentReferenceKey(rightKey);
+    return Boolean(leftNumericKey && rightNumericKey && leftNumericKey === rightNumericKey);
+};
+
+const findManualPaymentReferenceConflict = ({
+    reference,
+    payments = {},
+    paymentEntries = [],
+    gcashTransactions = []
+} = {}) => {
+    const safeReference = sanitizeReferenceInput(reference);
+    if (!safeReference) return null;
+
+    const storedEntries = [
+        ...Object.entries(payments || {}).flatMap(([accountNumber, record]) => (
+            (Array.isArray(record?.history) ? record.history : []).map((entry) => ({ accountNumber, entry }))
+        )),
+        ...(Array.isArray(paymentEntries) ? paymentEntries : []).map((entry) => ({
+            accountNumber: String(entry?.accountNumber || entry?.account_number || ''),
+            entry
+        }))
+    ];
+    const paymentConflict = storedEntries.find(({ entry }) => (
+        [entry?.reference, entry?.orNumber, entry?.or_number]
+            .some((candidate) => paymentReferencesMatch(candidate, safeReference))
+    ));
+    if (paymentConflict) {
+        return {
+            source: 'payment_history',
+            accountNumber: paymentConflict.accountNumber || null,
+            entryId: sanitizeString(paymentConflict.entry?.id) || null,
+            message: 'This reference is already used in Payment History or a pending payment.'
+        };
+    }
+
+    const importedConflict = (Array.isArray(gcashTransactions) ? gcashTransactions : [])
+        .find((transaction) => paymentReferencesMatch(transaction?.reference, safeReference));
+    if (importedConflict) {
+        return {
+            source: 'gcash_transaction',
+            reference: sanitizeString(importedConflict.reference) || null,
+            message: 'This reference already exists in Imported GCash Transactions. Use it from GCash Transactions instead.'
+        };
+    }
+    return null;
+};
+
 const collectUsedRefsFromDb = async (branchId, accountNumber) => {
     if (!branchId || !accountNumber) return new Set();
     const [rows] = await query(
@@ -699,6 +762,60 @@ const filterPaymentsForEffectiveHistory = (payments = {}) => Object.fromEntries(
 
 const writePayments = async (payments) => {
     await writeJson(STORE_KEYS.payments, payments);
+};
+
+const getStoredManualPaymentReferenceConflict = async ({
+    branchId,
+    reference,
+    payments = null,
+    executor = null
+} = {}) => {
+    const safeReference = sanitizeReferenceInput(reference);
+    if (!safeReference) return null;
+
+    let paymentEntries = [];
+    let paymentRecords = payments && typeof payments === 'object' ? payments : {};
+    if (executor || await isRelationalReady()) {
+        const runQuery = executor
+            ? executor.query.bind(executor)
+            : query;
+        const [rows] = await runQuery(
+            `SELECT
+                id,
+                account_number AS accountNumber,
+                reference,
+                or_number AS orNumber
+             FROM payment_entries
+             WHERE branch_id = ?
+               AND (reference IS NOT NULL OR or_number IS NOT NULL)`,
+            [branchId]
+        );
+        paymentEntries = rows || [];
+        paymentRecords = {};
+    } else if (!payments) {
+        paymentRecords = await readPayments(branchId);
+    }
+
+    const gcashHistory = await listGcashTransactionHistory({ branchId, all: true });
+    return findManualPaymentReferenceConflict({
+        reference: safeReference,
+        payments: paymentRecords,
+        paymentEntries,
+        gcashTransactions: gcashHistory?.transactions || []
+    });
+};
+
+const createManualPaymentReferenceConflictError = (conflict) => {
+    const error = createError(409, conflict?.message || 'This payment reference is already used.');
+    error.code = 'PAYMENT_REFERENCE_ALREADY_USED';
+    error.referenceSource = conflict?.source || 'unknown';
+    return error;
+};
+
+const assertManualPaymentReferenceAvailable = async (options = {}) => {
+    const conflict = await getStoredManualPaymentReferenceConflict(options);
+    if (conflict) throw createManualPaymentReferenceConflictError(conflict);
+    return true;
 };
 
 const countPaymentEntries = (payments = {}) => Object.values(payments || {}).reduce((sum, record) => (
@@ -5062,6 +5179,30 @@ router.get('/gcash-bindings', async (req, res, next) => {
     }
 });
 
+// GET /api/payments/reference-availability - Validate one manual reference before saving
+router.get('/reference-availability', async (req, res, next) => {
+    try {
+        const sessionUser = req.user || await getUserFromSession(req);
+        if (!sessionUser) throw createError(401, 'Unauthorized');
+        const branchId = sessionUser.branchId || null;
+        if (!branchId) throw createError(400, 'Branch assignment missing for this account.');
+        const reference = sanitizeReferenceInput(req.query?.reference);
+        if (!reference) {
+            return res.json({ ok: true, available: true });
+        }
+        const conflict = await getStoredManualPaymentReferenceConflict({ branchId, reference });
+        return res.json({
+            ok: true,
+            available: !conflict,
+            code: conflict ? 'PAYMENT_REFERENCE_ALREADY_USED' : null,
+            source: conflict?.source || null,
+            message: conflict?.message || 'Reference is available.'
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to validate the payment reference.'));
+    }
+});
+
 // GET /api/payments/gcash-pending - List manual GCash payments awaiting official proof
 router.get('/gcash-pending', async (req, res, next) => {
     try {
@@ -5245,6 +5386,11 @@ router.post('/:accountNumber', async (req, res, next) => {
             const usedReferenceTokens = collectUsedReferenceTokens(history);
             try {
                 fallbackReference = normalizeIncomingReference(providedReference, usedRefs);
+                await assertManualPaymentReferenceAvailable({
+                    branchId,
+                    reference: fallbackReference,
+                    payments
+                });
                 if (usedReferenceTokens.has(fallbackReference.toLowerCase())) {
                     return next(createError(409, 'Reference already exists for this account.'));
                 }
@@ -5291,6 +5437,13 @@ router.post('/:accountNumber', async (req, res, next) => {
 
         if (relational) {
             await withTransaction(async (connection) => {
+                if (providedReference) {
+                    await assertManualPaymentReferenceAvailable({
+                        branchId,
+                        reference: providedReference,
+                        executor: connection
+                    });
+                }
                 await assignEntryNumbers(connection, newEntry);
                 await assertEntryNumbersAvailable(connection, branchId, newEntry);
 
@@ -6348,3 +6501,7 @@ module.exports.isPendingGcashPaymentEntry = isPendingGcashPaymentEntry;
 module.exports.listPendingGcashPayments = listPendingGcashPayments;
 module.exports.getPendingGcashBindOptions = getPendingGcashBindOptions;
 module.exports.bindPendingGcashPayment = bindPendingGcashPayment;
+module.exports.normalizeManualPaymentReferenceKey = normalizeManualPaymentReferenceKey;
+module.exports.paymentReferencesMatch = paymentReferencesMatch;
+module.exports.findManualPaymentReferenceConflict = findManualPaymentReferenceConflict;
+module.exports.getStoredManualPaymentReferenceConflict = getStoredManualPaymentReferenceConflict;

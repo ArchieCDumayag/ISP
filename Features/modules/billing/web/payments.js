@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const paymentMethodHint = document.getElementById('paymentMethodHint');
     const paymentReferenceField = document.getElementById('paymentReferenceField');
     const paymentReferenceInput = document.getElementById('paymentReference');
+    const paymentReferenceHint = document.getElementById('paymentReferenceHint');
     const paymentAmountField = document.getElementById('paymentAmountField');
     const paymentsTableBody = document.querySelector('.payments-table tbody');
     const searchInput = document.querySelector('.search-field input[type="search"]');
@@ -168,6 +169,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let areaFilterInitialized = false;
     let paymentModalIgnoreCloseUntil = 0;
     let paymentCustomerSuggestionIndex = -1;
+    let paymentReferenceValidationId = 0;
+    let paymentReferenceValidationTimer = null;
 
     const applyAccountInfoMikrotikVisibility = () => {
         if (accountInfoMikrotikPanel && !mikrotikEnabled) {
@@ -2808,9 +2811,77 @@ document.addEventListener('DOMContentLoaded', function () {
         if (paymentReferenceInput) {
             paymentReferenceInput.disabled = !showPaymentMethod;
         }
+        if (!showPaymentMethod) clearPaymentReferenceValidation();
         if (paymentMethodHint) paymentMethodHint.hidden = !isPendingGcash;
         const submitLabel = paymentFormSubmitBtn?.querySelector('[data-payment-submit-label]');
         if (submitLabel) submitLabel.textContent = isPendingGcash ? 'Save Pending GCash' : 'Record Payment';
+    }
+
+    function clearPaymentReferenceValidation() {
+        paymentReferenceValidationId += 1;
+        if (paymentReferenceValidationTimer) {
+            clearTimeout(paymentReferenceValidationTimer);
+            paymentReferenceValidationTimer = null;
+        }
+        if (paymentReferenceInput) {
+            paymentReferenceInput.setCustomValidity('');
+            paymentReferenceInput.removeAttribute('aria-invalid');
+            paymentReferenceInput.removeAttribute('aria-busy');
+        }
+        if (paymentReferenceHint) {
+            paymentReferenceHint.textContent = '';
+            paymentReferenceHint.hidden = true;
+        }
+    }
+
+    function setPaymentReferenceConflict(message) {
+        const text = String(message || 'This payment reference is already used.').trim();
+        if (paymentReferenceInput) {
+            paymentReferenceInput.setCustomValidity(text);
+            paymentReferenceInput.setAttribute('aria-invalid', 'true');
+        }
+        if (paymentReferenceHint) {
+            paymentReferenceHint.textContent = text;
+            paymentReferenceHint.hidden = false;
+        }
+    }
+
+    async function validatePaymentReferenceAvailability() {
+        const reference = String(paymentReferenceInput?.value || '').trim();
+        const isPayment = String(paymentKindSelect?.value || '').trim().toLowerCase() === 'payment';
+        if (!isPayment || paymentReferenceInput?.disabled || !reference) {
+            clearPaymentReferenceValidation();
+            return true;
+        }
+
+        const requestId = ++paymentReferenceValidationId;
+        paymentReferenceInput?.setAttribute('aria-busy', 'true');
+        try {
+            const response = await fetch(`/api/payments/reference-availability?reference=${encodeURIComponent(reference)}`, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (requestId !== paymentReferenceValidationId
+                || reference !== String(paymentReferenceInput?.value || '').trim()) return false;
+            if (!response.ok) throw new Error(payload?.message || payload?.error || 'Unable to validate the payment reference.');
+            if (payload?.available === false) {
+                setPaymentReferenceConflict(payload?.message);
+                return false;
+            }
+            clearPaymentReferenceValidation();
+            return true;
+        } catch (error) {
+            if (requestId === paymentReferenceValidationId) {
+                paymentReferenceInput?.removeAttribute('aria-busy');
+            }
+            console.warn('Payment reference availability check failed:', error?.message || error);
+            return true;
+        } finally {
+            if (requestId === paymentReferenceValidationId) {
+                paymentReferenceInput?.removeAttribute('aria-busy');
+            }
+        }
     }
 
     function setPaymentCustomerLock(customer = null) {
@@ -2857,6 +2928,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function openModal(options = {}) {
         paymentForm.reset();
+        clearPaymentReferenceValidation();
         document.getElementById('paymentDate').valueAsDate = new Date();
         selectedCustomer = null;
         closePaymentCustomerSuggestions();
@@ -3591,6 +3663,21 @@ document.addEventListener('DOMContentLoaded', function () {
         syncPaymentMethodVisibility();
     });
     paymentMethodSelect?.addEventListener('change', syncPaymentMethodVisibility);
+    paymentReferenceInput?.addEventListener('input', () => {
+        clearPaymentReferenceValidation();
+        if (!String(paymentReferenceInput.value || '').trim()) return;
+        paymentReferenceValidationTimer = setTimeout(() => {
+            paymentReferenceValidationTimer = null;
+            validatePaymentReferenceAvailability();
+        }, 400);
+    });
+    paymentReferenceInput?.addEventListener('blur', () => {
+        if (paymentReferenceValidationTimer) {
+            clearTimeout(paymentReferenceValidationTimer);
+            paymentReferenceValidationTimer = null;
+        }
+        validatePaymentReferenceAvailability();
+    });
     openCustomerAddBtn?.addEventListener('click', () => {
         openCustomerAddModal();
     });
@@ -4197,6 +4284,12 @@ document.addEventListener('DOMContentLoaded', function () {
             finishSubmit();
             return;
         }
+        if (payload.reference && !(await validatePaymentReferenceAvailability())) {
+            showToast(paymentReferenceHint?.textContent || 'This payment reference is already used.');
+            finishSubmit();
+            paymentReferenceInput?.focus();
+            return;
+        }
         try {
             const response = await fetch(`/api/payments/${accountNumber}`, {
                     method: 'POST',
@@ -4205,7 +4298,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     body: JSON.stringify(payload)
                 });
                 const responseData = await response.json();
-                if (!response.ok) throw new Error(responseData.message || `Failed to add transaction`);
+                if (!response.ok) {
+                    const responseMessage = responseData?.message || responseData?.error || 'Failed to add transaction';
+                    if (responseData?.code === 'PAYMENT_REFERENCE_ALREADY_USED'
+                        || /reference.+already|already.+reference/i.test(String(responseMessage))) {
+                        setPaymentReferenceConflict(responseMessage);
+                    }
+                    throw new Error(responseMessage);
+                }
                 const savedPendingGcash = String(responseData?.status || '').trim().toLowerCase() === 'pending_gcash_verification';
                 showToast(savedPendingGcash
                     ? 'GCash payment saved as Pending. Bind imported proof before it affects billing.'

@@ -106,6 +106,7 @@ assert(paymentsHtmlSource.includes('aria-controls="paymentCustomerSuggestions"')
 assert(paymentsHtmlSource.includes('id="paymentCustomerSuggestions"'));
 assert(paymentsHtmlSource.includes('role="listbox" aria-label="Customer suggestions"'));
 assert(paymentsHtmlSource.includes('id="customerSelect" name="accountNumber" required hidden'));
+assert(paymentsHtmlSource.includes('id="paymentReferenceHint" role="alert"'));
 assert(breakdownHtmlSource.includes('js/payment-breakdown-table.js'));
 assert(breakdownHtmlSource.includes('id="breakdownPlanReason"'));
 assert(breakdownHtmlSource.includes('id="breakdownPlanConfirmed"'));
@@ -138,6 +139,9 @@ assert(paymentsBrowserSource.includes('function selectPaymentCustomer(accountNum
 assert(paymentsBrowserSource.includes("paymentCustomerSearch?.addEventListener('input'"));
 assert(paymentsBrowserSource.includes("paymentCustomerSearch?.addEventListener('keydown'"));
 assert(paymentsBrowserSource.includes('Amount due ${formatCurrency(amountDue)}'));
+assert(paymentsBrowserSource.includes('/api/payments/reference-availability?reference='));
+assert(paymentsBrowserSource.includes('validatePaymentReferenceAvailability()'));
+assert(paymentsBrowserSource.includes('paymentReferenceInput.setCustomValidity(text)'));
 assert(paymentsCssSource.includes('.payment-customer-suggestions'));
 assert(paymentsCssSource.includes('.payment-customer-option__amount'));
 assert(paymentsBrowserSource.includes('/api/payment-records/${encodeURIComponent(accountNumber)}'));
@@ -293,7 +297,10 @@ assert(paymentsSource.includes("path.join(DATA_DIR, 'payment-backups')"));
 assert(paymentsSource.includes("path.join(PROJECT_ROOT, '.cloudflared', 'config.yml')"));
 assert(paymentsSource.includes("router.get('/gcash-pending'"));
 assert(paymentsSource.includes("router.post('/gcash-pending/:accountNumber/:entryId/bind'"));
+assert(paymentsSource.includes("router.get('/reference-availability'"));
 assert(paymentsSource.includes("const PENDING_GCASH_STATUS = 'pending_gcash_verification'"));
+assert(paymentsSource.includes("error.code = 'PAYMENT_REFERENCE_ALREADY_USED'"));
+assert(paymentsSource.includes('await assertManualPaymentReferenceAvailable({'));
 console.log('PASS repository-root proof uploads, backups, and tunnel configuration paths');
 
 const normalizer = backend.load('paymentEntryNormalizer');

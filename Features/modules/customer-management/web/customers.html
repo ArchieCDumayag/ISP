@@ -219,53 +219,74 @@
                 </div>
                 <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
-            <form class="customer-form">
+            <form class="customer-form" novalidate>
+                <div class="customer-form__body">
+                    <ol class="customer-wizard-progress" id="customerWizardProgress" aria-label="Customer form progress">
+                        <li class="customer-wizard-progress__item is-active" data-customer-step-state="1">
+                            <button type="button" class="btn btn-sm customer-wizard-progress__button" data-customer-step-target="1" aria-current="step">
+                                <span class="customer-wizard-progress__number">1</span>
+                                <span>
+                                    <span class="customer-wizard-progress__label">Customer</span>
+                                    <span class="customer-wizard-progress__meta">Identity &amp; address</span>
+                                </span>
+                            </button>
+                        </li>
+                        <li class="customer-wizard-progress__item" data-customer-step-state="2">
+                            <button type="button" class="btn btn-sm customer-wizard-progress__button" data-customer-step-target="2">
+                                <span class="customer-wizard-progress__number">2</span>
+                                <span>
+                                    <span class="customer-wizard-progress__label">Billing</span>
+                                    <span class="customer-wizard-progress__meta">Plan &amp; first cycle</span>
+                                </span>
+                            </button>
+                        </li>
+                        <li class="customer-wizard-progress__item" data-customer-step-state="3">
+                            <button type="button" class="btn btn-sm customer-wizard-progress__button" data-customer-step-target="3">
+                                <span class="customer-wizard-progress__number">3</span>
+                                <span>
+                                    <span class="customer-wizard-progress__label">Network &amp; Review</span>
+                                    <span class="customer-wizard-progress__meta">Assignment &amp; confirmation</span>
+                                </span>
+                            </button>
+                        </li>
+                    </ol>
+
+                    <div class="alert alert-danger customer-form-error-summary" id="customerFormErrorSummary" role="alert" tabindex="-1" hidden>
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="ti ti-alert-circle" aria-hidden="true"></i>
+                            <div>
+                                <strong>Please review the highlighted fields.</strong>
+                                <ul class="customer-form-error-list" data-customer-error-list></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <section class="customer-form-step is-active" id="customerStepCustomer" data-customer-step="1" aria-labelledby="customerStepCustomerTitle">
+                        <h3 class="customer-form-step__title" id="customerStepCustomerTitle">Customer details</h3>
+                        <p class="customer-form-step__intro"><span class="required-mark" aria-hidden="true">*</span> Required fields must be completed before continuing.</p>
+
                 <div class="form-card form-card--primary">
                     <div class="form-card__header">
-                        <p class="form-card__eyebrow">Account &amp; plan</p>
-                        <p class="form-card__subhead">Group the basic identifiers for this customer.</p>
+                        <p class="form-card__eyebrow">Account &amp; customer</p>
+                        <p class="form-card__subhead">The account shown here is a preview. The server confirms the final account when the customer is saved.</p>
                     </div>
                     <div class="form-card__grid">
-                        <div class="form-field">
-                            <label for="accountNumber">Account Number</label>
-                            <input type="text" id="accountNumber" name="accountNumber" readonly maxlength="9" pattern="[0-9]{9}" inputmode="numeric">
+                        <div class="form-field" id="accountNumberField">
+                            <label for="accountNumber">Account Number <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                            <input type="text" id="accountNumber" name="accountNumber" readonly required maxlength="9" pattern="[0-9]{9}" inputmode="numeric" aria-describedby="accountAllocationStatus">
+                            <div class="account-allocation-status" id="accountAllocationStatus" role="status" aria-live="polite">
+                                <i class="ti ti-loader-2 ti-spin" data-account-allocation-icon aria-hidden="true"></i>
+                                <span data-account-allocation-message>Preparing account preview...</span>
+                                <button type="button" class="btn btn-link btn-sm account-allocation-retry" id="retryAccountAllocationBtn" hidden>Retry</button>
+                            </div>
                         </div>
                         <div class="form-field">
-                            <label for="planCategory">Plan Type</label>
-                            <select id="planCategory" name="planCategory">
-                                <option value="postpaid">Postpaid</option>
-                                <option value="prepaid">Prepaid</option>
-                            </select>
-                        </div>
-                        <div class="form-field" id="planField">
-                            <label for="plan">Plan</label>
-                            <select id="plan" name="plan" required>
-                                <option value="">Loading plans...</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="firstName">First Name</label>
+                            <label for="firstName">First Name <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                             <input type="text" id="firstName" name="firstName" required>
                         </div>
                         <div class="form-field">
-                            <label for="lastName">Last Name</label>
+                            <label for="lastName">Last Name <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                             <input type="text" id="lastName" name="lastName" required>
-                        </div>
-                        <div class="form-field form-field--status-control">
-                            <label for="statusToggle">Status</label>
-                            <label class="switch-field status-switch-field" for="statusToggle">
-                                <input type="checkbox" id="statusToggle" role="switch" aria-checked="true" checked>
-                                <span class="status-switch-copy">
-                                    <span class="status-switch-state" id="statusSwitchState">On</span>
-                                    <span class="status-switch-meta" id="statusSwitchMeta">Active customer.</span>
-                                </span>
-                            </label>
-                            <p class="status-switch-hint" id="statusSwitchHint">Turn off to disable this customer manually.</p>
-                            <select id="status" name="status" hidden aria-hidden="true" tabindex="-1">
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                                <option value="disabled">Disabled</option>
-                            </select>
                         </div>
                         <div class="form-field">
                             <label for="contactNumber">Mobile Number</label>
@@ -281,7 +302,7 @@
                 <div class="form-card form-card--soft" id="loginInfoSection" style="display: none;">
                     <div class="form-card__header">
                         <p class="form-card__eyebrow">Portal credentials</p>
-                        <p class="form-card__subhead">Leave these blank to auto-generate suggested values.</p>
+                        <p class="form-card__subhead">The current password is protected. Leave the password blank to keep it, or enter a replacement.</p>
                     </div>
                     <div class="form-card__grid">
                         <div class="form-field">
@@ -308,19 +329,19 @@
                             <input type="text" id="street" name="street">
                         </div>
                         <div class="form-field">
-                            <label for="province">Province</label>
+                            <label for="province">Province <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                             <select id="province" name="province" required>
                                 <option value="">Select province / independent city</option>
                             </select>
                         </div>
                         <div class="form-field">
-                            <label for="municipality">Municipality/City</label>
+                            <label for="municipality">Municipality/City <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                             <select id="municipality" name="municipality" required disabled>
                                 <option value="">Select province first</option>
                             </select>
                         </div>
                         <div class="form-field">
-                            <label for="barangay">Barangay</label>
+                            <label for="barangay">Barangay <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                             <select id="barangay" name="barangay" required disabled>
                                 <option value="">Select municipality first</option>
                             </select>
@@ -344,9 +365,42 @@
                         </div>
                     </div>
                 </fieldset>
+                    </section>
 
+                    <section class="customer-form-step" id="customerStepBilling" data-customer-step="2" aria-labelledby="customerStepBillingTitle" hidden>
+                        <h3 class="customer-form-step__title" id="customerStepBillingTitle">Billing setup</h3>
+                        <p class="customer-form-step__intro">Choose how this account enters billing and confirm its first cycle.</p>
                 <fieldset class="form-section form-section--billing">
                     <div class="form-grid">
+                    <div class="form-field">
+                        <label for="planCategory">Plan Type</label>
+                        <select id="planCategory" name="planCategory">
+                            <option value="postpaid">Postpaid</option>
+                            <option value="prepaid">Prepaid</option>
+                        </select>
+                    </div>
+                    <div class="form-field" id="planField">
+                        <label for="plan">Plan <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                        <select id="plan" name="plan" required>
+                            <option value="">Loading plans...</option>
+                        </select>
+                    </div>
+                    <div class="form-field form-field--status-control" style="grid-column: 1 / -1;">
+                        <label for="statusToggle">Account Status</label>
+                        <label class="switch-field status-switch-field" for="statusToggle">
+                            <input type="checkbox" id="statusToggle" role="switch" aria-checked="false">
+                            <span class="status-switch-copy">
+                                <span class="status-switch-state" id="statusSwitchState">Pending setup</span>
+                                <span class="status-switch-meta" id="statusSwitchMeta">Inactive until service setup is complete.</span>
+                            </span>
+                        </label>
+                        <p class="status-switch-hint" id="statusSwitchHint">Select Activate now only when service requirements are complete.</p>
+                        <select id="status" name="status" hidden aria-hidden="true" tabindex="-1">
+                            <option value="active">Active</option>
+                            <option value="inactive" selected>Inactive</option>
+                            <option value="disabled">Disabled</option>
+                        </select>
+                    </div>
                     <div class="form-field" id="customerStartTypeField" style="grid-column: 1 / -1;">
                         <label>Customer Type</label>
                         <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column flex-md-row gap-2">
@@ -369,15 +423,15 @@
                                         <i class="ti ti-user-check" aria-hidden="true"></i>
                                     </span>
                                     <span>
-                                        <span class="fw-semibold">Existing customer</span>
-                                        <span class="d-block text-secondary small">Use opening balance/advance only; no prorated first bill.</span>
+                                        <span class="fw-semibold">Migrated customer</span>
+                                        <span class="d-block text-secondary small">Optional opening debit or credit; no prorated first bill.</span>
                                     </span>
                                 </span>
                             </label>
                         </div>
                     </div>
                     <div class="form-field" id="existingCustomerOpeningField" style="grid-column: 1 / -1; display: none;">
-                        <label>Current Month Opening Amount</label>
+                        <label>Current Month Opening Amount <span class="optional-label">Optional</span></label>
                         <div class="row g-2">
                             <div class="col-md-6">
                                 <label class="form-label" for="openingPreviousBalance">Previous Balance</label>
@@ -390,23 +444,23 @@
                                 <small class="text-secondary">Adds an opening credit.</small>
                             </div>
                         </div>
-                        <small class="muted">Use only one. Current due is based on this opening amount; no prorated bill is added.</small>
+                        <small class="muted">Both may be left at zero. If needed, enter only one: a previous-balance debit or advance-payment credit.</small>
                     </div>
                     <div class="form-field" id="activationDateField">
                         <label for="activationDate">Activation Date</label>
                         <input type="date" id="activationDate" name="activationDate">
                     </div>
                     <div class="form-field" id="billDateField">
-                        <label for="billDate">Next Bill Date</label>
+                        <label for="billDate">Next Bill Date <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                         <input type="date" id="billDate" name="billDate" required>
                     </div>
                     <div class="form-field" id="dueOffsetField">
-                        <label for="dueOffset">Due after (days)</label>
+                        <label for="dueOffset">Due after (days) <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                         <input type="number" id="dueOffset" name="dueOffset" min="0" step="1" required>
                         <small class="muted" id="dueOffsetHelp"></small>
                     </div>
                     <div class="form-field" id="dueDateField">
-                        <label for="dueDateDisplay">Computed Due Date</label>
+                        <label for="dueDateDisplay">Computed Due Date <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
                         <input type="text" id="dueDateDisplay" readonly>
                         <input type="hidden" id="dueDate" name="dueDate" required>
                     </div>
@@ -441,7 +495,11 @@
                     </div>
                 </div>
             </fieldset>
+                    </section>
 
+                    <section class="customer-form-step" id="customerStepReview" data-customer-step="3" aria-labelledby="customerStepReviewTitle" hidden>
+                        <h3 class="customer-form-step__title" id="customerStepReviewTitle">Network &amp; review</h3>
+                        <p class="customer-form-step__intro">Add an optional NAP assignment, then confirm the record before saving.</p>
                 <fieldset class="form-section form-section--nap">
                     <legend>NAP Assignment</legend>
                     <div class="form-grid">
@@ -474,11 +532,110 @@
                     <label for="remarks">Remarks</label>
                     <textarea id="remarks" name="remarks" rows="3"></textarea>
                 </div>
+
+                        <section class="customer-review-card" id="customerReviewSummary" aria-labelledby="customerReviewSummaryTitle" aria-live="polite">
+                            <div class="customer-review-card__header">
+                                <div>
+                                    <p class="form-card__eyebrow">Final review</p>
+                                    <h4 id="customerReviewSummaryTitle">Confirm customer setup</h4>
+                                </div>
+                                <span class="badge bg-yellow-lt text-yellow" data-review-status-badge>Pending / Inactive</span>
+                            </div>
+                            <dl class="customer-review-grid">
+                                <div class="customer-review-item">
+                                    <dt>Account</dt>
+                                    <dd data-review-field="account">Preparing preview...</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>Customer</dt>
+                                    <dd data-review-field="customer">Not entered</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>Plan</dt>
+                                    <dd data-review-field="plan">Not selected</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>Activation</dt>
+                                    <dd data-review-field="activationDate">Not set</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>Bill date</dt>
+                                    <dd data-review-field="billDate">Not set</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>Due date</dt>
+                                    <dd data-review-field="dueDate">Not set</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>First amount</dt>
+                                    <dd data-review-field="firstAmount">Not available</dd>
+                                </div>
+                                <div class="customer-review-item">
+                                    <dt>Status</dt>
+                                    <dd data-review-field="status">Pending / Inactive</dd>
+                                </div>
+                                <div class="customer-review-item customer-review-item--wide">
+                                    <dt>NAP assignment</dt>
+                                    <dd data-review-field="nap">No NAP assignment</dd>
+                                </div>
+                            </dl>
+                            <p class="customer-review-note">The displayed account is a preview. Use the final account confirmed after saving.</p>
+                        </section>
+                    </section>
+                </div>
                 <div class="form-actions">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="closeModalFooter">Cancel</button>
-                    <button type="submit" class="btn btn-primary btn-sm" id="modalSubmitBtn"><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
+                    <span class="customer-step-counter" id="customerStepCounter" aria-live="polite">Step 1 of 3</span>
+                    <div class="customer-form-actions__buttons">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="closeModalFooter">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="customerStepBackBtn" hidden><i class="ti ti-arrow-left" aria-hidden="true"></i> Back</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="customerStepNextBtn">Continue <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+                        <button type="submit" class="btn btn-primary btn-sm" id="modalSubmitBtn" hidden><i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer</button>
+                    </div>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div id="portalSetupModal" class="modal customer-modal portal-setup-modal" role="dialog" aria-modal="true" aria-labelledby="portalSetupTitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <p class="modal-eyebrow"><i class="ti ti-shield-lock" aria-hidden="true"></i> Customer created</p>
+                    <h2 id="portalSetupTitle">Save the portal setup details</h2>
+                    <p class="modal-subtitle">The temporary password is shown once and will not appear on the customer record later.</p>
+                </div>
+                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closePortalSetupBtn" type="button" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning portal-setup-warning" role="alert">
+                    <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+                    <span>Copy these details now and ask the customer to change the temporary password after signing in.</span>
+                </div>
+                <dl class="portal-setup-details">
+                    <div>
+                        <dt>Final account number</dt>
+                        <dd><code data-portal-setup="accountNumber">--</code></dd>
+                    </div>
+                    <div>
+                        <dt>Portal username</dt>
+                        <dd>
+                            <code data-portal-setup="username">--</code>
+                            <button class="btn btn-icon btn-outline-secondary btn-sm" type="button" data-copy-portal-setup="username" aria-label="Copy portal username" title="Copy portal username"><i class="ti ti-copy" aria-hidden="true"></i></button>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>Temporary password</dt>
+                        <dd>
+                            <code data-portal-setup="temporaryPassword">--</code>
+                            <button class="btn btn-icon btn-outline-secondary btn-sm" type="button" data-copy-portal-setup="temporaryPassword" aria-label="Copy temporary password" title="Copy temporary password"><i class="ti ti-copy" aria-hidden="true"></i></button>
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-primary btn-sm" id="copyPortalSetupBtn" type="button"><i class="ti ti-copy" aria-hidden="true"></i> Copy all details</button>
+                <button class="btn btn-primary btn-sm" id="donePortalSetupBtn" type="button">Done</button>
+            </div>
         </div>
     </div>
 
@@ -732,12 +889,7 @@
                                         </div>
                                         <div class="view-row">
                                             <span class="view-row-label">Portal Password</span>
-                                            <span class="view-row-value view-value--mono view-copy">
-                                                <span data-view="loginPassword"></span>
-                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="loginPassword" aria-label="Copy portal password" title="Copy portal password">
-                                                    <i class="ti ti-copy" aria-hidden="true"></i>
-                                                </button>
-                                            </span>
+                                            <span class="view-row-value" data-view="loginPasswordStatus"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -1011,6 +1163,23 @@
             const acctInput = document.getElementById('accountNumber');
             const modalTitle = document.getElementById('customerModalTitle');
             const modalSubmitBtn = document.getElementById('modalSubmitBtn');
+            const customerWizardProgress = document.getElementById('customerWizardProgress');
+            const customerFormSteps = Array.from(document.querySelectorAll('[data-customer-step]'));
+            const customerStepButtons = Array.from(document.querySelectorAll('[data-customer-step-target]'));
+            const customerStepBackBtn = document.getElementById('customerStepBackBtn');
+            const customerStepNextBtn = document.getElementById('customerStepNextBtn');
+            const customerStepCounter = document.getElementById('customerStepCounter');
+            const customerFormErrorSummary = document.getElementById('customerFormErrorSummary');
+            const customerFormErrorList = customerFormErrorSummary?.querySelector('[data-customer-error-list]') || null;
+            const customerReviewSummary = document.getElementById('customerReviewSummary');
+            const accountAllocationStatus = document.getElementById('accountAllocationStatus');
+            const accountAllocationMessage = accountAllocationStatus?.querySelector('[data-account-allocation-message]') || null;
+            const accountAllocationIcon = accountAllocationStatus?.querySelector('[data-account-allocation-icon]') || null;
+            const retryAccountAllocationBtn = document.getElementById('retryAccountAllocationBtn');
+            const portalSetupModal = document.getElementById('portalSetupModal');
+            const closePortalSetupBtn = document.getElementById('closePortalSetupBtn');
+            const donePortalSetupBtn = document.getElementById('donePortalSetupBtn');
+            const copyPortalSetupBtn = document.getElementById('copyPortalSetupBtn');
             const viewTitle = document.getElementById('customerViewTitle');
             const form = modal.querySelector('form');
             const searchInput = document.getElementById('customerSearch');
@@ -1272,6 +1441,11 @@
             let customerProvinceOptionsCache = null;
             const customerMunicipalityOptionsCache = new Map();
             const customerBarangayOptionsCache = new Map();
+            let currentCustomerStep = 1;
+            let accountAllocationRequestId = 0;
+            let accountAllocationLoading = false;
+            let portalSetupDetails = null;
+            let portalSetupReturnUrl = '';
             const getMultiSelectValues = (select) => {
                 if (!select) return [];
                 return Array.from(select.selectedOptions || [])
@@ -1469,12 +1643,14 @@
                         modalSubmitBtn.dataset.label = modalSubmitBtn.innerHTML;
                     }
                     modalSubmitBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Saving...';
+                    syncCustomerStepControls();
                     return;
                 }
                 if (modalSubmitBtn.dataset.label) {
                     modalSubmitBtn.innerHTML = modalSubmitBtn.dataset.label;
                     delete modalSubmitBtn.dataset.label;
                 }
+                syncCustomerStepControls();
             };
 
             const normalizeAddressPickerText = (value) => String(value || '').trim().replace(/\s+/g, ' ');
@@ -1865,25 +2041,32 @@
                 if (!statusSelect || !statusToggle) return;
                 const normalizedStatus = normalizeCustomerStatusValue(statusSelect.value, 'active');
                 const autoInactive = normalizedStatus === 'inactive' && statusSelect.dataset.autoStatus === 'true';
+                const addMode = !isEditMode();
                 const field = statusToggle.closest('.status-switch-field');
-                const isOn = normalizedStatus !== 'disabled';
+                const isOn = addMode ? normalizedStatus === 'active' : normalizedStatus !== 'disabled';
 
                 statusToggle.checked = isOn;
                 statusToggle.setAttribute('aria-checked', isOn ? 'true' : 'false');
 
                 if (field) {
-                    field.classList.toggle('is-on', isOn && !autoInactive);
-                    field.classList.toggle('is-off', !isOn);
-                    field.classList.toggle('is-auto', autoInactive);
+                    field.classList.toggle('is-on', isOn && (!autoInactive || addMode));
+                    field.classList.toggle('is-off', !isOn && !addMode);
+                    field.classList.toggle('is-auto', autoInactive && !addMode);
+                    field.classList.toggle('is-pending', addMode && !isOn);
                 }
 
                 if (statusSwitchState) {
-                    statusSwitchState.textContent = isOn ? 'On' : 'Off';
+                    statusSwitchState.textContent = addMode
+                        ? (isOn ? 'Activate now' : 'Pending setup')
+                        : (isOn ? 'On' : 'Off');
                 }
                 if (statusSwitchMeta) {
-                    let statusMetaText = 'Active customer.';
-                    let statusMetaTitle = 'Customer is active.';
-                    if (!isOn) {
+                    let statusMetaText = addMode && isOn ? 'Service requirements confirmed.' : 'Active customer.';
+                    let statusMetaTitle = addMode && isOn ? 'The new customer will be active immediately.' : 'Customer is active.';
+                    if (addMode && !isOn) {
+                        statusMetaText = 'Inactive until service setup is complete.';
+                        statusMetaTitle = 'The new customer will be saved as Pending / Inactive.';
+                    } else if (!isOn) {
                         statusMetaText = 'Disabled manually.';
                         statusMetaTitle = 'Customer is manually disabled.';
                     } else if (autoInactive) {
@@ -1896,9 +2079,13 @@
                     statusSwitchMeta.textContent = statusMetaText;
                     statusSwitchMeta.title = statusMetaTitle;
                 }
-                const statusHintText = isOn
-                    ? 'Turn off to disable this customer manually.'
-                    : 'Turn on to restore the normal active/inactive flow.';
+                const statusHintText = addMode
+                    ? (isOn
+                        ? 'Turn off to keep this customer Pending / Inactive.'
+                        : 'Select Activate now only when service requirements are complete.')
+                    : (isOn
+                        ? 'Turn off to disable this customer manually.'
+                        : 'Turn on to restore the normal active/inactive flow.');
                 if (field) {
                     const metaTitle = statusSwitchMeta?.title || '';
                     field.title = metaTitle ? `${metaTitle} ${statusHintText}` : statusHintText;
@@ -2047,7 +2234,576 @@
                 if (firstBillPeriodDisplay && isExistingStart) {
                     firstBillPeriodDisplay.value = '';
                 }
+                updateCustomerReviewSummary();
             };
+
+            function getCustomerFieldLabel(field) {
+                if (!field) return 'Field';
+                const label = Array.from(form?.querySelectorAll('label') || []).find((entry) => entry.htmlFor === field.id);
+                const rawLabel = String(label?.textContent || field.name || field.id || 'Field')
+                    .replace(/\s+required\s*/gi, ' ')
+                    .replace(/\s*\*\s*/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                return rawLabel || 'Field';
+            }
+
+            function getCustomerFieldErrorContainer(field) {
+                return field?.closest?.('.col-md-6, .form-field') || field?.parentElement || null;
+            }
+
+            function getCustomerFieldErrorKey(field) {
+                return String(field?.id || field?.name || 'field').trim();
+            }
+
+            function clearCustomerFieldError(field) {
+                if (!field) return;
+                field.classList.remove('is-invalid');
+                field.removeAttribute('aria-invalid');
+                const key = getCustomerFieldErrorKey(field);
+                const container = getCustomerFieldErrorContainer(field);
+                Array.from(container?.querySelectorAll?.('[data-customer-field-error-for]') || []).forEach((feedback) => {
+                    if (feedback.dataset.customerFieldErrorFor === key) feedback.remove();
+                });
+            }
+
+            function setCustomerFieldError(field, message) {
+                if (!field || !message) return;
+                clearCustomerFieldError(field);
+                field.classList.add('is-invalid');
+                field.setAttribute('aria-invalid', 'true');
+                const container = getCustomerFieldErrorContainer(field);
+                if (!container) return;
+                const feedback = document.createElement('div');
+                feedback.className = 'invalid-feedback';
+                feedback.dataset.customerFieldErrorFor = getCustomerFieldErrorKey(field);
+                feedback.textContent = message;
+                container.appendChild(feedback);
+            }
+
+            function clearCustomerValidation() {
+                Array.from(form?.querySelectorAll('.is-invalid') || []).forEach((field) => {
+                    field.classList.remove('is-invalid');
+                    field.removeAttribute('aria-invalid');
+                });
+                Array.from(form?.querySelectorAll('[data-customer-field-error-for]') || []).forEach((feedback) => feedback.remove());
+                if (customerFormErrorList) customerFormErrorList.innerHTML = '';
+                if (customerFormErrorSummary) customerFormErrorSummary.hidden = true;
+            }
+
+            function getCustomerFieldStep(field) {
+                const step = Number(field?.closest?.('[data-customer-step]')?.dataset?.customerStep);
+                return Number.isInteger(step) && step >= 1 && step <= 3 ? step : currentCustomerStep;
+            }
+
+            function showCustomerValidationErrors(errors = [], { focus = true } = {}) {
+                const normalizedErrors = [];
+                const seen = new Set();
+                (Array.isArray(errors) ? errors : []).forEach((entry) => {
+                    const field = entry?.field || null;
+                    const message = String(entry?.message || '').trim();
+                    if (!field || !message) return;
+                    const key = `${getCustomerFieldErrorKey(field)}:${message}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    normalizedErrors.push({ field, message, step: entry?.step || getCustomerFieldStep(field) });
+                    setCustomerFieldError(field, message);
+                });
+
+                if (!normalizedErrors.length) {
+                    if (customerFormErrorSummary) customerFormErrorSummary.hidden = true;
+                    return false;
+                }
+
+                if (customerFormErrorList) {
+                    customerFormErrorList.innerHTML = '';
+                    normalizedErrors.forEach(({ message }) => {
+                        const item = document.createElement('li');
+                        item.textContent = message;
+                        customerFormErrorList.appendChild(item);
+                    });
+                }
+                if (customerFormErrorSummary) customerFormErrorSummary.hidden = false;
+
+                const firstError = normalizedErrors[0];
+                if (firstError.step !== currentCustomerStep) {
+                    setCustomerFormStep(firstError.step, { skipValidation: true });
+                }
+                if (focus) {
+                    setTimeout(() => {
+                        customerFormErrorSummary?.focus({ preventScroll: true });
+                        firstError.field?.focus?.({ preventScroll: false });
+                    }, 0);
+                }
+                return true;
+            }
+
+            function addCustomerValidationError(errors, field, message) {
+                if (!field || !message) return;
+                const key = getCustomerFieldErrorKey(field);
+                if (errors.some((entry) => getCustomerFieldErrorKey(entry.field) === key)) return;
+                errors.push({ field, message, step: getCustomerFieldStep(field) });
+            }
+
+            function getNativeCustomerFieldError(field) {
+                if (!field || field.disabled || field.type === 'hidden' || !field.willValidate) return '';
+                const label = getCustomerFieldLabel(field);
+                const value = String(field.value || '').trim();
+                if (field.required && !value) return `${label} is required.`;
+                if (field.validity?.typeMismatch) return `Enter a valid ${label.toLowerCase()}.`;
+                if (field.validity?.patternMismatch) return `${label} has an invalid format.`;
+                if (field.validity?.rangeUnderflow) return `${label} must be at least ${field.min}.`;
+                if (field.validity?.rangeOverflow) return `${label} must not exceed ${field.max}.`;
+                if (field.validity?.stepMismatch || field.validity?.badInput) return `Enter a valid ${label.toLowerCase()}.`;
+                return '';
+            }
+
+            function collectCustomerStepErrors(stepNumber) {
+                const step = customerFormSteps.find((entry) => Number(entry.dataset.customerStep) === Number(stepNumber));
+                if (!step) return [];
+                const errors = [];
+
+                Array.from(step.querySelectorAll('input, select, textarea')).forEach((field) => {
+                    const nativeMessage = getNativeCustomerFieldError(field);
+                    if (nativeMessage) addCustomerValidationError(errors, field, nativeMessage);
+                });
+
+                if (Number(stepNumber) === 1) {
+                    if (!isEditMode()) {
+                        if (accountAllocationLoading) {
+                            addCustomerValidationError(errors, acctInput, 'Wait for the account preview to finish loading.');
+                        } else if (!String(acctInput?.value || '').trim()) {
+                            addCustomerValidationError(errors, acctInput, 'Load an account preview before continuing.');
+                        } else if (!/^\d{9}$/.test(String(acctInput.value).trim())) {
+                            addCustomerValidationError(errors, acctInput, 'The account preview must contain 9 digits.');
+                        }
+                    }
+
+                    [form?.elements?.firstName, form?.elements?.lastName].forEach((field) => {
+                        if (field && !String(field.value || '').trim()) {
+                            addCustomerValidationError(errors, field, `${getCustomerFieldLabel(field)} is required.`);
+                        }
+                    });
+
+                    if (contactNumberInput?.value && !normalizePhilippineMobile(contactNumberInput.value, false)) {
+                        addCustomerValidationError(errors, contactNumberInput, 'Enter a valid Philippine mobile number (09xxxxxxxxx or +639xxxxxxxxx).');
+                    }
+                    if (!getAddressPickerSelectedLabel(customerProvinceSelect)) {
+                        addCustomerValidationError(errors, customerProvinceSelect, 'Province is required.');
+                    }
+                    if (!getAddressPickerSelectedLabel(customerMunicipalitySelect)) {
+                        addCustomerValidationError(errors, customerMunicipalitySelect, 'Municipality/City is required.');
+                    }
+                    if (!getAddressPickerSelectedLabel(customerBarangaySelect)) {
+                        addCustomerValidationError(errors, customerBarangaySelect, 'Barangay is required.');
+                    }
+
+                    const rawMapPin = String(mapPinInput?.value || '').trim();
+                    if (rawMapPin && !parseCoordinateValue(rawMapPin)) {
+                        addCustomerValidationError(errors, mapPinInput, 'Coordinates must contain a valid latitude and longitude, for example 14.5995, 120.9842.');
+                    }
+                }
+
+                if (Number(stepNumber) === 2) {
+                    const selectedPlanName = String(planSelect?.value || '').trim();
+                    if (!selectedPlanName) {
+                        addCustomerValidationError(errors, planSelect, 'Plan is required.');
+                    } else {
+                        const selectedPlan = findCatalogPlanForCategory({
+                            planName: selectedPlanName,
+                            category: planCategorySelect?.value || 'postpaid'
+                        });
+                        const targetId = String(form?.dataset.editingId || '').trim();
+                        const existingCustomer = isEditMode()
+                            ? allCustomers.find((entry) => String(entry?.accountNumber || entry?.id || '').trim() === targetId)
+                            : null;
+                        const keepingExistingPlan = !selectedPlan
+                            && existingCustomer?.planId
+                            && normalizePlanName(existingCustomer.planName) === normalizePlanName(selectedPlanName);
+                        if (!selectedPlan && !keepingExistingPlan) {
+                            addCustomerValidationError(errors, planSelect, 'Select a valid plan from the system list.');
+                        }
+                    }
+
+                    const openingAmounts = getOpeningAmounts();
+                    if (isExistingCustomerStart() && openingAmounts.previousBalance > 0 && openingAmounts.advancePayment > 0) {
+                        addCustomerValidationError(errors, openingPreviousBalanceInput, 'Use only one opening amount: previous balance or advance payment.');
+                        addCustomerValidationError(errors, openingAdvancePaymentInput, 'Use only one opening amount: previous balance or advance payment.');
+                    }
+
+                    if (!String(billDateInput?.value || '').trim()) {
+                        addCustomerValidationError(errors, billDateInput, 'Billing date is required.');
+                    }
+                    if (String(dueOffsetInput?.value ?? '').trim() === '') {
+                        addCustomerValidationError(errors, dueOffsetInput, 'Due-after days is required.');
+                    }
+                    if (!String(dueDateInput?.value || '').trim()) {
+                        addCustomerValidationError(errors, dueDateDisplay || dueDateInput, 'Due date is required.');
+                    }
+
+                    if (!isEditMode() && normalizePlanCategory(planCategorySelect?.value) === 'postpaid') {
+                        const billDate = formatDateISO(parseDateOnly(billDateInput?.value || ''));
+                        if (billDate && billDate < getMinimumNextBillDateInputValue()) {
+                            addCustomerValidationError(errors, billDateInput, 'Next bill date cannot be earlier than today.');
+                        }
+                    }
+
+                    const referralSourceType = String(referralSourceTypeSelect?.value || '').trim().toLowerCase();
+                    if (referralSourceType === 'customer' && !String(referralCustomerSelect?.value || '').trim()) {
+                        addCustomerValidationError(errors, referralCustomerSelect, 'Select the referral customer.');
+                    }
+                    if (referralSourceType === 'agent' && !String(referralAgentSelect?.value || '').trim()) {
+                        addCustomerValidationError(errors, referralAgentSelect, 'Select the referral agent.');
+                    }
+                    if (
+                        referralSourceType === 'customer'
+                        && String(referralCustomerSelect?.value || '').trim() === String(acctInput?.value || form?.dataset.editingId || '').trim()
+                    ) {
+                        addCustomerValidationError(errors, referralCustomerSelect, 'A customer cannot refer their own account.');
+                    }
+                }
+
+                if (Number(stepNumber) === 3) {
+                    const napId = normalizeNapValue(customerNapIdSelect?.value);
+                    const napPort = parsePositiveInt(customerNapPortSelect?.value);
+                    if (napId && !napPort) {
+                        addCustomerValidationError(errors, customerNapPortSelect, 'Select a NAP port for the chosen NAP pin.');
+                    } else if (!napId && napPort) {
+                        addCustomerValidationError(errors, customerNapIdSelect, 'Select a NAP pin for the chosen port.');
+                    }
+                }
+
+                return errors;
+            }
+
+            function validateCustomerStep(stepNumber, { focus = true } = {}) {
+                clearCustomerValidation();
+                const errors = collectCustomerStepErrors(stepNumber);
+                if (!errors.length) return true;
+                showCustomerValidationErrors(errors, { focus });
+                return false;
+            }
+
+            function validateCustomerForm({ focus = true } = {}) {
+                clearCustomerValidation();
+                const errors = [1, 2, 3].flatMap((step) => collectCustomerStepErrors(step));
+                if (!errors.length) return true;
+                showCustomerValidationErrors(errors, { focus });
+                return false;
+            }
+
+            function syncCustomerStepControls() {
+                const submitting = form?.dataset.submitting === 'true';
+                customerFormSteps.forEach((step) => {
+                    const stepNumber = Number(step.dataset.customerStep);
+                    const isActive = stepNumber === currentCustomerStep;
+                    step.hidden = !isActive;
+                    step.classList.toggle('is-active', isActive);
+                    step.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+                });
+                customerStepButtons.forEach((button) => {
+                    const stepNumber = Number(button.dataset.customerStepTarget);
+                    const item = button.closest('[data-customer-step-state]');
+                    item?.classList.toggle('is-active', stepNumber === currentCustomerStep);
+                    item?.classList.toggle('is-complete', stepNumber < currentCustomerStep);
+                    if (stepNumber === currentCustomerStep) {
+                        button.setAttribute('aria-current', 'step');
+                    } else {
+                        button.removeAttribute('aria-current');
+                    }
+                    button.disabled = submitting;
+                });
+                if (customerStepBackBtn) {
+                    customerStepBackBtn.hidden = currentCustomerStep === 1;
+                    customerStepBackBtn.disabled = submitting;
+                }
+                if (customerStepNextBtn) {
+                    customerStepNextBtn.hidden = currentCustomerStep === 3;
+                    customerStepNextBtn.disabled = submitting || (currentCustomerStep === 1 && accountAllocationLoading);
+                }
+                if (modalSubmitBtn) {
+                    modalSubmitBtn.hidden = currentCustomerStep !== 3;
+                    modalSubmitBtn.disabled = submitting;
+                }
+                if (customerStepCounter) customerStepCounter.textContent = `Step ${currentCustomerStep} of 3`;
+                if (currentCustomerStep === 3) updateCustomerReviewSummary();
+            }
+
+            function setCustomerFormStep(stepNumber, { skipValidation = false } = {}) {
+                const targetStep = Math.max(1, Math.min(3, Number(stepNumber) || 1));
+                if (!skipValidation && targetStep > currentCustomerStep) {
+                    for (let step = currentCustomerStep; step < targetStep; step += 1) {
+                        if (!validateCustomerStep(step)) return false;
+                    }
+                }
+                currentCustomerStep = targetStep;
+                syncCustomerStepControls();
+                const body = form?.querySelector('.customer-form__body');
+                if (body) body.scrollTop = 0;
+                return true;
+            }
+
+            function setAccountAllocationState(state, message = '') {
+                const normalizedState = ['loading', 'ready', 'error'].includes(state) ? state : 'loading';
+                accountAllocationLoading = normalizedState === 'loading';
+                accountAllocationStatus?.classList.toggle('is-ready', normalizedState === 'ready');
+                accountAllocationStatus?.classList.toggle('is-error', normalizedState === 'error');
+                if (accountAllocationMessage) accountAllocationMessage.textContent = message;
+                if (accountAllocationIcon) {
+                    accountAllocationIcon.className = normalizedState === 'loading'
+                        ? 'ti ti-loader-2 ti-spin'
+                        : (normalizedState === 'ready' ? 'ti ti-circle-check' : 'ti ti-alert-circle');
+                }
+                if (retryAccountAllocationBtn) retryAccountAllocationBtn.hidden = normalizedState !== 'error';
+                if (acctInput) {
+                    if (normalizedState === 'loading') {
+                        acctInput.setAttribute('aria-busy', 'true');
+                    } else {
+                        acctInput.removeAttribute('aria-busy');
+                    }
+                }
+                syncCustomerStepControls();
+                updateCustomerReviewSummary();
+            }
+
+            async function loadCustomerAccountPreview() {
+                if (isEditMode()) return String(acctInput?.value || '').trim();
+                const requestId = ++accountAllocationRequestId;
+                if (acctInput) acctInput.value = '';
+                clearCustomerFieldError(acctInput);
+                setAccountAllocationState('loading', 'Preparing account preview...');
+                try {
+                    const response = await fetch('/api/customers/next-account', {
+                        credentials: 'include',
+                        cache: 'no-store'
+                    });
+                    const payload = await response.json().catch(() => null);
+                    if (!response.ok) {
+                        throw new Error(payload?.message || payload?.error || `Account preview failed (${response.status}).`);
+                    }
+                    const accountNumber = String(payload?.accountNumber || '').trim();
+                    if (!/^\d{9}$/.test(accountNumber)) {
+                        throw new Error('The server returned an invalid account preview.');
+                    }
+                    if (requestId !== accountAllocationRequestId || isEditMode()) return '';
+                    if (acctInput) {
+                        acctInput.value = accountNumber;
+                        acctInput.dataset.prefixId = String(payload?.prefixId || '').trim();
+                    }
+                    setAccountAllocationState('ready', 'Preview ready. The server confirms the final account when saved.');
+                    populateReferralCustomerOptions('', accountNumber);
+                    if (pppoeModeSelect && pppoeModeSelect.value === 'auto') applyPppoeMode('auto');
+                    return accountNumber;
+                } catch (error) {
+                    if (requestId !== accountAllocationRequestId || isEditMode()) return '';
+                    if (acctInput) {
+                        acctInput.value = '';
+                        delete acctInput.dataset.prefixId;
+                    }
+                    setAccountAllocationState('error', error?.message || 'Unable to load an account preview.');
+                    return '';
+                }
+            }
+
+            function getProratedFirstBillDetails() {
+                const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || '')) || getTodayDateInputValue();
+                const periodEndValue = getMonthEndDateInputValue(activationValue);
+                const monthStartValue = getMonthStartDateInputValue(activationValue);
+                const activeDays = getInclusiveDayCount(activationValue, periodEndValue);
+                const daysInMonth = getInclusiveDayCount(monthStartValue, periodEndValue);
+                const selectedPlanAmount = getSelectedPlanAmount();
+                const amount = daysInMonth > 0 && selectedPlanAmount > 0
+                    ? roundWholePeso((selectedPlanAmount / daysInMonth) * activeDays)
+                    : 0;
+                return { activationValue, periodEndValue, activeDays, daysInMonth, amount };
+            }
+
+            function setCustomerReviewField(name, value) {
+                const field = customerReviewSummary?.querySelector(`[data-review-field="${name}"]`);
+                if (field) field.textContent = String(value || '').trim() || 'Not set';
+            }
+
+            function updateCustomerReviewSummary() {
+                if (!customerReviewSummary) return;
+                const name = [form?.elements?.firstName?.value, form?.elements?.lastName?.value]
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                    .join(' ');
+                const mobile = normalizePhilippineMobile(contactNumberInput?.value || '');
+                const planName = String(planSelect?.value || '').trim();
+                const category = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
+                const planAmount = getSelectedPlanAmount();
+                const planText = planName
+                    ? `${planName} · ${category === 'prepaid' ? 'Prepaid' : 'Postpaid'}${planAmount > 0 ? ` · ${formatPeso(planAmount)}` : ''}`
+                    : 'Not selected';
+                const status = normalizeCustomerStatusValue(statusSelect?.value || 'inactive', 'inactive');
+                const addPending = !isEditMode() && status !== 'active';
+                const statusText = addPending
+                    ? 'Pending / Inactive — activate after service setup'
+                    : (status === 'disabled' ? 'Disabled' : (status === 'inactive' ? 'Inactive' : 'Active'));
+                const statusBadge = customerReviewSummary.querySelector('[data-review-status-badge]');
+                if (statusBadge) {
+                    statusBadge.textContent = addPending ? 'Pending / Inactive' : statusText;
+                    statusBadge.className = `badge ${status === 'active' ? 'bg-green-lt text-green' : (status === 'disabled' ? 'bg-red-lt text-red' : 'bg-yellow-lt text-yellow')}`;
+                    statusBadge.dataset.reviewStatusBadge = '';
+                }
+
+                const openingAmounts = getOpeningAmounts();
+                let firstAmountText = 'Not available';
+                if (!isEditMode() && getCustomerStartType() === 'existing') {
+                    firstAmountText = openingAmounts.previousBalance > 0
+                        ? `${formatPeso(openingAmounts.previousBalance)} opening debit`
+                        : (openingAmounts.advancePayment > 0
+                            ? `${formatPeso(openingAmounts.advancePayment)} opening credit`
+                            : `${formatPeso(0)} opening balance`);
+                } else if (!isEditMode()) {
+                    const proration = getProratedFirstBillDetails();
+                    firstAmountText = `${formatPeso(proration.amount)} prorated · ${formatPeriodDate(proration.activationValue)} to ${formatPeriodDate(proration.periodEndValue)}`;
+                } else {
+                    firstAmountText = 'Existing billing record preserved';
+                }
+
+                const selectedNap = getNapCatalogEntry(customerNapIdSelect?.value || '');
+                const selectedNapLabel = selectedNap
+                    ? formatNapSelectLabel(selectedNap)
+                    : String(customerNapIdSelect?.selectedOptions?.[0]?.textContent || '').trim();
+                const selectedNapPort = parsePositiveInt(customerNapPortSelect?.value);
+                const napText = normalizeNapValue(customerNapIdSelect?.value)
+                    ? `${selectedNapLabel || 'Selected NAP'}${selectedNapPort ? ` · Port ${selectedNapPort}` : ' · Port not selected'}`
+                    : 'No NAP assignment';
+
+                setCustomerReviewField('account', String(acctInput?.value || '').trim() || (accountAllocationLoading ? 'Preparing preview...' : 'Preview unavailable'));
+                setCustomerReviewField('customer', name ? `${name}${mobile ? ` · ${mobile}` : ''}` : 'Not entered');
+                setCustomerReviewField('plan', planText);
+                setCustomerReviewField('activationDate', formatPeriodDate(activationDateInput?.value || '') || 'Not set');
+                setCustomerReviewField('billDate', formatPeriodDate(billDateInput?.value || '') || 'Not set');
+                setCustomerReviewField('dueDate', formatPeriodDate(dueDateInput?.value || '') || 'Not set');
+                setCustomerReviewField('firstAmount', firstAmountText);
+                setCustomerReviewField('status', statusText);
+                setCustomerReviewField('nap', napText);
+            }
+
+            function getCustomerServerField(name = '') {
+                const normalizedName = String(name || '').trim();
+                const aliases = {
+                    mobile: 'contactNumber',
+                    mobileRaw: 'contactNumber',
+                    contact: 'contactNumber',
+                    planId: 'plan',
+                    planName: 'plan',
+                    dueDate: 'dueDateDisplay',
+                    customerStartType: 'customerStartType',
+                    subscriberStartType: 'customerStartType',
+                    openingPreviousBalance: 'openingPreviousBalance',
+                    openingAdvancePayment: 'openingAdvancePayment',
+                    napId: 'napId',
+                    napPort: 'napPort'
+                };
+                const fieldName = aliases[normalizedName] || normalizedName;
+                const field = form?.elements?.[fieldName];
+                if (field && !field.tagName && typeof field.length === 'number') return field[0] || null;
+                return field || null;
+            }
+
+            function getCustomerServerValidationErrors(payload = null) {
+                const errors = [];
+                const fieldErrors = payload?.fieldErrors;
+                if (fieldErrors && typeof fieldErrors === 'object' && !Array.isArray(fieldErrors)) {
+                    Object.entries(fieldErrors).forEach(([name, message]) => {
+                        const field = getCustomerServerField(name);
+                        if (field && message) errors.push({ field, message: String(message), step: getCustomerFieldStep(field) });
+                    });
+                }
+                if (Array.isArray(payload?.errors)) {
+                    payload.errors.forEach((entry) => {
+                        const field = getCustomerServerField(entry?.field || entry?.path || entry?.name);
+                        const message = entry?.message || entry?.error;
+                        if (field && message) errors.push({ field, message: String(message), step: getCustomerFieldStep(field) });
+                    });
+                }
+                if (!errors.length) {
+                    const message = String(payload?.message || payload?.error || '').trim();
+                    const messageFieldRules = [
+                        [/mobile|contact number/i, contactNumberInput],
+                        [/email/i, form?.elements?.email],
+                        [/portal username|login username|username/i, loginUserInput || acctInput],
+                        [/first name/i, form?.elements?.firstName],
+                        [/last name/i, form?.elements?.lastName],
+                        [/same name.*service address|service address/i, form?.elements?.street || customerProvinceSelect],
+                        [/province/i, customerProvinceSelect],
+                        [/municipality|city/i, customerMunicipalitySelect],
+                        [/barangay/i, customerBarangaySelect],
+                        [/plan/i, planSelect],
+                        [/previous balance|opening amount/i, openingPreviousBalanceInput],
+                        [/advance payment/i, openingAdvancePaymentInput],
+                        [/NAP pin/i, customerNapIdSelect],
+                        [/NAP port/i, customerNapPortSelect],
+                        [/coordinate|map pin/i, mapPinInput]
+                    ];
+                    const matchedRule = messageFieldRules.find(([pattern, field]) => field && pattern.test(message));
+                    if (message && matchedRule?.[1]) {
+                        errors.push({ field: matchedRule[1], message, step: getCustomerFieldStep(matchedRule[1]) });
+                    }
+                }
+                return errors;
+            }
+
+            function openPortalSetupDetails(accountNumber, setup = {}, options = {}) {
+                const finalAccountNumber = String(accountNumber || '').trim();
+                const username = String(setup?.username || '').trim();
+                const temporaryPassword = String(setup?.temporaryPassword || '').trim();
+                if (!portalSetupModal || !finalAccountNumber || !username || !temporaryPassword) return false;
+                portalSetupDetails = { accountNumber: finalAccountNumber, username, temporaryPassword };
+                portalSetupReturnUrl = String(options?.returnUrl || '').trim();
+                portalSetupModal.querySelectorAll('[data-portal-setup]').forEach((field) => {
+                    const key = String(field.dataset.portalSetup || '').trim();
+                    field.textContent = portalSetupDetails[key] || '--';
+                });
+                closeModal({ notifyParent: false, restoreFocus: false });
+                portalSetupModal.classList.add('show');
+                portalSetupModal.setAttribute('aria-hidden', 'false');
+                refreshModalBackdrop();
+                setTimeout(() => copyPortalSetupBtn?.focus(), 0);
+                return true;
+            }
+
+            function closePortalSetupDetails() {
+                if (!portalSetupModal) return;
+                const returnUrl = portalSetupReturnUrl;
+                portalSetupModal.classList.remove('show');
+                portalSetupModal.setAttribute('aria-hidden', 'true');
+                portalSetupModal.querySelectorAll('[data-portal-setup]').forEach((field) => {
+                    field.textContent = '--';
+                });
+                portalSetupDetails = null;
+                portalSetupReturnUrl = '';
+                refreshModalBackdrop();
+                if (returnUrl) {
+                    window.location.href = returnUrl;
+                    return;
+                }
+                void loadCustomers();
+                openBtn?.focus();
+            }
+
+            async function copyPortalSetupValue(fieldName = '') {
+                const normalizedField = String(fieldName || '').trim();
+                const value = portalSetupDetails?.[normalizedField] || '';
+                const copied = await copyTextToClipboard(value);
+                showToast(copied ? 'Portal setup detail copied.' : 'Unable to copy portal setup detail.');
+            }
+
+            async function copyAllPortalSetupDetails() {
+                if (!portalSetupDetails) return;
+                const text = [
+                    `Account: ${portalSetupDetails.accountNumber}`,
+                    `Username: ${portalSetupDetails.username}`,
+                    `Temporary password: ${portalSetupDetails.temporaryPassword}`,
+                    'Change this temporary password after the first sign-in.'
+                ].join('\n');
+                const copied = await copyTextToClipboard(text);
+                showToast(copied ? 'Portal setup details copied.' : 'Unable to copy portal setup details.');
+            }
             const getMinimumNextBillDateInputValue = () => getTodayDateInputValue();
 
             let allCustomers = []; // In-memory store for customers
@@ -3085,6 +3841,16 @@
             function applyServiceStatus() {
                 if (!statusSelect) return;
                 const normalizedCurrentStatus = normalizeCustomerStatusValue(statusSelect.value);
+                if (!isEditMode()) {
+                    statusSelect.value = normalizedCurrentStatus === 'active' ? 'active' : 'inactive';
+                    if (statusSelect.value === 'inactive') {
+                        statusSelect.dataset.autoStatus = 'true';
+                    } else {
+                        delete statusSelect.dataset.autoStatus;
+                    }
+                    syncStatusSwitchUi();
+                    return;
+                }
                 if (normalizedCurrentStatus === 'disabled' && statusSelect.dataset.autoStatus !== 'true') {
                     statusSelect.value = 'disabled';
                     syncStatusSwitchUi();
@@ -4436,7 +5202,11 @@
                     setViewValue('opticalInfo', viewState.opticalInfo);
                     setViewValue('mikrotikStatus', viewState.mikrotikStatus);
                     setViewValue('loginUsername', viewState.loginUsername);
-                    setViewValue('loginPassword', viewState.loginPassword);
+                    const loginPasswordSet = customerData?.loginPasswordSet ?? viewState?.loginPasswordSet;
+                    setViewValue(
+                        'loginPasswordStatus',
+                        loginPasswordSet === true ? 'Password configured' : (loginPasswordSet === false ? 'Not set' : 'Protected')
+                    );
                     setViewValue('remarks', viewState.remarks);
                     setViewValue('currentBalance', viewState.balanceDisplay);
                     updateViewPppoeLive(customerData, viewState);
@@ -4606,12 +5376,15 @@
                 closeSecondaryCustomerModals();
                 setCustomerSubmitState(false);
                 form.reset();
+                clearCustomerValidation();
+                setCustomerFormStep(1, { skipValidation: true });
                 if (mapPinSearchInput) mapPinSearchInput.value = '';
                 clearMapPinPickerSelection({ preserveView: true });
 
                 const accountNumber = String(customerData?.accountNumber || customerData?.id || '').trim();
                 setEditMode(accountNumber);
                 if (acctInput) acctInput.value = accountNumber;
+                setAccountAllocationState('ready', 'Existing account number.');
                 setReferralFieldsFromCustomer(customerData);
                 void loadReferralOptions({ quiet: true });
 
@@ -4721,7 +5494,7 @@
                     loginUserInput.value = customerData?.loginUsername || fallbackName || '';
                 }
                 if (loginPassInput) {
-                    loginPassInput.value = customerData?.loginPassword || '';
+                    loginPassInput.value = '';
                 }
                 setLoginPasswordVisibility(false);
 
@@ -4766,6 +5539,7 @@
 
                 modalTitle.textContent = 'Edit customer';
                 modalSubmitBtn.innerHTML = '<i class="ti ti-device-floppy" aria-hidden="true"></i> Save Changes';
+                syncCustomerStepControls();
 
                 modal.classList.add('show');
                 modal.setAttribute('aria-hidden', 'false');
@@ -4893,6 +5667,8 @@
                 setCustomerSubmitState(false);
                 clearEditMode();
                 form.reset();
+                clearCustomerValidation();
+                setCustomerFormStep(1, { skipValidation: true });
                 resetReferralFields();
                 void loadReferralOptions({ quiet: true });
                 if (planSelect) {
@@ -4909,7 +5685,7 @@
                 if (planSelect) {
                     planSelect.value = '';
                 }
-                form.elements.status.value = 'active';
+                form.elements.status.value = 'inactive';
                 if (statusSelect) statusSelect.dataset.autoStatus = 'true';
                 const defaultActivationDate = getTodayDateInputValue();
                 const defaultCycleDate = getSuggestedNextBillDateInputValue();
@@ -4945,13 +5721,8 @@
                 setLoginPasswordVisibility(false);
                 modalTitle.textContent = 'Add customer';
                 modalSubmitBtn.innerHTML = '<i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer';
-                fetch('/api/customers/next-account')
-                    .then(res => res.json())
-                    .then(data => {
-                        if (acctInput && data.accountNumber) acctInput.value = data.accountNumber;
-                        populateReferralCustomerOptions('', String(acctInput?.value || '').trim());
-                        if (pppoeModeSelect && pppoeModeSelect.value === 'auto') applyPppoeMode('auto');
-                    });
+                if (acctInput) acctInput.value = '';
+                setAccountAllocationState('loading', 'Preparing account preview...');
                 if (dueOffsetInput) dueOffsetInput.value = DEFAULT_DUE_OFFSET;
                 syncBillDateInputMin();
                 recomputeDueDate();
@@ -4960,6 +5731,10 @@
                 modal.classList.add('show');
                 modal.setAttribute('aria-hidden', 'false');
                 refreshModalBackdrop();
+                syncStatusSwitchUi();
+                syncCustomerStepControls();
+                updateCustomerReviewSummary();
+                void loadCustomerAccountPreview();
                 // Set focus to the first input field
                 form.elements.firstName.focus();
             }
@@ -4968,7 +5743,10 @@
             function closeModal(options = {}) {
                 const notifyParent = options?.notifyParent !== false;
                 const restoreFocus = options?.restoreFocus !== false;
+                accountAllocationRequestId += 1;
+                accountAllocationLoading = false;
                 setCustomerSubmitState(false);
+                clearCustomerValidation();
                 clearEditMode();
                 addFlowReturnTo = '';
                 beginCustomerAddressSession();
@@ -5393,60 +6171,6 @@
                 }
             }
 
-            async function postOpeningPaymentEntries(accountNumber, amounts = {}, effectiveDate = '') {
-                const normalizedAccount = String(accountNumber || '').trim();
-                if (!normalizedAccount) return [];
-                const previousBalance = parseOpeningAmount(amounts.previousBalance);
-                const advancePayment = parseOpeningAmount(amounts.advancePayment);
-                if (previousBalance <= 0 && advancePayment <= 0) return [];
-
-                const entryDate = formatDateISO(parseDateOnly(effectiveDate || '')) || getTodayDateInputValue();
-                const referenceStamp = Date.now().toString(36).slice(-10).toUpperCase();
-                const accountReference = normalizedAccount.replace(/[^A-Za-z0-9]/g, '').slice(-8).toUpperCase() || 'ACCT';
-                const entries = [];
-                if (previousBalance > 0) {
-                    entries.push({
-                        kind: 'charge',
-                        type: 'charge',
-                        direction: 'debit',
-                        amount: previousBalance,
-                        date: entryDate,
-                        recordedAt: entryDate,
-                        reference: `OBB-${accountReference}-${referenceStamp}`,
-                        description: 'Previous Balance Bill - Current Bill'
-                    });
-                }
-                if (advancePayment > 0) {
-                    entries.push({
-                        kind: 'payment',
-                        type: 'payment',
-                        direction: 'credit',
-                        amount: advancePayment,
-                        date: entryDate,
-                        recordedAt: entryDate,
-                        reference: `OBA-${accountReference}-${referenceStamp}`,
-                        description: 'Opening advance payment for current month',
-                        paymentMethod: 'Opening Balance',
-                        skipPrepaidAutoCharge: true
-                    });
-                }
-
-                const savedEntries = [];
-                for (const entry of entries) {
-                    const response = await fetch(`/api/payments/${encodeURIComponent(normalizedAccount)}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(entry)
-                    });
-                    const responseBody = await response.json().catch(() => null);
-                    if (!response.ok) {
-                        throw new Error(responseBody?.message || responseBody?.error || `opening payment entry failed (${response.status})`);
-                    }
-                    savedEntries.push(responseBody);
-                }
-                return savedEntries;
-            }
-
             const focusEmbeddedField = (fieldName = 'firstName') => {
                 const targetFieldName = String(fieldName || '').trim() || 'firstName';
                 const targetField = form?.elements?.[targetFieldName];
@@ -5629,6 +6353,30 @@
                 addFlowReturnTo = '';
                 openModal();
             });
+            customerWizardProgress?.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-customer-step-target]');
+                if (!button || button.disabled) return;
+                setCustomerFormStep(Number(button.dataset.customerStepTarget));
+            });
+            customerStepBackBtn?.addEventListener('click', () => {
+                setCustomerFormStep(currentCustomerStep - 1, { skipValidation: true });
+            });
+            customerStepNextBtn?.addEventListener('click', () => {
+                setCustomerFormStep(currentCustomerStep + 1);
+            });
+            retryAccountAllocationBtn?.addEventListener('click', () => {
+                void loadCustomerAccountPreview();
+            });
+            closePortalSetupBtn?.addEventListener('click', closePortalSetupDetails);
+            donePortalSetupBtn?.addEventListener('click', closePortalSetupDetails);
+            copyPortalSetupBtn?.addEventListener('click', () => {
+                void copyAllPortalSetupDetails();
+            });
+            portalSetupModal?.addEventListener('click', (event) => {
+                const copyButton = event.target.closest('[data-copy-portal-setup]');
+                if (!copyButton) return;
+                void copyPortalSetupValue(copyButton.dataset.copyPortalSetup);
+            });
             if (importClientsBtn && importClientsFileInput) {
                 importClientsBtn.addEventListener('click', () => {
                     importClientsFileInput.click();
@@ -5773,7 +6521,6 @@
                     if (fieldName === 'pppoeUsername') return 'PPPoE username';
                     if (fieldName === 'pppoePassword') return 'PPPoE password';
                     if (fieldName === 'pppoeAssignedIp') return 'Assigned IP';
-                    if (fieldName === 'loginPassword') return 'Portal password';
                     if (fieldName === 'loginUsername') return 'Portal username';
                     return 'Value';
                 };
@@ -6034,6 +6781,17 @@
             if (statusToggle) {
                 statusToggle.addEventListener('change', () => {
                     if (!statusSelect) return;
+                    if (!isEditMode()) {
+                        statusSelect.value = statusToggle.checked ? 'active' : 'inactive';
+                        if (statusToggle.checked) {
+                            delete statusSelect.dataset.autoStatus;
+                        } else {
+                            statusSelect.dataset.autoStatus = 'true';
+                        }
+                        syncStatusSwitchUi();
+                        updateCustomerReviewSummary();
+                        return;
+                    }
                     if (statusToggle.checked) {
                         statusSelect.value = 'active';
                         delete statusSelect.dataset.autoStatus;
@@ -6136,6 +6894,18 @@
                     applyServiceStatus();
                 });
             }
+            const handleCustomerFormFieldUpdate = (event) => {
+                const field = event.target?.closest?.('input, select, textarea');
+                if (!field || !form.contains(field)) return;
+                clearCustomerFieldError(field);
+                if (!form.querySelector('.is-invalid')) {
+                    if (customerFormErrorList) customerFormErrorList.innerHTML = '';
+                    if (customerFormErrorSummary) customerFormErrorSummary.hidden = true;
+                }
+                updateCustomerReviewSummary();
+            };
+            form.addEventListener('input', handleCustomerFormFieldUpdate);
+            form.addEventListener('change', handleCustomerFormFieldUpdate);
 
             // Close modal on outside click
             window.addEventListener('click', function (event) {
@@ -6638,6 +7408,14 @@
                 event.preventDefault();
                 event.stopImmediatePropagation();
                 if (form?.dataset.submitting === 'true') return;
+                if (currentCustomerStep < 3) {
+                    setCustomerFormStep(currentCustomerStep + 1);
+                    return;
+                }
+                recomputeDueDate();
+                applyServiceStatus();
+                updateCustomerReviewSummary();
+                if (!validateCustomerForm()) return;
                 setCustomerSubmitState(true);
                 const activePlanCategory = normalizePlanCategory(planCategorySelect?.value || 'postpaid');
                 if (!enforceNonPastBillDateSelection()) {
@@ -6711,8 +7489,7 @@
                         return;
                     }
                 }
-                const fullNameDefault = `${(formData.get('firstName') || '').trim()} ${(formData.get('lastName') || '').trim()}`.trim();
-                const loginUsername = (formData.get('loginUsername') || '').trim() || fullNameDefault;
+                const loginUsername = String(formData.get('loginUsername') || '').trim();
                 const rawLoginPassword = (formData.get('loginPassword') || '').trim();
                 const opticalInfo = String(formData.get('opticalInfo') || '').trim();
                 const creditRaw = Number(formData.get('creditLimit'));
@@ -6722,20 +7499,6 @@
                 const openingAmounts = customerStartType === 'existing'
                     ? getOpeningAmounts()
                     : { previousBalance: 0, advancePayment: 0 };
-                if (!isEditing && customerStartType === 'existing') {
-                    if (openingAmounts.previousBalance > 0 && openingAmounts.advancePayment > 0) {
-                        showToast('Use only one opening amount: previous balance or advance payment.');
-                        setCustomerSubmitState(false);
-                        return;
-                    }
-                    if (openingAmounts.previousBalance <= 0 && openingAmounts.advancePayment <= 0) {
-                        showToast('Enter previous balance or advance payment for the existing customer.');
-                        openingPreviousBalanceInput?.focus();
-                        setCustomerSubmitState(false);
-                        return;
-                    }
-                }
-
                 // Ensure due date computed before payload
                 recomputeDueDate();
                 applyServiceStatus();
@@ -6829,6 +7592,12 @@
                 if (!isEditing) {
                     payload.customerStartType = customerStartType;
                     payload.subscriberStartType = customerStartType;
+                    payload.openingPreviousBalance = customerStartType === 'existing'
+                        ? openingAmounts.previousBalance
+                        : 0;
+                    payload.openingAdvancePayment = customerStartType === 'existing'
+                        ? openingAmounts.advancePayment
+                        : 0;
                 }
                 if (planCategory === 'prepaid') {
                     payload.billDate = formData.get('billDate');
@@ -6917,31 +7686,27 @@
                     const responseBody = await response.json().catch(() => null);
 
                     if (!response.ok) {
-                        throw new Error(responseBody?.message || responseBody?.error || `Server responded with ${response.status}`);
+                        const validationErrors = getCustomerServerValidationErrors(responseBody);
+                        const requestError = new Error(responseBody?.message || responseBody?.error || `Server responded with ${response.status}`);
+                        requestError.customerValidationErrors = validationErrors;
+                        throw requestError;
                     }
-                    let openingEntryWarning = '';
-                    let openingEntriesSaved = 0;
                     const createdAccountNumber = String(
-                        responseBody?.accountNumber || payload.accountNumber || customerId || ''
+                        responseBody?.accountNumber || ''
                     ).trim();
-                    if (!isEditing && customerStartType === 'existing' && createdAccountNumber) {
-                        try {
-                            const openingEntries = await postOpeningPaymentEntries(
-                                createdAccountNumber,
-                                openingAmounts,
-                                payload.activationDate || payload.billDate || getTodayDateInputValue()
-                            );
-                            openingEntriesSaved = openingEntries.length;
-                        } catch (openingError) {
-                            openingEntryWarning = openingError?.message || 'opening payment entry failed';
-                        }
+                    const portalSetup = responseBody?.portalSetup || null;
+                    const customerResponse = responseBody && typeof responseBody === 'object'
+                        ? { ...responseBody }
+                        : null;
+                    if (customerResponse) delete customerResponse.portalSetup;
+                    if (!isEditing && !createdAccountNumber) {
+                        throw new Error('Customer was saved, but the server did not confirm the final account number.');
                     }
                     if (!isEditing && embeddedContext === 'payments') {
                         notifyEmbeddedParent('created', {
                             accountNumber: createdAccountNumber,
-                            customer: responseBody || null,
-                            openingEntryWarning,
-                            openingEntriesSaved
+                            customer: customerResponse,
+                            portalSetup
                         });
                         return;
                     }
@@ -6956,25 +7721,29 @@
                         return;
                     }
                     if (!isEditing && addFlowReturnTo === 'payments') {
-                        const createdAccountNumber = String(payload.accountNumber || customerId || '').trim();
+                        const paymentsReturnUrl = `/payments?payNow=${encodeURIComponent(createdAccountNumber)}`;
                         addFlowReturnTo = '';
-                        window.location.href = createdAccountNumber
-                            ? `/payments?payNow=${encodeURIComponent(createdAccountNumber)}`
-                            : '/payments';
+                        if (openPortalSetupDetails(createdAccountNumber, portalSetup, { returnUrl: paymentsReturnUrl })) {
+                            return;
+                        }
+                        window.location.href = paymentsReturnUrl;
                         return;
                     }
                     if (responseBody?.pppoeProfileSyncWarning) {
                         showToast(`Customer saved, but PPPoE speed was not updated: ${responseBody.pppoeProfileSyncWarning}`, 'warning');
-                    } else if (openingEntryWarning) {
-                        showToast(`Customer added, but opening amount was not recorded: ${openingEntryWarning}`);
-                    } else if (openingEntriesSaved > 0) {
-                        showToast('Existing customer added with opening amount.');
                     } else {
-                        showToast(isEditing ? 'Customer updated successfully!' : 'Customer added successfully!');
+                        showToast(isEditing ? 'Customer updated successfully!' : `Customer ${createdAccountNumber} added successfully!`);
+                    }
+                    if (!isEditing && openPortalSetupDetails(createdAccountNumber, portalSetup)) {
+                        return;
                     }
                     closeModal();
                     loadCustomers(); // Reload data from server to show changes
                 } catch (error) {
+                    if (Array.isArray(error?.customerValidationErrors) && error.customerValidationErrors.length) {
+                        showCustomerValidationErrors(error.customerValidationErrors);
+                        return;
+                    }
                     showToast(`Error: Could not save customer. ${error.message}`);
                 } finally {
                     setCustomerSubmitState(false);

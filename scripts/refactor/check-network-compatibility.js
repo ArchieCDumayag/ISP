@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
@@ -18,6 +19,7 @@ const backendPairs = [
   ['mikrotik-endpoint.js', 'mikrotik-endpoint'],
   ['mikrotik.js', 'mikrotik'],
   ['pon-management-api.js', 'pon-management-api'],
+  ['pon-serviceability.js', 'pon-serviceability'],
   ['pppoe-account-utils.js', 'pppoe-account-utils']
 ];
 
@@ -65,6 +67,14 @@ const coverageMapSource = fs.readFileSync(path.join(webRoot, 'coverage-map.html'
 const publicCoverageMapSource = fs.readFileSync(path.join(webRoot, 'coverage-map-app.html'), 'utf8');
 const ponManagementHtmlSource = fs.readFileSync(path.join(webRoot, 'pon-management.html'), 'utf8');
 const ponManagementJsSource = fs.readFileSync(path.join(webRoot, 'js', 'pon-management.js'), 'utf8');
+const ponManagementBackendSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/network/backend/pon-management-api.js'),
+  'utf8'
+);
+const ponServiceabilityBackendSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/network/backend/pon-serviceability.js'),
+  'utf8'
+);
 const leafletPopupStyles = fs.readFileSync(path.join(webRoot, 'css', 'leaflet-popups-tabler.css'), 'utf8');
 const pppoeHtmlSource = fs.readFileSync(path.join(webRoot, 'pppoe.html'), 'utf8');
 const pppoeJsSource = fs.readFileSync(path.join(webRoot, 'js', 'pppoe.js'), 'utf8');
@@ -80,7 +90,29 @@ const pppoeTablerStyles = fs.readFileSync(path.join(webRoot, 'css', 'pppoe-table
   assert(source.includes('const statusBadgeClass ='));
 });
 assert(ponManagementHtmlSource.includes('css/leaflet-popups-tabler.css?v=1.1'));
-assert(ponManagementHtmlSource.includes('js/pon-management.js?v=4.6'));
+assert(ponManagementHtmlSource.includes('js/pon-management.js?v=4.7'));
+assert(ponManagementJsSource.includes('expectedRevision: syncState.revision'));
+assert(ponManagementJsSource.includes('recoverFromPonRevisionConflict'));
+assert(ponManagementJsSource.includes('applyBackendRevision(result)'));
+assert(ponManagementBackendSource.includes("SELECT id FROM branches WHERE id = ? FOR UPDATE"));
+assert(ponManagementBackendSource.includes('loadRelationalRevisionSnapshot(connection, branchId, { lockRows: true })'));
+assert(ponManagementBackendSource.includes('assertExpectedPonRevision(payload?.expectedRevision, currentRevision)'));
+const mysqlBranchLockIndex = ponManagementBackendSource.indexOf(
+  "await connection.query('SELECT id FROM branches WHERE id = ? FOR UPDATE', [branchId])"
+);
+const mysqlRevisionSnapshotIndex = ponManagementBackendSource.indexOf(
+  'const currentState = await loadRelationalRevisionSnapshot(connection, branchId, { lockRows: true })'
+);
+const mysqlRevisionCompareIndex = ponManagementBackendSource.indexOf(
+  'assertExpectedPonRevision(payload?.expectedRevision, currentRevision)',
+  mysqlRevisionSnapshotIndex
+);
+assert(mysqlBranchLockIndex >= 0 && mysqlBranchLockIndex < mysqlRevisionSnapshotIndex);
+assert(mysqlRevisionSnapshotIndex < mysqlRevisionCompareIndex);
+assert.strictEqual(
+  (ponServiceabilityBackendSource.match(/lockRelationalPonBranch\(connection, input\.branchId\)/g) || []).length,
+  3
+);
 assert(ponManagementJsSource.includes("className: 'network-map-popup pon-reference-popup'"));
 assert(ponManagementJsSource.includes('class="card map-popup-card"'));
 [
@@ -211,5 +243,26 @@ assert.strictEqual(client.isRetryableMikrotikError({ code: 'ECONNREFUSED' }), tr
 const pon = backend.load('ponManagement');
 assert.strictEqual(typeof pon.loadPonStateForBranch, 'function');
 assert.strictEqual(typeof pon.savePonStateForBranch, 'function');
+assert.strictEqual(typeof pon.createPonStateRevision, 'function');
+assert.strictEqual(typeof pon.assertExpectedPonRevision, 'function');
+assert.strictEqual(typeof pon.loadRelationalRevisionSnapshot, 'function');
+const ponServiceability = backend.load('ponServiceability');
+assert.strictEqual(typeof ponServiceability.findNearbyPonNaps, 'function');
+assert.strictEqual(typeof ponServiceability.reservePonPort, 'function');
+assert.strictEqual(typeof ponServiceability.releasePonPortReservation, 'function');
+assert.strictEqual(typeof ponServiceability.finalizePonAssignment, 'function');
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/network/tests/pon-serviceability.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/network/tests/pon-state-revision.test.js')
+], { stdio: 'inherit' });
+const schemaSource = fs.readFileSync(path.join(projectRoot, 'scripts/schema.sql'), 'utf8');
+assert(schemaSource.includes('pon_port_names_json LONGTEXT'));
+assert(schemaSource.includes('CREATE TABLE IF NOT EXISTS pon_port_reservations'));
+assert(schemaSource.includes('uniq_pon_reservation_active_port'));
+const migrationSource = fs.readFileSync(path.join(projectRoot, 'scripts/migrate-json-to-schema.js'), 'utf8');
+assert(migrationSource.includes('async function ensurePonPortNamesColumn()'));
+assert(migrationSource.includes('await ensurePonPortNamesColumn();'));
 console.log('PASS endpoint, PPPoE, audit, client-error, and PON helper contracts');
 console.log('NETWORK COMPATIBILITY PASSED');

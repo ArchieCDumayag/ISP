@@ -1,6 +1,6 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-08-16
+Last reviewed: 2026-08-17
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -8,8 +8,10 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Create, view, update, search, import, archive, restore, and delete customer records.
 - Review CLIENTS LIST import warnings in an editable modal and retry only corrected skipped rows without re-importing successful records.
 - Manage account numbers, identity/contact details, service addresses, coordinates, plan/service metadata, PPPoE linkage, status, and billing dates.
+- Guide Admin customer onboarding through Customer, Billing, and Network/Review steps with server-confirmed account allocation, duplicate-safe identity checks, optional NAP assignment, migrated opening amounts, and one-time portal setup credentials.
 - Normalize and validate optional decimal, Google Maps URL, or DMS customer Map Pins on browser and backend create/update paths so downstream Technician and Network maps receive a valid decimal latitude/longitude pair or no coordinate.
 - Accept public applications and place them into the customer draft review workflow.
+- Accept technician-created client drafts with validated GPS metadata, reject branch-local customer/pending-draft duplicates, and replay a lost-response retry by stable `clientEventId` without creating another client. Event and duplicate searches paginate the full branch dataset, and replay fingerprints cover the material customer, plan, billing, GPS, credential, and PPPoE fields.
 - Maintain coverage areas and public Philippine address lookup flows.
 - Create, edit, approve, cancel, and track customer/agent referrals through a centralized audited registry.
 - Provide customer-session-scoped GCash proof instructions, exact current balance, local-OCR-first screenshot analysis with an optional configured Vision AI fallback, imported-history matching, submission, and review-history contracts for the Customer App.
@@ -20,6 +22,9 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - `backend/customers.js`: `/api/customers`, customer sessions/helpers, record lifecycle, import, archive orchestration, and cross-domain enrichment.
 - `backend/customers.js` also owns customer-session-authenticated `GET /api/customers/payments/proof/context`, `POST /api/customers/payments/proof/analyze`, and `POST /api/customers/payments/proof`; account identity and amount due are derived server-side from the logged-in customer. These routes are always available and are no longer controlled by deployment feature settings. Analyze compares extracted fields with the invoice, merchant, and imported official history without changing payment state. Final submission independently analyzes the image and always stays Pending Review.
 - `backend/customer-draft-submissions.js` and `backend/customer-draft-submissions-store.js`: Admin and Technician draft workflows.
+- Technician draft input keeps paired nonblank decimal latitude/longitude, canonical `mapPin`, optional GPS accuracy/capture time/source, and a device `clientEventId`. Duplicate checks compare normalized name plus mobile or location against canonical customers and every pending draft; create performs that check under the branch draft lock and returns the original pending/processed row for an identical event replay.
+- JSON approval, rejection, deletion, and technician draft creation share the whole draft-store mutation lock plus branch sequencing, including coordination with Technician completion writes. MySQL decisions claim the pending row transactionally before status changes. Rejection removes only its linked PON assignment after winning the state transition; deletion performs its existing PON/customer/local-PPPoE cleanup after winning deletion, so a stale Admin action cannot remove resources from an approved client.
+- Admin approval preserves the authenticated technician's structured `installationCompletion` evidence and ignores form attempts to replace it; the approved draft retains ONU/MAC/signal/material and PON-assignment audit data.
 - `backend/customer-archive-store.js`: archive retention, restore, and permanent deletion persistence.
 - `backend/customer-full-json-import.js`: storage-aware merge/persistence for full customer exports when JSON storage is selected.
 - `backend/api_coverage.js`: authenticated `/api/coverage` CRUD and reusable coverage reads.
@@ -42,6 +47,8 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/css/
 
 Customers uses native Tabler structure for its compact header, small Import/Export/Add controls, four-item filtered summary strip, search/filter controls, fitted eight-column desktop table, pagination, modal form controls, and every row/dialog action. All buttons use Tabler `btn-sm`; desktop actions use compact icon buttons and the table becomes responsive customer cards on narrow screens. Only customer-specific layout additions for the summary, filters, table cards, maps, and dialogs remain in `css/customers-tabler.css`. The existing row/detail-modal workflow remains available through row selection and the explicit View action.
 
+Add Customer is a three-step guided modal with inline validation, a final review, account-preview loading/retry state, Pending/Inactive as the default, and explicit optional activation. The browser submits customer, NAP, and migrated Previous Balance/Advance data once, trusts the account returned by `POST /api/customers`, and shows server-generated temporary portal credentials only in a dismissible one-time setup dialog.
+
 The View Customer Account dialog is a compact, responsive Tabler detail workspace. Its profile and financial summary stay in a narrow sidebar on wide screens; Account Information, Billing Schedule, MikroTik/PPPoE, NAP Management, and Payment History use an explicit twelve-column panel grid that collapses safely for tablet and mobile. The page-scoped stylesheet supplies the complete detail grid after the shared account-view layer, so the Admin page does not depend on legacy `customers.css`. Existing customer, Billing, payment-history, MikroTik, NAP, statement, copy, and action bindings are unchanged.
 
 Coverage Table uses a centered compact Tabler workspace for its native page header, small Add control, filtered four-item summary strip, inline client/sort/page-size controls, fitted five-column desktop table, Tabler pagination, and responsive coverage cards. Every static and generated action uses `btn-sm`. Visible router cells show only the readable router label; the full technical router ID remains available as a tooltip. Its focused `css/coverage-tabler.css` contains only Admin Coverage layout additions and no duplicated map or legacy table rules; shared `/coverage.css` remains unchanged for Network map consumers. The compact Add/Edit modal stays viewport-centered at a 640px maximum with small controls, explicit close, inline validation, submit locking, and desktop two-column/mobile single-column fields. Counts still come from the existing coverage and customer reads; CRUD, MikroTik linking, API contracts, and Network-owned coverage-map behavior are unchanged.
@@ -59,6 +66,8 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
 - Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- Admin customer creation strictly validates required identity/address/plan/date fields, normalizes contact and opening amounts, rejects normalized duplicate usernames/mobile/email/name-address records, and reserves server account/username allocation against concurrent creates. MySQL commits the customer, optional NAP connection, opening debit/credit, and activity audit in one transaction; JSON mode serializes creates and compensates related writes on failure. New portal secrets are hashed at persistence, ordinary Admin/customer responses remove credential fields, and successful legacy plaintext login upgrades the stored hash.
+- Migrated customers persist the compatibility value `customer_start_type = existing`; zero is a valid opening amount, while a positive Previous Balance or Advance becomes one deterministic Billing payment-entry debit or credit as part of onboarding. New customers store `new` and do not receive opening entries.
 - Customer-derived payment summaries consume Billing's shared effective-entry normalizer, so `pending_gcash_verification` records remain available in raw history but cannot reduce a customer balance, increase collected totals, or become the latest effective payment before imported proof is bound.
 - Referral relationships are registered once per referred account. New and edited records return to Pending. Admin approval immediately locks the proposed discount and places a customer referral in the unlimited FIFO Billing queue; the referred customer's first payment is not required. The optional registry `applyFromMonth` is an Admin-controlled current/future earliest month, with blank meaning next available. Approved records without an active application may be rescheduled with a required reason; an active application must be reversed first. Applied referrals cannot be cancelled, and records with billing-application history cannot be edited, preserving their audit chain. Legacy customer referral fields remain readable but are materialized into the registry when approved.
 - `updateCustomerRecord` accepts an internal `planChangeEffectiveAt` option for Billing-owned effective plan changes. A future timestamp preserves the active subscriber plan and writes the canonical scheduled plan/profile snapshot; a current/past change updates the subscriber plan and resolves/synchronizes the router-specific PPPoE profile immediately. The existing Billing scheduler applies due snapshots and retries when MikroTik synchronization cannot complete.
@@ -77,8 +86,10 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, the referral store/registry workflow, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
 - The compatibility run also confirms customer-derived balances, collected totals, and last-payment fields consume Billing's effective-entry contract, which excludes `pending_gcash_verification` until imported proof is bound.
 - Customer-page validation covers inline-script syntax, static ID uniqueness, balanced CSS, compact summary/filter/table hooks, and the responsive card breakpoint without changing customer or Billing APIs.
+- `tests/admin-add-customer-hardening.test.js` covers strict create validation and duplicates, secure credential handling, collision retries, transaction/executor ordering, rollback hooks, migrated zero/debit/credit behavior, schema migration hooks, and the guided one-request Add Customer UI.
 - Coverage-page validation covers inline-script syntax, HTML parsing, static ID uniqueness, balanced page-scoped CSS, native Tabler header/table/footer/form hooks, `btn-sm` on every static/generated action, absence of duplicated map and legacy footer rules, responsive coverage cards, the explicit-close Add/Edit modal with inline errors and submit locking, and the unchanged `/api/coverage` and `/api/customers` reads.
 - The focused check verifies valid decimal/Google Maps coordinate normalization, invalid Map Pin rejection, and the Customers form validation contract.
+- Technician draft checks cover GPS normalization (including blank/null coordinate handling), full-dataset pagination, comprehensive stable event fingerprints, trusted completion-evidence preservation, same-branch decision serialization, MySQL row claiming, cleanup ordering, and retry-safe submission behavior.
 - The focused check also verifies correction-record normalization plus the warning-review button, modal, retry API call, and responsive modal styling contract.
 - Referral-focused checks verify immediate Admin-approved eligibility, locked amounts, optional Admin-selected earliest application months, unlimited FIFO queuing, the two-per-month cap, month-to-month carryover, and reversal requeue behavior.
 - Referral-page validation covers JavaScript syntax, static ID uniqueness, balanced HTML/CSS, compact KPI/filter/six-column table hooks, fixed ten-record pagination, View/Actions/detail-modal wiring, responsive cards, and unchanged referral API endpoints.
@@ -94,6 +105,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 ## Known risks and follow-up
 
 - `backend/customers.js` remains large and crosses Billing, Network, Customer App, and Admin contracts.
+- Multi-store JSON onboarding is serialized across customer creates and compensates handled failures, but it is not crash-atomic and does not lock independent Billing/PON writers; use MySQL when strict all-or-nothing onboarding is required.
 - Public application and coverage-map handlers still partly live in shared `server.js`.
 - `/coverage.css` is shared with Network module pages; preserve its unchanged root URL.
 - Customer file cleanup is destructive by design; never test it against production data.
@@ -103,6 +115,10 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Vision AI is disabled unless the operator configures Billing's environment opt-in. Provider failures degrade to local OCR/manual review and never prevent a customer from submitting evidence or turn the screenshot into confirmed payment.
 
 ## Latest meaningful changes
+
+- 2026-08-17: Rebuilt Add Customer as a three-step guided onboarding flow with inline errors, account-preview retry, final review, Pending/Inactive default, migrated opening amounts in the single create request, and a one-time temporary portal credential dialog. The backend now performs strict duplicate-safe validation, hashes stored credentials and upgrades legacy plaintext login, persists migrated start type, and commits MySQL customer/NAP/opening/audit records atomically with JSON serialization and compensation fallback.
+
+- 2026-08-16: Hardened technician client drafts with nonblank paired GPS handling, full-dataset duplicate/event lookup, comprehensive replay fingerprints, serialized/transactional Admin decisions, post-transition resource cleanup, and approval-time preservation of immutable technician installation evidence.
 
 - 2026-08-16: Billing's shared effective-entry contract now excludes `pending_gcash_verification`, so customer-derived balances, collected totals, and last-payment fields remain Admin-record authoritative until imported GCash proof is bound.
 

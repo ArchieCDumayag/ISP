@@ -4,6 +4,7 @@ const entries = Object.freeze({
   mikrotikEndpoint: './mikrotik-endpoint',
   mikrotik: './mikrotik',
   ponManagement: './pon-management-api',
+  ponServiceability: './pon-serviceability',
   pppoeAccountUtils: './pppoe-account-utils'
 });
 

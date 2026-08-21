@@ -1,7 +1,10 @@
+const crypto = require('crypto');
 const express = require('express');
 const createError = require('http-errors');
 const { assertRelationalReady } = require('../../../../core/data/db-relational');
+const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
 const { connectMikrotikClient } = require('../../network/backend/mikrotik-client');
+const jobsRouter = require('./jobs');
 const {
     requireTechnicianAuth
 } = require('../../customer-management/backend/customer-draft-submissions');
@@ -21,9 +24,15 @@ const {
 const {
     hasPonTables,
     loadPonOverviewForBranch,
-    loadPonStateForBranch,
-    savePonStateForBranch
+    loadPonStateForBranch
 } = require('../../network/backend/pon-management-api');
+const {
+    parseCoordinate,
+    findNearbyPonNaps,
+    reservePonPort,
+    releasePonPortReservation,
+    finalizePonAssignment
+} = require('../../network/backend/pon-serviceability');
 const {
     dedupePppoeAccounts,
     normalizePppoeRouterId,
@@ -33,6 +42,8 @@ const {
 const {
     findCustomerDraftSubmissionByAccountNumber,
     listCustomerDraftSubmissions,
+    compareAndSetCustomerDraftInstallationCompletion,
+    withCustomerDraftStoreMutationLock,
     updateCustomerDraftSubmissionDraftDataByAccountNumber
 } = require('../../customer-management/backend/customer-draft-submissions-store');
 const {
@@ -56,6 +67,93 @@ const toPositiveInt = (value, fallback = null) => {
 };
 
 const normalizeNameKey = (value) => toSafeText(value).toLowerCase();
+
+const normalizeInstallationMaterials = (value) => {
+    if (value == null) return [];
+    if (!Array.isArray(value)) {
+        throw createError(400, 'Installation materials must be an array.');
+    }
+    if (value.length > 100) {
+        throw createError(400, 'Installation materials cannot exceed 100 entries.');
+    }
+    return value.map((entry, index) => {
+        const source = entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? entry
+            : { name: entry };
+        const sku = toSafeText(source.sku || source.itemId, 80).toUpperCase();
+        const name = toSafeText(source.name || source.itemName || sku, 160);
+        const quantity = Number(source.quantity == null ? 1 : source.quantity);
+        if (!name) throw createError(400, `Installation material ${index + 1} requires a name or SKU.`);
+        if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100000) {
+            throw createError(400, `Installation material ${index + 1} has an invalid quantity.`);
+        }
+        const serialNumbers = Array.isArray(source.serialNumbers)
+            ? source.serialNumbers.map((item) => toSafeText(item, 120)).filter(Boolean)
+            : [];
+        if (serialNumbers.length > 100) {
+            throw createError(400, `Installation material ${index + 1} has too many serial numbers.`);
+        }
+        return {
+            sku,
+            name,
+            quantity: Math.round(quantity * 1000) / 1000,
+            unit: toSafeText(source.unit || 'pcs', 30),
+            serialNumbers: [...new Set(serialNumbers)]
+        };
+    });
+};
+
+const normalizeInstallationCompletion = (value) => {
+    if (value == null) return null;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw createError(400, 'installationCompletion must be an object.');
+    }
+    const clientEventId = toSafeText(value.clientEventId, 100);
+    const onuSerialNumber = toSafeText(value.onuSerialNumber || value.onuSerial, 160);
+    const opticalSignal = toSafeText(value.opticalSignal || value.rxPower, 80);
+    if (!clientEventId) throw createError(400, 'Installation completion clientEventId is required.');
+    if (!onuSerialNumber) throw createError(400, 'ONU serial number is required for installation completion.');
+    if (!opticalSignal) throw createError(400, 'Optical signal is required for installation completion.');
+
+    const rawCableLength = value.cableLengthMeters;
+    let cableLengthMeters = null;
+    if (rawCableLength != null && String(rawCableLength).trim() !== '') {
+        cableLengthMeters = Number(rawCableLength);
+        if (!Number.isFinite(cableLengthMeters) || cableLengthMeters < 0 || cableLengthMeters > 100000) {
+            throw createError(400, 'Drop cable length must be between 0 and 100000 meters.');
+        }
+        cableLengthMeters = Math.round(cableLengthMeters * 1000) / 1000;
+    }
+
+    return {
+        clientEventId,
+        onuSerialNumber,
+        macAddress: toSafeText(value.macAddress, 80),
+        opticalSignal,
+        cableLengthMeters,
+        materials: normalizeInstallationMaterials(value.materials),
+        notes: toSafeText(value.notes || value.completionNotes, 2000)
+    };
+};
+
+const installationCompletionFingerprint = (completion) => crypto
+    .createHash('sha256')
+    .update(JSON.stringify(completion || null))
+    .digest('hex');
+
+const assertInstallationCompletionReplay = (existing, completion) => {
+    if (!existing || typeof existing !== 'object') return false;
+    const existingEventId = toSafeText(existing.clientEventId, 100);
+    if (existingEventId !== completion.clientEventId) {
+        throw createError(409, 'Installation completion was already submitted for this client.');
+    }
+    const expectedFingerprint = installationCompletionFingerprint(completion);
+    const storedFingerprint = toSafeText(existing.fingerprint, 64);
+    if (storedFingerprint && storedFingerprint !== expectedFingerprint) {
+        throw createError(409, 'Installation completion clientEventId was reused with different evidence.');
+    }
+    return true;
+};
 const normalizePlanName = (value) => normalizeNameKey(value);
 const resolveCustomerCoverageAreaName = (customer = {}) => toSafeText(
     customer?.area || customer?.coverageArea || customer?.areaName,
@@ -434,6 +532,90 @@ const loadPendingDraftCustomersForTechnician = async (branchId, technicianId, { 
         .filter((item) => item?.accountNumber);
 };
 
+const resolveJobCustomerAccountNumber = (job = {}) => toSafeText(
+    job?.customerAccountNumber
+        || job?.customer_account_number
+        || job?.dispatchPayload?.customerAccountNumber
+        || job?.dispatch_payload?.customerAccountNumber,
+    20
+);
+
+const technicianOwnsPendingDraft = (submission = {}, technician = {}) => (
+    toSafeText(submission?.status, 20).toLowerCase() === 'pending'
+    && toSafeText(submission?.submittedBy?.id, 64) === toSafeText(technician?.id, 64)
+);
+
+const jobGrantsCustomerAccess = (job = {}, branchId, accountNumber = '') => {
+    if (
+        (isJsonStorageMode() || job?.branchId != null)
+        && Number(job?.branchId) !== Number(branchId)
+    ) return false;
+    return resolveJobCustomerAccountNumber(job) === toSafeText(accountNumber, 20);
+};
+
+const loadTechnicianOpenJobs = async (branchId, technician = {}) => {
+    if (typeof jobsRouter.readJobsForTechnician !== 'function') {
+        throw createError(500, 'Technician job lookup is unavailable.');
+    }
+    const jobs = await jobsRouter.readJobsForTechnician(branchId, technician, {
+        includeClosed: false,
+        includeUnassigned: false
+    });
+    return (Array.isArray(jobs) ? jobs : []).filter((job) => {
+        if (
+            (isJsonStorageMode() || job?.branchId != null)
+            && Number(job?.branchId) !== Number(branchId)
+        ) return false;
+        if (typeof jobsRouter.isOpenJobStatus !== 'function') return true;
+        return jobsRouter.isOpenJobStatus(job?.workflowStatus || job?.status);
+    });
+};
+
+const loadTechnicianAccessibleCustomers = async (branchId, technician = {}) => {
+    const [customers, drafts, jobs] = await Promise.all([
+        readCustomers(branchId),
+        loadPendingDraftCustomersForTechnician(branchId, technician?.id || '', { limit: 500 }),
+        loadTechnicianOpenJobs(branchId, technician)
+    ]);
+    const assignedAccounts = new Set(
+        jobs.map(resolveJobCustomerAccountNumber).filter(Boolean)
+    );
+    const realCustomers = (Array.isArray(customers) ? customers : [])
+        .filter((customer) => assignedAccounts.has(toSafeText(customer?.accountNumber, 20)));
+    return {
+        customers: realCustomers,
+        drafts,
+        jobs,
+        assignedAccounts
+    };
+};
+
+const resolveTechnicianAccessibleCustomer = async (branchId, technician = {}, accountNumber = '') => {
+    const targetAccount = toSafeText(accountNumber, 20);
+    if (!targetAccount) throw createError(400, 'Customer account number is required.');
+
+    const ownDraft = await findCustomerDraftSubmissionByAccountNumber(
+        targetAccount,
+        branchId,
+        { statuses: ['pending'] }
+    );
+    if (ownDraft && technicianOwnsPendingDraft(ownDraft, technician)) {
+        const customer = buildDraftCustomerRecordFromSubmission(ownDraft);
+        if (customer) return { accessType: 'own-pending-draft', customer, draft: ownDraft, job: null };
+    }
+
+    const jobs = await loadTechnicianOpenJobs(branchId, technician);
+    const job = jobs.find((entry) => jobGrantsCustomerAccess(entry, branchId, targetAccount)) || null;
+    if (!job) {
+        throw createError(404, 'Customer is not available for this technician.');
+    }
+    const customers = await readCustomers(branchId);
+    const customer = (Array.isArray(customers) ? customers : [])
+        .find((entry) => toSafeText(entry?.accountNumber, 20) === targetAccount) || null;
+    if (!customer) throw createError(404, 'Customer is not available for this technician.');
+    return { accessType: 'assigned-open-job', customer, draft: null, job };
+};
+
 const getCustomerNameParts = (customer = {}) => {
     const rawFirst = toSafeText(customer?.firstName, 100);
     const rawLast = toSafeText(customer?.lastName, 100);
@@ -490,16 +672,6 @@ const parseNapCodeParts = (rawCode) => {
         return { napCode, napNumber: `NAP-${napNo}` };
     }
     return { napCode: '', napNumber: '' };
-};
-
-const getNapSplitPortCount = (splitter, fallback = 0) => {
-    const raw = toSafeText(splitter).replace('/', ':');
-    const parts = raw.split(':');
-    const parsed = Number(parts[1]);
-    if (Number.isInteger(parsed) && parsed > 0) return parsed;
-    const fallbackValue = Number(fallback);
-    if (Number.isInteger(fallbackValue) && fallbackValue > 0) return fallbackValue;
-    return 16;
 };
 
 const normalizeCustomerSummary = (customer = {}, napAssignment = null, options = {}) => {
@@ -583,50 +755,6 @@ const matchesPppoeFilter = (customer = {}, filter = 'all') => {
     return true;
 };
 
-const normalizeConnectionRecord = (entry = {}) => {
-    const customerId = toSafeText(entry?.customerId || entry?.accountNumber || entry?.id, 20);
-    const customerName = toSafeText(entry?.customerName || entry?.name, 200);
-    const customerRef = toSafeText(entry?.customerRef || customerId || customerName, 255);
-    const port = toPositiveInt(entry?.port);
-    if (!customerRef || !port) return null;
-    return {
-        customerId,
-        customerName,
-        customerRef,
-        port,
-        opticalInfo: toSafeText(entry?.opticalInfo || entry?.optical || entry?.signal || entry?.rxPower, 120),
-        opticalPower: toSafeText(entry?.opticalPower || entry?.opticalInfo || entry?.optical || entry?.signal || entry?.rxPower, 120),
-        subscriberStatus: normalizeSubscriberStatus(entry?.subscriberStatus)
-    };
-};
-
-const serializePonState = (state = {}) => ({
-    olts: (Array.isArray(state?.olts) ? state.olts : []).map((item) => ({
-        id: toSafeText(item?.id, 120),
-        name: toSafeText(item?.name, 120),
-        technology: toSafeText(item?.technology, 30),
-        site: toSafeText(item?.site, 120),
-        status: toSafeText(item?.status, 30),
-        ponPorts: toPositiveInt(item?.ponPorts, 0) || 0
-    })),
-    naps: (Array.isArray(state?.naps) ? state.naps : []).map((item) => ({
-        id: toSafeText(item?.id, 120),
-        code: toSafeText(item?.code, 120),
-        location: toSafeText(item?.location, 150),
-        coordinate: toSafeText(item?.coordinate, 120),
-        splitter: toSafeText(item?.splitter, 20),
-        linkedOlt: toSafeText(item?.linkedOlt, 120),
-        ponRef: toSafeText(item?.ponRef, 60),
-        ponCapacity: toPositiveInt(item?.ponCapacity, 64) || 64,
-        capacity: toPositiveInt(item?.capacity, getNapSplitPortCount(item?.splitter, 16)) || getNapSplitPortCount(item?.splitter, 16),
-        used: toPositiveInt(item?.used, 0) || 0,
-        opticalPower: toSafeText(item?.opticalPower, 120),
-        connections: (Array.isArray(item?.connections) ? item.connections : [])
-            .map((entry) => normalizeConnectionRecord(entry))
-            .filter(Boolean)
-    }))
-});
-
 const collectNapAssignments = (naps = []) => {
     const byAccount = new Map();
     (Array.isArray(naps) ? naps : []).forEach((nap) => {
@@ -656,7 +784,107 @@ const collectNapAssignments = (naps = []) => {
     return byAccount;
 };
 
+const sanitizeTechnicianPonConnection = (entry = {}, targetAccountNumber = '') => {
+    const accountNumber = resolveConnectionAccountNumber(entry);
+    const isTargetCustomer = Boolean(targetAccountNumber && accountNumber === targetAccountNumber);
+    const port = toPositiveInt(entry?.port);
+    return {
+        port,
+        occupied: Boolean(port),
+        assignmentStatus: port ? 'used' : 'empty',
+        ...(isTargetCustomer ? {
+            customerId: accountNumber,
+            customerRef: accountNumber,
+            customerName: toSafeText(entry?.customerName, 200),
+            opticalInfo: toSafeText(entry?.opticalInfo || entry?.opticalPower, 120),
+            opticalPower: toSafeText(entry?.opticalPower || entry?.opticalInfo, 120),
+            subscriberStatus: normalizeSubscriberStatus(entry?.subscriberStatus)
+        } : {})
+    };
+};
+
+const sanitizeTechnicianPonPort = (entry = {}, targetAccountNumber = '') => {
+    const accountNumber = resolveConnectionAccountNumber(entry);
+    const isTargetCustomer = Boolean(targetAccountNumber && accountNumber === targetAccountNumber);
+    const occupied = Boolean(entry?.occupied || accountNumber || toSafeText(entry?.customerName, 200));
+    return {
+        port: toPositiveInt(entry?.port),
+        portLabel: toSafeText(entry?.portLabel, 40),
+        occupied,
+        assignmentStatus: occupied ? 'used' : 'empty',
+        status: occupied ? 'assigned' : 'empty',
+        ...(isTargetCustomer ? {
+            customerId: accountNumber,
+            customerRef: accountNumber,
+            customerName: toSafeText(entry?.customerName, 200),
+            opticalInfo: toSafeText(entry?.opticalInfo || entry?.opticalPower, 120),
+            opticalPower: toSafeText(entry?.opticalPower || entry?.opticalInfo, 120),
+            subscriberStatus: normalizeSubscriberStatus(entry?.subscriberStatus),
+            status: toSafeText(entry?.status, 30) || 'assigned'
+        } : {})
+    };
+};
+
+const sanitizeTechnicianPonNap = (nap = {}, targetAccountNumber = '') => ({
+    id: toSafeText(nap?.id, 120),
+    code: toSafeText(nap?.code, 120),
+    location: toSafeText(nap?.location, 150),
+    coordinate: toSafeText(nap?.coordinate, 120),
+    splitter: toSafeText(nap?.splitter, 20),
+    linkedOlt: toSafeText(nap?.linkedOlt, 120),
+    ponRef: toSafeText(nap?.ponRef, 60),
+    ponCapacity: toPositiveInt(nap?.ponCapacity, 0) || 0,
+    capacity: toPositiveInt(nap?.capacity, 0) || 0,
+    used: Math.max(0, Number(nap?.used) || 0),
+    opticalPower: toSafeText(nap?.opticalPower, 120),
+    customerCount: Math.max(0, Number(nap?.customerCount) || (Array.isArray(nap?.connections) ? nap.connections.length : 0)),
+    connections: (Array.isArray(nap?.connections) ? nap.connections : [])
+        .map((entry) => sanitizeTechnicianPonConnection(entry, targetAccountNumber))
+        .filter((entry) => entry.port),
+    ports: (Array.isArray(nap?.ports) ? nap.ports : [])
+        .map((entry) => sanitizeTechnicianPonPort(entry, targetAccountNumber))
+        .filter((entry) => entry.port)
+});
+
+const sanitizeTechnicianPonOverview = (overview = {}, targetAccountNumber = '') => ({
+    olts: (Array.isArray(overview?.olts) ? overview.olts : []).map((olt) => ({
+        id: toSafeText(olt?.id, 120),
+        name: toSafeText(olt?.name, 120),
+        technology: toSafeText(olt?.technology, 30),
+        site: toSafeText(olt?.site, 120),
+        status: toSafeText(olt?.status, 30),
+        ponPorts: toPositiveInt(olt?.ponPorts, 0) || 0,
+        ponCodePrefix: toSafeText(olt?.ponCodePrefix, 40),
+        ponPortNames: olt?.ponPortNames && typeof olt.ponPortNames === 'object'
+            ? { ...olt.ponPortNames }
+            : {}
+    })),
+    naps: (Array.isArray(overview?.naps) ? overview.naps : [])
+        .map((nap) => sanitizeTechnicianPonNap(nap, targetAccountNumber)),
+    ports: (Array.isArray(overview?.ports) ? overview.ports : []).map((group) => ({
+        key: toSafeText(group?.key, 255),
+        oltId: toSafeText(group?.oltId, 120),
+        linkedOlt: toSafeText(group?.linkedOlt, 120),
+        ponRef: toSafeText(group?.ponRef, 60),
+        ponPortName: toSafeText(group?.ponPortName, 80),
+        ponPortNo: toPositiveInt(group?.ponPortNo),
+        ponCapacity: toPositiveInt(group?.ponCapacity, 0) || 0,
+        napCount: Math.max(0, Number(group?.napCount) || 0),
+        totalCapacity: Math.max(0, Number(group?.totalCapacity) || 0),
+        totalUsed: Math.max(0, Number(group?.totalUsed) || 0),
+        totalCustomers: Math.max(0, Number(group?.totalCustomers) || 0),
+        napIds: Array.isArray(group?.napIds) ? group.napIds.map((value) => toSafeText(value, 120)) : [],
+        napCodes: Array.isArray(group?.napCodes) ? group.napCodes.map((value) => toSafeText(value, 120)) : [],
+        naps: (Array.isArray(group?.naps) ? group.naps : [])
+            .map((nap) => sanitizeTechnicianPonNap(nap, targetAccountNumber))
+    }))
+});
+
 const loadPonContext = async (branchId, { allowMissingSchema = false } = {}) => {
+    if (isJsonStorageMode()) {
+        const state = await loadPonStateForBranch(branchId);
+        return { schemaReady: true, state };
+    }
     await assertRelationalReady();
     const schemaReady = await hasPonTables();
     if (!schemaReady) {
@@ -676,6 +904,25 @@ const loadPonContext = async (branchId, { allowMissingSchema = false } = {}) => 
     }
     const state = await loadPonStateForBranch(branchId);
     return { schemaReady: true, state };
+};
+
+const loadPonOverviewContext = async (branchId, { allowMissingSchema = false } = {}) => {
+    if (isJsonStorageMode()) {
+        return { schemaReady: true, overview: await loadPonOverviewForBranch(branchId) };
+    }
+    await assertRelationalReady();
+    const schemaReady = await hasPonTables();
+    if (!schemaReady) {
+        if (allowMissingSchema) {
+            return {
+                schemaReady: false,
+                message: 'PON schema is not initialized. Run Schema Update from owner page.',
+                overview: { olts: [], naps: [], ports: [], customers: [], coverageAreas: [] }
+            };
+        }
+        throw createError(503, 'PON schema is not initialized. Run Schema Update from owner page.');
+    }
+    return { schemaReady: true, overview: await loadPonOverviewForBranch(branchId) };
 };
 
 const buildGeneratedCredentials = (customer, napAssignment = null) => {
@@ -745,43 +992,41 @@ router.use(requireTechnicianAuth);
 router.get('/pon/overview', async (req, res, next) => {
     try {
         const branchId = req.technician.branchId;
-        await assertRelationalReady();
-        const ponTablesReady = await hasPonTables();
-        if (!ponTablesReady) {
-            const customers = await readCustomers(branchId);
-            return res.json({
-                ok: true,
-                schemaReady: false,
-                message: 'PON schema is not initialized. Run Schema Update from owner page.',
-                olts: [],
-                naps: [],
-                ports: [],
-                subscriberStatusAvailable: false,
-                activePppoeUsernames: [],
-                customers: (Array.isArray(customers) ? customers : []).map((customer) => normalizeCustomerSummary(customer, null)),
-                coverageAreas: []
-            });
-        }
-
-        const overview = await loadPonOverviewForBranch(branchId);
+        const customerAccountNumber = toSafeText(
+            req.query?.customerAccountNumber || req.query?.accountNumber || req.query?.account,
+            20
+        );
+        const access = await resolveTechnicianAccessibleCustomer(
+            branchId,
+            req.technician,
+            customerAccountNumber
+        );
+        const context = await loadPonOverviewContext(branchId, { allowMissingSchema: true });
+        const overview = context.overview || {};
+        const safeOverview = sanitizeTechnicianPonOverview(overview, customerAccountNumber);
         const assignmentMap = collectNapAssignments(overview?.naps);
-        const customers = (Array.isArray(overview?.customers) ? overview.customers : [])
-            .map((customer) => {
-                const accountNumber = toSafeText(customer?.accountNumber, 20);
-                return normalizeCustomerSummary(customer, assignmentMap.get(accountNumber) || null);
-            })
-            .filter((customer) => customer.accountNumber);
+        const customer = normalizeCustomerSummary(
+            access.customer,
+            assignmentMap.get(customerAccountNumber) || null
+        );
+        const activeUsername = toSafeText(customer.pppoeUsername, 120);
+        const activePppoeUsernames = activeUsername && (Array.isArray(overview?.activePppoeUsernames)
+            ? overview.activePppoeUsernames
+            : []).some((username) => normalizeNameKey(username) === normalizeNameKey(activeUsername))
+            ? [activeUsername]
+            : [];
 
         return res.json({
             ok: true,
-            schemaReady: true,
-            olts: Array.isArray(overview?.olts) ? overview.olts : [],
-            naps: Array.isArray(overview?.naps) ? overview.naps : [],
-            ports: Array.isArray(overview?.ports) ? overview.ports : [],
+            schemaReady: context.schemaReady,
+            message: context.message || '',
+            accessType: access.accessType,
+            ...safeOverview,
             subscriberStatusAvailable: Boolean(overview?.subscriberStatusAvailable),
-            activePppoeUsernames: Array.isArray(overview?.activePppoeUsernames) ? overview.activePppoeUsernames : [],
-            customers,
-            coverageAreas: Array.isArray(overview?.coverageAreas) ? overview.coverageAreas : []
+            activePppoeUsernames,
+            customer,
+            customers: [customer],
+            coverageAreas: []
         });
     } catch (error) {
         return next(error);
@@ -790,12 +1035,31 @@ router.get('/pon/overview', async (req, res, next) => {
 
 router.get('/pon/state', async (req, res, next) => {
     try {
-        const result = await loadPonContext(req.technician.branchId, { allowMissingSchema: true });
+        const branchId = req.technician.branchId;
+        const customerAccountNumber = toSafeText(
+            req.query?.customerAccountNumber || req.query?.accountNumber || req.query?.account,
+            20
+        );
+        const access = await resolveTechnicianAccessibleCustomer(
+            branchId,
+            req.technician,
+            customerAccountNumber
+        );
+        const result = await loadPonContext(branchId, { allowMissingSchema: true });
+        const safeState = sanitizeTechnicianPonOverview(result.state, customerAccountNumber);
+        const assignmentMap = collectNapAssignments(result.state?.naps);
         return res.json({
             ok: true,
             schemaReady: result.schemaReady,
             message: result.message || '',
-            ...result.state
+            accessType: access.accessType,
+            ...safeState,
+            customer: normalizeCustomerSummary(
+                access.customer,
+                assignmentMap.get(customerAccountNumber) || null
+            ),
+            subscriberStatusAvailable: Boolean(result.state?.subscriberStatusAvailable),
+            activePppoeUsernames: []
         });
     } catch (error) {
         return next(error);
@@ -812,9 +1076,8 @@ const sendTechnicianCustomers = async (req, res, next) => {
         );
         const assignedFilter = toSafeText(endpointFilters.assigned ?? req.query?.assigned, 20).toLowerCase() || 'all';
         const pppoeFilter = toSafeText(endpointFilters.pppoe ?? req.query?.pppoe, 20).toLowerCase() || 'all';
-        const [customers, draftCustomers, integrationSettings, liveMikrotikLookup] = await Promise.all([
-            readCustomers(branchId),
-            loadPendingDraftCustomersForTechnician(branchId, req.technician?.id || '').catch(() => []),
+        const [accessible, integrationSettings, liveMikrotikLookup] = await Promise.all([
+            loadTechnicianAccessibleCustomers(branchId, req.technician),
             loadIntegrationSettings(branchId).catch(() => null),
             loadBranchActivePppoeLookup(branchId).catch(() => ({
                 available: false,
@@ -824,14 +1087,16 @@ const sendTechnicianCustomers = async (req, res, next) => {
                 reason: 'unavailable'
             }))
         ]);
+        const customers = accessible.customers;
+        const draftCustomers = accessible.drafts;
         const storedPppoeStatusLookup = buildStoredPppoeStatusLookup(integrationSettings);
         const storedPppoeLookup = buildStoredPppoeLookup(integrationSettings);
         const mikrotikEnabled = hasUsableMikrotikRouter(integrationSettings);
 
         let assignmentMap = new Map();
-        const ponReady = await hasPonTables().catch(() => false);
-        if (ponReady) {
-            const state = await loadPonStateForBranch(branchId);
+        const ponContext = await loadPonContext(branchId, { allowMissingSchema: true }).catch(() => null);
+        if (ponContext?.schemaReady) {
+            const state = ponContext.state;
             assignmentMap = collectNapAssignments(state.naps);
         }
 
@@ -894,137 +1159,196 @@ router.get('/customers/without-pppoe', (req, res, next) => {
     return sendTechnicianCustomers(req, res, next);
 });
 
-router.post('/pon/assign', async (req, res, next) => {
+const requestedCustomerAccountNumber = (req) => toSafeText(
+    req.body?.customerAccountNumber
+        || req.body?.accountNumber
+        || req.body?.customerId
+        || req.query?.customerAccountNumber
+        || req.query?.accountNumber
+        || req.query?.account,
+    20
+);
+
+const assertPonOverrideFlagsDenied = (payload = {}) => {
+    if (
+        normalizeBoolean(payload?.replaceExistingPort, false)
+        || normalizeBoolean(payload?.moveExistingCustomer, false)
+        || normalizeBoolean(payload?.override, false)
+        || normalizeBoolean(payload?.force, false)
+    ) {
+        throw createError(403, 'Technicians cannot replace occupied ports or move existing customer assignments.');
+    }
+};
+
+router.get('/pon/nearby', async (req, res, next) => {
     try {
         const branchId = req.technician.branchId;
-        const customerAccountNumber = toSafeText(
-            req.body?.customerAccountNumber || req.body?.accountNumber || req.body?.customerId,
-            20
+        const customerAccountNumber = requestedCustomerAccountNumber(req);
+        const access = await resolveTechnicianAccessibleCustomer(branchId, req.technician, customerAccountNumber);
+        const fallbackCoordinates = parseCoordinate(
+            access.customer?.mapPin || access.customer?.coordinates
         );
-        const napId = toSafeText(req.body?.napId || req.body?.id, 120);
-        const napCode = toSafeText(req.body?.napCode || req.body?.code, 120);
-        const port = toPositiveInt(req.body?.port || req.body?.portNo || req.body?.customerPort);
-        const opticalInfo = toSafeText(req.body?.opticalInfo || req.body?.signal || req.body?.rxPower, 120);
-        const replaceExistingPort = normalizeBoolean(req.body?.replaceExistingPort, false);
-        const moveExistingCustomer = normalizeBoolean(req.body?.moveExistingCustomer, false);
-
-        if (!customerAccountNumber) {
-            throw createError(400, 'Customer account number is required.');
+        const latitude = req.query?.latitude ?? req.query?.lat ?? fallbackCoordinates?.latitude;
+        const longitude = req.query?.longitude ?? req.query?.lng ?? req.query?.lon ?? fallbackCoordinates?.longitude;
+        if (latitude == null || longitude == null) {
+            throw createError(400, 'Valid customer latitude and longitude are required.');
         }
-        if (!napId && !napCode) {
-            throw createError(400, 'NAP ID or NAP code is required.');
-        }
-        if (!port) {
-            throw createError(400, 'Target port is required.');
-        }
-
-        const customers = await readCustomers(branchId);
-        let customer = customers.find((item) => toSafeText(item?.accountNumber, 20) === customerAccountNumber);
-        if (!customer) {
-            const draftSubmission = await findCustomerDraftSubmissionByAccountNumber(
-                customerAccountNumber,
-                branchId,
-                { statuses: ['pending'] }
-            );
-            customer = buildDraftCustomerRecordFromSubmission(draftSubmission);
-        }
-        if (!customer) {
-            throw createError(404, 'Customer or pending draft not found.');
-        }
-
-        const { state } = await loadPonContext(branchId);
-        const editableState = serializePonState(state);
-        const napIndex = editableState.naps.findIndex((item) =>
-            (napId && toSafeText(item?.id, 120) === napId) ||
-            (napCode && normalizeNameKey(item?.code) === normalizeNameKey(napCode))
-        );
-        if (napIndex < 0) {
-            throw createError(404, 'NAP record not found.');
-        }
-
-        const targetNap = editableState.naps[napIndex];
-        const targetCapacity = Math.max(
-            toPositiveInt(targetNap.capacity, 0) || 0,
-            getNapSplitPortCount(targetNap.splitter, targetNap.capacity)
-        );
-        if (targetCapacity > 0 && port > targetCapacity) {
-            throw createError(400, `Port ${port} is outside the NAP capacity.`);
-        }
-
-        const currentAssignments = collectNapAssignments(editableState.naps);
-        const existingCustomerAssignment = currentAssignments.get(customerAccountNumber) || null;
-        if (
-            existingCustomerAssignment &&
-            (existingCustomerAssignment.napId !== targetNap.id || existingCustomerAssignment.port !== port) &&
-            !moveExistingCustomer
-        ) {
-            throw createError(
-                409,
-                `Customer is already assigned to ${existingCustomerAssignment.napCode || 'another NAP'} port ${existingCustomerAssignment.port}.`
-            );
-        }
-
-        const existingPortConnection = (Array.isArray(targetNap.connections) ? targetNap.connections : []).find((entry) => entry.port === port) || null;
-        if (
-            existingPortConnection &&
-            resolveConnectionAccountNumber(existingPortConnection) !== customerAccountNumber &&
-            !replaceExistingPort
-        ) {
-            throw createError(
-                409,
-                `Port ${port} is already assigned to customer ${resolveConnectionAccountNumber(existingPortConnection) || existingPortConnection.customerRef || 'unknown'}.`
-            );
-        }
-
-        editableState.naps = editableState.naps.map((nap) => {
-            const existingConnections = Array.isArray(nap.connections) ? nap.connections : [];
-            let nextConnections = existingConnections;
-
-            if (moveExistingCustomer || nap.id === targetNap.id) {
-                nextConnections = nextConnections.filter((entry) => resolveConnectionAccountNumber(entry) !== customerAccountNumber);
-            }
-            if (nap.id === targetNap.id) {
-                nextConnections = nextConnections.filter((entry) => entry.port !== port);
-                nextConnections.push({
-                    customerId: customerAccountNumber,
-                    customerName: buildCustomerDisplayName(customer),
-                    customerRef: customerAccountNumber,
-                    port,
-                    opticalInfo: opticalInfo || toSafeText(existingPortConnection?.opticalInfo || nap.opticalPower, 120)
-                });
-                nextConnections.sort((left, right) => left.port - right.port);
-            }
-
-            return {
-                ...nap,
-                connections: nextConnections,
-                used: nextConnections.length
-            };
+        const result = await findNearbyPonNaps({
+            branchId,
+            latitude,
+            longitude,
+            limit: req.query?.limit,
+            maxDistanceMeters: req.query?.maxDistanceMeters,
+            includeOffline: false
         });
-
-        await savePonStateForBranch(branchId, editableState);
-
-        const refreshedState = await loadPonStateForBranch(branchId);
-        const refreshedAssignments = collectNapAssignments(refreshedState.naps);
-        const assigned = refreshedAssignments.get(customerAccountNumber) || null;
-
         return res.json({
             ok: true,
-            assignment: assigned,
-            customer: normalizeCustomerSummary(customer, assigned),
-            state: {
-                olts: refreshedState.olts,
-                naps: refreshedState.naps,
-                subscriberStatusAvailable: Boolean(refreshedState.subscriberStatusAvailable),
-                activePppoeUsernames: Array.isArray(refreshedState.activePppoeUsernames)
-                    ? refreshedState.activePppoeUsernames
-                    : []
-            }
+            accessType: access.accessType,
+            customer: normalizeCustomerSummary(access.customer, null),
+            origin: {
+                latitude: Number(latitude),
+                longitude: Number(longitude)
+            },
+            candidates: result.candidates,
+            skippedInvalidCoordinates: result.skippedInvalidCoordinates,
+            radiusMeters: result.radiusMeters
         });
     } catch (error) {
         return next(error);
     }
 });
+
+const reservePonPortHandler = async (req, res, next) => {
+    try {
+        assertPonOverrideFlagsDenied(req.body || {});
+        const branchId = req.technician.branchId;
+        const customerAccountNumber = requestedCustomerAccountNumber(req);
+        const access = await resolveTechnicianAccessibleCustomer(branchId, req.technician, customerAccountNumber);
+        const reservation = await reservePonPort({
+            branchId,
+            technicianUserId: req.technician.id,
+            customerAccountNumber,
+            napId: req.body?.napId,
+            port: req.body?.port,
+            clientEventId: req.body?.clientEventId,
+            ttlMs: req.body?.ttlMs
+        });
+        return res.status(201).json({
+            ok: true,
+            accessType: access.accessType,
+            reservation
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+router.post('/pon/reservations', reservePonPortHandler);
+router.post('/pon/reserve', reservePonPortHandler);
+
+const releasePonReservationHandler = async (req, res, next) => {
+    try {
+        const branchId = req.technician.branchId;
+        const customerAccountNumber = requestedCustomerAccountNumber(req);
+        await resolveTechnicianAccessibleCustomer(branchId, req.technician, customerAccountNumber);
+        const reservationId = toSafeText(
+            req.params?.reservationId || req.body?.reservationId || req.query?.reservationId,
+            64
+        );
+        const reservation = await releasePonPortReservation({
+            branchId,
+            technicianUserId: req.technician.id,
+            reservationId,
+            customerAccountNumber
+        });
+        return res.json({ ok: true, reservation });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+router.delete('/pon/reservations/:reservationId', releasePonReservationHandler);
+router.post('/pon/reservations/:reservationId/release', releasePonReservationHandler);
+router.post('/pon/release', releasePonReservationHandler);
+
+const finalizePonAssignmentHandler = async (req, res, next) => {
+    try {
+        assertPonOverrideFlagsDenied(req.body || {});
+        const branchId = req.technician.branchId;
+        const customerAccountNumber = requestedCustomerAccountNumber(req);
+        const access = await resolveTechnicianAccessibleCustomer(branchId, req.technician, customerAccountNumber);
+        const completion = normalizeInstallationCompletion(req.body?.installationCompletion);
+        if (completion && access.accessType !== 'own-pending-draft') {
+            throw createError(409, 'Installation completion evidence can only be attached to the technician\'s pending client draft.');
+        }
+        const existingCompletion = access.draft?.draftData?.installationCompletion;
+        if (completion && existingCompletion) {
+            assertInstallationCompletionReplay(existingCompletion, completion);
+        }
+        const reservationId = toSafeText(
+            req.params?.reservationId || req.body?.reservationId,
+            64
+        );
+        const result = await finalizePonAssignment({
+            branchId,
+            technicianUserId: req.technician.id,
+            reservationId,
+            clientEventId: req.body?.clientEventId,
+            customerAccountNumber,
+            customerName: buildCustomerDisplayName(access.customer),
+            opticalInfo: req.body?.opticalInfo || req.body?.signal || req.body?.rxPower
+        });
+        if (
+            toSafeText(result?.assignment?.customerAccountNumber, 20)
+            && toSafeText(result.assignment.customerAccountNumber, 20) !== customerAccountNumber
+        ) {
+            throw createError(409, 'Reservation does not belong to the requested customer.');
+        }
+        let persistedCompletion = existingCompletion || null;
+        if (completion) {
+            const completionRecord = {
+                ...completion,
+                fingerprint: installationCompletionFingerprint(completion),
+                submittedAt: new Date().toISOString(),
+                submittedBy: {
+                    id: toSafeText(req.technician?.id, 64),
+                    username: toSafeText(req.technician?.username || req.technician?.name, 120)
+                },
+                ponAssignment: {
+                    reservationId: toSafeText(result?.reservationId || reservationId, 64),
+                    napId: toSafeText(result?.assignment?.napId, 100),
+                    napCode: toSafeText(result?.assignment?.napCode, 100),
+                    port: toPositiveInt(result?.assignment?.port),
+                    opticalInfo: toSafeText(result?.assignment?.opticalInfo, 120)
+                }
+            };
+            const completionUpdate = await compareAndSetCustomerDraftInstallationCompletion(
+                customerAccountNumber,
+                branchId,
+                completionRecord,
+                { statuses: ['pending', 'approved'] }
+            );
+            if (!completionUpdate) {
+                throw createError(503, 'The PON assignment was finalized, but installation evidence could not be stored. Retry the same submission event.');
+            }
+            persistedCompletion = completionUpdate.installationCompletion || completionRecord;
+        }
+        return res.json({
+            ok: true,
+            reservationId: result.reservationId,
+            duplicate: Boolean(result.duplicate),
+            assignment: result.assignment,
+            customer: normalizeCustomerSummary(access.customer, result.assignment),
+            installationCompletion: persistedCompletion
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+router.post('/pon/reservations/:reservationId/finalize', finalizePonAssignmentHandler);
+router.post('/pon/assignments', finalizePonAssignmentHandler);
+router.post('/pon/assign', finalizePonAssignmentHandler);
 
 router.post('/pppoe/generate', async (req, res, next) => {
     let client = null;
@@ -1038,27 +1362,21 @@ router.post('/pppoe/generate', async (req, res, next) => {
             throw createError(400, 'Customer account number is required.');
         }
 
+        const access = await resolveTechnicianAccessibleCustomer(
+            branchId,
+            req.technician,
+            customerAccountNumber
+        );
         const customers = await readCustomers(branchId);
         const pendingDraftCustomers = await loadPendingDraftCustomersForTechnician(branchId, req.technician?.id || '', {
             limit: 500
         }).catch(() => []);
-        let customer = customers.find((item) => toSafeText(item?.accountNumber, 20) === customerAccountNumber);
-        if (!customer) {
-            const draftSubmission = await findCustomerDraftSubmissionByAccountNumber(
-                customerAccountNumber,
-                branchId,
-                { statuses: ['pending'] }
-            );
-            customer = buildDraftCustomerRecordFromSubmission(draftSubmission);
-        }
-        if (!customer) {
-            throw createError(404, 'Customer or pending draft not found.');
-        }
+        const customer = access.customer;
 
         let napAssignment = null;
-        const ponReady = await hasPonTables().catch(() => false);
-        if (ponReady) {
-            const state = await loadPonStateForBranch(branchId);
+        const ponContext = await loadPonContext(branchId, { allowMissingSchema: true }).catch(() => null);
+        if (ponContext?.schemaReady) {
+            const state = ponContext.state;
             const assignmentMap = collectNapAssignments(state.naps);
             napAssignment = assignmentMap.get(customerAccountNumber) || null;
         }
@@ -1241,11 +1559,13 @@ router.post('/pppoe/generate', async (req, res, next) => {
             };
 
             if (customer?.isDraft) {
-                const updatedDraft = await updateCustomerDraftSubmissionDraftDataByAccountNumber(
-                    customerAccountNumber,
-                    branchId,
-                    customerPppoePatch,
-                    { statuses: ['pending'] }
+                const updatedDraft = await withCustomerDraftStoreMutationLock(() =>
+                    updateCustomerDraftSubmissionDraftDataByAccountNumber(
+                        customerAccountNumber,
+                        branchId,
+                        customerPppoePatch,
+                        { statuses: ['pending'] }
+                    )
                 );
                 const persistedDraftCustomer = buildDraftCustomerRecordFromSubmission(updatedDraft) || {
                     ...customer,
@@ -1306,11 +1626,13 @@ router.post('/pppoe/generate', async (req, res, next) => {
             };
 
             if (customer?.isDraft) {
-                const updatedDraft = await updateCustomerDraftSubmissionDraftDataByAccountNumber(
-                    customerAccountNumber,
-                    branchId,
-                    fallbackCredentialPatch,
-                    { statuses: ['pending'] }
+                const updatedDraft = await withCustomerDraftStoreMutationLock(() =>
+                    updateCustomerDraftSubmissionDraftDataByAccountNumber(
+                        customerAccountNumber,
+                        branchId,
+                        fallbackCredentialPatch,
+                        { statuses: ['pending'] }
+                    )
                 );
                 const persistedDraftCustomer = buildDraftCustomerRecordFromSubmission(updatedDraft) || fallbackCustomer;
 
@@ -1367,3 +1689,11 @@ router.post('/pppoe/generate', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.resolveJobCustomerAccountNumber = resolveJobCustomerAccountNumber;
+module.exports.technicianOwnsPendingDraft = technicianOwnsPendingDraft;
+module.exports.jobGrantsCustomerAccess = jobGrantsCustomerAccess;
+module.exports.sanitizeTechnicianPonOverview = sanitizeTechnicianPonOverview;
+module.exports.assertPonOverrideFlagsDenied = assertPonOverrideFlagsDenied;
+module.exports.normalizeInstallationCompletion = normalizeInstallationCompletion;
+module.exports.installationCompletionFingerprint = installationCompletionFingerprint;
+module.exports.assertInstallationCompletionReplay = assertInstallationCompletionReplay;

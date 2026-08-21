@@ -1,235 +1,325 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    
-    <title>Tickets - Archie Point To Point Pisonet</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support Tickets - THRE3J Internet</title>
   <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
-    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+  <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
   <link rel="stylesheet" href="styles.css?v=2.9">
-  <link rel="stylesheet" href="css/technicians.css?v=1.0">
-  <link rel="stylesheet" href="css/tickets.css?v=1.1">
-    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+  <link rel="stylesheet" href="css/tickets.css?v=2.0">
+  <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
   <script src="theme-init.js?v=2.6"></script>
 </head>
-<body>
-  <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+  <div class="app-shell tabler-fluid-vertical">
     <div id="sidebar"></div>
-    <div class="app-main">
+    <div class="app-main page-wrapper">
       <div id="topbar"></div>
-      <main class="page technician-page ticket-page">
-        <section class="page-header">
-          <div class="page-title">
-            <p class="eyebrow">Customer Support</p>
-            <h1>Tickets</h1>
-            <p class="subtitle">Receive customer tickets, assign technicians, and track service issues.</p>
+      <main class="page ticket-page">
+        <header class="page-header d-print-none" aria-labelledby="ticketPageTitle">
+          <div class="row g-2 align-items-center w-100">
+            <div class="col">
+              <div class="page-pretitle">Customer Support</div>
+              <h1 class="page-title" id="ticketPageTitle">Tickets</h1>
+              <p class="text-secondary mb-0">Triage customer concerns, dispatch field work, and preserve a complete service record.</p>
+            </div>
+            <div class="col-auto ms-auto d-print-none">
+              <div class="btn-list">
+                <a class="btn btn-outline-secondary" href="technicians.html">
+                  <i class="ti ti-tool" aria-hidden="true"></i>
+                  <span class="d-none d-sm-inline">Technician Jobs</span>
+                </a>
+                <button class="btn btn-icon btn-outline-secondary" id="refreshTickets" type="button" aria-label="Refresh tickets" title="Refresh tickets">
+                  <i class="ti ti-refresh" aria-hidden="true"></i>
+                </button>
+                <button class="btn btn-primary" id="openTicketModal" type="button">
+                  <i class="ti ti-plus" aria-hidden="true"></i>
+                  New Ticket
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="header-actions">
-            <button class="add-btn" id="openTicketModal"><i class="ti ti-plus" aria-hidden="true"></i> New Ticket</button>
+        </header>
+
+        <section class="row row-deck row-cards mt-0 mb-3" aria-label="Ticket summary">
+          <div class="col-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-blue-lt text-blue"><i class="ti ti-ticket"></i></span></div>
+                  <div class="col"><div class="h2 mb-0" id="ticketMetricOpen">0</div><div class="text-secondary">Active tickets</div></div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="col-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-yellow-lt text-yellow"><i class="ti ti-user-question"></i></span></div>
+                  <div class="col"><div class="h2 mb-0" id="ticketMetricUnassigned">0</div><div class="text-secondary">Unassigned</div></div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="col-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-azure-lt text-azure"><i class="ti ti-hourglass"></i></span></div>
+                  <div class="col"><div class="h2 mb-0" id="ticketMetricWaiting">0</div><div class="text-secondary">Waiting for customer</div></div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="col-6 col-xl-3">
+            <article class="card card-sm">
+              <div class="card-body">
+                <div class="row align-items-center">
+                  <div class="col-auto"><span class="avatar bg-red-lt text-red"><i class="ti ti-alert-triangle"></i></span></div>
+                  <div class="col"><div class="h2 mb-0" id="ticketMetricEscalated">0</div><div class="text-secondary">Escalated</div></div>
+                </div>
+              </div>
+            </article>
           </div>
         </section>
 
-        <section class="section-frame elevated">
-          <header class="section-heading">
-            <div class="toolbar-actions">
-              <div class="page-size-control">
-                <label for="ticketPageSize">Show</label>
-                <div class="select-wrapper">
-                  <select id="ticketPageSize" name="ticketPageSize">
-                    <option value="5">5</option>
-                    <option value="10" selected>10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                  </select>
+        <section class="card ticket-queue-card" aria-labelledby="ticketQueueTitle">
+          <div class="card-header">
+            <div>
+              <div class="subheader">Support Queue</div>
+              <h2 class="card-title" id="ticketQueueTitle">Ticket Operations</h2>
+            </div>
+          </div>
+          <div class="card-header ticket-tabs-header">
+            <ul class="nav nav-tabs card-header-tabs flex-nowrap" role="tablist" aria-label="Ticket status views">
+              <li class="nav-item" role="presentation"><button class="nav-link active" type="button" role="tab" aria-selected="true" data-ticket-filter="active">Active <span class="badge bg-blue-lt text-blue ms-1" data-ticket-count="active">0</span></button></li>
+              <li class="nav-item" role="presentation"><button class="nav-link" type="button" role="tab" aria-selected="false" data-ticket-filter="unassigned">Unassigned <span class="badge bg-yellow-lt text-yellow ms-1" data-ticket-count="unassigned">0</span></button></li>
+              <li class="nav-item" role="presentation"><button class="nav-link" type="button" role="tab" aria-selected="false" data-ticket-filter="waiting-customer">Waiting <span class="badge bg-azure-lt text-azure ms-1" data-ticket-count="waiting-customer">0</span></button></li>
+              <li class="nav-item" role="presentation"><button class="nav-link" type="button" role="tab" aria-selected="false" data-ticket-filter="escalated">Escalated <span class="badge bg-red-lt text-red ms-1" data-ticket-count="escalated">0</span></button></li>
+              <li class="nav-item" role="presentation"><button class="nav-link" type="button" role="tab" aria-selected="false" data-ticket-filter="resolved">Resolved <span class="badge bg-green-lt text-green ms-1" data-ticket-count="resolved">0</span></button></li>
+              <li class="nav-item" role="presentation"><button class="nav-link" type="button" role="tab" aria-selected="false" data-ticket-filter="archived">Archived <span class="badge bg-secondary-lt text-secondary ms-1" data-ticket-count="archived">0</span></button></li>
+              <li class="nav-item" role="presentation"><button class="nav-link" type="button" role="tab" aria-selected="false" data-ticket-filter="all">All</button></li>
+            </ul>
+          </div>
+          <div class="card-body border-bottom py-3">
+            <div class="row g-2 align-items-center">
+              <div class="col-12 col-md-7 col-xl-5">
+                <label class="visually-hidden" for="ticketSearch">Search tickets</label>
+                <div class="input-icon">
+                  <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                  <input class="form-control" id="ticketSearch" type="search" placeholder="Search ticket, customer, account, or technician" autocomplete="off">
                 </div>
               </div>
-              <div class="filter-chips" role="radiogroup" aria-label="Ticket status filter">
-                <button class="chip active" data-ticket-filter="all" aria-checked="true">All</button>
-                <button class="chip" data-ticket-filter="to-be-assigned" aria-checked="false">To Be Assigned</button>
-                <button class="chip" data-ticket-filter="in-progress" aria-checked="false">In Progress</button>
+              <div class="col-7 col-md-3 col-xl-2 ms-md-auto">
+                <label class="visually-hidden" for="ticketPageSize">Tickets per page</label>
+                <select class="form-select" id="ticketPageSize" aria-label="Tickets per page">
+                  <option value="5">5 per page</option>
+                  <option value="10" selected>10 per page</option>
+                  <option value="25">25 per page</option>
+                  <option value="50">50 per page</option>
+                </select>
               </div>
+              <div class="col-5 col-md-2 text-end"><span class="text-secondary small" id="ticketLastUpdated">Not refreshed</span></div>
             </div>
-          </header>
-          <div class="table-wrapper tech-table-wrapper">
-            <table class="settings-table tech-table ticket-table" aria-label="Support tickets">
+          </div>
+          <div class="table-responsive">
+            <table class="table table-vcenter table-hover card-table ticket-table mb-0" aria-label="Support tickets">
               <thead>
-              <tr>
-                <th>#</th>
-                <th>Ticket Number</th>
-                <th>Subject</th>
-                <th>Customer Name</th>
-                <th>Assigned</th>
-                <th>Created</th>
-                <th>Description</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
+                <tr>
+                  <th>Ticket</th>
+                  <th>Customer</th>
+                  <th>Assignment</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th>Work Order</th>
+                  <th class="text-end">Actions</th>
+                </tr>
               </thead>
               <tbody id="ticketTableBody">
-                <tr><td colspan="9" style="text-align:center; padding:14px;">No tickets yet.</td></tr>
+                <tr><td colspan="7" class="text-center text-secondary py-5">Loading tickets...</td></tr>
               </tbody>
             </table>
           </div>
-          <div class="table-footer" id="ticketFooter">
-            <div class="footer-summary" id="ticketFooterSummary">No tickets to display</div>
-            <div class="footer-controls">
-              <button type="button" class="footer-btn" id="ticketPrevPage" aria-label="Previous page" disabled><</button>
-              <span class="footer-page-info" id="ticketPageInfo">Page 1 of 1</span>
-              <button type="button" class="footer-btn" id="ticketNextPage" aria-label="Next page" disabled>></button>
+          <footer class="card-footer d-flex align-items-center flex-wrap gap-2">
+            <p class="m-0 text-secondary" id="ticketFooterSummary">No tickets to display</p>
+            <div class="ms-auto d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="ticketPrevPage" aria-label="Previous page" disabled><i class="ti ti-chevron-left"></i></button>
+              <span class="text-secondary" id="ticketPageInfo">Page 1 of 1</span>
+              <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="ticketNextPage" aria-label="Next page" disabled><i class="ti ti-chevron-right"></i></button>
             </div>
-          </div>
+          </footer>
         </section>
       </main>
     </div>
   </div>
 
-  <div class="toast" id="ticketToast" role="status" aria-live="polite"></div>
-
-  <div class="modal-overlay" id="ticketModal" aria-hidden="true">
-    <div class="modal-container">
-      <header class="modal-header">
-        <div>
-          <p class="section-eyebrow" id="ticketModalEyebrow">New Ticket</p>
-          <h3 id="ticketModalTitle">Create a support ticket</h3>
-        </div>
-        <button type="button" class="modal-close" id="ticketModalClose" aria-label="Close ticket modal">&times;</button>
-      </header>
-      <form id="ticketModalForm" class="job-form">
-        <div class="form-grid">
-          <div class="form-field">
-            <label for="ticketSubject">Subject</label>
-            <select id="ticketSubject" name="subject" required>
-              <option value="">Select a reason</option>
-              <option value="Blinking LOS">Blinking LOS</option>
-              <option value="No Power Modem">No Power Modem</option>
-              <option value="Reset Modem">Reset Modem</option>
-              <option value="Slow Connection">Slow Connection</option>
-              <option value="Wire Problem">Wire Problem</option>
-              <option value="Wi-Fi Connected, No Internet">Wi-Fi Connected, No Internet</option>
-            </select>
-          </div>
-          <div class="form-field customer-search-field">
-            <label for="ticketCustomerSelect">Customer</label>
-            <input type="text" id="ticketCustomerSelect" name="customerSelect" autocomplete="off" required>
-            <div id="customerSearchList" class="customer-search-list" role="listbox" aria-label="Customer suggestions"></div>
-          </div>
-          <div class="form-field">
-            <label for="ticketTechnician">Assign to</label>
-            <select id="ticketTechnician" name="assignedTo">
-              <option value="">Unassigned</option>
-            </select>
-          </div>
-          <div class="form-field full-row">
-            <label for="ticketDescription">Description</label>
-            <textarea id="ticketDescription" name="description" rows="3"></textarea>
-          </div>
-        </div>
-        <footer class="modal-footer">
-          <button type="button" class="ghost-btn" id="ticketModalCancel">Cancel</button>
-          <button type="submit" class="primary-btn" id="ticketModalSubmit"><i class="ti ti-send" aria-hidden="true"></i> Create Ticket</button>
-        </footer>
-      </form>
+  <div class="toast-container ticket-toast-container position-fixed top-0 end-0 p-3">
+    <div class="toast" id="ticketToast" role="status" aria-live="polite" aria-atomic="true">
+      <div class="toast-body" id="ticketToastBody"></div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="assignModal" aria-hidden="true">
-    <div class="modal-container modal-compact">
-      <header class="modal-header">
-        <div>
-          <p class="section-eyebrow">Assignment</p>
-          <h3>Assign technician</h3>
-          <p class="field-hint" id="assignTicketLabel">Ticket</p>
-        </div>
-        <button type="button" class="modal-close" id="assignModalClose" aria-label="Close assignment modal">&times;</button>
-      </header>
-      <form id="assignModalForm" class="job-form">
-        <div class="form-grid">
-          <div class="form-field full-row">
-            <label for="assignTechnician">Technician</label>
-            <select id="assignTechnician" name="technician">
-              <option value="">Unassigned</option>
-            </select>
+  <div class="modal modal-blur fade ticket-modal" id="ticketModal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+      <div class="modal-content">
+        <form id="ticketModalForm">
+          <div class="modal-header">
+            <div><div class="page-pretitle" id="ticketModalEyebrow">New Ticket</div><h2 class="modal-title" id="ticketModalTitle">Create a support ticket</h2></div>
+            <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="ticketModalClose" aria-label="Close ticket dialog"><i class="ti ti-x"></i></button>
           </div>
-        </div>
-        <footer class="modal-footer">
-          <button type="button" class="ghost-btn" id="assignModalCancel">Cancel</button>
-          <button type="submit" class="primary-btn"><i class="ti ti-user-check" aria-hidden="true"></i> Save</button>
-        </footer>
-      </form>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label required" for="ticketSubject">Issue category</label>
+                <select class="form-select" id="ticketSubject" name="subject" required>
+                  <option value="">Select an issue</option>
+                  <option value="Blinking LOS">Blinking LOS</option>
+                  <option value="No Power Modem">No Power Modem</option>
+                  <option value="Reset Modem">Reset Modem</option>
+                  <option value="Slow Connection">Slow Connection</option>
+                  <option value="Wire Problem">Wire Problem</option>
+                  <option value="Wi-Fi Connected, No Internet">Wi-Fi Connected, No Internet</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label required" for="ticketCustomerSelect">Customer</label>
+                <select class="form-select" id="ticketCustomerSelect" name="customerSelect" required><option value="">Select a customer</option></select>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="ticketTechnician">Assign technician</label>
+                <select class="form-select" id="ticketTechnician" name="assignedTo"><option value="">Leave unassigned</option></select>
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="ticketDescription">Description</label>
+                <textarea class="form-control" id="ticketDescription" name="description" rows="4" maxlength="1200" placeholder="Customer symptoms, troubleshooting already completed, or access notes"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary" id="ticketModalCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="ticketModalSubmit"><i class="ti ti-send"></i> Create Ticket</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="customerDetailModal" aria-hidden="true">
-    <div class="modal-container modal-compact modal-customer-detail">
-      <header class="modal-header">
-        <div>
-          <p class="section-eyebrow">Customer</p>
-          <h3 id="customerDetailName">Customer Name</h3>
-          <p class="field-hint" id="customerDetailAccount">Account #00000000</p>
+  <div class="modal modal-blur fade ticket-modal" id="assignModal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+      <div class="modal-content">
+        <form id="assignModalForm">
+          <div class="modal-header">
+            <div><div class="page-pretitle">Assignment</div><h2 class="modal-title">Assign technician</h2></div>
+            <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="assignModalClose" aria-label="Close assignment dialog"><i class="ti ti-x"></i></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-secondary" id="assignTicketLabel">Ticket</p>
+            <label class="form-label" for="assignTechnician">Technician</label>
+            <select class="form-select" id="assignTechnician" name="technician"><option value="">Unassigned</option></select>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary" id="assignModalCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="ti ti-user-check"></i> Save Assignment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal modal-blur fade ticket-modal" id="workOrderModal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+      <div class="modal-content">
+        <form id="workOrderForm">
+          <div class="modal-header">
+            <div><div class="page-pretitle">Field Dispatch</div><h2 class="modal-title">Create linked work order</h2></div>
+            <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="workOrderModalClose" aria-label="Close work order dialog"><i class="ti ti-x"></i></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info" role="status" id="workOrderTicketLabel">Select a ticket.</div>
+            <div class="row g-3">
+              <div class="col-12 col-md-4">
+                <label class="form-label required" for="workOrderType">Work type</label>
+                <select class="form-select" id="workOrderType" name="type" required>
+                  <option value="repair">Repair</option>
+                  <option value="outage">Outage</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="installation">Installation</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label" for="workOrderTechnician">Technician</label>
+                <select class="form-select" id="workOrderTechnician" name="technician"><option value="">Leave unassigned</option></select>
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label" for="workOrderPriority">Priority</label>
+                <select class="form-select" id="workOrderPriority" name="priority">
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="emergency">Emergency</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label required" for="workOrderStart">Appointment start</label>
+                <input class="form-control" id="workOrderStart" name="appointmentStart" type="datetime-local" required>
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label" for="workOrderEnd">Appointment end</label>
+                <input class="form-control" id="workOrderEnd" name="appointmentEnd" type="datetime-local">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label" for="workOrderSla">SLA deadline</label>
+                <input class="form-control" id="workOrderSla" name="slaDueAt" type="datetime-local">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="workOrderInstructions">Technician instructions</label>
+                <textarea class="form-control" id="workOrderInstructions" name="instructions" rows="4" maxlength="4000" placeholder="Access notes, troubleshooting context, or equipment to bring"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary" id="workOrderModalCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary"><i class="ti ti-clipboard-plus"></i> Create Work Order</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal modal-blur fade ticket-modal" id="customerDetailModal" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div><div class="page-pretitle">Customer</div><h2 class="modal-title" id="customerDetailName">Customer Name</h2><div class="text-secondary" id="customerDetailAccount">Account not specified</div></div>
+          <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="customerDetailClose" aria-label="Close customer details"><i class="ti ti-x"></i></button>
         </div>
-        <button type="button" class="modal-close" id="customerDetailClose" aria-label="Close customer details modal">&times;</button>
-      </header>
-      <div class="customer-detail-body">
-        <div class="customer-detail-grid">
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">Status</span>
-            <span class="customer-detail-value" id="customerDetailStatus">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">Plan</span>
-            <span class="customer-detail-value" id="customerDetailPlan">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">Contact</span>
-            <span class="customer-detail-value" id="customerDetailContact">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">Address</span>
-            <span class="customer-detail-value" id="customerDetailAddress">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">Router</span>
-            <span class="customer-detail-value" id="customerDetailRouter">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">PPPoE Username</span>
-            <span class="customer-detail-value" id="customerDetailPppoeUsername">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">PPPoE Password</span>
-            <span class="customer-detail-value" id="customerDetailPppoePassword">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">PPPoE Profile</span>
-            <span class="customer-detail-value" id="customerDetailPppoeProfile">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">NAP Info</span>
-            <span class="customer-detail-value" id="customerDetailNapInfo">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">Optical Info</span>
-            <span class="customer-detail-value" id="customerDetailOpticalInfo">-</span>
-          </div>
-          <div class="customer-detail-field">
-            <span class="customer-detail-label">MikroTik Status</span>
-            <span class="customer-detail-value" id="customerDetailMikrotikStatus">-</span>
+        <div class="modal-body">
+          <div class="row row-cards" id="customerDetailGrid">
+            <div class="col-12 col-md-6"><div class="card card-sm h-100"><div class="card-body"><div class="subheader">Status</div><div class="fw-semibold mt-1" id="customerDetailStatus">-</div></div></div></div>
+            <div class="col-12 col-md-6"><div class="card card-sm h-100"><div class="card-body"><div class="subheader">Plan</div><div class="fw-semibold mt-1" id="customerDetailPlan">-</div></div></div></div>
+            <div class="col-12 col-md-6"><div class="card card-sm h-100"><div class="card-body"><div class="subheader">Contact</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailContact">-</div></div></div></div>
+            <div class="col-12 col-md-6"><div class="card card-sm h-100"><div class="card-body"><div class="subheader">Address</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailAddress">-</div></div></div></div>
+            <div class="col-12 col-md-6" data-mikrotik-detail><div class="card card-sm h-100"><div class="card-body"><div class="subheader">Router</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailRouter">-</div></div></div></div>
+            <div class="col-12 col-md-6" data-mikrotik-detail><div class="card card-sm h-100"><div class="card-body"><div class="subheader">PPPoE Username</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailPppoeUsername">-</div></div></div></div>
+            <div class="col-12 col-md-6" data-mikrotik-detail><div class="card card-sm h-100"><div class="card-body"><div class="subheader">PPPoE Password</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailPppoePassword">-</div></div></div></div>
+            <div class="col-12 col-md-6" data-mikrotik-detail><div class="card card-sm h-100"><div class="card-body"><div class="subheader">PPPoE Profile</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailPppoeProfile">-</div></div></div></div>
+            <div class="col-12 col-md-6"><div class="card card-sm h-100"><div class="card-body"><div class="subheader">NAP Information</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailNapInfo">-</div></div></div></div>
+            <div class="col-12 col-md-6"><div class="card card-sm h-100"><div class="card-body"><div class="subheader">Optical Information</div><div class="fw-semibold mt-1 ticket-break" id="customerDetailOpticalInfo">-</div></div></div></div>
+            <div class="col-12 col-md-6" data-mikrotik-detail><div class="card card-sm h-100"><div class="card-body"><div class="subheader">MikroTik Status</div><div class="fw-semibold mt-1" id="customerDetailMikrotikStatus">-</div></div></div></div>
           </div>
         </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" id="customerDetailDone">Close</button></div>
       </div>
     </div>
   </div>
 
   <script src="layout.js?v=3.9"></script>
-  <script src="js/tickets.js?v=1.2"></script>
-    <script src="vendor/tabler/js/tabler.min.js"></script>
-    <script src="js/tabler-enhance.js?v=2.2"></script>
+  <script src="vendor/tabler/js/tabler.min.js"></script>
+  <script src="js/tickets.js?v=2.0"></script>
+  <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>
-
-
-
-
-
-

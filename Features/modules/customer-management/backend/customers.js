@@ -6,6 +6,7 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { getPool, query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
+const { assertDataWritesAllowed } = require('../../../../core/runtime/maintenance-state');
 const https = require('https');
 const createError = require('http-errors');
 const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter } = require('../../admin/backend/integration-settings');
@@ -18,7 +19,8 @@ const {
     normalizePppoeSecretId,
     normalizePppoeUsernameKey
 } = require('../../network/backend/pppoe-account-utils');
-const { verifyPassword } = require('../../../../core/security/passwords');
+const { hashPassword, isHashedPassword, verifyPassword } = require('../../../../core/security/passwords');
+const { appendActivityLog } = require('../../admin/backend/activity-log');
 const {
     createPaymentConfirmationSubmission,
     listPaymentConfirmationSubmissions,
@@ -114,8 +116,25 @@ const CUSTOMER_DRAFT_SUBMISSIONS_TABLE = 'customer_draft_submissions';
 const PAYMENT_CONFIRMATION_QUEUE_TABLE = 'payment_confirmation_queue';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ARCHIVE_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CUSTOMER_CREATE_MAX_RETRIES = 5;
+const CUSTOMER_FIELD_LIMITS = Object.freeze({
+    firstName: 100,
+    lastName: 100,
+    email: 150,
+    mobile: 32,
+    street: 150,
+    barangay: 150,
+    municipality: 150,
+    province: 150,
+    area: 150,
+    planName: 120,
+    remarks: 4000,
+    loginUsername: 120,
+    loginPassword: 200
+});
 let archiveCleanupInterval = null;
 let customerImportXlsxModule = null;
+let customerCreateMutationQueue = Promise.resolve();
 
 const normalizeCustomerStatus = (value, fallback = STATUS_ACTIVE) => {
     const raw = String(value || '').trim().toLowerCase();
@@ -147,6 +166,217 @@ const hydrateCustomerStatus = (customer) => {
     if (!customer || typeof customer !== 'object') return customer;
     const state = resolveCustomerStatusState(customer.status, customer.statusMode);
     return { ...customer, status: state.status, statusMode: state.statusMode, statusRaw: state.stored };
+};
+
+const withCustomerCreateMutationLock = (task) => {
+    const operation = customerCreateMutationQueue.catch(() => {}).then(task);
+    customerCreateMutationQueue = operation.then(() => undefined, () => undefined);
+    return operation;
+};
+
+const ensureHashedCustomerPassword = (value) => {
+    const password = String(value || '');
+    if (!password) return '';
+    return isHashedPassword(password) ? password : hashPassword(password);
+};
+
+const generateTemporaryPortalPassword = () => {
+    const entropy = crypto.randomBytes(12).toString('base64url');
+    return `Tmp-${entropy}9a!`;
+};
+
+const normalizeCustomerField = (value, field, { required = false } = {}) => {
+    const normalized = String(value ?? '').trim().replace(/\s+/g, ' ');
+    const limit = CUSTOMER_FIELD_LIMITS[field] || 255;
+    if (required && !normalized) {
+        const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, (character) => character.toUpperCase());
+        throw createError(400, `${label} is required.`);
+    }
+    if (normalized.length > limit) {
+        const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, (character) => character.toUpperCase());
+        throw createError(400, `${label} must be ${limit} characters or fewer.`);
+    }
+    return normalized;
+};
+
+const normalizeOpeningAmount = (value, label) => {
+    if (value === '' || value === null || value === undefined) return 0;
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 9_999_999_999.99) {
+        throw createError(400, `${label} must be between zero and PHP 9,999,999,999.99.`);
+    }
+    return Math.round((amount + Number.EPSILON) * 100) / 100;
+};
+
+const isExactDateOnly = (value) => {
+    const text = String(value || '').trim();
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match || Number(match[1]) < 1000) return false;
+    const parsed = new Date(`${text}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
+};
+
+const normalizeDuplicateText = (value) => String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+const findCustomerCreateDuplicate = (payload = {}, existingCustomers = [], branchId = null) => {
+    const customers = Array.isArray(existingCustomers) ? existingCustomers : [];
+    const scopedBranchId = Number(branchId || payload?.branchId || 0) || null;
+    const loginUsername = normalizeDuplicateText(payload?.loginUsername);
+    const mobile = normalizePhilippineMobile(
+        payload?.mobileRaw ?? payload?.mobile ?? payload?.contactNumber ?? payload?.contact,
+        { fallbackToRaw: false }
+    );
+    const email = normalizeDuplicateText(payload?.email);
+    const fullName = normalizeDuplicateText(`${payload?.firstName || ''} ${payload?.lastName || ''}`);
+    const addressKey = [payload?.street, payload?.barangay, payload?.municipality, payload?.province]
+        .map(normalizeDuplicateText)
+        .join('|');
+
+    for (const customer of customers) {
+        if (!customer || typeof customer !== 'object') continue;
+        const accountNumber = String(customer.accountNumber || '').trim();
+        if (loginUsername && normalizeDuplicateText(customer.loginUsername) === loginUsername) {
+            return { kind: 'loginUsername', accountNumber, message: 'Portal username is already assigned to another customer.' };
+        }
+        const sameBranch = !scopedBranchId || Number(customer.branchId || 0) === scopedBranchId;
+        if (!sameBranch) continue;
+        const existingMobile = normalizePhilippineMobile(customer.mobileRaw || customer.mobile, { fallbackToRaw: false });
+        if (mobile && existingMobile && existingMobile === mobile) {
+            return { kind: 'mobile', accountNumber, message: `Mobile number already belongs to account ${accountNumber}.` };
+        }
+        if (email && normalizeDuplicateText(customer.email) === email) {
+            return { kind: 'email', accountNumber, message: `Email already belongs to account ${accountNumber}.` };
+        }
+        const existingName = normalizeDuplicateText(
+            `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.name
+        );
+        const existingAddress = [customer.street, customer.barangay, customer.municipality, customer.province]
+            .map(normalizeDuplicateText)
+            .join('|');
+        if (fullName && addressKey !== '|||' && existingName === fullName && existingAddress === addressKey) {
+            return { kind: 'identityAddress', accountNumber, message: `A customer with the same name and service address already exists as account ${accountNumber}.` };
+        }
+    }
+    return null;
+};
+
+const validateAdminCustomerCreatePayload = (payload = {}, existingCustomers = [], branchId = null) => {
+    const normalized = { ...(payload || {}) };
+    normalized.firstName = normalizeCustomerField(payload?.firstName, 'firstName', { required: true });
+    normalized.lastName = normalizeCustomerField(payload?.lastName, 'lastName', { required: true });
+    normalized.province = normalizeCustomerField(payload?.province, 'province', { required: true });
+    normalized.municipality = normalizeCustomerField(payload?.municipality, 'municipality', { required: true });
+    normalized.barangay = normalizeCustomerField(payload?.barangay, 'barangay', { required: true });
+    normalized.street = normalizeCustomerField(payload?.street, 'street');
+    normalized.area = normalizeCustomerField(payload?.area, 'area');
+    normalized.remarks = normalizeCustomerField(payload?.remarks, 'remarks');
+    normalized.planName = normalizeCustomerField(payload?.planName, 'planName', { required: true });
+
+    const rawMobile = String(
+        payload?.mobileRaw ?? payload?.mobile ?? payload?.contactNumber ?? payload?.contact ?? ''
+    ).trim();
+    const mobile = rawMobile
+        ? normalizePhilippineMobile(rawMobile, { fallbackToRaw: false })
+        : '';
+    if (rawMobile && !mobile) {
+        throw createError(400, 'Mobile number must use 09xxxxxxxxx or +639xxxxxxxxx format.');
+    }
+    if (mobile.length > CUSTOMER_FIELD_LIMITS.mobile) {
+        throw createError(400, `Mobile number must be ${CUSTOMER_FIELD_LIMITS.mobile} characters or fewer.`);
+    }
+    normalized.mobileRaw = mobile;
+    normalized.mobile = mobile;
+    delete normalized.contactNumber;
+    delete normalized.contact;
+
+    normalized.email = normalizeCustomerField(payload?.email, 'email').toLowerCase();
+    if (normalized.email && !EMAIL_PATTERN.test(normalized.email)) {
+        throw createError(400, 'Enter a valid email address.');
+    }
+
+    normalized.loginUsername = normalizeCustomerField(payload?.loginUsername, 'loginUsername');
+    const suppliedPassword = typeof payload?.loginPassword === 'string' ? payload.loginPassword : '';
+    if (suppliedPassword && suppliedPassword !== suppliedPassword.trim()) {
+        throw createError(400, 'Portal password cannot begin or end with spaces.');
+    }
+    if (suppliedPassword.length > CUSTOMER_FIELD_LIMITS.loginPassword) {
+        throw createError(400, `Portal password must be ${CUSTOMER_FIELD_LIMITS.loginPassword} characters or fewer.`);
+    }
+    if (suppliedPassword && suppliedPassword.length < 12) {
+        throw createError(400, 'Portal password must be at least 12 characters.');
+    }
+    normalized.loginPassword = suppliedPassword;
+
+    const planCategory = String(payload?.planCategory || 'postpaid').trim().toLowerCase();
+    if (!['postpaid', 'prepaid'].includes(planCategory)) {
+        throw createError(400, 'Plan type must be Postpaid or Prepaid.');
+    }
+    normalized.planCategory = planCategory;
+
+    const customerStartType = String(payload?.customerStartType || payload?.subscriberStartType || 'new')
+        .trim()
+        .toLowerCase();
+    if (!['new', 'existing', 'migrated'].includes(customerStartType)) {
+        throw createError(400, 'Customer type must be New or Migrated.');
+    }
+    // Keep the stored compatibility value `existing`; the Admin UI labels this
+    // path "Migrated customer" so Billing can continue to suppress proration.
+    normalized.customerStartType = ['existing', 'migrated'].includes(customerStartType) ? 'existing' : 'new';
+    normalized.subscriberStartType = normalized.customerStartType;
+    normalized.openingPreviousBalance = normalizeOpeningAmount(payload?.openingPreviousBalance, 'Previous balance');
+    normalized.openingAdvancePayment = normalizeOpeningAmount(payload?.openingAdvancePayment, 'Advance payment');
+    if (normalized.openingPreviousBalance > 0 && normalized.openingAdvancePayment > 0) {
+        throw createError(400, 'Use only one opening amount: previous balance or advance payment.');
+    }
+    if (normalized.customerStartType !== 'existing') {
+        normalized.openingPreviousBalance = 0;
+        normalized.openingAdvancePayment = 0;
+    }
+
+    const activationDate = String(payload?.activationDate || '').trim();
+    const billDate = String(payload?.billDate || '').trim();
+    if (!isExactDateOnly(activationDate)) {
+        throw createError(400, 'Enter a valid activation date.');
+    }
+    if (!isExactDateOnly(billDate)) {
+        throw createError(400, 'Enter a valid next bill date.');
+    }
+    normalized.activationDate = activationDate;
+    normalized.billDate = billDate;
+    const dueOffset = Number(payload?.dueOffset);
+    if (!Number.isInteger(dueOffset) || dueOffset < 0 || dueOffset > 365) {
+        throw createError(400, 'Due-after days must be a whole number from 0 to 365.');
+    }
+    normalized.dueOffset = dueOffset;
+
+    const creditLimitRaw = payload?.creditLimit;
+    if (creditLimitRaw !== '' && creditLimitRaw !== null && creditLimitRaw !== undefined) {
+        const creditLimit = Number(creditLimitRaw);
+        if (!Number.isFinite(creditLimit) || creditLimit < 0 || creditLimit > 9_999_999_999.99) {
+            throw createError(400, 'Credit limit must be between zero and PHP 9,999,999,999.99.');
+        }
+        normalized.creditLimit = Math.round((creditLimit + Number.EPSILON) * 100) / 100;
+    }
+
+    const napId = String(payload?.napId || '').trim();
+    const napPort = toPositiveInt(payload?.napPort);
+    if ((napId && !napPort) || (!napId && napPort)) {
+        throw createError(400, 'NAP pin and NAP port must be selected together.');
+    }
+    normalized.napId = napId;
+    normalized.napPort = napPort ? String(napPort) : '';
+    normalized.status = normalizeCustomerStatus(payload?.status, STATUS_INACTIVE);
+
+    const duplicate = findCustomerCreateDuplicate(normalized, existingCustomers, branchId);
+    if (duplicate) {
+        const error = createError(409, duplicate.message);
+        error.duplicate = duplicate;
+        throw error;
+    }
+    return normalized;
 };
 
 const parseCookies = (cookieHeader = '') =>
@@ -1708,6 +1938,8 @@ const mapCustomerRow = (row) => ({
     loginPassword: row.loginPassword || undefined,
     dueOffset: row.dueOffset != null ? Number(row.dueOffset) : undefined,
     planCategory: row.planCategory || undefined,
+    customerStartType: row.customerStartType || undefined,
+    subscriberStartType: row.customerStartType || undefined,
     scheduledPlanId: row.scheduledPlanId || undefined,
     scheduledPlanName: row.scheduledPlanName || undefined,
     scheduledPlanAmount: row.scheduledPlanAmount != null ? Number(row.scheduledPlanAmount) : undefined,
@@ -1791,6 +2023,7 @@ const readCustomers = async (branchId = null) => {
                 plan_amount AS planAmount,
                 plan_billing AS planBilling,
                 plan_category AS planCategory,
+                customer_start_type AS customerStartType,
                 scheduled_plan_id AS scheduledPlanId,
                 scheduled_plan_name AS scheduledPlanName,
                 scheduled_plan_amount AS scheduledPlanAmount,
@@ -1822,8 +2055,14 @@ const readCustomers = async (branchId = null) => {
     return Array.isArray(data) ? data.map(hydrateCustomerStatus) : [];
 };
 
-const writeCustomers = async (customers, branchId = null) => {
+const writeCustomers = async (customers, branchId = null, options = {}) => {
+    const insertOnly = options?.insertOnly === true;
+    const executor = options?.executor && typeof options.executor.query === 'function'
+        ? options.executor
+        : null;
+    const executeQuery = executor ? executor.query.bind(executor) : query;
     if (await isRelationalReady()) {
+        if (executor) assertDataWritesAllowed();
         for (const customer of customers) {
             const resolvedBranchId = customer.branchId || branchId;
             if (!resolvedBranchId) {
@@ -1834,24 +2073,8 @@ const writeCustomers = async (customers, branchId = null) => {
                 statusMode: STATUS_MODE_AUTO
             };
             const statusState = resolveCustomerStatusState(customer.status, customer.statusMode, existingStatusState);
-            const loginPassword = String(customer.loginPassword || '').trim() || null;
-            await query(
-                `INSERT INTO customers (
-                    account_number, branch_id, first_name, last_name, name, email, mobile, mobile_raw,
-                    street, barangay, municipality, province, area, map_pin, status, remarks, since,
-                    activation_date, plan_id, plan_name, plan_amount, plan_billing, plan_category,
-                    scheduled_plan_id, scheduled_plan_name, scheduled_plan_amount, scheduled_plan_billing,
-                    scheduled_plan_category, scheduled_plan_apply_at, scheduled_pppoe_profile,
-                    bill_date, due_date, prepaid_expiration_at, due_offset, credit_limit,
-                    login_username, login_password_hash, pppoe_mode, mikrotik_id, pppoe_username, pppoe_password, pppoe_profile
-                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?
-                 )
-                 ON DUPLICATE KEY UPDATE
+            const loginPassword = ensureHashedCustomerPassword(customer.loginPassword) || null;
+            const duplicateClause = insertOnly ? '' : `ON DUPLICATE KEY UPDATE
                     first_name = VALUES(first_name),
                     last_name = VALUES(last_name),
                     name = VALUES(name),
@@ -1873,6 +2096,7 @@ const writeCustomers = async (customers, branchId = null) => {
                     plan_amount = VALUES(plan_amount),
                     plan_billing = VALUES(plan_billing),
                     plan_category = VALUES(plan_category),
+                    customer_start_type = VALUES(customer_start_type),
                     scheduled_plan_id = VALUES(scheduled_plan_id),
                     scheduled_plan_name = VALUES(scheduled_plan_name),
                     scheduled_plan_amount = VALUES(scheduled_plan_amount),
@@ -1891,7 +2115,25 @@ const writeCustomers = async (customers, branchId = null) => {
                     mikrotik_id = VALUES(mikrotik_id),
                     pppoe_username = VALUES(pppoe_username),
                     pppoe_password = VALUES(pppoe_password),
-                    pppoe_profile = VALUES(pppoe_profile)`,
+                    pppoe_profile = VALUES(pppoe_profile)`;
+            await executeQuery(
+                `INSERT INTO customers (
+                    account_number, branch_id, first_name, last_name, name, email, mobile, mobile_raw,
+                    street, barangay, municipality, province, area, map_pin, status, remarks, since,
+                    activation_date, plan_id, plan_name, plan_amount, plan_billing, plan_category,
+                    customer_start_type,
+                    scheduled_plan_id, scheduled_plan_name, scheduled_plan_amount, scheduled_plan_billing,
+                    scheduled_plan_category, scheduled_plan_apply_at, scheduled_pppoe_profile,
+                    bill_date, due_date, prepaid_expiration_at, due_offset, credit_limit,
+                    login_username, login_password_hash, pppoe_mode, mikrotik_id, pppoe_username, pppoe_password, pppoe_profile
+                 ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?
+                 )
+                 ${duplicateClause}`,
                 [
                     String(customer.accountNumber || '').trim(),
                     resolvedBranchId,
@@ -1916,6 +2158,7 @@ const writeCustomers = async (customers, branchId = null) => {
                     customer.planAmount != null ? Number(customer.planAmount) : null,
                     customer.planBilling || null,
                     customer.planCategory || null,
+                    customer.customerStartType || customer.subscriberStartType || null,
                     customer.scheduledPlanId || null,
                     customer.scheduledPlanName || null,
                     customer.scheduledPlanAmount != null ? Number(customer.scheduledPlanAmount) : null,
@@ -1949,8 +2192,10 @@ const writeCustomers = async (customers, branchId = null) => {
             };
             const statusState = resolveCustomerStatusState(customer.status, customer.statusMode, existingStatusState);
             const { statusRaw, ...rest } = customer;
+            const loginPassword = ensureHashedCustomerPassword(rest.loginPassword);
             return {
                 ...rest,
+                loginPassword: loginPassword || null,
                 status: statusState.stored,
                 statusMode: statusState.statusMode
             };
@@ -1962,18 +2207,17 @@ const writeCustomers = async (customers, branchId = null) => {
 const sanitizeCustomerPayload = (customer) => {
     if (!customer) return null;
     const normalized = hydrateCustomerStatus(customer);
-    const { loginPassword, statusRaw, statusMode, ...rest } = normalized;
+    const { loginPassword, login_password_hash, login_password, statusRaw, statusMode, ...rest } = normalized;
     return rest;
 };
 
 const sanitizeCustomerForAdmin = (customer) => {
     if (!customer || typeof customer !== 'object') return customer;
     const normalized = hydrateCustomerStatus(customer);
-    const { loginPassword, statusRaw, statusMode, ...rest } = normalized;
+    const { loginPassword, login_password_hash, login_password, statusRaw, statusMode, ...rest } = normalized;
     return {
         ...rest,
-        loginPassword: String(loginPassword || ''),
-        loginPasswordSet: Boolean(String(loginPassword || '').trim())
+        loginPasswordSet: Boolean(String(loginPassword || login_password_hash || login_password || '').trim())
     };
 };
 
@@ -2016,6 +2260,7 @@ const getCustomerFromSession = async (req, res = null) => {
                 plan_amount AS planAmount,
                 plan_billing AS planBilling,
                 plan_category AS planCategory,
+                customer_start_type AS customerStartType,
                 scheduled_plan_id AS scheduledPlanId,
                 scheduled_plan_name AS scheduledPlanName,
                 scheduled_plan_amount AS scheduledPlanAmount,
@@ -2532,6 +2777,40 @@ const readCustomerLoginCandidates = async ({ username, accountNumber } = {}) => 
 const findCustomerByCredentialsForLogin = async ({ username, accountNumber, password } = {}) => {
     const candidates = await readCustomerLoginCandidates({ username, accountNumber });
     return findCustomerByCredentials(candidates, { username, accountNumber, password });
+};
+
+const upgradeLegacyCustomerPasswordHash = async (customer, verifiedPassword) => {
+    const storedPassword = String(customer?.loginPassword || '');
+    const accountNumber = String(customer?.accountNumber || '').trim();
+    if (!accountNumber || !storedPassword || isHashedPassword(storedPassword)) return false;
+    const passwordHash = hashPassword(String(verifiedPassword || ''));
+    if (await isRelationalReady()) {
+        const [result] = await query(
+            `UPDATE customers
+             SET login_password_hash = ?
+             WHERE account_number = ?
+               AND login_password_hash = ?`,
+            [passwordHash, accountNumber, storedPassword]
+        );
+        if (Number(result?.affectedRows || 0) <= 0) return false;
+        customer.loginPassword = passwordHash;
+        return true;
+    }
+    let upgraded = false;
+    await withCustomerCreateMutationLock(async () => {
+        const customers = await readCustomers();
+        const index = customers.findIndex((entry) =>
+            String(entry?.accountNumber || '').trim() === accountNumber
+        );
+        if (index < 0) return;
+        const latestPassword = String(customers[index]?.loginPassword || '');
+        if (!latestPassword || isHashedPassword(latestPassword) || latestPassword !== storedPassword) return;
+        customers[index] = { ...customers[index], loginPassword: passwordHash };
+        await writeCustomers(customers, customer?.branchId || null);
+        upgraded = true;
+    });
+    if (upgraded) customer.loginPassword = passwordHash;
+    return upgraded;
 };
 
 const findCustomerByAccount = (customers, accountNumber) => {
@@ -3890,7 +4169,8 @@ const syncCustomerNapAssignment = async ({
     customerName = '',
     napId = '',
     port = null,
-    opticalInfo = undefined
+    opticalInfo = undefined,
+    executor = null
 } = {}) => {
     const scopedBranchId = Number(branchId);
     const targetAccountNumber = String(accountNumber || '').trim();
@@ -3920,10 +4200,11 @@ const syncCustomerNapAssignment = async ({
         return null;
     }
 
-    const pool = await getPool();
-    const connection = await pool.getConnection();
+    const ownsConnection = !(executor && typeof executor.query === 'function');
+    const pool = ownsConnection ? await getPool() : null;
+    const connection = ownsConnection ? await pool.getConnection() : executor;
     try {
-        await connection.beginTransaction();
+        if (ownsConnection) await connection.beginTransaction();
 
         const [existingRows] = await connection.query(
             `SELECT c.optical_info AS opticalInfo
@@ -3956,7 +4237,8 @@ const syncCustomerNapAssignment = async ({
                  FROM pon_naps
                  WHERE branch_id = ?
                    AND client_uid = ?
-                 LIMIT 1`,
+                 LIMIT 1
+                 FOR UPDATE`,
                 [scopedBranchId, targetNapId]
             );
             const napRow = napRows?.[0] || null;
@@ -3986,13 +4268,7 @@ const syncCustomerNapAssignment = async ({
             await connection.query(
                 `INSERT INTO pon_nap_connections (
                     nap_id, customer_account_number, customer_name, customer_ref, port, optical_info
-                 ) VALUES (?, ?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                    customer_account_number = VALUES(customer_account_number),
-                    customer_name = VALUES(customer_name),
-                    customer_ref = VALUES(customer_ref),
-                    optical_info = VALUES(optical_info),
-                    updated_at = CURRENT_TIMESTAMP`,
+                 ) VALUES (?, ?, ?, ?, ?, ?)`,
                 [
                     napDbId,
                     targetAccountNumber,
@@ -4004,7 +4280,7 @@ const syncCustomerNapAssignment = async ({
             );
         }
 
-        await connection.commit();
+        if (ownsConnection) await connection.commit();
         return {
             accountNumber: targetAccountNumber,
             napId: targetNapId || null,
@@ -4013,17 +4289,22 @@ const syncCustomerNapAssignment = async ({
             cleared: !targetNapId
         };
     } catch (error) {
-        try {
-            await connection.rollback();
-        } catch {
-            // Ignore rollback failures.
+        if (ownsConnection) {
+            try {
+                await connection.rollback();
+            } catch {
+                // Ignore rollback failures.
+            }
         }
-        if (isOptionalSchemaError(error)) {
+        if (ownsConnection && isOptionalSchemaError(error)) {
             return null;
+        }
+        if (error?.code === 'ER_DUP_ENTRY') {
+            throw createError(409, 'Selected NAP port is already assigned to another customer.');
         }
         throw error;
     } finally {
-        connection.release();
+        if (ownsConnection) connection.release();
     }
 };
 
@@ -4888,16 +5169,244 @@ const applyNormalizedCustomerMapPin = (target, source = {}) => {
     return normalizedMapPin;
 };
 
-const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'customers-create', allowPastBillingDates = false } = {}) => {
+const isAccountNumberDuplicateError = (error) => {
+    if (error?.code !== 'ER_DUP_ENTRY') return false;
+    const details = String(error?.message || error?.sqlMessage || '');
+    if (/uniq_account_number/i.test(details)) return true;
+    return /\bprimary\b/i.test(details)
+        && /\binsert\s+into\s+customers\b/i.test(String(error?.sql || ''));
+};
+
+const buildCustomerCreateLockName = () => 'customer-create:global';
+
+const buildOpeningAdjustmentEntry = ({
+    branchId,
+    accountNumber,
+    previousBalance = 0,
+    advancePayment = 0,
+    effectiveDate = '',
+    actor = null
+} = {}) => {
+    const debit = normalizeOpeningAmount(previousBalance, 'Previous balance');
+    const credit = normalizeOpeningAmount(advancePayment, 'Advance payment');
+    if (debit <= 0 && credit <= 0) return null;
+    if (debit > 0 && credit > 0) {
+        throw createError(400, 'Use only one opening amount: previous balance or advance payment.');
+    }
+    const account = String(accountNumber || '').trim();
+    const kind = debit > 0 ? 'charge' : 'payment';
+    const direction = debit > 0 ? 'debit' : 'credit';
+    const amount = debit > 0 ? debit : credit;
+    const date = normalizeDateOnly(effectiveDate) || formatDateOnly(new Date());
+    const fingerprint = `customer-onboarding|${branchId}|${account}|${kind}|${amount.toFixed(2)}`;
+    const digest = crypto.createHash('sha256').update(fingerprint).digest('hex').slice(0, 32);
+    return {
+        id: `onboard-${digest}`,
+        branchId: Number(branchId),
+        accountNumber: account,
+        amount,
+        date,
+        kind,
+        type: kind,
+        direction,
+        reference: `${debit > 0 ? 'OBB' : 'OBA'}-${account}`.slice(0, 32),
+        description: debit > 0
+            ? 'Previous Balance Bill - Current Bill'
+            : 'Opening advance payment for current month',
+        recordedAt: new Date().toISOString(),
+        recordedBy: actor ? {
+            id: String(actor.id || ''),
+            username: actor.username || undefined,
+            name: actor.name || undefined,
+            role: actor.role || undefined
+        } : undefined,
+        payer: actor?.name || actor?.username || null,
+        paymentMethod: debit > 0 ? undefined : 'Opening Balance',
+        fingerprint
+    };
+};
+
+const recordCustomerCreateAudit = async ({
+    customer,
+    napId = '',
+    napPort = null,
+    openingEntry = null,
+    actor = null,
+    executor = null
+} = {}) => {
+    const accountNumber = String(customer?.accountNumber || '').trim();
+    const branchId = Number(customer?.branchId || 0) || null;
+    if (!accountNumber || !branchId) return null;
+    const openingSummary = openingEntry
+        ? `Opening ${openingEntry.direction || openingEntry.kind}: PHP ${Number(openingEntry.amount || 0).toFixed(2)}`
+        : 'No opening amount';
+    const napSummary = napId && napPort ? `NAP: ${napId} / port ${napPort}` : 'NAP: not assigned';
+    const message = `Customer ${accountNumber} created`;
+    const meta = [
+        buildCustomerDisplayName(customer),
+        `Branch: ${branchId}`,
+        `Plan: ${customer?.planName || 'No plan'}`,
+        `Status: ${customer?.status || STATUS_INACTIVE}`,
+        napSummary,
+        openingSummary
+    ].filter(Boolean).join(' | ').slice(0, 200);
+    const timestamp = new Date().toISOString();
+    const entry = {
+        id: crypto.randomBytes(8).toString('hex'),
+        message,
+        meta,
+        timestamp,
+        userId: actor?.id ? String(actor.id) : undefined,
+        username: actor?.username || actor?.name || undefined
+    };
+
+    if (executor && typeof executor.query === 'function') {
+        await executor.query(
+            `INSERT INTO activity_logs (id, branch_id, message, meta, timestamp, user_id, username)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                entry.id,
+                branchId,
+                entry.message,
+                entry.meta,
+                toMysqlDateTime(entry.timestamp),
+                entry.userId || null,
+                entry.username || null
+            ]
+        );
+        return entry;
+    }
+
+    return appendActivityLog({ ...entry, branchId });
+};
+
+const recordCustomerOpeningAdjustment = async (options = {}) => {
+    const entry = buildOpeningAdjustmentEntry(options);
+    if (!entry) return null;
+    if (await isRelationalReady()) {
+        const executor = options?.executor && typeof options.executor.query === 'function'
+            ? options.executor
+            : null;
+        const executeQuery = executor ? executor.query.bind(executor) : query;
+        const [existingRows] = await executeQuery(
+            `SELECT id, fingerprint
+             FROM payment_entries
+             WHERE branch_id = ?
+               AND account_number = ?
+               AND (id = ? OR fingerprint = ?)
+             LIMIT 1`,
+            [entry.branchId, entry.accountNumber, entry.id, entry.fingerprint]
+        );
+        if (existingRows?.length) return entry;
+        await executeQuery(
+            `INSERT INTO payment_entries (
+                id, branch_id, account_number, amount, date, kind, direction,
+                reference, description, type, recorded_at, recorded_by_user_id,
+                recorded_by_username, recorded_by_name, recorded_by_role, payer,
+                payment_method, fingerprint
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                entry.id,
+                entry.branchId,
+                entry.accountNumber,
+                entry.amount,
+                entry.date,
+                entry.kind,
+                entry.direction,
+                entry.reference,
+                entry.description,
+                entry.type,
+                toMysqlDateTime(entry.recordedAt),
+                entry.recordedBy?.id || null,
+                entry.recordedBy?.username || null,
+                entry.recordedBy?.name || null,
+                entry.recordedBy?.role || null,
+                entry.payer || null,
+                entry.paymentMethod || null,
+                entry.fingerprint
+            ]
+        );
+        return entry;
+    }
+    const payments = await readPayments(entry.branchId);
+    if (!payments[entry.accountNumber]) payments[entry.accountNumber] = { history: [] };
+    const history = Array.isArray(payments[entry.accountNumber].history)
+        ? payments[entry.accountNumber].history
+        : [];
+    const existing = history.find((item) => item?.id === entry.id || item?.fingerprint === entry.fingerprint);
+    if (existing) return existing;
+    payments[entry.accountNumber].history = [entry, ...history];
+    await writeJson(STORE_KEYS.payments, payments);
+    return entry;
+};
+
+const removeOpeningAdjustmentForRollback = async (entry) => {
+    if (!entry?.id || !entry?.accountNumber) return;
+    if (await isRelationalReady()) {
+        await query(
+            'DELETE FROM payment_entries WHERE id = ? AND branch_id = ? AND account_number = ?',
+            [entry.id, entry.branchId, entry.accountNumber]
+        );
+        return;
+    }
+    const payments = await readPayments(entry.branchId);
+    const record = payments?.[entry.accountNumber];
+    if (!record || !Array.isArray(record.history)) return;
+    record.history = record.history.filter((item) => item?.id !== entry.id);
+    await writeJson(STORE_KEYS.payments, payments);
+};
+
+const removeCustomerForOnboardingRollback = async (accountNumber, branchId) => {
+    const account = String(accountNumber || '').trim();
+    if (!account) return;
+    if (await isRelationalReady()) {
+        await query(
+            'DELETE FROM customers WHERE account_number = ? AND branch_id = ?',
+            [account, branchId]
+        );
+        return;
+    }
+    const customers = await readCustomers();
+    const filtered = customers.filter((customer) => !(
+        String(customer?.accountNumber || '').trim() === account
+        && Number(customer?.branchId || 0) === Number(branchId)
+    ));
+    await writeCustomers(filtered, branchId);
+};
+
+const createCustomerRecordUnlocked = async (
+    payload = {},
+    {
+        branchId,
+        refreshSource = 'customers-create',
+        allowPastBillingDates = false,
+        enforceAdminValidation = false,
+        defaultStatus = STATUS_ACTIVE,
+        includePortalSetup = false,
+        actor = null,
+        accountCreateAttempt = 0
+    } = {}
+) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
         throw createError(400, 'Branch assignment missing for this admin account.');
     }
 
     const customers = await readCustomers();
-    const existing = new Set(customers.map((customer) => customer.accountNumber?.toString()).filter(Boolean));
+    const effectivePayload = enforceAdminValidation
+        ? validateAdminCustomerCreatePayload(payload, customers, scopedBranchId)
+        : { ...(payload || {}) };
+    const existing = new Set();
+    customers.forEach((customer) => {
+        const accountNumber = String(customer?.accountNumber || '').trim();
+        const loginUsername = String(customer?.loginUsername || '').trim();
+        if (accountNumber) existing.add(accountNumber);
+        // A generated account is also the default portal username, so reserve any
+        // numeric custom username that would otherwise create an ambiguous login.
+        if (isValidAccountNumber(loginUsername)) existing.add(loginUsername);
+    });
 
-    let incomingAccount = (payload?.accountNumber || '').toString().trim();
+    let incomingAccount = (effectivePayload?.accountNumber || '').toString().trim();
     const configuredPrefixId = await resolveStoredAccountPrefixId();
     const hasConfiguredPrefix = isAllowedGeneratedAccountPrefix(configuredPrefixId);
     const prefixMatches = !hasConfiguredPrefix || incomingAccount.startsWith(configuredPrefixId);
@@ -4906,7 +5415,7 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         incomingAccount = generateAccountNumber(existing, configuredPrefixId);
     }
 
-    const incomingBody = { ...(payload || {}) };
+    const incomingBody = { ...(effectivePayload || {}) };
     delete incomingBody.statusMode;
     delete incomingBody.prepaidExpirationAt;
     delete incomingBody.prepaid_expiration_at;
@@ -4920,41 +5429,41 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
     delete incomingBody.napPort;
     delete incomingBody.opticalInfo;
     delete incomingBody.opticalPower;
-    applyNormalizedCustomerMobileFields(incomingBody, payload);
-    applyNormalizedCustomerMapPin(incomingBody, payload);
-    const hasIncomingNapAssignment = Object.prototype.hasOwnProperty.call(payload || {}, 'napId')
-        || Object.prototype.hasOwnProperty.call(payload || {}, 'napPort')
-        || Object.prototype.hasOwnProperty.call(payload || {}, 'opticalInfo')
-        || Object.prototype.hasOwnProperty.call(payload || {}, 'opticalPower');
-    const incomingNapId = String(payload?.napId || '').trim();
-    const incomingNapPort = toPositiveInt(payload?.napPort);
-    const incomingOpticalInfo = String(payload?.opticalInfo ?? payload?.opticalPower ?? '').trim();
+    delete incomingBody.openingPreviousBalance;
+    delete incomingBody.openingAdvancePayment;
+    applyNormalizedCustomerMobileFields(incomingBody, effectivePayload);
+    applyNormalizedCustomerMapPin(incomingBody, effectivePayload);
+    const incomingNapId = String(effectivePayload?.napId || '').trim();
+    const incomingNapPort = toPositiveInt(effectivePayload?.napPort);
+    const incomingOpticalInfo = String(effectivePayload?.opticalInfo ?? effectivePayload?.opticalPower ?? '').trim();
+    const hasIncomingNapAssignment = Boolean(incomingNapId && incomingNapPort);
 
-    const firstName = String(payload?.firstName || '').trim();
-    const lastName = String(payload?.lastName || '').trim();
+    const firstName = String(effectivePayload?.firstName || '').trim();
+    const lastName = String(effectivePayload?.lastName || '').trim();
     const fullName = `${firstName} ${lastName}`.trim();
-    const loginUsername = String(payload?.loginUsername || '').trim() || fullName || incomingAccount;
-    const rawLoginPassword = String(payload?.loginPassword || '').trim() || incomingAccount;
-    const loginPassword = rawLoginPassword;
-    const creditRaw = Number(payload?.creditLimit);
+    const loginUsername = String(effectivePayload?.loginUsername || '').trim() || incomingAccount;
+    const suppliedLoginPassword = String(effectivePayload?.loginPassword || '');
+    const temporaryPortalPassword = suppliedLoginPassword ? '' : generateTemporaryPortalPassword();
+    const loginPassword = ensureHashedCustomerPassword(suppliedLoginPassword || temporaryPortalPassword);
+    const creditRaw = Number(effectivePayload?.creditLimit);
     const creditLimit = Number.isFinite(creditRaw) && creditRaw >= 0 ? Math.floor(creditRaw) : undefined;
-    const dueOffsetRaw = Number(payload?.dueOffset);
+    const dueOffsetRaw = Number(effectivePayload?.dueOffset);
     const dueOffset = Number.isFinite(dueOffsetRaw) && dueOffsetRaw >= 0 ? Math.floor(dueOffsetRaw) : undefined;
     const now = new Date();
 
     const plans = await readPlans(scopedBranchId);
-    const requestedPlanCategory = normalizePlanCategory(payload?.planCategory);
+    const requestedPlanCategory = normalizePlanCategory(effectivePayload?.planCategory);
     const planSnapshot = deriveCustomerPlanSnapshot({
         plans,
-        planId: payload?.planId,
-        planName: payload?.planName,
+        planId: effectivePayload?.planId,
+        planName: effectivePayload?.planName,
         allowMissingPlan: requestedPlanCategory === 'prepaid'
     });
     const incomingCategory = normalizePlanCategory(requestedPlanCategory || planSnapshot.planCategory);
     const incomingActivationDate = normalizeDateOnly(
-        payload?.activationDate ?? payload?.activation_date
+        effectivePayload?.activationDate ?? effectivePayload?.activation_date
     );
-    const requestedBillDate = normalizeDateOnly(payload?.billDate);
+    const requestedBillDate = normalizeDateOnly(effectivePayload?.billDate);
     const initialBillDate = incomingCategory === 'prepaid' || allowPastBillingDates
         ? requestedBillDate
         : resolveInitialNextBillDate(requestedBillDate, now);
@@ -4963,17 +5472,17 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         : alignBillDateOnOrAfterActivationDate(initialBillDate, incomingActivationDate);
     const planBilling = 'Monthly';
     const incomingPlanName = String(planSnapshot.planName || '').trim();
-    const incomingMikrotikId = resolveCustomerRouterId(payload);
+    const incomingMikrotikId = resolveCustomerRouterId(effectivePayload);
     if (!incomingPlanName) {
         throw createError(400, 'Plan is required.');
     }
     const incomingPrepaidExpirationAt = normalizePrepaidExpirationAt(
-        payload?.prepaidExpirationAt
-            ?? payload?.prepaid_expiration_at
-            ?? payload?.expiryDateTime
-            ?? payload?.prepaidExpiration
+        effectivePayload?.prepaidExpirationAt
+            ?? effectivePayload?.prepaid_expiration_at
+            ?? effectivePayload?.expiryDateTime
+            ?? effectivePayload?.prepaidExpiration
     );
-    const incomingDueDateRaw = String(payload?.dueDate || '').trim();
+    const incomingDueDateRaw = String(effectivePayload?.dueDate || '').trim();
     const baseIncomingDueDate = normalizeDateOnly(incomingDueDateRaw)
         || formatDateOnly(parseDateTimeValue(incomingPrepaidExpirationAt))
         || '';
@@ -4998,7 +5507,7 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         )
         : true;
     const serviceReady = planReady && prepaidReady;
-    const requestedStatus = normalizeCustomerStatus(payload?.status, STATUS_ACTIVE);
+    const requestedStatus = normalizeCustomerStatus(effectivePayload?.status, defaultStatus);
     const desiredStatus = requestedStatus === STATUS_DISABLED
         ? STATUS_DISABLED
         : (serviceReady ? requestedStatus : STATUS_INACTIVE);
@@ -5035,22 +5544,198 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
     const payments = await readPayments(scopedBranchId);
     const inactiveByRules = isCustomerInactiveByRules(newCustomer, { plans, payments, now });
     const persistedCustomer = applyRuntimeStatusRules(newCustomer, { inactiveByRules });
-    if (await isRelationalReady()) {
-        await writeCustomers([persistedCustomer], scopedBranchId);
-    } else {
-        customers.push(persistedCustomer);
-        await writeCustomers(customers, scopedBranchId);
-    }
+    let customerWasPersisted = false;
+    let openingEntry = null;
+    let auditEntry = null;
+    const relationalReady = await isRelationalReady();
+    if (relationalReady) {
+        const pool = await getPool();
+        const connection = await pool.getConnection();
+        let relationalCreateError = null;
+        const createLockName = buildCustomerCreateLockName();
+        let createLockAcquired = false;
+        try {
+            const [lockRows] = await connection.query(
+                'SELECT GET_LOCK(?, 5) AS acquired',
+                [createLockName]
+            );
+            createLockAcquired = Number(lockRows?.[0]?.acquired) === 1;
+            if (!createLockAcquired) {
+                throw createError(503, 'Customer creation is busy. Please retry in a moment.');
+            }
+            await connection.beginTransaction();
+            const [latestCustomerRows] = await connection.query(
+                `SELECT
+                    account_number AS accountNumber,
+                    branch_id AS branchId,
+                    first_name AS firstName,
+                    last_name AS lastName,
+                    name,
+                    email,
+                    mobile,
+                    mobile_raw AS mobileRaw,
+                    login_username AS loginUsername,
+                    street,
+                    barangay,
+                    municipality,
+                    province
+                 FROM customers
+                 FOR UPDATE`
+            );
+            const latestDuplicate = findCustomerCreateDuplicate(
+                { ...effectivePayload, loginUsername },
+                latestCustomerRows,
+                scopedBranchId
+            );
+            if (latestDuplicate) {
+                const duplicateError = createError(409, latestDuplicate.message);
+                duplicateError.duplicate = latestDuplicate;
+                throw duplicateError;
+            }
+            await writeCustomers([persistedCustomer], scopedBranchId, {
+                insertOnly: true,
+                executor: connection
+            });
+            customerWasPersisted = true;
 
-    if (hasIncomingNapAssignment) {
-        await syncCustomerNapAssignment({
-            branchId: scopedBranchId,
-            accountNumber: persistedCustomer.accountNumber,
-            customerName: buildCustomerDisplayName(persistedCustomer),
-            napId: incomingNapId,
-            port: incomingNapPort,
-            opticalInfo: incomingOpticalInfo
-        });
+            if (hasIncomingNapAssignment) {
+                await syncCustomerNapAssignment({
+                    branchId: scopedBranchId,
+                    accountNumber: persistedCustomer.accountNumber,
+                    customerName: buildCustomerDisplayName(persistedCustomer),
+                    napId: incomingNapId,
+                    port: incomingNapPort,
+                    opticalInfo: incomingOpticalInfo,
+                    executor: connection
+                });
+            }
+
+            if (enforceAdminValidation) {
+                openingEntry = await recordCustomerOpeningAdjustment({
+                    branchId: scopedBranchId,
+                    accountNumber: persistedCustomer.accountNumber,
+                    previousBalance: effectivePayload.openingPreviousBalance,
+                    advancePayment: effectivePayload.openingAdvancePayment,
+                    effectiveDate: effectivePayload.activationDate || effectivePayload.billDate,
+                    actor,
+                    executor: connection
+                });
+                auditEntry = await recordCustomerCreateAudit({
+                    customer: persistedCustomer,
+                    napId: incomingNapId,
+                    napPort: incomingNapPort,
+                    openingEntry,
+                    actor,
+                    executor: connection
+                });
+            }
+            await connection.commit();
+        } catch (error) {
+            relationalCreateError = error;
+            try {
+                await connection.rollback();
+            } catch (rollbackError) {
+                console.error('Customer onboarding transaction rollback failed:', rollbackError?.message || rollbackError);
+            }
+        } finally {
+            if (createLockAcquired) {
+                try {
+                    await connection.query('SELECT RELEASE_LOCK(?) AS released', [createLockName]);
+                } catch (lockReleaseError) {
+                    console.warn('Unable to release customer creation lock:', lockReleaseError?.message || lockReleaseError);
+                }
+            }
+            connection.release();
+        }
+
+        if (relationalCreateError) {
+            if (isAccountNumberDuplicateError(relationalCreateError) && accountCreateAttempt < CUSTOMER_CREATE_MAX_RETRIES) {
+                return createCustomerRecordUnlocked(
+                    { ...effectivePayload, accountNumber: '' },
+                    {
+                        branchId: scopedBranchId,
+                        refreshSource,
+                        allowPastBillingDates,
+                        enforceAdminValidation,
+                        defaultStatus,
+                        includePortalSetup,
+                        actor,
+                        accountCreateAttempt: accountCreateAttempt + 1
+                    }
+                );
+            }
+            throw relationalCreateError;
+        }
+    } else {
+        try {
+            customers.push(persistedCustomer);
+            await writeCustomers(customers, scopedBranchId);
+            customerWasPersisted = true;
+
+            if (hasIncomingNapAssignment) {
+                await syncCustomerNapAssignment({
+                    branchId: scopedBranchId,
+                    accountNumber: persistedCustomer.accountNumber,
+                    customerName: buildCustomerDisplayName(persistedCustomer),
+                    napId: incomingNapId,
+                    port: incomingNapPort,
+                    opticalInfo: incomingOpticalInfo
+                });
+            }
+
+            if (enforceAdminValidation) {
+                openingEntry = await recordCustomerOpeningAdjustment({
+                    branchId: scopedBranchId,
+                    accountNumber: persistedCustomer.accountNumber,
+                    previousBalance: effectivePayload.openingPreviousBalance,
+                    advancePayment: effectivePayload.openingAdvancePayment,
+                    effectiveDate: effectivePayload.activationDate || effectivePayload.billDate,
+                    actor
+                });
+                auditEntry = await recordCustomerCreateAudit({
+                    customer: persistedCustomer,
+                    napId: incomingNapId,
+                    napPort: incomingNapPort,
+                    openingEntry,
+                    actor
+                });
+            }
+        } catch (error) {
+            const rollbackErrors = [];
+            if (openingEntry) {
+                try {
+                    await removeOpeningAdjustmentForRollback(openingEntry);
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError);
+                }
+            }
+            if (customerWasPersisted && hasIncomingNapAssignment) {
+                try {
+                    await syncCustomerNapAssignment({
+                        branchId: scopedBranchId,
+                        accountNumber: persistedCustomer.accountNumber,
+                        customerName: buildCustomerDisplayName(persistedCustomer),
+                        napId: '',
+                        port: null,
+                        opticalInfo: ''
+                    });
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError);
+                }
+            }
+            if (customerWasPersisted) {
+                try {
+                    await removeCustomerForOnboardingRollback(persistedCustomer.accountNumber, scopedBranchId);
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError);
+                }
+            }
+            if (rollbackErrors.length) {
+                console.error('Customer onboarding rollback was incomplete:', rollbackErrors.map((item) => item?.message || item));
+                throw createError(500, 'Customer setup failed and could not be fully rolled back. Contact support before retrying.');
+            }
+            throw error;
+        }
     }
 
     const normalizedRefreshSource = String(refreshSource || '').trim();
@@ -5058,8 +5743,23 @@ const createCustomerRecord = async (payload = {}, { branchId, refreshSource = 'c
         triggerBranchServiceRefreshSafe(scopedBranchId, normalizedRefreshSource);
     }
 
+    if (includePortalSetup) {
+        return {
+            customer: persistedCustomer,
+            openingEntry,
+            auditEntry,
+            portalSetup: temporaryPortalPassword ? {
+                username: loginUsername,
+                temporaryPassword: temporaryPortalPassword,
+                passwordChangeRecommended: true
+            } : null
+        };
+    }
     return persistedCustomer;
 };
+
+const createCustomerRecord = (payload = {}, options = {}) =>
+    withCustomerCreateMutationLock(() => createCustomerRecordUnlocked(payload, options));
 
 const updateCustomerRecord = async (
     accountNumber,
@@ -5782,6 +6482,14 @@ const handleCustomerLogin = async (req, res, next) => {
             return res.status(401).json({ ok: false, error: 'Invalid credentials' });
         }
         const customerRecord = match;
+        try {
+            await upgradeLegacyCustomerPasswordHash(customerRecord, password);
+        } catch (passwordUpgradeError) {
+            console.warn(
+                `Unable to upgrade the portal password hash for account ${customerRecord.accountNumber || 'unknown'}:`,
+                passwordUpgradeError?.message || passwordUpgradeError
+            );
+        }
         const payload = {
             accountNumber: customerRecord.accountNumber || '',
             branchId: customerRecord.branchId || null,
@@ -6742,13 +7450,34 @@ router.post('/', async (req, res, next) => {
         if (!branchId) {
             return res.status(400).json({ message: 'Branch assignment missing for this admin account.' });
         }
-        const persistedCustomer = await createCustomerRecord(req.body || {}, {
+        const onboardingResult = await createCustomerRecord(req.body || {}, {
             branchId,
-            refreshSource: 'customers-create'
+            refreshSource: 'customers-create',
+            enforceAdminValidation: true,
+            defaultStatus: STATUS_INACTIVE,
+            includePortalSetup: true,
+            actor: req.user || null
         });
-        const [technicalCustomer] = await enrichCustomersWithTechnicalDetails([persistedCustomer], branchId);
-        const payments = await readPayments(branchId);
-        res.status(201).json(sanitizeCustomerForAdmin(attachCustomerPaymentSummary(technicalCustomer || persistedCustomer, payments)));
+        const persistedCustomer = onboardingResult.customer;
+        let responseCustomer = persistedCustomer;
+        try {
+            const [technicalCustomer] = await enrichCustomersWithTechnicalDetails([persistedCustomer], branchId);
+            const payments = await readPayments(branchId);
+            responseCustomer = attachCustomerPaymentSummary(technicalCustomer || persistedCustomer, payments);
+        } catch (enrichmentError) {
+            // Core onboarding is already complete. Do not turn an optional response
+            // enrichment failure into a false 500 that encourages a duplicate retry.
+            console.warn('Unable to enrich newly created customer response:', enrichmentError?.message || enrichmentError);
+        }
+        res.status(201).json({
+            ...sanitizeCustomerForAdmin(responseCustomer),
+            portalSetup: onboardingResult.portalSetup,
+            onboarding: {
+                complete: true,
+                openingAmountRecorded: Boolean(onboardingResult.openingEntry),
+                auditRecorded: Boolean(onboardingResult.auditEntry)
+            }
+        });
     } catch (error) {
         next(error);
     }
@@ -6882,5 +7611,9 @@ module.exports.scheduleCustomerArchiveCleanupWithPppoe = scheduleCustomerArchive
 module.exports.sanitizeCustomerForAdmin = sanitizeCustomerForAdmin;
 module.exports.resolveStoredAccountPrefixId = resolveStoredAccountPrefixId;
 module.exports.generateAccountNumber = generateAccountNumber;
+module.exports.generateTemporaryPortalPassword = generateTemporaryPortalPassword;
+module.exports.validateAdminCustomerCreatePayload = validateAdminCustomerCreatePayload;
+module.exports.findCustomerCreateDuplicate = findCustomerCreateDuplicate;
+module.exports.buildOpeningAdjustmentEntry = buildOpeningAdjustmentEntry;
 module.exports.normalizeImportedClientCorrectionRecord = normalizeImportedClientCorrectionRecord;
 module.exports.normalizeCustomerMapPin = normalizeCustomerMapPin;

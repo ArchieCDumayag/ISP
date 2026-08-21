@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const { getPool } = require('../../../../core/data/db');
 const { assertRelationalReady } = require('../../../../core/data/db-relational');
@@ -6,6 +7,10 @@ const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
 const { loadBranchActivePppoeLookup } = require('./mikrotik');
 const { readCoverage } = require('../../customer-management/backend/api_coverage');
 const { readVisibleCustomers: readCustomers, sanitizeCustomerForAdmin } = require('../../customer-management/backend/customers');
+const {
+  withPonBranchLock,
+  ensureRelationalReservationSchema
+} = require('./pon-serviceability');
 
 const router = express.Router();
 const MAX_OLTS = 400;
@@ -176,7 +181,7 @@ const hasPonTables = async () => {
   );
   return REQUIRED_PON_TABLES.every((name) => found.has(name));
 };
-let ponCodePrefixColumnReady = false;
+let ponMetadataColumnsReady = false;
 
 const withTimeout = async (promise, timeoutMs, fallbackValue) => {
   let timer = null;
@@ -193,17 +198,17 @@ const withTimeout = async (promise, timeoutMs, fallbackValue) => {
 };
 
 const ensurePonCodePrefixColumn = async () => {
-  if (ponCodePrefixColumnReady) return;
+  if (ponMetadataColumnsReady) return;
   const pool = await getPool();
   const [rows] = await pool.query(
     `SELECT column_name
      FROM information_schema.columns
      WHERE table_schema = DATABASE()
        AND table_name = 'pon_olts'
-       AND column_name = 'pon_code_prefix'
-     LIMIT 1`
+       AND column_name IN ('pon_code_prefix', 'pon_port_names_json')`
   );
-  if (!(rows || []).length) {
+  const columns = new Set((rows || []).map((row) => toText(row.column_name).toLowerCase()));
+  if (!columns.has('pon_code_prefix')) {
     try {
       await pool.query(
         `ALTER TABLE pon_olts
@@ -215,7 +220,17 @@ const ensurePonCodePrefixColumn = async () => {
       }
     }
   }
-  ponCodePrefixColumnReady = true;
+  if (!columns.has('pon_port_names_json')) {
+    try {
+      await pool.query(
+        `ALTER TABLE pon_olts
+         ADD COLUMN pon_port_names_json LONGTEXT NULL AFTER pon_code_prefix`
+      );
+    } catch (error) {
+      if (error?.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+  ponMetadataColumnsReady = true;
 };
 
 const normalizeConnection = (raw) => {
@@ -356,15 +371,217 @@ const normalizePayload = (payload) => {
   return { olts, naps };
 };
 
+const sortByCanonicalJson = (left, right) => (
+  JSON.stringify(left).localeCompare(JSON.stringify(right))
+);
+
+const canonicalPonRevisionState = (state = {}) => {
+  const olts = (Array.isArray(state?.olts) ? state.olts : [])
+    .map((raw) => {
+      const ponPorts = clamp(toNonNegativeInt(raw?.ponPorts ?? raw?.pon_ports, 0), 0, 4096);
+      const ponPortNames = normalizePonPortNames(
+        raw?.ponPortNames ?? raw?.pon_port_names_json ?? raw?.pon_port_names,
+        ponPorts
+      );
+      return {
+        id: toText(raw?.id ?? raw?.client_uid),
+        name: toText(raw?.name),
+        technology: normalizePonTechnology(raw?.technology),
+        site: toText(raw?.site),
+        status: normalizeOltStatus(raw?.status),
+        ponCodePrefix: normalizePonCodePrefix(raw?.ponCodePrefix ?? raw?.pon_code_prefix),
+        ponPorts,
+        ponPortNames: Object.fromEntries(
+          Object.entries(ponPortNames).sort(([left], [right]) => left.localeCompare(right))
+        )
+      };
+    })
+    .sort(sortByCanonicalJson);
+
+  const naps = (Array.isArray(state?.naps) ? state.naps : [])
+    .map((raw) => {
+      const connections = (Array.isArray(raw?.connections) ? raw.connections : [])
+        .map(normalizeConnection)
+        .filter(Boolean)
+        .sort(sortByCanonicalJson);
+      return {
+        id: toText(raw?.id ?? raw?.client_uid),
+        code: toText(raw?.code).toUpperCase(),
+        location: toText(raw?.location ?? raw?.area),
+        coordinate: toText(raw?.coordinate ?? raw?.coordinates ?? raw?.coords),
+        splitter: normalizeSplitter(raw?.splitter),
+        linkedOlt: toText(raw?.linkedOlt ?? raw?.linked_olt),
+        ponRef: normalizePonRef(raw?.ponRef ?? raw?.pon_ref),
+        ponCapacity: clamp(toPositiveInt(raw?.ponCapacity ?? raw?.pon_capacity, 64), 1, 100000),
+        capacity: Math.max(toNonNegativeInt(raw?.capacity, 0), 0),
+        used: Math.max(toNonNegativeInt(raw?.used, 0), 0),
+        opticalPower: toText(raw?.opticalPower ?? raw?.optical_power),
+        connections
+      };
+    })
+    .sort(sortByCanonicalJson);
+
+  return { olts, naps };
+};
+
+const createPonStateRevision = (state = {}) => {
+  const digest = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(canonicalPonRevisionState(state)))
+    .digest('hex');
+  return `pon-v1-${digest}`;
+};
+
+const createPonRevisionConflict = (currentRevision) => {
+  const error = makeError(
+    'PON data changed after this page was loaded. Reload the latest state and retry your change.',
+    409
+  );
+  error.code = 'PON_STATE_CONFLICT';
+  error.currentRevision = currentRevision;
+  return error;
+};
+
+const assertExpectedPonRevision = (expectedRevision, currentRevision) => {
+  const expected = toText(expectedRevision);
+  if (!expected) {
+    const error = makeError('expectedRevision is required when saving PON state.', 428);
+    error.code = 'PON_REVISION_REQUIRED';
+    throw error;
+  }
+  if (expected !== currentRevision) {
+    throw createPonRevisionConflict(currentRevision);
+  }
+  return currentRevision;
+};
+
+const createActiveReservationConflict = (reservation = {}, reason = '') => {
+  const napId = toText(reservation?.napId ?? reservation?.nap_id);
+  const port = toPositiveInt(reservation?.port);
+  const location = [napId ? `NAP ${napId}` : 'the reserved NAP', port ? `port ${port}` : '']
+    .filter(Boolean)
+    .join(' ');
+  const error = makeError(
+    reason || `${location} is temporarily reserved by a technician. Wait for release or expiry before changing it.`,
+    409
+  );
+  error.code = 'PON_ACTIVE_RESERVATION_CONFLICT';
+  error.reservationConflict = {
+    reservationId: toText(reservation?.reservationId ?? reservation?.id),
+    napId,
+    port,
+    expiresAt: reservation?.expiresAt ?? reservation?.expires_at ?? null
+  };
+  return error;
+};
+
+const activeReservationRows = (reservations = [], nowMs = Date.now()) => (
+  (Array.isArray(reservations) ? reservations : []).filter((reservation) => {
+    const status = toText(reservation?.status || 'active').toLowerCase();
+    const expiresAtMs = new Date(reservation?.expiresAt ?? reservation?.expires_at ?? 0).getTime();
+    return status === 'active' && Number.isFinite(expiresAtMs) && expiresAtMs > nowMs;
+  })
+);
+
+const assertActiveReservationCompatibility = (reservations = [], naps = [], { nowMs = Date.now() } = {}) => {
+  const napById = new Map(
+    (Array.isArray(naps) ? naps : []).map((nap) => [toText(nap?.id ?? nap?.client_uid), nap])
+  );
+  const active = activeReservationRows(reservations, nowMs);
+  active.forEach((reservation) => {
+    const napId = toText(reservation?.napId ?? reservation?.nap_id);
+    const port = toPositiveInt(reservation?.port);
+    const nap = napById.get(napId);
+    if (!nap) {
+      throw createActiveReservationConflict(
+        reservation,
+        `${napId ? `NAP ${napId}` : 'A NAP'} has an active technician reservation and cannot be removed yet.`
+      );
+    }
+    const capacity = Math.max(
+      getSplitCapacity(nap?.splitter),
+      toNonNegativeInt(nap?.capacity, 0),
+      1
+    );
+    if (!port || port > capacity) {
+      throw createActiveReservationConflict(
+        reservation,
+        `NAP ${napId} cannot be reduced below its actively reserved port ${port || ''}.`.trim()
+      );
+    }
+    const portOccupied = (Array.isArray(nap?.connections) ? nap.connections : [])
+      .some((connection) => toPositiveInt(connection?.port) === port);
+    if (portOccupied) {
+      throw createActiveReservationConflict(
+        reservation,
+        `NAP ${napId} port ${port} is temporarily reserved by a technician and cannot be assigned from PON Management.`
+      );
+    }
+  });
+  return active.length;
+};
+
+const getJsonScopedState = (allState, branchId) => (
+  allState?.branches?.[String(branchId)] || allState?.default || {}
+);
+
+const loadRelationalRevisionSnapshot = async (queryable, branchId, { lockRows = false } = {}) => {
+  const lockClause = lockRows ? ' FOR UPDATE' : '';
+  const [oltsRows] = await queryable.query(
+    `SELECT client_uid AS id, name, technology, site, status,
+            pon_ports AS ponPorts, pon_code_prefix AS ponCodePrefix,
+            pon_port_names_json AS ponPortNames
+       FROM pon_olts
+      WHERE branch_id = ?
+      ORDER BY id ASC${lockClause}`,
+    [branchId]
+  );
+  const [napRows] = await queryable.query(
+    `SELECT n.id AS databaseId, n.client_uid AS id, n.code, n.area AS location,
+            n.coordinate, n.splitter, n.pon_ref AS ponRef, n.pon_capacity AS ponCapacity,
+            n.capacity, n.used, n.optical_power AS opticalPower, o.name AS linkedOlt
+       FROM pon_naps n
+       INNER JOIN pon_olts o ON o.id = n.olt_id
+      WHERE n.branch_id = ?
+      ORDER BY n.id ASC${lockClause}`,
+    [branchId]
+  );
+  const [connectionRows] = await queryable.query(
+    `SELECT c.nap_id AS napDatabaseId, c.customer_account_number AS customerId,
+            c.customer_name AS customerName, c.customer_ref AS customerRef,
+            c.port, c.optical_info AS opticalInfo
+       FROM pon_nap_connections c
+       INNER JOIN pon_naps n ON n.id = c.nap_id
+      WHERE n.branch_id = ?
+      ORDER BY c.nap_id ASC, c.port ASC${lockClause}`,
+    [branchId]
+  );
+  const connectionsByNapId = new Map();
+  (connectionRows || []).forEach((row) => {
+    const key = Number(row.napDatabaseId);
+    const rows = connectionsByNapId.get(key) || [];
+    rows.push(row);
+    connectionsByNapId.set(key, rows);
+  });
+  return {
+    olts: oltsRows || [],
+    naps: (napRows || []).map((nap) => ({
+      ...nap,
+      connections: connectionsByNapId.get(Number(nap.databaseId)) || []
+    }))
+  };
+};
+
 const loadState = async (branchId) => {
   if (isJsonStorageMode()) {
     const allState = await readJson(JSON_STORE_KEY, {});
-    const scoped = allState?.branches?.[String(branchId)] || allState?.default || {};
+    const scoped = getJsonScopedState(allState, branchId);
     const olts = Array.isArray(scoped?.olts) ? scoped.olts : [];
     const naps = Array.isArray(scoped?.naps) ? scoped.naps : [];
     return {
       olts,
       naps,
+      revision: createPonStateRevision({ olts, naps }),
       schemaReady: true,
       storageDriver: 'json',
       subscriberStatusAvailable: false
@@ -374,7 +591,7 @@ const loadState = async (branchId) => {
   const pool = await getPool();
   await ensurePonCodePrefixColumn();
   const [oltsRows] = await pool.query(
-    `SELECT client_uid, name, technology, site, status, pon_ports, pon_code_prefix
+    `SELECT client_uid, name, technology, site, status, pon_ports, pon_code_prefix, pon_port_names_json
      FROM pon_olts
      WHERE branch_id = ?
      ORDER BY id ASC`,
@@ -455,7 +672,7 @@ const loadState = async (branchId) => {
     status: normalizeOltStatus(row.status),
     ponCodePrefix: normalizePonCodePrefix(row.pon_code_prefix),
     ponPorts: clamp(toNonNegativeInt(row.pon_ports, 0), 0, 4096),
-    ponPortNames: {}
+    ponPortNames: normalizePonPortNames(row.pon_port_names_json, row.pon_ports)
   }));
 
   const naps = (napRows || []).map((row) => {
@@ -522,6 +739,7 @@ const loadState = async (branchId) => {
   return {
     olts,
     naps,
+    revision: createPonStateRevision({ olts, naps }),
     subscriberStatusAvailable: Boolean(livePppoeLookup?.available),
     activePppoeUsernames: livePppoeLookup?.available ? [...livePppoeLookup.usernames] : []
   };
@@ -696,10 +914,14 @@ const loadOverview = async (branchId) => {
   };
 };
 
-const saveState = async (branchId, payload) => {
+const saveStateUnlocked = async (branchId, payload) => {
   const { olts, naps } = normalizePayload(payload);
   if (isJsonStorageMode()) {
     const allState = await readJson(JSON_STORE_KEY, {});
+    const currentState = getJsonScopedState(allState, branchId);
+    const currentRevision = createPonStateRevision(currentState);
+    assertExpectedPonRevision(payload?.expectedRevision, currentRevision);
+    assertActiveReservationCompatibility(currentState?.reservations, naps);
     const nextState = allState && typeof allState === 'object' && !Array.isArray(allState)
       ? allState
       : {};
@@ -708,26 +930,50 @@ const saveState = async (branchId, payload) => {
       ? nextState.branches
       : {};
     nextState.branches[branchKey] = {
+      ...(nextState.branches[branchKey] && typeof nextState.branches[branchKey] === 'object'
+        ? nextState.branches[branchKey]
+        : currentState),
       olts,
       naps,
       updatedAt: new Date().toISOString()
     };
     await writeJson(JSON_STORE_KEY, nextState);
-    return { olts: olts.length, naps: naps.length };
+    return {
+      olts: olts.length,
+      naps: naps.length,
+      revision: createPonStateRevision(nextState.branches[branchKey])
+    };
   }
 
   const pool = await getPool();
   await ensurePonCodePrefixColumn();
+  await ensureRelationalReservationSchema();
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
+    await connection.query('SELECT id FROM branches WHERE id = ? FOR UPDATE', [branchId]);
+    const currentState = await loadRelationalRevisionSnapshot(connection, branchId, { lockRows: true });
+    const currentRevision = createPonStateRevision(currentState);
+    assertExpectedPonRevision(payload?.expectedRevision, currentRevision);
+    const [reservationRows] = await connection.query(
+      `SELECT r.id AS reservationId, n.client_uid AS napId, r.port,
+              r.customer_ref AS customerAccountNumber, r.expires_at AS expiresAt, r.status
+         FROM pon_port_reservations r
+         INNER JOIN pon_naps n ON n.id = r.nap_id
+        WHERE r.branch_id = ?
+          AND r.status = 'active'
+          AND r.expires_at > CURRENT_TIMESTAMP
+        FOR UPDATE`,
+      [branchId]
+    );
+    assertActiveReservationCompatibility(reservationRows, naps);
 
     for (const olt of olts) {
       await connection.query(
         `INSERT INTO pon_olts (
-            branch_id, client_uid, name, technology, site, status, pon_ports, pon_code_prefix
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            branch_id, client_uid, name, technology, site, status, pon_ports, pon_code_prefix, pon_port_names_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
             name = VALUES(name),
             technology = VALUES(technology),
@@ -735,8 +981,19 @@ const saveState = async (branchId, payload) => {
             status = VALUES(status),
             pon_ports = VALUES(pon_ports),
             pon_code_prefix = VALUES(pon_code_prefix),
+            pon_port_names_json = VALUES(pon_port_names_json),
             updated_at = CURRENT_TIMESTAMP`,
-        [branchId, olt.id, olt.name, olt.technology, olt.site || null, olt.status, olt.ponPorts, olt.ponCodePrefix]
+        [
+          branchId,
+          olt.id,
+          olt.name,
+          olt.technology,
+          olt.site || null,
+          olt.status,
+          olt.ponPorts,
+          olt.ponCodePrefix,
+          JSON.stringify(normalizePonPortNames(olt.ponPortNames, olt.ponPorts))
+        ]
       );
     }
 
@@ -855,8 +1112,10 @@ const saveState = async (branchId, payload) => {
       await connection.query('DELETE FROM pon_olts WHERE branch_id = ?', [branchId]);
     }
 
+    const savedState = await loadRelationalRevisionSnapshot(connection, branchId);
+    const revision = createPonStateRevision(savedState);
     await connection.commit();
-    return { olts: olts.length, naps: naps.length };
+    return { olts: olts.length, naps: naps.length, revision };
   } catch (error) {
     try {
       await connection.rollback();
@@ -871,6 +1130,11 @@ const saveState = async (branchId, payload) => {
     connection.release();
   }
 };
+
+const saveState = async (branchId, payload) => withPonBranchLock(
+  branchId,
+  () => saveStateUnlocked(branchId, payload)
+);
 
 router.get('/state', async (req, res, next) => {
   try {
@@ -975,6 +1239,19 @@ router.put('/state', async (req, res, next) => {
     return res.json({ ok: true, ...summary });
   } catch (error) {
     if (
+      error?.code === 'PON_STATE_CONFLICT'
+      || error?.code === 'PON_REVISION_REQUIRED'
+      || error?.code === 'PON_ACTIVE_RESERVATION_CONFLICT'
+    ) {
+      return res.status(error.statusCode || 409).json({
+        ok: false,
+        code: error.code,
+        error: error.message,
+        ...(error.currentRevision ? { currentRevision: error.currentRevision } : {}),
+        ...(error.reservationConflict ? { reservationConflict: error.reservationConflict } : {})
+      });
+    }
+    if (
       /Relational schema not initialized/i.test(String(error?.message || '')) ||
       isMissingPonTableError(error)
     ) {
@@ -990,3 +1267,8 @@ module.exports.hasPonTables = hasPonTables;
 module.exports.loadPonStateForBranch = loadState;
 module.exports.savePonStateForBranch = saveState;
 module.exports.loadPonOverviewForBranch = loadOverview;
+module.exports.canonicalPonRevisionState = canonicalPonRevisionState;
+module.exports.createPonStateRevision = createPonStateRevision;
+module.exports.assertExpectedPonRevision = assertExpectedPonRevision;
+module.exports.loadRelationalRevisionSnapshot = loadRelationalRevisionSnapshot;
+module.exports.assertActiveReservationCompatibility = assertActiveReservationCompatibility;

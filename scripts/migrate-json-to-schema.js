@@ -111,6 +111,22 @@ async function ensureCustomersPlanIdColumn() {
   }
 }
 
+async function ensureCustomersStartTypeColumn() {
+  const [rows] = await query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'customers'
+       AND column_name = 'customer_start_type'
+     LIMIT 1`
+  );
+  if (rows && rows.length) return;
+  await query(
+    'ALTER TABLE customers ADD COLUMN customer_start_type VARCHAR(20) NULL AFTER plan_category'
+  );
+  console.log('Added customers.customer_start_type column.');
+}
+
 async function ensureCustomersScheduledPlanColumns() {
   const scheduledColumns = [
     {
@@ -202,6 +218,22 @@ async function ensureCoverageAreasMikrotikIdColumn() {
     'ALTER TABLE coverage_areas ADD COLUMN mikrotik_id VARCHAR(120) NULL AFTER area_code'
   );
   console.log('Added coverage_areas.mikrotik_id column.');
+}
+
+async function ensurePonPortNamesColumn() {
+  const [rows] = await query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'pon_olts'
+       AND column_name = 'pon_port_names_json'
+     LIMIT 1`
+  );
+  if (rows && rows.length) return;
+  await query(
+    'ALTER TABLE pon_olts ADD COLUMN pon_port_names_json LONGTEXT NULL AFTER pon_code_prefix'
+  );
+  console.log('Added pon_olts.pon_port_names_json column.');
 }
 
 async function backfillCustomerPlanSnapshots() {
@@ -313,6 +345,27 @@ async function ensureTicketsTicketNumberColumn() {
   if (!indexRows || !indexRows.length) {
     await query('ALTER TABLE tickets ADD KEY idx_tickets_number (ticket_number)');
     console.log('Added tickets idx_tickets_number index.');
+  }
+}
+
+async function ensureTicketArchiveColumns() {
+  const columns = [
+    ['archived_at', 'ALTER TABLE tickets ADD COLUMN archived_at DATETIME NULL AFTER updated_at'],
+    ['archived_by', 'ALTER TABLE tickets ADD COLUMN archived_by VARCHAR(120) NULL AFTER archived_at']
+  ];
+  for (const [name, ddl] of columns) {
+    const [rows] = await query(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'tickets'
+         AND column_name = ?
+       LIMIT 1`,
+      [name]
+    );
+    if (rows && rows.length) continue;
+    await query(ddl);
+    console.log(`Added tickets.${name} column.`);
   }
 }
 
@@ -483,11 +536,14 @@ async function updateSchema() {
   await ensureCustomersActivationDateColumn();
   await ensureCustomersMikrotikIdColumn();
   await ensureCustomersPlanIdColumn();
+  await ensureCustomersStartTypeColumn();
   await ensureCustomersScheduledPlanColumns();
   await ensurePlansProfileBindingsColumn();
   await ensureCoverageAreasMikrotikIdColumn();
+  await ensurePonPortNamesColumn();
   await ensurePaymentEntriesOrNumberColumn();
   await ensureTicketsTicketNumberColumn();
+  await ensureTicketArchiveColumns();
   await backfillCustomerPlanSnapshots();
   await ensureJobsJobNumbering();
   await dropLegacyTicketsPriorityColumn();

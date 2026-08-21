@@ -104,6 +104,12 @@ execFileSync(process.execPath, [
 execFileSync(process.execPath, [
   path.join(projectRoot, 'Features/modules/customer-management/tests/referral-queue.test.js')
 ], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/customer-management/tests/technician-draft-location.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/customer-management/tests/admin-add-customer-hardening.test.js')
+], { stdio: 'inherit' });
 console.log('PASS Customer Management centralized referral workflow contract');
 
 const customerRouter = backend.load('customers');

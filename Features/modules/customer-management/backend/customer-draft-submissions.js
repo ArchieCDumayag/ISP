@@ -1,8 +1,9 @@
 const express = require('express');
 const createError = require('http-errors');
 const { getPool, query } = require('../../../../core/data/db');
-const { readJson } = require('../../../../core/data/data-store');
+const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
+const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
 const { loadAccounts, saveAccounts } = require('../../admin/backend/accounts-store');
 const { verifyPassword, isHashedPassword, hashPassword } = require('../../../../core/security/passwords');
 const { issueToken, verifyTokenDetailed, isEphemeralSessionSecret } = require('../../../../core/security/session-cache');
@@ -14,6 +15,7 @@ const {
     CUSTOMER_DRAFT_SUBMISSIONS_TABLE,
     updateCustomerDraftSubmissionRow,
     deleteCustomerDraftSubmissionRow,
+    withCustomerDraftStoreMutationLock,
     buildCustomerName,
     buildAddressText,
     toSafeText
@@ -24,7 +26,9 @@ const {
     deleteCustomerRecord,
     removeCustomerPppoeAccounts,
     sanitizeCustomerForAdmin,
-    readPlans
+    readPlans,
+    readCustomers,
+    normalizeCustomerMapPin
 } = require('./customers');
 const {
     createCustomerArchive
@@ -32,6 +36,7 @@ const {
 const {
     hasPonTables
 } = require('../../network/backend/pon-management-api');
+const { withPonBranchLock } = require('../../network/backend/pon-serviceability');
 const {
     loadIntegrationSettings,
     hasUsableMikrotikRouter
@@ -52,6 +57,29 @@ const TECHNICIAN_SESSION_TTL_SECONDS = (() => {
 const SINGLE_BRANCH_MODE = String(process.env.SINGLE_BRANCH_MODE || 'true').trim().toLowerCase() === 'true';
 const SINGLE_BRANCH_ID = Number(process.env.SINGLE_BRANCH_ID || 1);
 const COVERAGE_STORE_KEY = 'coverage';
+const PON_STATE_STORE_KEY = 'pon-state';
+const draftSubmissionMutationTails = new Map();
+
+const withDraftSubmissionBranchLock = async (branchId, task) => {
+    const key = String(resolveBranchId(branchId) || branchId || 'default');
+    const previous = draftSubmissionMutationTails.get(key) || Promise.resolve();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const tail = previous.catch(() => {}).then(() => gate);
+    draftSubmissionMutationTails.set(key, tail);
+    await previous.catch(() => {});
+    try {
+        return await task();
+    } finally {
+        release();
+        if (draftSubmissionMutationTails.get(key) === tail) {
+            draftSubmissionMutationTails.delete(key);
+        }
+    }
+};
+
+const withDraftSubmissionLock = async (branchId, task) =>
+    withCustomerDraftStoreMutationLock(() => withDraftSubmissionBranchLock(branchId, task));
 
 const resolveBranchId = (value) => {
     if (SINGLE_BRANCH_MODE && Number.isFinite(SINGLE_BRANCH_ID) && SINGLE_BRANCH_ID > 0) {
@@ -200,7 +228,49 @@ const normalizeDraftPayload = (payload = {}) => {
     const lastName = toSafeText(source.lastName, 100);
     const explicitName = toSafeText(source.name, 200);
     const mobile = normalizePhilippineMobile(source.mobile || source.contactNumber || source.contact);
+    const hasLatitude = Object.prototype.hasOwnProperty.call(source, 'latitude')
+        && source.latitude !== null
+        && String(source.latitude).trim() !== '';
+    const hasLongitude = Object.prototype.hasOwnProperty.call(source, 'longitude')
+        && source.longitude !== null
+        && String(source.longitude).trim() !== '';
+    if (hasLatitude !== hasLongitude) {
+        throw createError(400, 'Both latitude and longitude are required when capturing GPS.');
+    }
+    let coordinateInput = toSafeText(source.mapPin, 120);
+    if (hasLatitude && hasLongitude) {
+        const latitude = Number(source.latitude);
+        const longitude = Number(source.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            throw createError(400, 'GPS latitude and longitude must be valid numbers.');
+        }
+        coordinateInput = `${latitude}, ${longitude}`;
+    }
+    const mapPin = coordinateInput ? normalizeCustomerMapPin(coordinateInput) : '';
+    const rawAccuracy = source.gpsAccuracyMeters ?? source.gps_accuracy_meters;
+    let gpsAccuracyMeters = null;
+    if (rawAccuracy !== undefined && rawAccuracy !== null && String(rawAccuracy).trim() !== '') {
+        gpsAccuracyMeters = Number(rawAccuracy);
+        if (!Number.isFinite(gpsAccuracyMeters) || gpsAccuracyMeters < 0 || gpsAccuracyMeters > 10000) {
+            throw createError(400, 'GPS accuracy must be between 0 and 10,000 meters.');
+        }
+        gpsAccuracyMeters = Number(gpsAccuracyMeters.toFixed(2));
+    }
+    const rawCapturedAt = toSafeText(source.gpsCapturedAt || source.gps_captured_at, 80);
+    let gpsCapturedAt = '';
+    if (rawCapturedAt) {
+        const capturedDate = new Date(rawCapturedAt);
+        if (!Number.isFinite(capturedDate.getTime())) {
+            throw createError(400, 'GPS capture time is invalid.');
+        }
+        gpsCapturedAt = capturedDate.toISOString();
+    }
+    const locationSourceInput = toSafeText(source.locationSource || source.location_source, 20).toLowerCase();
+    const locationSource = ['gps', 'map', 'manual'].includes(locationSourceInput)
+        ? locationSourceInput
+        : (mapPin ? (hasLatitude ? 'gps' : 'manual') : '');
     const normalized = {
+        clientEventId: toSafeText(source.clientEventId || source.client_event_id, 100),
         name: explicitName || `${firstName} ${lastName}`.trim(),
         firstName,
         lastName,
@@ -211,7 +281,10 @@ const normalizeDraftPayload = (payload = {}) => {
         municipality: toSafeText(source.municipality, 150),
         province: toSafeText(source.province, 150),
         area: toSafeText(source.area, 150),
-        mapPin: toSafeText(source.mapPin, 120),
+        mapPin,
+        gpsAccuracyMeters,
+        gpsCapturedAt,
+        locationSource,
         planId: toSafeText(source.planId, 80),
         planName: toSafeText(source.planName, 120),
         planCategory: normalizePlanCategory(source.planCategory),
@@ -237,8 +310,25 @@ const normalizeDraftPayload = (payload = {}) => {
     if (normalized.planAmount == null) delete normalized.planAmount;
     if (normalized.dueOffset == null) delete normalized.dueOffset;
     if (normalized.creditLimit == null) delete normalized.creditLimit;
+    if (normalized.gpsAccuracyMeters == null) delete normalized.gpsAccuracyMeters;
+    if (!normalized.gpsCapturedAt) delete normalized.gpsCapturedAt;
+    if (!normalized.locationSource) delete normalized.locationSource;
+    if (!normalized.clientEventId) delete normalized.clientEventId;
     if (!normalized.prepaidExpirationAt) delete normalized.prepaidExpirationAt;
     return normalized;
+};
+
+const preserveInstallationCompletion = (reviewedDraft = {}, existingDraftData = {}) => {
+    const completion = existingDraftData?.installationCompletion;
+    if (!completion || typeof completion !== 'object' || Array.isArray(completion)) {
+        return reviewedDraft;
+    }
+    // Installation evidence is written by the authenticated technician finalize flow.
+    // Admin form payloads may edit customer fields, but must not replace or erase it.
+    return {
+        ...reviewedDraft,
+        installationCompletion: JSON.parse(JSON.stringify(completion))
+    };
 };
 
 const applyDraftPortalCredentialDefaults = (draft = {}, accountNumber = '') => {
@@ -392,6 +482,33 @@ const removePonAssignmentsForAccount = async (branchId, accountNumber) => {
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0 || !safeAccountNumber) {
         return false;
     }
+    if (isJsonStorageMode()) {
+        return withPonBranchLock(safeBranchId, async () => {
+            const allState = await readJson(PON_STATE_STORE_KEY, {});
+            const branch = allState?.branches?.[String(safeBranchId)] || allState?.default;
+            if (!branch || !Array.isArray(branch.naps)) return false;
+            const accountKey = safeAccountNumber.toLowerCase();
+            let removed = false;
+            branch.naps.forEach((nap) => {
+                const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+                const kept = connections.filter((entry) => {
+                    const matches = [entry?.customerId, entry?.customerRef, entry?.accountNumber]
+                        .some((value) => toSafeText(value, 200).toLowerCase() === accountKey);
+                    if (matches) removed = true;
+                    return !matches;
+                });
+                if (kept.length !== connections.length) {
+                    nap.connections = kept;
+                    nap.used = kept.length;
+                }
+            });
+            if (removed) {
+                branch.updatedAt = new Date().toISOString();
+                await writeJson(PON_STATE_STORE_KEY, allState);
+            }
+            return removed;
+        });
+    }
     const ponReady = await hasPonTables().catch(() => false);
     if (!ponReady) return false;
 
@@ -417,6 +534,32 @@ const promotePonAssignmentsForAccount = async (branchId, accountNumber) => {
     const safeAccountNumber = toSafeText(accountNumber, 20);
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0 || !safeAccountNumber) {
         return false;
+    }
+    if (isJsonStorageMode()) {
+        return withPonBranchLock(safeBranchId, async () => {
+            const allState = await readJson(PON_STATE_STORE_KEY, {});
+            const branch = allState?.branches?.[String(safeBranchId)] || allState?.default;
+            if (!branch || !Array.isArray(branch.naps)) return false;
+            const accountKey = safeAccountNumber.toLowerCase();
+            let promoted = false;
+            branch.naps.forEach((nap) => {
+                (Array.isArray(nap?.connections) ? nap.connections : []).forEach((entry) => {
+                    const matches = [entry?.customerId, entry?.customerRef, entry?.accountNumber]
+                        .some((value) => toSafeText(value, 200).toLowerCase() === accountKey);
+                    if (!matches) return;
+                    if (entry.customerId !== safeAccountNumber || entry.customerRef !== safeAccountNumber) {
+                        entry.customerId = safeAccountNumber;
+                        entry.customerRef = safeAccountNumber;
+                        promoted = true;
+                    }
+                });
+            });
+            if (promoted) {
+                branch.updatedAt = new Date().toISOString();
+                await writeJson(PON_STATE_STORE_KEY, allState);
+            }
+            return promoted;
+        });
     }
     const ponReady = await hasPonTables().catch(() => false);
     if (!ponReady) return false;
@@ -545,12 +688,56 @@ const buildDraftArchivePayload = ({
     };
 };
 
+const cleanupRejectedOrDeletedDraftResources = async ({
+    branchId,
+    linkedCustomerAccountNumber = '',
+    draftData = {},
+    customerName = '',
+    refreshSource = 'customer-drafts-delete',
+    deleteCustomer = true
+} = {}) => {
+    const warnings = [];
+    try {
+        await removePonAssignmentsForAccount(branchId, linkedCustomerAccountNumber);
+    } catch (error) {
+        warnings.push(`PON cleanup: ${error?.message || error}`);
+    }
+
+    if (!deleteCustomer) return warnings.join('; ');
+
+    if (linkedCustomerAccountNumber) {
+        try {
+            await deleteCustomerRecord(linkedCustomerAccountNumber, {
+                branchId,
+                refreshSource,
+                deleteDraftRows: false
+            });
+            return warnings.join('; ');
+        } catch (error) {
+            if (Number(error?.status || 0) !== 404) {
+                warnings.push(`Customer cleanup: ${error?.message || error}`);
+                return warnings.join('; ');
+            }
+        }
+    }
+
+    const cleanupResult = await cleanupDraftLinkedPppoeAccount({
+        branchId,
+        linkedCustomerAccountNumber,
+        draftData,
+        customerName
+    });
+    if (cleanupResult?.warning) warnings.push(String(cleanupResult.warning));
+    return warnings.join('; ');
+};
+
 const deletePendingDraftSubmission = async ({
     submissionId,
     branchId,
     submittedByUserId = '',
     refreshSource = 'customer-drafts-delete',
-    deletedBy = null
+    deletedBy = null,
+    branchLockHeld = false
 } = {}) => {
     await ensureCustomerDraftSubmissionsTable();
 
@@ -562,6 +749,18 @@ const deletePendingDraftSubmission = async ({
     }
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
         throw createError(400, 'Branch assignment missing for this request.');
+    }
+
+    const relationalReady = await isRelationalReady();
+    if (!relationalReady && !branchLockHeld) {
+        return withDraftSubmissionLock(safeBranchId, () => deletePendingDraftSubmission({
+            submissionId: safeSubmissionId,
+            branchId: safeBranchId,
+            submittedByUserId: safeSubmittedByUserId,
+            refreshSource,
+            deletedBy,
+            branchLockHeld: true
+        }));
     }
 
     const existing = await getCustomerDraftSubmission(safeSubmissionId, safeBranchId);
@@ -582,38 +781,7 @@ const deletePendingDraftSubmission = async ({
     const existingDraftData = existing.draftData && typeof existing.draftData === 'object' && !Array.isArray(existing.draftData)
         ? existing.draftData
         : {};
-    let cleanupWarning = '';
-    await removePonAssignmentsForAccount(safeBranchId, linkedCustomerAccountNumber);
-    if (linkedCustomerAccountNumber) {
-        try {
-            await deleteCustomerRecord(linkedCustomerAccountNumber, {
-                branchId: safeBranchId,
-                refreshSource,
-                deleteDraftRows: false
-            });
-        } catch (error) {
-            if (Number(error?.status || 0) !== 404) {
-                throw error;
-            }
-            const cleanupResult = await cleanupDraftLinkedPppoeAccount({
-                branchId: safeBranchId,
-                linkedCustomerAccountNumber,
-                draftData: existingDraftData,
-                customerName: existing.customerName || buildCustomerName(existingDraftData)
-            });
-            cleanupWarning = String(cleanupResult?.warning || '').trim();
-        }
-    } else {
-        const cleanupResult = await cleanupDraftLinkedPppoeAccount({
-            branchId: safeBranchId,
-            linkedCustomerAccountNumber,
-            draftData: existingDraftData,
-            customerName: existing.customerName || buildCustomerName(existingDraftData)
-        });
-        cleanupWarning = String(cleanupResult?.warning || '').trim();
-    }
-
-    if (!await isRelationalReady()) {
+    if (!relationalReady) {
         const deleted = await deleteCustomerDraftSubmissionRow({
             id: safeSubmissionId,
             branchId: safeBranchId,
@@ -623,6 +791,13 @@ const deletePendingDraftSubmission = async ({
         if (!deleted) {
             throw createError(409, 'Unable to delete customer draft. It may have been updated already.');
         }
+        await cleanupRejectedOrDeletedDraftResources({
+            branchId: safeBranchId,
+            linkedCustomerAccountNumber,
+            draftData: existingDraftData,
+            customerName: existing.customerName || buildCustomerName(existingDraftData),
+            refreshSource
+        });
         return existing;
     }
 
@@ -650,7 +825,7 @@ const deletePendingDraftSubmission = async ({
             payload: buildDraftArchivePayload({
                 submission: existing,
                 linkedCustomerAccountNumber,
-                cleanupWarning
+                cleanupWarning: ''
             }),
             executor: connection
         });
@@ -675,6 +850,14 @@ const deletePendingDraftSubmission = async ({
         connection.release();
     }
 
+    await cleanupRejectedOrDeletedDraftResources({
+        branchId: safeBranchId,
+        linkedCustomerAccountNumber,
+        draftData: existingDraftData,
+        customerName: existing.customerName || buildCustomerName(existingDraftData),
+        refreshSource
+    });
+
     return existing;
 };
 
@@ -697,6 +880,125 @@ const validateDraftPayload = (draft = {}, options = {}) => {
             draft.area = matchedAreaName;
         }
     }
+};
+
+const duplicateNameKey = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
+    name: duplicateNameKey(buildCustomerName(draft)),
+    mobile: normalizePhilippineMobile(draft.mobile, { fallbackToRaw: false }),
+    email: toSafeText(draft.email, 150).toLowerCase(),
+    street: duplicateNameKey(draft.street),
+    barangay: duplicateNameKey(draft.barangay),
+    municipality: duplicateNameKey(draft.municipality),
+    province: duplicateNameKey(draft.province),
+    area: duplicateNameKey(draft.area),
+    mapPin: toSafeText(draft.mapPin, 120),
+    planId: toSafeText(draft.planId, 80),
+    planName: duplicateNameKey(draft.planName),
+    planCategory: toSafeText(draft.planCategory, 20).toLowerCase(),
+    planAmount: toOptionalNumber(draft.planAmount),
+    activationDate: normalizeDateOnly(draft.activationDate),
+    billDate: normalizeDateOnly(draft.billDate),
+    dueDate: normalizeDateOnly(draft.dueDate),
+    prepaidExpirationAt: normalizeDateTimeInput(draft.prepaidExpirationAt),
+    dueOffset: Number.isFinite(Number(draft.dueOffset)) ? Math.max(0, Math.floor(Number(draft.dueOffset))) : null,
+    creditLimit: Number.isFinite(Number(draft.creditLimit)) ? Math.max(0, Math.floor(Number(draft.creditLimit))) : null,
+    gpsAccuracyMeters: toOptionalNumber(draft.gpsAccuracyMeters),
+    gpsCapturedAt: toSafeText(draft.gpsCapturedAt, 80),
+    remarks: toSafeText(draft.remarks, 2000),
+    status: toSafeText(draft.status, 30).toLowerCase(),
+    loginUsername: toSafeText(draft.loginUsername, 120),
+    loginPassword: toSafeText(draft.loginPassword, 120),
+    pppoeMode: toSafeText(draft.pppoeMode, 30).toLowerCase(),
+    pppoeUsername: toSafeText(draft.pppoeUsername, 120),
+    pppoePassword: toSafeText(draft.pppoePassword, 120),
+    pppoeProfile: toSafeText(draft.pppoeProfile, 120)
+});
+
+const listAllCustomerDraftSubmissions = async (options = {}, listPage = listCustomerDraftSubmissions) => {
+    const items = [];
+    let offset = 0;
+    while (true) {
+        const result = await listPage({ ...options, limit: 200, offset });
+        const page = Array.isArray(result?.items) ? result.items : [];
+        items.push(...page);
+        const total = Number(result?.pagination?.total);
+        offset += page.length;
+        if (!page.length || (Number.isFinite(total) && offset >= total)) break;
+    }
+    return items;
+};
+
+const findDraftSubmissionByClientEvent = async (branchId, technicianId, draft = {}) => {
+    const clientEventId = toSafeText(draft.clientEventId, 100);
+    if (!clientEventId) return null;
+    const submissions = await listAllCustomerDraftSubmissions({
+        branchId,
+        status: 'all',
+        submittedByUserId: technicianId
+    });
+    return submissions.find((submission) => (
+        toSafeText(submission?.draftData?.clientEventId, 100) === clientEventId
+    )) || null;
+};
+
+const findDraftDuplicateCandidates = async (branchId, draft = {}) => {
+    const targetName = duplicateNameKey(buildCustomerName(draft));
+    const targetMobile = normalizePhilippineMobile(draft.mobile, { fallbackToRaw: false });
+    const targetMapPin = toSafeText(draft.mapPin, 120);
+    if (!targetName) return [];
+
+    const [customers, pendingDrafts] = await Promise.all([
+        readCustomers(branchId),
+        listAllCustomerDraftSubmissions({ branchId, status: 'pending' })
+    ]);
+    const candidates = [];
+    (Array.isArray(customers) ? customers : []).forEach((customer) => {
+        const name = buildCustomerName(customer);
+        const mobile = normalizePhilippineMobile(
+            customer?.mobileRaw || customer?.mobile || customer?.contactNumber || '',
+            { fallbackToRaw: false }
+        );
+        const mapPin = toSafeText(customer?.mapPin, 120);
+        const sameName = duplicateNameKey(name) === targetName;
+        const sameMobile = Boolean(targetMobile && mobile && targetMobile === mobile);
+        const sameLocation = Boolean(targetMapPin && mapPin && targetMapPin === mapPin);
+        if (!sameName || (!sameMobile && !sameLocation)) return;
+        candidates.push({
+            type: 'customer',
+            accountNumber: toSafeText(customer?.accountNumber, 20),
+            name,
+            mobile,
+            status: toSafeText(customer?.status, 30) || 'active',
+            matchedBy: sameMobile ? 'name-and-mobile' : 'name-and-location'
+        });
+    });
+    pendingDrafts.forEach((submission) => {
+        const pendingDraft = submission?.draftData || {};
+        const name = submission?.customerName || buildCustomerName(pendingDraft);
+        const mobile = normalizePhilippineMobile(
+            pendingDraft?.mobile || submission?.contactNumber || '',
+            { fallbackToRaw: false }
+        );
+        const mapPin = toSafeText(pendingDraft?.mapPin, 120);
+        const sameName = duplicateNameKey(name) === targetName;
+        const sameMobile = Boolean(targetMobile && mobile && targetMobile === mobile);
+        const sameLocation = Boolean(targetMapPin && mapPin && targetMapPin === mapPin);
+        if (!sameName || (!sameMobile && !sameLocation)) return;
+        candidates.push({
+            type: 'pending-draft',
+            accountNumber: toSafeText(submission?.draftAccountNumber, 20),
+            name,
+            mobile,
+            status: 'pending',
+            matchedBy: sameMobile ? 'name-and-mobile' : 'name-and-location'
+        });
+    });
+    return candidates.slice(0, 10);
 };
 
 const buildTechnicianProfile = (account = {}) => {
@@ -867,6 +1169,16 @@ technicianRouter.get('/meta', async (req, res, next) => {
     }
 });
 
+technicianRouter.post('/duplicate-check', async (req, res, next) => {
+    try {
+        const draft = normalizeDraftPayload(req.body || {});
+        const candidates = await findDraftDuplicateCandidates(req.technician.branchId, draft);
+        res.json({ ok: true, duplicate: candidates.length > 0, candidates });
+    } catch (error) {
+        next(error);
+    }
+});
+
 technicianRouter.get('/', async (req, res, next) => {
     try {
         const status = String(req.query?.status || 'all').trim().toLowerCase() || 'all';
@@ -896,16 +1208,41 @@ technicianRouter.post('/', async (req, res, next) => {
         );
         validateDraftPayload(draft, { coverageAreas });
 
-        const item = await createCustomerDraftSubmission({
-            branchId: req.technician.branchId,
-            submittedBy: req.technician,
-            draftData: draft
+        const submission = await withDraftSubmissionLock(req.technician.branchId, async () => {
+            const replay = await findDraftSubmissionByClientEvent(
+                req.technician.branchId,
+                req.technician.id,
+                draft
+            );
+            if (replay) {
+                if (draftSubmissionFingerprint(replay.draftData) !== draftSubmissionFingerprint(draft)) {
+                    throw createError(409, 'clientEventId was already used for a different customer draft.');
+                }
+                return { item: replay, replayed: true };
+            }
+            const duplicates = await findDraftDuplicateCandidates(req.technician.branchId, draft);
+            if (duplicates.length) {
+                throw createError(409, 'A matching customer or pending installation already exists.', {
+                    duplicateCandidates: duplicates
+                });
+            }
+            return {
+                item: await createCustomerDraftSubmission({
+                    branchId: req.technician.branchId,
+                    submittedBy: req.technician,
+                    draftData: draft
+                }),
+                replayed: false
+            };
         });
 
-        res.status(201).json({
+        res.status(submission.replayed ? 200 : 201).json({
             ok: true,
-            message: 'Customer draft submitted for admin finalization.',
-            item
+            replayed: submission.replayed,
+            message: submission.replayed
+                ? 'Customer draft was already submitted.'
+                : 'Customer draft submitted for admin finalization.',
+            item: submission.item
         });
     } catch (error) {
         next(error);
@@ -971,6 +1308,7 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
         }
 
         if (!await isRelationalReady()) {
+            return await withDraftSubmissionLock(req.branchId, async () => {
             const existing = await getCustomerDraftSubmission(submissionId, req.branchId);
             if (!existing) {
                 throw createError(404, 'Customer draft not found.');
@@ -990,9 +1328,12 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 readPlans(req.branchId),
                 readCoverageAreaNames(req.branchId)
             ]);
-            let reviewedDraft = applyPlanDefaults(
-                normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
-                plans
+            let reviewedDraft = preserveInstallationCompletion(
+                applyPlanDefaults(
+                    normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
+                    plans
+                ),
+                existingDraftData
             );
 
             const linkedCustomerAccountNumber = toSafeText(
@@ -1041,7 +1382,7 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             };
 
             const decisionReason = toSafeText(req.body?.reason, 2000) || null;
-            await updateCustomerDraftSubmissionRow(submissionId, req.branchId, {
+            const updatedSubmission = await updateCustomerDraftSubmissionRow(submissionId, req.branchId, {
                 customer_name: buildCustomerName(finalizedDraft) || null,
                 contact_number: toSafeText(finalizedDraft.mobile, 50) || null,
                 plan_name: toSafeText(finalizedDraft.planName, 120) || null,
@@ -1057,6 +1398,9 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 decision_reason: decisionReason,
                 approved_customer_account_number: toSafeText(persistedCustomer?.accountNumber, 20) || null
             });
+            if (!updatedSubmission) {
+                throw createError(409, 'Unable to approve customer draft. It may have been updated already.');
+            }
 
             await promotePonAssignmentsForAccount(
                 req.branchId,
@@ -1069,6 +1413,7 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 customer: sanitizeCustomerForAdmin(persistedCustomer)
             });
             return;
+            });
         }
 
         const pool = await getPool();
@@ -1115,9 +1460,12 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             readPlans(req.branchId),
             readCoverageAreaNames(req.branchId)
         ]);
-        let reviewedDraft = applyPlanDefaults(
-            normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
-            plans
+        let reviewedDraft = preserveInstallationCompletion(
+            applyPlanDefaults(
+                normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
+                plans
+            ),
+            existingDraftData
         );
 
         const linkedCustomerAccountNumber = toSafeText(
@@ -1230,51 +1578,87 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
 });
 
 adminRouter.post('/:id/reject', async (req, res, next) => {
+    let connection = null;
     try {
         await ensureCustomerDraftSubmissionsTable();
         const submissionId = toSafeText(req.params?.id, 64);
         if (!submissionId) {
             throw createError(400, 'Submission ID is required.');
         }
-
-        const existing = await getCustomerDraftSubmission(submissionId, req.branchId);
-        if (!existing) {
-            throw createError(404, 'Customer draft not found.');
-        }
-        if (existing.rawStatus !== 'pending') {
-            throw createError(409, `This draft is already ${existing.rawStatus || 'processed'}.`);
-        }
-
-        const draft = existing.draftData || {};
         const decisionReason = toSafeText(req.body?.reason, 2000) || null;
-        const linkedCustomerAccountNumber = toSafeText(
-            existing.approvedCustomerAccountNumber || existing.draftAccountNumber,
-            20
-        );
-        await removePonAssignmentsForAccount(req.branchId, linkedCustomerAccountNumber);
 
         if (!await isRelationalReady()) {
-            const item = await updateCustomerDraftSubmissionRow(submissionId, req.branchId, {
-                customer_name: buildCustomerName(draft) || existing.customerName || null,
-                contact_number: toSafeText(draft.mobile || draft.contactNumber, 50) || existing.contactNumber || null,
-                plan_name: toSafeText(draft.planName, 120) || existing.planName || null,
-                area_name: toSafeText(draft.area, 150) || existing.areaName || null,
-                address_text: buildAddressText(draft) || existing.addressText || null,
-                status: 'rejected',
-                reviewed_at: new Date().toISOString(),
-                reviewed_by_user_id: toSafeText(req.user?.id, 32) || null,
-                reviewed_by_username: toSafeText(req.user?.username, 100) || null,
-                reviewed_by_name: toSafeText(req.user?.name, 120) || null,
-                decision_reason: decisionReason
+            return await withDraftSubmissionLock(req.branchId, async () => {
+                const existing = await getCustomerDraftSubmission(submissionId, req.branchId);
+                if (!existing) {
+                    throw createError(404, 'Customer draft not found.');
+                }
+                if (existing.rawStatus !== 'pending') {
+                    throw createError(409, `This draft is already ${existing.rawStatus || 'processed'}.`);
+                }
+                const draft = existing.draftData || {};
+                const linkedCustomerAccountNumber = toSafeText(
+                    existing.approvedCustomerAccountNumber || existing.draftAccountNumber,
+                    20
+                );
+                const item = await updateCustomerDraftSubmissionRow(submissionId, req.branchId, {
+                    customer_name: buildCustomerName(draft) || existing.customerName || null,
+                    contact_number: toSafeText(draft.mobile || draft.contactNumber, 50) || existing.contactNumber || null,
+                    plan_name: toSafeText(draft.planName, 120) || existing.planName || null,
+                    area_name: toSafeText(draft.area, 150) || existing.areaName || null,
+                    address_text: buildAddressText(draft) || existing.addressText || null,
+                    status: 'rejected',
+                    reviewed_at: new Date().toISOString(),
+                    reviewed_by_user_id: toSafeText(req.user?.id, 32) || null,
+                    reviewed_by_username: toSafeText(req.user?.username, 100) || null,
+                    reviewed_by_name: toSafeText(req.user?.name, 120) || null,
+                    decision_reason: decisionReason
+                });
+                if (!item) {
+                    throw createError(409, 'Unable to reject customer draft. It may have been updated already.');
+                }
+                const cleanupWarning = await cleanupRejectedOrDeletedDraftResources({
+                    branchId: req.branchId,
+                    linkedCustomerAccountNumber,
+                    draftData: draft,
+                    customerName: existing.customerName || buildCustomerName(draft),
+                    refreshSource: 'customer-drafts-reject',
+                    deleteCustomer: false
+                });
+                res.json({ ok: true, item, ...(cleanupWarning ? { cleanupWarning } : {}) });
             });
-            if (!item) {
-                throw createError(409, 'Unable to reject customer draft. It may have been updated already.');
-            }
-            res.json({ ok: true, item });
-            return;
         }
 
-        const [result] = await query(
+        const pool = await getPool();
+        if (!pool) throw createError(500, 'MySQL connection is not available.');
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [rows] = await connection.query(
+            `SELECT *
+             FROM ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
+             WHERE id = ?
+               AND branch_id = ?
+             FOR UPDATE`,
+            [submissionId, req.branchId]
+        );
+        if (!rows || !rows.length) throw createError(404, 'Customer draft not found.');
+        const existing = rows[0];
+        const currentStatus = String(existing.status || '').trim().toLowerCase();
+        if (currentStatus !== 'pending') {
+            throw createError(409, `This draft is already ${currentStatus || 'processed'}.`);
+        }
+        let draft = {};
+        try {
+            const parsed = JSON.parse(existing.draft_json || '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) draft = parsed;
+        } catch {
+            draft = {};
+        }
+        const linkedCustomerAccountNumber = toSafeText(
+            existing.approved_customer_account_number || existing.draft_account_number,
+            20
+        );
+        const [result] = await connection.query(
             `UPDATE ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
              SET
                 customer_name = ?,
@@ -1292,11 +1676,11 @@ adminRouter.post('/:id/reject', async (req, res, next) => {
                AND branch_id = ?
                AND status = 'pending'`,
             [
-                buildCustomerName(draft) || existing.customerName || null,
-                toSafeText(draft.mobile || draft.contactNumber, 50) || existing.contactNumber || null,
-                toSafeText(draft.planName, 120) || existing.planName || null,
-                toSafeText(draft.area, 150) || existing.areaName || null,
-                buildAddressText(draft) || existing.addressText || null,
+                buildCustomerName(draft) || existing.customer_name || null,
+                toSafeText(draft.mobile || draft.contactNumber, 50) || existing.contact_number || null,
+                toSafeText(draft.planName, 120) || existing.plan_name || null,
+                toSafeText(draft.area, 150) || existing.area_name || null,
+                buildAddressText(draft) || existing.address_text || null,
                 toSafeText(req.user?.id, 32) || null,
                 toSafeText(req.user?.username, 100) || null,
                 toSafeText(req.user?.name, 120) || null,
@@ -1308,11 +1692,24 @@ adminRouter.post('/:id/reject', async (req, res, next) => {
         if (!result || !result.affectedRows) {
             throw createError(409, 'Unable to reject customer draft. It may have been updated already.');
         }
-
+        await connection.commit();
+        connection.release();
+        connection = null;
+        const cleanupWarning = await cleanupRejectedOrDeletedDraftResources({
+            branchId: req.branchId,
+            linkedCustomerAccountNumber,
+            draftData: draft,
+            customerName: existing.customer_name || buildCustomerName(draft),
+            refreshSource: 'customer-drafts-reject',
+            deleteCustomer: false
+        });
         const item = await getCustomerDraftSubmission(submissionId, req.branchId);
-        res.json({ ok: true, item });
+        res.json({ ok: true, item, ...(cleanupWarning ? { cleanupWarning } : {}) });
     } catch (error) {
+        if (connection) await connection.rollback().catch(() => {});
         next(error);
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -1339,3 +1736,9 @@ module.exports.TECHNICIAN_TOKEN_SCOPE = TECHNICIAN_TOKEN_SCOPE;
 module.exports.buildTechnicianProfile = buildTechnicianProfile;
 module.exports.loadTechnicianByToken = loadTechnicianByToken;
 module.exports.requireTechnicianAuth = requireTechnicianAuth;
+module.exports.normalizeDraftPayload = normalizeDraftPayload;
+module.exports.preserveInstallationCompletion = preserveInstallationCompletion;
+module.exports.findDraftDuplicateCandidates = findDraftDuplicateCandidates;
+module.exports.withDraftSubmissionLock = withDraftSubmissionLock;
+module.exports.draftSubmissionFingerprint = draftSubmissionFingerprint;
+module.exports.listAllCustomerDraftSubmissions = listAllCustomerDraftSubmissions;

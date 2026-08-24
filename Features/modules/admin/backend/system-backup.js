@@ -134,9 +134,15 @@ router.post('/preview', async (req, res) => {
         createdAt: prepared.manifest.createdAt,
         applicationVersion: prepared.manifest.applicationVersion,
         storageDriver: prepared.manifest.storageDriver,
+        targetStorageDriver: prepared.targetStorageDriver || prepared.manifest.storageDriver,
+        conversionRequired: prepared.conversion?.required === true,
+        conversionRecordCount: Number(prepared.conversion?.relationalRecordCount || 0),
         ...prepared.summary,
         excluded: prepared.manifest.excluded || [],
-        warnings: prepared.manifest.warnings || []
+        warnings: [
+          ...(prepared.manifest.warnings || []),
+          ...(prepared.conversion?.warnings || [])
+        ]
       },
       current,
       automaticPreImportBackup: true,

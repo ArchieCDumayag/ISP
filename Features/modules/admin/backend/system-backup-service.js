@@ -10,6 +10,11 @@ const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { getStorageDriver } = require('../../../../core/config/storage-mode');
 const { DATA_DIR, PROJECT_ROOT, PUBLIC_ROOT, isPathInside } = require('../../../../core/runtime/paths');
 const { countStoreRecords } = require('./factory-reset');
+const {
+  buildJsonToMysqlPlan,
+  getRequiredTableColumns,
+  applyJsonToMysqlPlan
+} = require('./json-to-mysql-restore');
 
 const BACKUP_KIND = 'isp-full-system-backup';
 const BACKUP_SCHEMA_VERSION = 1;
@@ -198,6 +203,9 @@ function createSystemBackupService(options = {}) {
   const storageDriver = options.getStorageDriver || getStorageDriver;
   const relationalReady = options.isRelationalReady || isRelationalReady;
   const acquirePool = options.getPool || getPool;
+  const createJsonToMysqlPlan = options.buildJsonToMysqlPlan || buildJsonToMysqlPlan;
+  const requiredJsonToMysqlColumns = options.getRequiredTableColumns || getRequiredTableColumns;
+  const applyJsonToMysqlConversion = options.applyJsonToMysqlPlan || applyJsonToMysqlPlan;
   const stagingRoot = path.resolve(options.stagingRoot || path.join(dataDir, 'backups', '.system-backup-staging'));
   const backupRoot = path.resolve(options.backupRoot || path.join(dataDir, 'backups'));
 
@@ -598,7 +606,8 @@ function createSystemBackupService(options = {}) {
       const driver = String(manifest.storageDriver || '').trim().toLowerCase();
       if (!['json', 'mysql'].includes(driver)) throw new Error('Backup storage driver is invalid.');
       const currentDriver = String(storageDriver() || '').trim().toLowerCase();
-      if (driver !== currentDriver) {
+      const convertsJsonToMysql = driver === 'json' && currentDriver === 'mysql';
+      if (driver !== currentDriver && !convertsJsonToMysql) {
         throw new Error(`Backup uses ${driver.toUpperCase()} storage, but this server uses ${currentDriver.toUpperCase()} storage.`);
       }
 
@@ -705,6 +714,8 @@ function createSystemBackupService(options = {}) {
       const extraPaths = [...extraction.extracted.keys()].filter((entryName) => !expectedPaths.has(entryName));
       if (extraPaths.length) throw new Error(`Backup contains undeclared entries, starting with ${extraPaths[0]}.`);
 
+      let jsonToMysqlPlan = null;
+      let conversion = null;
       if (driver === 'json') {
         const accounts = parsedStores.get('accounts.json');
         if (!Array.isArray(accounts) || !accounts.some((account) => (
@@ -712,6 +723,17 @@ function createSystemBackupService(options = {}) {
           && String(account?.role || '').toLowerCase().includes('admin')
         ))) {
           throw new Error('Backup does not contain an active Admin account record.');
+        }
+        if (convertsJsonToMysql) {
+          jsonToMysqlPlan = createJsonToMysqlPlan(parsedStores);
+          await validateJsonToMysqlCompatibility(jsonToMysqlPlan);
+          conversion = {
+            required: true,
+            sourceStorageDriver: 'json',
+            targetStorageDriver: 'mysql',
+            relationalRecordCount: Number(jsonToMysqlPlan.relationalRecordCount || 0),
+            warnings: [...(jsonToMysqlPlan.warnings || [])]
+          };
         }
       } else {
         const users = parsedTables.get('users');
@@ -730,6 +752,9 @@ function createSystemBackupService(options = {}) {
         ...received,
         contentRoot,
         manifest: cloneJson(manifest),
+        targetStorageDriver: currentDriver,
+        conversion,
+        jsonToMysqlPlan,
         parsedStores,
         parsedTables,
         summary: {
@@ -800,6 +825,36 @@ function createSystemBackupService(options = {}) {
         const archiveSignature = archiveTable.columns.map((column) => `${column.name}:${String(column.type || '').toLowerCase()}`);
         if (JSON.stringify(currentSignature) !== JSON.stringify(archiveSignature)) {
           throw new Error(`MySQL schema columns differ for ${archiveTable.tableName}; safe restore stopped.`);
+        }
+      }
+    } finally {
+      connection.release();
+    }
+  };
+
+  const validateJsonToMysqlCompatibility = async (plan) => {
+    if (!(await relationalReady())) throw new Error('MySQL relational schema is not available.');
+    const pool = await acquirePool();
+    if (!pool) throw new Error('MySQL connection is not available.');
+    const connection = await pool.getConnection();
+    try {
+      const currentTables = await getMysqlTables(connection);
+      const currentByName = new Map(currentTables.map((table) => [table.tableName, table]));
+      const unsafeTable = currentTables.find((table) => String(table.engine || '').toLowerCase() !== 'innodb');
+      if (unsafeTable) {
+        throw new Error(`Table ${unsafeTable.tableName} is not transactional InnoDB; safe JSON conversion is unavailable.`);
+      }
+      const requiredColumns = requiredJsonToMysqlColumns(plan);
+      for (const [logicalTableName, columnNames] of Object.entries(requiredColumns)) {
+        const tableName = logicalTableName === 'app_store' ? STORE_TABLE : logicalTableName;
+        if (!currentByName.has(tableName)) {
+          throw new Error(`MySQL table ${tableName} is required to convert this JSON backup.`);
+        }
+        const currentColumns = await getMysqlColumns(connection, tableName);
+        const currentNames = new Set(currentColumns.map((column) => column.name));
+        const missingColumn = columnNames.find((columnName) => !currentNames.has(columnName));
+        if (missingColumn) {
+          throw new Error(`MySQL table ${tableName} is missing column ${missingColumn}; run Schema Update before importing.`);
         }
       }
     } finally {
@@ -1009,6 +1064,48 @@ function createSystemBackupService(options = {}) {
     }
   };
 
+  const restoreJsonToMysql = async (prepared) => {
+    if (!prepared.jsonToMysqlPlan) throw new Error('JSON-to-MySQL conversion plan is missing. Select the backup again.');
+    await validateJsonToMysqlCompatibility(prepared.jsonToMysqlPlan);
+    const pool = await acquirePool();
+    if (!pool) throw new Error('MySQL connection is not available.');
+    const connection = await pool.getConnection();
+    let filesystemSwap = null;
+    let foreignKeysDisabled = false;
+    try {
+      const tables = await getMysqlTables(connection);
+      await connection.beginTransaction();
+      await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+      foreignKeysDisabled = true;
+      for (const descriptor of [...tables].reverse()) {
+        await connection.query(`DELETE FROM ${quoteIdentifier(descriptor.tableName)}`);
+      }
+      const [sessionTableRows] = await connection.query(
+        `SELECT COUNT(*) AS count
+         FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+           AND table_name = 'sessions'`
+      );
+      if (Number(sessionTableRows?.[0]?.count || 0) > 0) {
+        await connection.query('DELETE FROM `sessions`');
+      }
+      const conversionResult = await applyJsonToMysqlConversion(connection, prepared.jsonToMysqlPlan, {
+        storeTable: STORE_TABLE
+      });
+      filesystemSwap = await swapFilesystem(prepared, false);
+      await connection.commit();
+      await filesystemSwap.commit().catch(() => {});
+      return conversionResult;
+    } catch (error) {
+      await connection.rollback().catch(() => {});
+      if (filesystemSwap) await filesystemSwap.rollback().catch(() => {});
+      throw error;
+    } finally {
+      if (foreignKeysDisabled) await connection.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
+      connection.release();
+    }
+  };
+
   const restoreJson = async (prepared) => {
     const filesystemSwap = await swapFilesystem(prepared, true);
     await filesystemSwap.commit().catch(() => {});
@@ -1016,16 +1113,24 @@ function createSystemBackupService(options = {}) {
 
   const restorePrepared = async (prepared) => {
     const currentDriver = String(storageDriver() || '').trim().toLowerCase();
-    if (prepared.manifest.storageDriver !== currentDriver) {
+    const targetDriver = String(prepared.targetStorageDriver || prepared.manifest.storageDriver || '').trim().toLowerCase();
+    if (targetDriver !== currentDriver) {
       throw new Error('Server storage mode changed after preview. Select and validate the backup again.');
     }
     const preImportBackup = await createPreImportBackup();
     try {
-      if (currentDriver === 'mysql') await restoreMysql(prepared);
-      else await restoreJson(prepared);
+      let conversion = null;
+      if (currentDriver === 'mysql' && prepared.manifest.storageDriver === 'json') {
+        conversion = await restoreJsonToMysql(prepared);
+      } else if (currentDriver === 'mysql') {
+        await restoreMysql(prepared);
+      } else {
+        await restoreJson(prepared);
+      }
       return {
         restoredAt: new Date().toISOString(),
         summary: cloneJson(prepared.summary),
+        ...(conversion ? { conversion: cloneJson(conversion) } : {}),
         preImportBackup: {
           fileName: preImportBackup.fileName,
           relativePath: toPosixPath(path.relative(dataDir, preImportBackup.destinationPath))

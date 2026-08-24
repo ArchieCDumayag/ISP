@@ -1597,6 +1597,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div class="fw-semibold mb-1">All current server records and uploaded files will be replaced.</div>
                                 <div class="small">A complete pre-import backup is created automatically. API and background record changes are paused during restore, and every session is signed out afterward.</div>
                             </div>
+                            ${archive.conversionRequired ? `
+                            <div class="alert alert-warning" role="alert">
+                                <div class="fw-semibold mb-1">Storage conversion required</div>
+                                <div class="small">This JSON backup was validated and will be converted transactionally into the server's MySQL schema during restore.</div>
+                            </div>` : ''}
                             <div class="row g-2 mb-3">
                                 <div class="col-md-6"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Selected backup</div><div class="fw-semibold" data-restore-archive-summary></div></div></div></div>
                                 <div class="col-md-6"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Current server to replace</div><div class="fw-semibold" data-restore-current-summary></div></div></div></div>
@@ -1629,7 +1634,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const submitButton = modal.querySelector('[data-restore-submit]');
             const form = modal.querySelector('form');
 
-            fileLabel.textContent = `${archive.fileName || 'Selected archive'} · ${String(archive.storageDriver || '').toUpperCase()} · created ${archive.createdAt ? new Date(archive.createdAt).toLocaleString() : 'unknown'}`;
+            const sourceStorageDriver = String(archive.storageDriver || '').toUpperCase();
+            const targetStorageDriver = String(archive.targetStorageDriver || archive.storageDriver || '').toUpperCase();
+            const storageLabel = archive.conversionRequired
+                ? `${sourceStorageDriver} -> ${targetStorageDriver}`
+                : sourceStorageDriver;
+            fileLabel.textContent = `${archive.fileName || 'Selected archive'} · ${storageLabel} · created ${archive.createdAt ? new Date(archive.createdAt).toLocaleString() : 'unknown'}`;
             archiveSummary.textContent = `${formatBackupCount(archive.recordCount)} records · ${formatBackupCount(archive.uploadFileCount)} files (${formatBackupBytes(archive.uploadBytes)})`;
             currentSummary.textContent = `${formatBackupCount(current.recordCount)} records · ${formatBackupCount(current.uploadFileCount)} files (${formatBackupBytes(current.uploadBytes)})`;
             phraseLabel.textContent = phrase;

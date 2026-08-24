@@ -7,6 +7,7 @@ const path = require('path');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 require(path.join(projectRoot, 'core/config/env-loader'));
+const { resetPool } = require(path.join(projectRoot, 'core/data/db'));
 
 const { loadModuleBackend, getModuleWebRoot } = require(path.join(
   projectRoot,
@@ -244,6 +245,10 @@ const systemBackupModule = require(path.join(
   projectRoot,
   'Features/modules/admin/backend/system-backup-service'
 ));
+const jsonToMysqlRestoreModule = require(path.join(
+  projectRoot,
+  'Features/modules/admin/backend/json-to-mysql-restore'
+));
 assert.strictEqual(systemBackupModule.BACKUP_KIND, 'isp-full-system-backup');
 assert.strictEqual(systemBackupModule.BACKUP_SCHEMA_VERSION, 1);
 assert.strictEqual(systemBackupModule.RESTORE_CONFIRMATION_PHRASE, 'RESTORE ALL DATA');
@@ -257,6 +262,96 @@ assert.strictEqual(maintenanceState.getMaintenance()?.kind, 'backup compatibilit
 assert.throws(() => maintenanceState.assertDataWritesAllowed(), /temporarily paused/);
 assert.strictEqual(maintenanceState.endMaintenance(maintenanceToken), true);
 maintenanceState.assertDataWritesAllowed();
+
+async function verifyJsonToMysqlConversionContract() {
+  const stores = new Map([
+    ['accounts.json', [
+      { id: '1', username: 'owner', role: 'Admin', password: 'owner-password', branchId: 1 },
+      { id: '2', username: 'collector', role: 'Collector', password: 'collector-password', branchId: 1 }
+    ]],
+    ['customers.json', [{
+      accountNumber: '100000001',
+      branchId: 1,
+      name: 'Converted Customer',
+      planId: 'plan-800',
+      planName: 'Plan 800',
+      planAmount: 800,
+      loginPassword: 'customer-password'
+    }]],
+    ['plans.json', [{ id: 'plan-800', name: 'Plan 800', price: 800 }]],
+    ['collectors.json', { assignments: { Poblacion: ['2'] } }],
+    ['payments.json', {
+      100000001: {
+        history: [{
+          id: 'payment-1',
+          amount: 800,
+          date: '2026-08-24',
+          kind: 'payment',
+          direction: 'credit',
+          reference: 'GCASH-1001'
+        }]
+      }
+    }],
+    ['pon-state.json', {
+      branches: {
+        1: {
+          olts: [{ id: 'olt-1', name: 'OLT 1', technology: 'epon', ponPorts: 16 }],
+          naps: [{
+            id: 'nap-1',
+            code: 'NAP-1',
+            linkedOlt: 'OLT 1',
+            ponRef: 'PON-1',
+            splitter: '1:16',
+            capacity: 16,
+            connections: [{ port: 1, customerId: '100000001', customerName: 'Converted Customer' }]
+          }]
+        }
+      }
+    }]
+  ]);
+  const plan = jsonToMysqlRestoreModule.buildJsonToMysqlPlan(stores);
+  assert.strictEqual(plan.sourceStorageDriver, 'json');
+  assert.strictEqual(plan.targetStorageDriver, 'mysql');
+  assert.strictEqual(plan.users.length, 2);
+  assert.strictEqual(plan.customers.length, 1);
+  assert.strictEqual(plan.plans.length, 1);
+  assert.strictEqual(plan.payments.length, 1);
+  assert.strictEqual(plan.collectorAssignments.length, 1);
+  assert.strictEqual(plan.ponOlts.length, 1);
+  assert.strictEqual(plan.ponNaps.length, 1);
+  assert.strictEqual(plan.ponNaps[0].connections.length, 1);
+  assert.strictEqual(plan.appStoreRows.length, stores.size, 'Every JSON store must remain preserved in app_store');
+  assert.strictEqual(new Set(plan.payments.map((entry) => entry.id)).size, plan.payments.length);
+  const requiredColumns = jsonToMysqlRestoreModule.getRequiredTableColumns(plan);
+  assert(requiredColumns.app_store.includes('payload'));
+  assert(requiredColumns.payment_entries.includes('fingerprint'));
+
+  const queries = [];
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql: String(sql), params });
+      return [[], []];
+    }
+  };
+  const minimalPlan = {
+    ...plan,
+    collectorAssignments: [],
+    ponOlts: [],
+    ponNaps: [],
+    activityLogs: [],
+    businessProfiles: [],
+    integrationSettings: [],
+    tickets: [],
+    jobs: []
+  };
+  const applied = await jsonToMysqlRestoreModule.applyJsonToMysqlPlan(connection, minimalPlan);
+  assert.strictEqual(applied.sourceStorageDriver, 'json');
+  assert.strictEqual(applied.targetStorageDriver, 'mysql');
+  assert(queries.some((entry) => entry.sql.includes('INSERT INTO `payment_entries`')));
+  assert(queries.some((entry) => entry.sql.includes('INSERT INTO `app_store`')));
+  assert(!queries.some((entry) => entry.sql.includes('INSERT INTO `sessions`')));
+  console.log('PASS Admin JSON-to-MySQL full-backup conversion contract');
+}
 
 async function verifyFullSystemBackupContract() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'isp-system-backup-test-'));
@@ -381,8 +476,16 @@ const systemBackupRouteSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/admin/backend/system-backup.js'),
   'utf8'
 );
+const systemBackupServiceSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/admin/backend/system-backup-service.js'),
+  'utf8'
+);
 assert(systemBackupRouteSource.includes('service.validateGeneratedArchive(archive)'));
 assert(systemBackupRouteSource.includes("'Content-Length': String(validation.bytes)"));
+assert(systemBackupRouteSource.includes('conversionRequired'));
+assert(systemBackupServiceSource.includes("driver === 'json' && currentDriver === 'mysql'"));
+assert(systemBackupServiceSource.includes('restoreJsonToMysql'));
+assert(sharedLayoutSource.includes('Storage conversion required'));
 console.log('PASS Admin server loader and web routing');
 
 const installerSource = fs.readFileSync(
@@ -396,8 +499,13 @@ assert(installerSource.includes("'Features/modules/admin/web/update-download.htm
 console.log('PASS Admin installer root and package paths');
 verifyFactoryResetContract()
   .then(verifyFullSystemBackupContract)
-  .then(() => console.log('ADMIN COMPATIBILITY PASSED'))
-  .catch((error) => {
+  .then(verifyJsonToMysqlConversionContract)
+  .then(async () => {
+    console.log('ADMIN COMPATIBILITY PASSED');
+    await resetPool();
+  })
+  .catch(async (error) => {
     console.error(error);
+    await resetPool().catch(() => {});
     process.exitCode = 1;
   });

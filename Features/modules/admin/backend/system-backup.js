@@ -80,10 +80,13 @@ router.get('/export', async (_req, res) => {
   let archive = null;
   try {
     archive = await service.createTemporaryArchive();
+    const validation = await service.validateGeneratedArchive(archive);
     res.set({
       'Cache-Control': 'no-store',
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${archive.fileName}"`,
+      'Content-Length': String(validation.bytes),
+      'X-Backup-Snapshot-Id': validation.manifest.snapshotId,
       'X-Content-Type-Options': 'nosniff'
     });
     await pipeline(fs.createReadStream(archive.destinationPath), res);

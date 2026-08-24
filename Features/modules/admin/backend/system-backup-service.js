@@ -745,6 +745,38 @@ function createSystemBackupService(options = {}) {
     }
   };
 
+  const validateGeneratedArchive = async (archive) => {
+    const destinationPath = path.resolve(String(archive?.destinationPath || ''));
+    if (!archive?.destinationPath || !(await pathExists(destinationPath))) {
+      throw new Error('Generated backup archive is missing before download.');
+    }
+    const stat = await fsp.stat(destinationPath);
+    if (!stat.isFile() || stat.size <= 0) {
+      throw new Error('Generated backup archive is empty before download.');
+    }
+
+    const source = fs.createReadStream(destinationPath);
+    source.headers = { 'content-length': String(stat.size) };
+    let received = null;
+    let prepared = null;
+    try {
+      received = await receiveArchive(source);
+      prepared = await validateArchive(received);
+      const generatedSnapshotId = String(archive?.manifest?.snapshotId || '');
+      const validatedSnapshotId = String(prepared?.manifest?.snapshotId || '');
+      if (!generatedSnapshotId || generatedSnapshotId !== validatedSnapshotId) {
+        throw new Error('Generated backup identity changed during validation.');
+      }
+      return {
+        bytes: stat.size,
+        manifest: cloneJson(prepared.manifest),
+        summary: cloneJson(prepared.summary)
+      };
+    } finally {
+      await cleanupPrepared(prepared || received).catch(() => {});
+    }
+  };
+
   const validateMysqlCompatibility = async (archiveTables) => {
     if (!(await relationalReady())) throw new Error('MySQL relational schema is not available.');
     const pool = await acquirePool();
@@ -1015,6 +1047,7 @@ function createSystemBackupService(options = {}) {
     createPreImportBackup,
     receiveArchive,
     validateArchive,
+    validateGeneratedArchive,
     inspectCurrent,
     restorePrepared,
     cleanupPrepared,

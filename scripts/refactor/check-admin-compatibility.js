@@ -290,6 +290,14 @@ async function verifyFullSystemBackupContract() {
       isRelationalReady: async () => false
     });
     const exported = await service.createTemporaryArchive();
+    const generatedValidation = await service.validateGeneratedArchive(exported);
+    assert.strictEqual(
+      generatedValidation.manifest.snapshotId,
+      exported.manifest.snapshotId,
+      'Export must pass the same archive validation used by Import before download'
+    );
+    assert.strictEqual(generatedValidation.summary.recordCount, 4);
+    assert.strictEqual(generatedValidation.summary.uploadFileCount, 2);
     const uploadStream = fs.createReadStream(exported.destinationPath);
     uploadStream.headers = { 'content-length': String(fs.statSync(exported.destinationPath).size) };
     const received = await service.receiveArchive(uploadStream);
@@ -369,6 +377,12 @@ assert(sharedLayoutSource.includes("fetch('/api/system-backup/preview'"));
 assert(sharedLayoutSource.includes("fetch('/api/system-backup/restore'"));
 assert(sharedLayoutSource.includes("fetch('/api/import/customers-full'"));
 assert(sharedLayoutSource.includes('RESTORE ALL DATA'));
+const systemBackupRouteSource = fs.readFileSync(
+  path.join(projectRoot, 'Features/modules/admin/backend/system-backup.js'),
+  'utf8'
+);
+assert(systemBackupRouteSource.includes('service.validateGeneratedArchive(archive)'));
+assert(systemBackupRouteSource.includes("'Content-Length': String(validation.bytes)"));
 console.log('PASS Admin server loader and web routing');
 
 const installerSource = fs.readFileSync(

@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.7">
+    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.10">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -94,8 +94,22 @@
                         </div>
                     </div>
                     <div class="card-body queue-history-tools">
+                        <div class="queue-history-view-bar">
+                            <nav class="nav nav-pills" aria-label="Imported GCash transaction type" role="tablist">
+                                <button type="button" class="nav-link active" id="queueGcashCreditsViewBtn" data-gcash-history-type="credit" role="tab" aria-selected="true">
+                                    <i class="ti ti-arrow-down-left me-1" aria-hidden="true"></i> Credits
+                                </button>
+                                <button type="button" class="nav-link" id="queueGcashDebitsViewBtn" data-gcash-history-type="debit" role="tab" aria-selected="false">
+                                    <i class="ti ti-arrow-up-right me-1" aria-hidden="true"></i> Debits · Finance Review
+                                </button>
+                                <button type="button" class="nav-link" id="queueGcashNotForPostingViewBtn" data-gcash-history-type="remarked" role="tab" aria-selected="false">
+                                    <i class="ti ti-message-lock me-1" aria-hidden="true"></i> Not for Posting
+                                    <span class="badge bg-purple-lt text-purple ms-1" id="queueGcashNotForPostingCount" aria-label="Not for Posting transactions this month">0</span>
+                                </button>
+                            </nav>
+                        </div>
                         <div class="row g-2 align-items-end">
-                            <div class="col-12 col-lg-6">
+                            <div class="col-12 col-lg-4">
                                 <label class="form-label" for="queueGcashHistorySearch">Search transactions</label>
                                 <div class="input-icon">
                                     <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
@@ -103,19 +117,37 @@
                                 </div>
                             </div>
                             <div class="col-12 col-sm-6 col-lg-3">
+                                <label class="form-label" for="queueGcashHistoryMonth">Statement month</label>
+                                <div class="input-group">
+                                    <button type="button" class="btn btn-outline-secondary btn-icon" id="queueGcashHistoryOlderMonthBtn" data-gcash-month-step="older" title="Older month" aria-label="Show older GCash transaction month">
+                                        <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                                    </button>
+                                    <select class="form-select" id="queueGcashHistoryMonth" aria-label="GCash transaction month">
+                                        <option value="">Loading current month...</option>
+                                    </select>
+                                    <button type="button" class="btn btn-outline-secondary btn-icon" id="queueGcashHistoryNewerMonthBtn" data-gcash-month-step="newer" title="Newer month" aria-label="Show newer GCash transaction month">
+                                        <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-12 col-sm-6 col-lg-3" id="queueGcashHistoryStatusField">
                                 <label class="form-label" for="queueGcashHistoryFilter">Record status</label>
                                 <select class="form-select" id="queueGcashHistoryFilter">
-                                    <option value="all">All records</option>
+                                    <option value="all">All credits</option>
                                     <option value="available">Available credits</option>
                                     <option value="reserved">Reserved credits</option>
                                     <option value="posted">Posted credits</option>
-                                    <option value="remarked">Not for Posting</option>
-                                    <option value="debit">Debit records</option>
                                 </select>
                             </div>
-                            <div class="col-12 col-sm-6 col-lg-3">
+                            <div class="col-12 col-lg-2">
                                 <div class="queue-visible-count text-secondary" id="queueGcashVisibleCount" aria-live="polite">Loading records...</div>
                             </div>
+                        </div>
+                        <div class="alert alert-info mt-3 mb-0" id="queueGcashDebitNotice" role="status" hidden>
+                            Debit rows remain in the official GCash history for future Finance review. Classifications are GCash metadata only; no Finance expense is created yet.
+                        </div>
+                        <div class="alert alert-warning mt-3 mb-0" id="queueGcashNotForPostingNotice" role="status" hidden>
+                            Locked credits cannot be posted or matched. Unlock returns the transaction to Credits as Available without creating a payment.
                         </div>
                     </div>
                     <div class="table-responsive queue-table-wrap">
@@ -325,13 +357,13 @@
         </div>
     </div>
 
-    <div id="queueBindPendingGcashModal" class="modal modal-blur tabler-form-modal queue-tabler-modal" role="dialog" aria-modal="true" aria-labelledby="queueBindPendingGcashModalTitle" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered" role="document">
+    <div id="queueBindPendingGcashModal" class="modal modal-blur tabler-form-modal queue-tabler-modal queue-bind-pending-modal" role="dialog" aria-modal="true" aria-labelledby="queueBindPendingGcashModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title" id="queueBindPendingGcashModalTitle">Verify Pending GCash Payment</h2>
-                        <p class="text-secondary mt-1 mb-0">Select the exact imported incoming credit. Posting uses the imported reference, date, and time as the official proof.</p>
+                        <p class="text-secondary mt-1 mb-0">Select the official imported credit. Verification updates this same pending entry; it does not create another payment.</p>
                     </div>
                     <button class="btn btn-icon btn-outline-secondary close-modal" type="button" data-dismiss="queue-bind-pending-gcash-modal" aria-label="Close">
                         <i class="ti ti-x" aria-hidden="true"></i>
@@ -339,46 +371,93 @@
                 </div>
                 <form id="queueBindPendingGcashForm" class="tabler-modal-form" novalidate>
                     <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label class="form-label">Customer</label>
-                                <input class="form-control" type="text" id="queueBindPendingGcashCustomer" readonly>
-                            </div>
-                            <div class="col-sm-6">
-                                <label class="form-label">Pending Amount</label>
-                                <input class="form-control" type="text" id="queueBindPendingGcashAmount" readonly>
-                            </div>
-                            <div class="col-sm-6">
-                                <label class="form-label">Payment Date</label>
-                                <input class="form-control" type="text" id="queueBindPendingGcashDate" readonly>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">Entered Reference</label>
-                                <input class="form-control" type="text" id="queueBindPendingGcashEnteredReference" readonly>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label" for="queueBindPendingGcashReference">Matching Imported Transaction</label>
+                        <div class="queue-bind-pending-stack">
+                            <section class="queue-bind-pending-section" aria-labelledby="queueBindPendingPaymentHeading">
+                                <div class="queue-bind-pending-section-header">
+                                    <span class="queue-bind-pending-step" aria-hidden="true">1</span>
+                                    <div>
+                                        <h3 class="queue-bind-pending-section-title" id="queueBindPendingPaymentHeading">Pending Payment</h3>
+                                        <p class="text-secondary mb-0">Confirm the customer and the details originally entered in Payments.</p>
+                                    </div>
+                                    <span class="badge bg-orange-lt text-orange ms-auto">Pending</span>
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label">Customer</label>
+                                        <input class="form-control" type="text" id="queueBindPendingGcashCustomer" readonly>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label">Pending Amount</label>
+                                        <input class="form-control" type="text" id="queueBindPendingGcashAmount" readonly>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label">Payment Date</label>
+                                        <input class="form-control" type="text" id="queueBindPendingGcashDate" readonly>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">Entered Reference</label>
+                                        <input class="form-control" type="text" id="queueBindPendingGcashEnteredReference" readonly>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="queue-bind-pending-section" aria-labelledby="queueBindPendingMatchesHeading">
+                                <div class="queue-bind-pending-section-header">
+                                    <span class="queue-bind-pending-step" aria-hidden="true">2</span>
+                                    <div>
+                                        <h3 class="queue-bind-pending-section-title" id="queueBindPendingMatchesHeading">Official Matches</h3>
+                                        <p class="text-secondary mb-0">Choose one transaction from the imported GCash statement.</p>
+                                    </div>
+                                    <span class="badge bg-blue-lt text-blue ms-auto" id="queueBindPendingGcashMatchCount">0 matches</span>
+                                </div>
+                                <label class="form-label" for="queueBindPendingGcashReference">Selected Official Transaction</label>
                                 <select class="form-select" id="queueBindPendingGcashReference" required>
                                     <option value="">Loading exact matches...</option>
                                 </select>
-                                <div class="form-hint">Only unassigned incoming credits with the exact amount and payment date are available.</div>
-                            </div>
-                            <div class="col-12">
-                                <div class="alert alert-warning mb-0" id="queueBindPendingGcashNotice" role="status">This pending entry has not changed the customer's billing balance.</div>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-check mb-0">
+                                <div class="form-hint">Candidates share the exact amount and payment date. Compare the reference, time, sender, recipient, and description.</div>
+                                <div class="list-group queue-bind-pending-candidates mt-3" id="queueBindPendingGcashCandidates" aria-label="Matching imported transaction details" aria-live="polite"></div>
+                            </section>
+
+                            <section class="queue-bind-pending-section" aria-labelledby="queueBindPendingVerificationHeading">
+                                <div class="queue-bind-pending-section-header">
+                                    <span class="queue-bind-pending-step" aria-hidden="true">3</span>
+                                    <div>
+                                        <h3 class="queue-bind-pending-section-title" id="queueBindPendingVerificationHeading">Verification Summary</h3>
+                                        <p class="text-secondary mb-0">Review the pending values beside the selected official proof.</p>
+                                    </div>
+                                </div>
+                                <div class="alert alert-warning mb-3" id="queueBindPendingGcashNotice" role="status">This pending entry has not changed the customer's billing balance.</div>
+                                <div class="queue-bind-pending-verification" id="queueBindPendingGcashVerificationSummary" aria-live="polite">
+                                    <div class="queue-bind-pending-empty">Select an official transaction to compare its details.</div>
+                                </div>
+                            </section>
+
+                            <section class="queue-bind-pending-section queue-bind-pending-confirmation" aria-labelledby="queueBindPendingConfirmationHeading">
+                                <div class="queue-bind-pending-section-header">
+                                    <span class="queue-bind-pending-step" aria-hidden="true">4</span>
+                                    <div>
+                                        <h3 class="queue-bind-pending-section-title" id="queueBindPendingConfirmationHeading">Confirmation</h3>
+                                        <p class="text-secondary mb-0">Posting is enabled only after one official proof is selected and confirmed.</p>
+                                    </div>
+                                </div>
+                                <label class="form-check queue-bind-pending-confirm-check mb-0">
                                     <input class="form-check-input" type="checkbox" id="queueBindPendingGcashConfirmed">
-                                    <span class="form-check-label">I verified the customer, exact amount, payment date, and selected imported GCash proof.</span>
+                                    <span class="form-check-label">I verified the customer and selected imported proof. I understand Verify &amp; Post updates this same pending entry and uses only the selected reference.</span>
                                 </label>
-                            </div>
+                            </section>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-link link-secondary" data-dismiss="queue-bind-pending-gcash-modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary ms-auto" id="queueBindPendingGcashSubmitBtn" disabled>
-                            <i class="ti ti-lock-check" aria-hidden="true"></i> Verify &amp; Post
-                        </button>
+                    <div class="modal-footer queue-bind-pending-footer">
+                        <div class="queue-bind-pending-footer-note text-secondary">
+                            <i class="ti ti-shield-check" aria-hidden="true"></i>
+                            One official transaction updates one existing pending entry.
+                        </div>
+                        <div class="queue-bind-pending-footer-actions">
+                            <button type="button" class="btn btn-outline-secondary" data-dismiss="queue-bind-pending-gcash-modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary" id="queueBindPendingGcashSubmitBtn" disabled>
+                                <i class="ti ti-lock-check" aria-hidden="true"></i> Verify &amp; Post
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -648,7 +727,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payment-confirmation-queue.js?v=5.16"></script>
+    <script src="payment-confirmation-queue.js?v=5.20"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

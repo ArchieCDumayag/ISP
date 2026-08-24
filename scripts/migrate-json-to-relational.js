@@ -486,9 +486,16 @@ async function upsertSessions(sessions) {
 async function upsertCollectorAssignments(assignments, branchId) {
   if (!assignments || typeof assignments !== 'object') return;
   const [areas] = await query('SELECT id, name FROM coverage_areas WHERE branch_id = ?', [branchId]);
+  const [users] = await query('SELECT id FROM users WHERE branch_id = ?', [branchId]);
   const areaMap = new Map((areas || []).map((row) => [String(row.name), row.id]));
+  const userIds = new Set((users || []).map((row) => String(row.id)));
+  let skippedOrphans = 0;
   for (const [areaName, collectorId] of Object.entries(assignments)) {
     if (!collectorId) continue;
+    if (!userIds.has(String(collectorId))) {
+      skippedOrphans += 1;
+      continue;
+    }
     const coverageId = areaMap.get(String(areaName)) || null;
     await query(
       `INSERT INTO collector_assignments (branch_id, coverage_id, area_name, collector_user_id)
@@ -499,6 +506,9 @@ async function upsertCollectorAssignments(assignments, branchId) {
          area_name = VALUES(area_name)`,
       [branchId, coverageId, areaName, String(collectorId)]
     );
+  }
+  if (skippedOrphans) {
+    console.warn(`[warn] Skipped ${skippedOrphans} orphaned collector assignment(s) with no matching user.`);
   }
 }
 

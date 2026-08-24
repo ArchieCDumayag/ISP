@@ -402,7 +402,9 @@ router.get('/gcash-history', async (req, res, next) => {
         }
         const history = await listGcashTransactionHistory({
             branchId: req.branchId,
-            limit: req.query?.limit
+            limit: req.query?.limit,
+            month: req.query?.month,
+            all: Boolean(String(req.query?.month || '').trim())
         });
         let paymentHistoryMatches = { matchesByReference: {}, exactReferences: 0, suggestedReferences: 0 };
         if (typeof paymentsRouter.getExistingPaymentHistoryGcashMatches === 'function') {

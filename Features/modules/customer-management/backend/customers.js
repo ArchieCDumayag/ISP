@@ -73,6 +73,8 @@ const STORE_KEYS = {
 const MONTHLY_PRICE_SUFFIX = '/ month';
 const PON_STATE_STORE_KEY = 'pon-state';
 const ACCOUNT_NUMBER_SETTINGS_KEY = 'account_number_settings';
+const ACCOUNT_NUMBER_SEQUENCE_KEY = 'customer_account_number_sequence';
+const ACCOUNT_NUMBER_SEQUENCE_LOCK_NAME = 'customer-account-number-sequence';
 const ACCOUNT_TOTAL_DIGITS = 9;
 const ACCOUNT_PREFIX_DIGITS = 3;
 const ACCOUNT_SUFFIX_DIGITS = ACCOUNT_TOTAL_DIGITS - ACCOUNT_PREFIX_DIGITS;
@@ -135,6 +137,7 @@ const CUSTOMER_FIELD_LIMITS = Object.freeze({
 let archiveCleanupInterval = null;
 let customerImportXlsxModule = null;
 let customerCreateMutationQueue = Promise.resolve();
+let accountNumberSequenceMutationQueue = Promise.resolve();
 
 const normalizeCustomerStatus = (value, fallback = STATUS_ACTIVE) => {
     const raw = String(value || '').trim().toLowerCase();
@@ -5068,20 +5071,223 @@ const resolveStoredAccountPrefixId = async () => {
     }
 };
 
-const generateRandomAccountSuffix = () =>
-    String(Math.floor(Math.random() * (10 ** ACCOUNT_SUFFIX_DIGITS))).padStart(ACCOUNT_SUFFIX_DIGITS, '0');
-
-// Helper to generate a random unique account number
-const generateAccountNumber = (existingSet, prefixId = '') => {
+const generateAccountNumber = (existingSet, prefixId = '', lastIssuedAccountNumber = '') => {
     const existing = existingSet instanceof Set ? existingSet : new Set();
     const prefix = resolveEffectiveAccountPrefixId(prefixId);
-    for (let i = 0; i < 100; i++) {
-        const candidateStr = `${prefix}${generateRandomAccountSuffix()}`;
-        if (!existing.has(candidateStr)) {
-            return candidateStr;
-        }
+    const storedHighWater = String(lastIssuedAccountNumber || '').trim();
+    const hasStoredHighWater = isValidAccountNumber(storedHighWater)
+        && storedHighWater.startsWith(prefix);
+    let nextSuffix = hasStoredHighWater
+        ? Number(storedHighWater.slice(ACCOUNT_PREFIX_DIGITS)) + 1
+        : 1;
+    const suffixLimit = 10 ** ACCOUNT_SUFFIX_DIGITS;
+    while (nextSuffix < suffixLimit) {
+        const accountNumber = `${prefix}${String(nextSuffix).padStart(ACCOUNT_SUFFIX_DIGITS, '0')}`;
+        if (!existing.has(accountNumber)) return accountNumber;
+        nextSuffix += 1;
     }
-    throw new Error('Unable to generate unique account number');
+    throw createError(409, `Account number sequence for prefix ${prefix} is exhausted.`);
+};
+
+const normalizeAccountNumberSequenceState = (value = {}) => {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const sourceVersion = Number(source.version || 0);
+    const storedByPrefix = source.lastIssuedByPrefix && typeof source.lastIssuedByPrefix === 'object'
+        && !Array.isArray(source.lastIssuedByPrefix)
+        ? source.lastIssuedByPrefix
+        : {};
+    const lastIssuedByPrefix = {};
+    const reservedAccountNumbers = new Set(
+        (Array.isArray(source.reservedAccountNumbers) ? source.reservedAccountNumbers : [])
+            .map((entry) => String(entry || '').trim())
+            .filter((entry) => isValidAccountNumber(entry) && /^[1-9]/.test(entry))
+    );
+    Object.entries(storedByPrefix).forEach(([rawPrefix, rawAccountNumber]) => {
+        const prefix = normalizeAccountPrefixId(rawPrefix);
+        const accountNumber = String(rawAccountNumber || '').trim();
+        if (
+            isAllowedGeneratedAccountPrefix(prefix)
+            && isValidAccountNumber(accountNumber)
+            && accountNumber.startsWith(prefix)
+        ) {
+            if (sourceVersion >= 2) {
+                lastIssuedByPrefix[prefix] = accountNumber;
+            } else {
+                // Version 1 treated legacy random numbers as the high-water mark.
+                // Keep the exact value unavailable without moving the sequence to it.
+                reservedAccountNumbers.add(accountNumber);
+            }
+        }
+    });
+    return {
+        version: 2,
+        lastIssuedByPrefix,
+        reservedAccountNumbers: Array.from(reservedAccountNumbers).sort(),
+        updatedAt: source.updatedAt || null
+    };
+};
+
+const readAccountNumberSequenceState = async () =>
+    normalizeAccountNumberSequenceState(await readJson(ACCOUNT_NUMBER_SEQUENCE_KEY, {}));
+
+const writeAccountNumberSequenceState = async (state) => {
+    const normalized = normalizeAccountNumberSequenceState(state);
+    normalized.updatedAt = new Date().toISOString();
+    await writeJson(ACCOUNT_NUMBER_SEQUENCE_KEY, normalized);
+    return normalized;
+};
+
+const addAccountNumberReservation = (target, value) => {
+    const accountNumber = String(value || '').trim();
+    if (isValidAccountNumber(accountNumber)) target.add(accountNumber);
+};
+
+const addStoredAccountNumberReservations = (target, state) => {
+    (Array.isArray(state?.reservedAccountNumbers) ? state.reservedAccountNumbers : [])
+        .forEach((value) => addAccountNumberReservation(target, value));
+    return target;
+};
+
+const collectAccountNumberReservations = async (additionalAccountNumbers = new Set()) => {
+    const reserved = new Set();
+    if (additionalAccountNumbers instanceof Set) {
+        additionalAccountNumbers.forEach((value) => addAccountNumberReservation(reserved, value));
+    }
+
+    if (await isRelationalReady()) {
+        const readOptionalRows = async (sql) => {
+            try {
+                const [rows] = await query(sql);
+                return Array.isArray(rows) ? rows : [];
+            } catch (error) {
+                if (isOptionalSchemaError(error)) return [];
+                throw error;
+            }
+        };
+        const [customerRows, archiveRows, draftRows] = await Promise.all([
+            readOptionalRows('SELECT account_number AS accountNumber, login_username AS loginUsername FROM customers'),
+            readOptionalRows(`SELECT account_number AS accountNumber FROM ${CUSTOMER_ARCHIVES_TABLE}`),
+            readOptionalRows(
+                `SELECT draft_account_number AS draftAccountNumber,
+                        approved_customer_account_number AS approvedCustomerAccountNumber
+                 FROM ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}`
+            )
+        ]);
+        customerRows.forEach((row) => {
+            addAccountNumberReservation(reserved, row?.accountNumber);
+            addAccountNumberReservation(reserved, row?.loginUsername);
+        });
+        archiveRows.forEach((row) => addAccountNumberReservation(reserved, row?.accountNumber));
+        draftRows.forEach((row) => {
+            addAccountNumberReservation(reserved, row?.draftAccountNumber);
+            addAccountNumberReservation(reserved, row?.approvedCustomerAccountNumber);
+        });
+        return reserved;
+    }
+
+    const [customers, archives, drafts] = await Promise.all([
+        readJson(STORE_KEYS.customers, []),
+        readJson('customer_archives', []),
+        readJson('customer_draft_submissions', [])
+    ]);
+    (Array.isArray(customers) ? customers : []).forEach((row) => {
+        addAccountNumberReservation(reserved, row?.accountNumber ?? row?.account_number);
+        addAccountNumberReservation(reserved, row?.loginUsername ?? row?.login_username);
+    });
+    (Array.isArray(archives) ? archives : []).forEach((row) =>
+        addAccountNumberReservation(reserved, row?.accountNumber ?? row?.account_number));
+    (Array.isArray(drafts) ? drafts : []).forEach((row) => {
+        addAccountNumberReservation(reserved, row?.draftAccountNumber ?? row?.draft_account_number);
+        addAccountNumberReservation(
+            reserved,
+            row?.approvedCustomerAccountNumber ?? row?.approved_customer_account_number
+        );
+    });
+    return reserved;
+};
+
+const runWithAccountNumberSequenceDatabaseLock = async (task) => {
+    if (!(await isRelationalReady())) return task();
+    const pool = await getPool();
+    if (!pool) throw createError(503, 'Account number allocation is unavailable.');
+    const connection = await pool.getConnection();
+    let lockAcquired = false;
+    try {
+        const [rows] = await connection.query(
+            'SELECT GET_LOCK(?, 5) AS acquired',
+            [ACCOUNT_NUMBER_SEQUENCE_LOCK_NAME]
+        );
+        lockAcquired = Number(rows?.[0]?.acquired) === 1;
+        if (!lockAcquired) {
+            throw createError(503, 'Account number allocation is busy. Please retry in a moment.');
+        }
+        return await task();
+    } finally {
+        if (lockAcquired) {
+            try {
+                await connection.query('SELECT RELEASE_LOCK(?) AS released', [ACCOUNT_NUMBER_SEQUENCE_LOCK_NAME]);
+            } catch (error) {
+                console.warn('Unable to release account number allocation lock:', error?.message || error);
+            }
+        }
+        connection.release();
+    }
+};
+
+const withAccountNumberSequenceMutationLock = (task) => {
+    const operation = accountNumberSequenceMutationQueue
+        .catch(() => {})
+        .then(() => runWithAccountNumberSequenceDatabaseLock(task));
+    accountNumberSequenceMutationQueue = operation.then(() => undefined, () => undefined);
+    return operation;
+};
+
+const previewNextAccountNumber = async (existingSet, prefixId = '') => {
+    await accountNumberSequenceMutationQueue.catch(() => {});
+    const prefix = resolveEffectiveAccountPrefixId(prefixId);
+    const [reserved, state] = await Promise.all([
+        collectAccountNumberReservations(existingSet),
+        readAccountNumberSequenceState()
+    ]);
+    addStoredAccountNumberReservations(reserved, state);
+    return generateAccountNumber(reserved, prefix, state.lastIssuedByPrefix[prefix]);
+};
+
+const reserveNextAccountNumber = (existingSet, prefixId = '') =>
+    withAccountNumberSequenceMutationLock(async () => {
+        const prefix = resolveEffectiveAccountPrefixId(prefixId);
+        const [reserved, state] = await Promise.all([
+            collectAccountNumberReservations(existingSet),
+            readAccountNumberSequenceState()
+        ]);
+        addStoredAccountNumberReservations(reserved, state);
+        const accountNumber = generateAccountNumber(
+            reserved,
+            prefix,
+            state.lastIssuedByPrefix[prefix]
+        );
+        state.lastIssuedByPrefix[prefix] = accountNumber;
+        await writeAccountNumberSequenceState(state);
+        return accountNumber;
+    });
+
+const recordIssuedAccountNumber = (value) => {
+    const accountNumber = String(value || '').trim();
+    if (!isValidAccountNumber(accountNumber) || !/^[1-9]/.test(accountNumber)) {
+        throw createError(400, 'A valid 9-digit account number is required.');
+    }
+    return withAccountNumberSequenceMutationLock(async () => {
+        const prefix = accountNumber.slice(0, ACCOUNT_PREFIX_DIGITS);
+        const state = await readAccountNumberSequenceState();
+        const currentAccountNumber = state.lastIssuedByPrefix[prefix] || '';
+        if (!currentAccountNumber || Number(accountNumber) > Number(currentAccountNumber)) {
+            const reserved = new Set(state.reservedAccountNumbers || []);
+            reserved.add(accountNumber);
+            state.reservedAccountNumbers = Array.from(reserved).sort();
+            await writeAccountNumberSequenceState(state);
+        }
+        return accountNumber;
+    });
 };
 
 const applyNormalizedCustomerMobileFields = (target, source = {}, { fallback = '' } = {}) => {
@@ -5185,7 +5391,10 @@ const buildOpeningAdjustmentEntry = ({
     previousBalance = 0,
     advancePayment = 0,
     effectiveDate = '',
-    actor = null
+    actor = null,
+    description = '',
+    paymentMethod = '',
+    referencePrefix = ''
 } = {}) => {
     const debit = normalizeOpeningAmount(previousBalance, 'Previous balance');
     const credit = normalizeOpeningAmount(advancePayment, 'Advance payment');
@@ -5209,10 +5418,10 @@ const buildOpeningAdjustmentEntry = ({
         kind,
         type: kind,
         direction,
-        reference: `${debit > 0 ? 'OBB' : 'OBA'}-${account}`.slice(0, 32),
-        description: debit > 0
+        reference: `${referencePrefix || (debit > 0 ? 'OBB' : 'OBA')}-${account}`.slice(0, 32),
+        description: String(description || '').trim() || (debit > 0
             ? 'Previous Balance Bill - Current Bill'
-            : 'Opening advance payment for current month',
+            : 'Opening advance payment for current month'),
         recordedAt: new Date().toISOString(),
         recordedBy: actor ? {
             id: String(actor.id || ''),
@@ -5221,7 +5430,7 @@ const buildOpeningAdjustmentEntry = ({
             role: actor.role || undefined
         } : undefined,
         payer: actor?.name || actor?.username || null,
-        paymentMethod: debit > 0 ? undefined : 'Opening Balance',
+        paymentMethod: debit > 0 ? undefined : (String(paymentMethod || '').trim() || 'Opening Balance'),
         fingerprint
     };
 };
@@ -5411,8 +5620,18 @@ const createCustomerRecordUnlocked = async (
     const hasConfiguredPrefix = isAllowedGeneratedAccountPrefix(configuredPrefixId);
     const prefixMatches = !hasConfiguredPrefix || incomingAccount.startsWith(configuredPrefixId);
     const startsWithAllowedDigit = /^[1-9]/.test(incomingAccount);
-    if (!incomingAccount || !isValidAccountNumber(incomingAccount) || !startsWithAllowedDigit || existing.has(incomingAccount) || !prefixMatches) {
-        incomingAccount = generateAccountNumber(existing, configuredPrefixId);
+    const mustAllocateAccountNumber = enforceAdminValidation
+        || !incomingAccount
+        || !isValidAccountNumber(incomingAccount)
+        || !startsWithAllowedDigit
+        || existing.has(incomingAccount)
+        || !prefixMatches;
+    if (mustAllocateAccountNumber) {
+        incomingAccount = await reserveNextAccountNumber(existing, configuredPrefixId);
+    } else {
+        // Imported and technician-reserved account numbers remain supported, but
+        // they also advance the durable high-water mark so deletion cannot reuse them.
+        await recordIssuedAccountNumber(incomingAccount);
     }
 
     const incomingBody = { ...(effectivePayload || {}) };
@@ -6150,6 +6369,7 @@ const deleteCustomerRecord = async (
         if (!customer) {
             throw createError(404, 'Customer not found.');
         }
+        await recordIssuedAccountNumber(targetAccountNumber);
 
         const pppoeResult = await disableCustomerPppoeAccountsForArchive({
             branchId: scopedBranchId,
@@ -6325,6 +6545,9 @@ const deleteCustomerRecord = async (
             String(customer?.accountNumber || '').trim() === targetAccountNumber &&
             Number(customer?.branchId || scopedBranchId) === scopedBranchId
         );
+        if (targetCustomer) {
+            await recordIssuedAccountNumber(targetAccountNumber);
+        }
         const filteredCustomers = customers.filter((customer) => String(customer?.accountNumber || '').trim() !== targetAccountNumber);
         if (filteredCustomers.length !== customers.length) {
             if (targetCustomer) {
@@ -6461,10 +6684,16 @@ router.get('/', async (req, res, next) => {
 router.get('/next-account', async (req, res, next) => {
     try {
         const customers = await readCustomers();
-        const existing = new Set(customers.map((c) => c.accountNumber?.toString()).filter(Boolean));
+        const existing = new Set();
+        customers.forEach((customer) => {
+            const accountNumber = String(customer?.accountNumber || '').trim();
+            const loginUsername = String(customer?.loginUsername || '').trim();
+            if (accountNumber) existing.add(accountNumber);
+            if (isValidAccountNumber(loginUsername)) existing.add(loginUsername);
+        });
         const storedPrefixId = await resolveStoredAccountPrefixId();
         const effectivePrefixId = resolveEffectiveAccountPrefixId(storedPrefixId);
-        const accountNumber = generateAccountNumber(existing, storedPrefixId);
+        const accountNumber = await previewNextAccountNumber(existing, storedPrefixId);
         res.json({ accountNumber, prefixId: effectivePrefixId });
     } catch (error) {
         next(error);
@@ -7611,9 +7840,13 @@ module.exports.scheduleCustomerArchiveCleanupWithPppoe = scheduleCustomerArchive
 module.exports.sanitizeCustomerForAdmin = sanitizeCustomerForAdmin;
 module.exports.resolveStoredAccountPrefixId = resolveStoredAccountPrefixId;
 module.exports.generateAccountNumber = generateAccountNumber;
+module.exports.previewNextAccountNumber = previewNextAccountNumber;
+module.exports.reserveNextAccountNumber = reserveNextAccountNumber;
+module.exports.recordIssuedAccountNumber = recordIssuedAccountNumber;
 module.exports.generateTemporaryPortalPassword = generateTemporaryPortalPassword;
 module.exports.validateAdminCustomerCreatePayload = validateAdminCustomerCreatePayload;
 module.exports.findCustomerCreateDuplicate = findCustomerCreateDuplicate;
 module.exports.buildOpeningAdjustmentEntry = buildOpeningAdjustmentEntry;
+module.exports.recordCustomerOpeningAdjustment = recordCustomerOpeningAdjustment;
 module.exports.normalizeImportedClientCorrectionRecord = normalizeImportedClientCorrectionRecord;
 module.exports.normalizeCustomerMapPin = normalizeCustomerMapPin;

@@ -257,6 +257,8 @@ assert(routeSource.includes('existing reference(s) skipped'));
 assert(routeSource.includes('reconcileExistingPaymentHistoryWithGcashTransactions'));
 assert(routeSource.includes('paymentHistoryMatch'));
 assert(routeSource.includes('automaticReconciliation'));
+assert(routeSource.includes('month: req.query?.month'));
+assert(routeSource.includes("all: Boolean(String(req.query?.month || '').trim())"));
 assert(!routeSource.includes('/gcash-gmail/'));
 assert(!routeSource.includes('gcash-notification-bridge-store'));
 assert(htmlSource.includes('id="queueImportGcashHistoryBtn"'));
@@ -305,11 +307,33 @@ assert(htmlSource.includes('id="queueGcashHistorySearch"'));
 assert(htmlSource.includes('id="queueGcashHistoryFilter"'));
 assert(htmlSource.includes('<option value="available">Available credits</option>'));
 assert(htmlSource.includes('<option value="posted">Posted credits</option>'));
-assert(htmlSource.includes('<option value="remarked">Not for Posting</option>'));
-assert(htmlSource.includes('<option value="debit">Debit records</option>'));
+assert(!htmlSource.includes('<option value="remarked">Not for Posting</option>'));
+assert(!htmlSource.includes('<option value="debit">Debit records</option>'));
+assert(htmlSource.includes('id="queueGcashHistoryMonth"'));
+assert(htmlSource.includes('data-gcash-month-step="older"'));
+assert(htmlSource.includes('data-gcash-month-step="newer"'));
+assert(htmlSource.includes('data-gcash-history-type="credit"'));
+assert(htmlSource.includes('data-gcash-history-type="debit"'));
+assert(htmlSource.includes('data-gcash-history-type="remarked"'));
+assert(htmlSource.includes('id="queueGcashNotForPostingCount"'));
+assert(htmlSource.includes('Debits · Finance Review'));
+assert(htmlSource.includes('no Finance expense is created yet'));
+assert(htmlSource.includes('Unlock returns the transaction to Credits as Available without creating a payment.'));
 assert(htmlSource.includes('id="queueLockGcashModal"'));
 assert(htmlSource.includes('id="queueLockGcashRemark"'));
 assert(htmlSource.includes('Remark &amp; Lock GCash Credit'));
+assert(htmlSource.includes('id="queueBindPendingGcashCandidates"'));
+assert(htmlSource.includes('id="queueBindPendingGcashMatchCount"'));
+assert(htmlSource.includes('id="queueBindPendingGcashVerificationSummary"'));
+assert(htmlSource.includes('id="queueBindPendingPaymentHeading">Pending Payment</h3>'));
+assert(htmlSource.includes('id="queueBindPendingMatchesHeading">Official Matches</h3>'));
+assert(htmlSource.includes('id="queueBindPendingVerificationHeading">Verification Summary</h3>'));
+assert(htmlSource.includes('id="queueBindPendingConfirmationHeading">Confirmation</h3>'));
+assert(htmlSource.includes('One official transaction updates one existing pending entry.'));
+assert(htmlSource.includes('it does not create another payment'));
+assert(htmlSource.includes('Compare the reference, time, sender, recipient, and description.'));
+assert(htmlSource.includes('css/payment-confirmation-queue.css?v=4.10'));
+assert(htmlSource.includes('payment-confirmation-queue.js?v=5.20'));
 assert(htmlSource.includes('id="queueGcashVisibleCount"'));
 assert(htmlSource.includes('<col class="gcash-col-description">'));
 assert(htmlSource.includes('<col class="gcash-col-match">'));
@@ -324,7 +348,18 @@ assert(!htmlSource.includes('queueGmailPanel'));
 assert(!htmlSource.includes('queueBridgePanel'));
 assert(browserSource.includes("'X-PDF-Password': password"));
 assert(browserSource.includes('Official match'));
-assert(browserSource.includes("fetch('/api/payment-confirmations/gcash-history?limit=500'"));
+assert(browserSource.includes("timeZone: 'Asia/Manila'"));
+assert(browserSource.includes("limit: '1000'"));
+assert(browserSource.includes('month: state.gcashHistoryMonth'));
+assert(browserSource.includes('getGcashHistoryTransactionMonth'));
+assert(browserSource.includes("state.gcashHistoryType === 'debit'"));
+assert(browserSource.includes("if (type === 'remarked') return category === 'remarked'"));
+assert(browserSource.includes("return category !== 'debit' && category !== 'remarked'"));
+assert(browserSource.includes("['credit', 'debit', 'remarked'].includes(requestedType)"));
+assert(browserSource.includes("state.gcashHistoryType !== 'credit'"));
+assert(browserSource.includes("gcashHistoryNotForPostingCount.textContent = String(grouped.remarked.length)"));
+assert(browserSource.includes("stepGcashHistoryMonth('older')"));
+assert(browserSource.includes("stepGcashHistoryMonth('newer')"));
 assert(browserSource.includes('/post-payment`'));
 assert(browserSource.includes('Bind &amp; Post'));
 assert(browserSource.includes('class="btn btn-icon btn-primary btn-sm" data-action="post-gcash"'));
@@ -345,6 +380,24 @@ assert(browserSource.includes('class="gcash-match-allocation"'));
 assert(browserSource.includes('class="gcash-match-name"'));
 assert(browserSource.includes('class="gcash-match-amount"'));
 assert(browserSource.includes('transaction.paymentHistoryMatch'));
+assert(browserSource.includes("paymentHistoryMatch?.status === 'pending_match'"));
+assert(browserSource.includes('data-action="bind-matched-pending-gcash"'));
+assert(browserSource.includes('Bind Pending'));
+assert(browserSource.includes('openBindPendingGcashModal(pendingPayment, transaction.reference)'));
+assert(browserSource.includes('getPendingGcashCandidateLabel'));
+assert(browserSource.includes('renderBindPendingGcashVerificationSummary'));
+assert(browserSource.includes("status: amountMatches ? 'Exact' : 'Mismatch'"));
+assert(browserSource.includes("status: referenceMatches ? 'Exact' : 'Verify'"));
+assert(browserSource.includes("label: 'Official Recipient'"));
+assert(browserSource.includes('data-action="select-pending-gcash-candidate"'));
+assert(browserSource.includes('transaction.sender'));
+assert(browserSource.includes('getPendingGcashRecipientDisplay(transaction)'));
+assert(browserSource.includes('Description: ${escapeHtml(description)}'));
+assert(browserSource.includes('was preselected because it exactly matches this payment'));
+assert(browserSource.includes('does not create another payment'));
+assert(browserSource.includes('const selectedTransaction = exactReference || (transactions.length === 1 ? transactions[0] : null)'));
+assert(paymentsSource.includes("'bind_pending'"));
+assert(paymentsSource.includes("pendingAllocation ? 'pending_match' : 'review_required'"));
 assert(!browserSource.includes("accountNumber ? `Acct: ${accountNumber}` : ''"));
 assert(!browserSource.includes('billingMonth ? formatBillingMonth(billingMonth)'));
 assert(browserSource.includes('save-gcash-remark'));
@@ -358,9 +411,15 @@ assert(browserSource.includes('renderGcashHistoryStats'));
 assert(browserSource.includes('getFilteredGcashHistoryTransactions'));
 assert(browserSource.includes('`Last import: ${formatDateTime(latestBatch.importedAt)}`'));
 assert(!browserSource.includes('if (latestBatch?.fileName)'));
-assert(browserSource.includes('No imported transactions match the current search and status filter.'));
+assert(browserSource.includes('No ${escapeHtml(typeLabel)} match the current search'));
 assert(browserSource.includes("gcashHistorySearch?.addEventListener('input'"));
 assert(browserSource.includes("gcashHistoryFilter?.addEventListener('change'"));
+assert(cssSource.includes('.queue-history-view-bar'));
+assert(cssSource.includes('.queue-bind-pending-section'));
+assert(cssSource.includes('.queue-bind-pending-verification'));
+assert(cssSource.includes('grid-template-columns: repeat(2, minmax(0, 1fr))'));
+assert(cssSource.includes('.queue-bind-pending-footer'));
+assert(cssSource.includes('#queueGcashHistoryMonth'));
 assert(cssSource.includes('table-layout: fixed'));
 assert(cssSource.includes('min-width: 76rem'));
 assert(cssSource.includes('.gcash-history-table .gcash-col-match'));
@@ -452,6 +511,27 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
     });
     const initialBranchHistory = await listGcashTransactionHistory({ branchId: 1, all: true });
+    assert.deepStrictEqual(initialBranchHistory.availableMonths, ['2026-08']);
+    assert.strictEqual(initialBranchHistory.filteredTotalTransactions, 2);
+    assert.strictEqual(initialBranchHistory.selectedMonth, null);
+    const augustBranchHistory = await listGcashTransactionHistory({ branchId: 1, month: '2026-08', all: true });
+    assert.strictEqual(augustBranchHistory.transactions.length, 2);
+    assert.strictEqual(augustBranchHistory.totalTransactions, 2);
+    assert.strictEqual(augustBranchHistory.filteredTotalTransactions, 2);
+    assert.strictEqual(augustBranchHistory.selectedMonth, '2026-08');
+    const julyBranchHistory = await listGcashTransactionHistory({ branchId: 1, month: '2026-07', all: true });
+    assert.strictEqual(julyBranchHistory.transactions.length, 0);
+    assert.strictEqual(julyBranchHistory.totalTransactions, 2);
+    assert.strictEqual(julyBranchHistory.filteredTotalTransactions, 0);
+    assert.deepStrictEqual(julyBranchHistory.availableMonths, ['2026-08']);
+    await assert.rejects(
+        () => listGcashTransactionHistory({ branchId: 1, month: 'August 2026' }),
+        (error) => error?.status === 400
+    );
+    await assert.rejects(
+        () => listGcashTransactionHistory({ branchId: 1, month: '2026-08-extra' }),
+        (error) => error?.status === 400
+    );
     const importedDebit = initialBranchHistory.transactions.find((row) => row.reference === '1043753606701');
     assert(importedDebit, 'debit rows must remain in imported GCash history');
     assert.strictEqual(importedDebit.debit, 250);
@@ -928,6 +1008,52 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         payments: paymentStoreMemory,
         gcashTransactions: []
     }), null);
+    const pendingShortcutReference = 'PENDING-SHORTCUT-5005';
+    const pendingShortcutEntry = {
+        id: 'pending-shortcut-entry-5005',
+        reference: pendingShortcutReference,
+        amount: 651,
+        date: '2026-08-08',
+        kind: 'payment',
+        type: 'payment',
+        direction: 'credit',
+        paymentMethod: 'GCash',
+        status: 'pending_gcash_verification'
+    };
+    paymentStoreMemory['ACC-PENDING'] = { history: [] };
+    paymentStoreMemory['ACC-PENDING'].history.unshift(pendingShortcutEntry);
+    await importGcashTransactionBatch({
+        branchId: 5,
+        fileName: 'pending-gcash-shortcut.pdf',
+        pdfSha256: 'c'.repeat(64),
+        parsed: {
+            ...parsed,
+            transactions: [{
+                ...transaction,
+                reference: pendingShortcutReference,
+                credit: 651,
+                recipient: '09361565251'
+            }]
+        },
+        importedBy: { id: 'admin-1', username: 'admin', name: 'Admin' }
+    });
+    const pendingShortcutMatches = await actualPaymentsRouter.getExistingPaymentHistoryGcashMatches({ branchId: 5 });
+    const pendingShortcutMatch = pendingShortcutMatches.matchesByReference.PENDINGSHORTCUT5005;
+    assert.strictEqual(pendingShortcutMatch.status, 'pending_match');
+    assert.strictEqual(pendingShortcutMatch.reason.includes('awaiting Admin confirmation'), true);
+    assert.deepStrictEqual(pendingShortcutMatch.pendingPayment, {
+        entryId: pendingShortcutEntry.id,
+        accountNumber: 'ACC-PENDING',
+        customerName: 'Batch Customer 4',
+        amount: 651,
+        paymentDate: '2026-08-08',
+        enteredReference: 'PENDINGSHORTCUT5005',
+        paymentMethod: 'GCash',
+        status: 'pending_gcash_verification',
+        statusLabel: 'Pending'
+    });
+    paymentStoreMemory['ACC-PENDING'].history = paymentStoreMemory['ACC-PENDING'].history
+        .filter((entry) => entry.id !== pendingShortcutEntry.id);
     const batchWrite = await actualPaymentsRouter.recordApprovedProofPayments({
         submissionId: 'batch-writer-5005',
         source: 'gcash-history',

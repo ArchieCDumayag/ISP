@@ -36,6 +36,7 @@
     const reviewDueOffsetField = document.getElementById('draftReviewDueOffsetField');
     const reviewDueDateField = document.getElementById('draftReviewDueDateField');
     const reviewCreditLimitField = document.getElementById('draftReviewCreditLimitField');
+    const reviewOnboardingSummary = document.getElementById('draftReviewOnboardingSummary');
 
     const savedPageSize = Number(localStorage.getItem('draftQueuePageSize'));
     const initialPageSize = Array.from(pageSizeSelect?.options || []).some((option) => Number(option.value) === savedPageSize)
@@ -868,6 +869,23 @@
         reviewForm.elements.loginUsername.value = portalCredentials.loginUsername;
         reviewForm.elements.loginPassword.value = portalCredentials.loginPassword;
         reviewForm.elements.remarks.value = draft.remarks || '';
+        if (reviewOnboardingSummary) {
+            const onboardingNotes = [];
+            if (draft.firstBillPaid === true) {
+                const submittedAmount = Number(draft.firstBillProratedAmount);
+                onboardingNotes.push(`Technician marked the first bill collected${Number.isFinite(submittedAmount)
+                    ? ` (submitted estimate: PHP ${submittedAmount.toLocaleString('en-PH')})`
+                    : ''}. The server recalculates the amount from the approved plan and activation date, then records the payment on approval.`);
+            } else {
+                onboardingNotes.push('Technician marked the prorated first bill as not paid.');
+            }
+            const referrerAccount = String(draft.referralCustomerAccountNumber || '').trim();
+            if (referrerAccount) {
+                onboardingNotes.push(`Referral: ${String(draft.referralCustomerName || 'Existing customer').trim()} (${referrerAccount}). Approval creates a Pending referral for separate discount approval.`);
+            }
+            reviewOnboardingSummary.textContent = onboardingNotes.join(' ');
+            reviewOnboardingSummary.hidden = onboardingNotes.length === 0;
+        }
         syncReviewPlanFields(false);
         applyReviewPlanCategoryUI(reviewForm.elements.planCategory.value || 'postpaid');
         recomputeReviewDueDate();

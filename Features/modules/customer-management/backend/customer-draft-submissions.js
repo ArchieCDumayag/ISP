@@ -28,8 +28,13 @@ const {
     sanitizeCustomerForAdmin,
     readPlans,
     readCustomers,
+    recordCustomerOpeningAdjustment,
     normalizeCustomerMapPin
 } = require('./customers');
+const {
+    mutateReferralRegistry,
+    normalizeActor
+} = require('./referral-store');
 const {
     createCustomerArchive
 } = require('./customer-archive-store');
@@ -138,6 +143,8 @@ const normalizePlanId = (value) => String(value || '').trim().toLowerCase();
 const normalizePlanName = (value) => String(value || '').trim().toLowerCase();
 const normalizeAreaName = (value) => String(value || '').trim().toLowerCase();
 const DEFAULT_DUE_OFFSET = 0;
+const normalizeBoolean = (value) => value === true
+    || ['true', '1', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 const findPlanByIdOrName = (plans = [], { planId = '', planName = '' } = {}) => {
     const normalizedPlanId = normalizePlanId(planId);
     const normalizedPlanName = normalizePlanName(planName);
@@ -225,6 +232,7 @@ const normalizePhilippineMobile = (value, { fallbackToRaw = true } = {}) => {
 const normalizeDraftPayload = (payload = {}) => {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
     const firstName = toSafeText(source.firstName, 100);
+    const middleName = toSafeText(source.middleName, 100);
     const lastName = toSafeText(source.lastName, 100);
     const explicitName = toSafeText(source.name, 200);
     const mobile = normalizePhilippineMobile(source.mobile || source.contactNumber || source.contact);
@@ -271,8 +279,9 @@ const normalizeDraftPayload = (payload = {}) => {
         : (mapPin ? (hasLatitude ? 'gps' : 'manual') : '');
     const normalized = {
         clientEventId: toSafeText(source.clientEventId || source.client_event_id, 100),
-        name: explicitName || `${firstName} ${lastName}`.trim(),
+        name: explicitName || [firstName, middleName, lastName].filter(Boolean).join(' ').trim(),
         firstName,
+        middleName,
         lastName,
         mobile,
         email: toSafeText(source.email, 150),
@@ -280,6 +289,9 @@ const normalizeDraftPayload = (payload = {}) => {
         barangay: toSafeText(source.barangay, 150),
         municipality: toSafeText(source.municipality, 150),
         province: toSafeText(source.province, 150),
+        provinceCode: toSafeText(source.provinceCode || source.province_code, 20),
+        municipalityCode: toSafeText(source.municipalityCode || source.municipality_code, 20),
+        barangayCode: toSafeText(source.barangayCode || source.barangay_code, 20),
         area: toSafeText(source.area, 150),
         mapPin,
         gpsAccuracyMeters,
@@ -297,6 +309,26 @@ const normalizeDraftPayload = (payload = {}) => {
         ),
         dueOffset: Number.isFinite(Number(source.dueOffset)) ? Math.max(0, Math.floor(Number(source.dueOffset))) : null,
         creditLimit: Number.isFinite(Number(source.creditLimit)) ? Math.max(0, Math.floor(Number(source.creditLimit))) : null,
+        firstBillPaid: normalizeBoolean(source.firstBillPaid || source.first_bill_paid),
+        firstBillProratedAmount: toOptionalNumber(
+            source.firstBillProratedAmount ?? source.first_bill_prorated_amount
+        ),
+        firstBillPeriodStart: normalizeDateOnly(
+            source.firstBillPeriodStart || source.first_bill_period_start
+        ),
+        firstBillPeriodEnd: normalizeDateOnly(
+            source.firstBillPeriodEnd || source.first_bill_period_end
+        ),
+        referralSourceType: toSafeText(source.referralSourceType || source.referral_source_type, 40).toLowerCase(),
+        referralCustomerAccountNumber: toSafeText(
+            source.referralCustomerAccountNumber || source.referral_customer_account_number,
+            20
+        ),
+        referralCustomerName: toSafeText(
+            source.referralCustomerName || source.referral_customer_name,
+            200
+        ),
+        referredBy: toSafeText(source.referredBy || source.referred_by, 200),
         remarks: toSafeText(source.remarks || source.notes, 2000),
         status: toSafeText(source.status, 30) || 'active',
         loginUsername: toSafeText(source.loginUsername, 120),
@@ -315,6 +347,13 @@ const normalizeDraftPayload = (payload = {}) => {
     if (!normalized.locationSource) delete normalized.locationSource;
     if (!normalized.clientEventId) delete normalized.clientEventId;
     if (!normalized.prepaidExpirationAt) delete normalized.prepaidExpirationAt;
+    if (normalized.firstBillProratedAmount == null) delete normalized.firstBillProratedAmount;
+    if (!normalized.firstBillPeriodStart) delete normalized.firstBillPeriodStart;
+    if (!normalized.firstBillPeriodEnd) delete normalized.firstBillPeriodEnd;
+    if (!normalized.referralSourceType) delete normalized.referralSourceType;
+    if (!normalized.referralCustomerAccountNumber) delete normalized.referralCustomerAccountNumber;
+    if (!normalized.referralCustomerName) delete normalized.referralCustomerName;
+    if (!normalized.referredBy) delete normalized.referredBy;
     return normalized;
 };
 
@@ -427,6 +466,183 @@ const applyMonthlyBillingDefaults = (draft = {}) => {
         dueOffset,
         dueDate
     };
+};
+
+const computeMonthEndDate = (value) => {
+    const activation = parseDateOnlyLocal(value);
+    if (!activation) return '';
+    return formatDateOnlyLocal(new Date(
+        activation.getFullYear(),
+        activation.getMonth() + 1,
+        0
+    ));
+};
+
+const computeFirstBillProration = (activationDateValue, planAmountValue) => {
+    const activation = parseDateOnlyLocal(activationDateValue);
+    const planAmount = Number(planAmountValue);
+    if (!activation || !Number.isFinite(planAmount) || planAmount < 0) return null;
+    const daysInMonth = new Date(
+        activation.getFullYear(),
+        activation.getMonth() + 1,
+        0
+    ).getDate();
+    const activeDays = daysInMonth - activation.getDate() + 1;
+    const monthEnd = new Date(
+        activation.getFullYear(),
+        activation.getMonth() + 1,
+        0
+    );
+    return {
+        periodStart: formatDateOnlyLocal(activation),
+        periodEnd: formatDateOnlyLocal(monthEnd),
+        activeDays,
+        daysInMonth,
+        // Match Customer Management and Billing's whole-peso activation proration.
+        amount: Math.round((planAmount / daysInMonth) * activeDays)
+    };
+};
+
+const applyFirstBillDefaults = (draft = {}) => {
+    const normalizedDraft = { ...(draft || {}) };
+    if (normalizePlanCategory(normalizedDraft.planCategory) !== 'postpaid') {
+        normalizedDraft.firstBillPaid = false;
+        delete normalizedDraft.firstBillProratedAmount;
+        delete normalizedDraft.firstBillPeriodStart;
+        delete normalizedDraft.firstBillPeriodEnd;
+        return normalizedDraft;
+    }
+    const proration = computeFirstBillProration(
+        normalizedDraft.activationDate,
+        normalizedDraft.planAmount
+    );
+    if (!proration) return normalizedDraft;
+    normalizedDraft.billDate = proration.periodEnd;
+    normalizedDraft.dueDate = proration.periodEnd;
+    normalizedDraft.dueOffset = 0;
+    normalizedDraft.firstBillProratedAmount = proration.amount;
+    normalizedDraft.firstBillPeriodStart = proration.periodStart;
+    normalizedDraft.firstBillPeriodEnd = proration.periodEnd;
+    normalizedDraft.firstBillPaid = normalizedDraft.firstBillPaid === true;
+    return normalizedDraft;
+};
+
+const applyReferralDefaults = (draft = {}, customers = []) => {
+    const normalizedDraft = { ...(draft || {}) };
+    const referrerAccountNumber = toSafeText(
+        normalizedDraft.referralCustomerAccountNumber,
+        20
+    );
+    if (!referrerAccountNumber) {
+        delete normalizedDraft.referralSourceType;
+        delete normalizedDraft.referralCustomerAccountNumber;
+        delete normalizedDraft.referralCustomerName;
+        delete normalizedDraft.referredBy;
+        return normalizedDraft;
+    }
+    const referrer = (Array.isArray(customers) ? customers : []).find((customer) => (
+        toSafeText(customer?.accountNumber, 20) === referrerAccountNumber
+    )) || null;
+    if (!referrer) {
+        throw createError(400, 'The selected referral customer no longer exists.');
+    }
+    const referrerName = buildCustomerName(referrer) || referrerAccountNumber;
+    normalizedDraft.referralSourceType = 'customer';
+    normalizedDraft.referralCustomerAccountNumber = referrerAccountNumber;
+    normalizedDraft.referralCustomerName = referrerName;
+    normalizedDraft.referredBy = referrerName;
+    return normalizedDraft;
+};
+
+const recordDraftFirstBillPayment = async ({
+    branchId,
+    customer,
+    draft,
+    actor,
+    executor = null
+} = {}) => {
+    if (draft?.firstBillPaid !== true) return null;
+    const proration = computeFirstBillProration(
+        customer?.activationDate || draft?.activationDate,
+        customer?.planAmount ?? draft?.planAmount
+    );
+    if (!proration || proration.amount <= 0) return null;
+    return recordCustomerOpeningAdjustment({
+        branchId,
+        accountNumber: customer?.accountNumber,
+        advancePayment: proration.amount,
+        effectiveDate: proration.periodStart,
+        actor,
+        executor,
+        description: 'Prorated first bill collected during installation',
+        paymentMethod: 'Technician Collection',
+        referencePrefix: 'PFB'
+    });
+};
+
+const createPendingDraftReferral = async ({
+    branchId,
+    submissionId,
+    referredAccountNumber,
+    draft,
+    actor
+} = {}) => {
+    const referrerAccountNumber = toSafeText(draft?.referralCustomerAccountNumber, 20);
+    if (!referrerAccountNumber) return null;
+    const customers = await readCustomers(branchId);
+    const referrer = (Array.isArray(customers) ? customers : []).find((customer) => (
+        toSafeText(customer?.accountNumber, 20) === referrerAccountNumber
+    )) || null;
+    if (!referrer) throw createError(409, 'The selected referral customer no longer exists.');
+    const safeReferredAccount = toSafeText(referredAccountNumber, 20);
+    if (!safeReferredAccount || safeReferredAccount === referrerAccountNumber) {
+        throw createError(400, 'Choose a different existing customer as the referrer.');
+    }
+    const referrerName = buildCustomerName(referrer) || referrerAccountNumber;
+    const timestamp = new Date().toISOString();
+    const safeActor = normalizeActor(actor);
+    const recordId = `referral-draft-${toSafeText(submissionId, 64)}`;
+    return mutateReferralRegistry(branchId, (records) => {
+        const existing = records.find((item) => (
+            toSafeText(item?.referredAccountNumber, 20) === safeReferredAccount
+        )) || null;
+        if (existing) {
+            const sameSource = existing.sourceType === 'customer'
+                && toSafeText(existing.referrerAccountNumber, 20) === referrerAccountNumber;
+            if (!sameSource) {
+                throw createError(409, 'This customer already has a different referral record.');
+            }
+            return { changed: false, result: existing };
+        }
+        const reason = 'Submitted by technician during customer onboarding.';
+        const record = {
+            id: recordId,
+            sourceType: 'customer',
+            referrerAccountNumber,
+            referrerId: '',
+            referrerName,
+            referredAccountNumber: safeReferredAccount,
+            approvalStatus: 'pending',
+            approvalReason: reason,
+            approvedDiscountAmount: 0,
+            approvedAt: '',
+            approvedBy: null,
+            applyFromMonth: '',
+            createdAt: timestamp,
+            createdBy: safeActor,
+            updatedAt: timestamp,
+            updatedBy: safeActor,
+            applications: [],
+            audit: [{
+                id: `created-${recordId}`,
+                action: 'created',
+                reason,
+                at: timestamp,
+                by: safeActor
+            }]
+        };
+        return { records: [...records, record], result: record };
+    });
 };
 
 const readCoverageAreaNames = async (branchId) => {
@@ -889,12 +1105,16 @@ const duplicateNameKey = (value) => String(value || '')
 
 const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     name: duplicateNameKey(buildCustomerName(draft)),
+    middleName: duplicateNameKey(draft.middleName),
     mobile: normalizePhilippineMobile(draft.mobile, { fallbackToRaw: false }),
     email: toSafeText(draft.email, 150).toLowerCase(),
     street: duplicateNameKey(draft.street),
     barangay: duplicateNameKey(draft.barangay),
     municipality: duplicateNameKey(draft.municipality),
     province: duplicateNameKey(draft.province),
+    provinceCode: toSafeText(draft.provinceCode, 20),
+    municipalityCode: toSafeText(draft.municipalityCode, 20),
+    barangayCode: toSafeText(draft.barangayCode, 20),
     area: duplicateNameKey(draft.area),
     mapPin: toSafeText(draft.mapPin, 120),
     planId: toSafeText(draft.planId, 80),
@@ -909,6 +1129,13 @@ const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     creditLimit: Number.isFinite(Number(draft.creditLimit)) ? Math.max(0, Math.floor(Number(draft.creditLimit))) : null,
     gpsAccuracyMeters: toOptionalNumber(draft.gpsAccuracyMeters),
     gpsCapturedAt: toSafeText(draft.gpsCapturedAt, 80),
+    firstBillPaid: draft.firstBillPaid === true,
+    firstBillProratedAmount: toOptionalNumber(draft.firstBillProratedAmount),
+    firstBillPeriodStart: normalizeDateOnly(draft.firstBillPeriodStart),
+    firstBillPeriodEnd: normalizeDateOnly(draft.firstBillPeriodEnd),
+    referralSourceType: toSafeText(draft.referralSourceType, 40),
+    referralCustomerAccountNumber: toSafeText(draft.referralCustomerAccountNumber, 20),
+    referralCustomerName: duplicateNameKey(draft.referralCustomerName),
     remarks: toSafeText(draft.remarks, 2000),
     status: toSafeText(draft.status, 30).toLowerCase(),
     loginUsername: toSafeText(draft.loginUsername, 120),
@@ -1152,16 +1379,27 @@ technicianRouter.use(requireTechnicianAuth);
 
 technicianRouter.get('/meta', async (req, res, next) => {
     try {
-        const [plans, coverageAreas, integrationSettings] = await Promise.all([
+        const [plans, coverageAreas, integrationSettings, customers] = await Promise.all([
             readPlans(req.technician.branchId),
             readCoverageAreaNames(req.technician.branchId),
-            loadIntegrationSettings(req.technician.branchId).catch(() => null)
+            loadIntegrationSettings(req.technician.branchId).catch(() => null),
+            readCustomers(req.technician.branchId)
         ]);
+        const referralCustomers = (Array.isArray(customers) ? customers : [])
+            .map((customer) => ({
+                accountNumber: toSafeText(customer?.accountNumber, 20),
+                name: buildCustomerName(customer),
+                status: toSafeText(customer?.status, 30) || 'active',
+                area: toSafeText(customer?.area, 150)
+            }))
+            .filter((customer) => customer.accountNumber && customer.name)
+            .sort((left, right) => left.name.localeCompare(right.name));
         res.json({
             ok: true,
             technician: req.technician,
             plans: Array.isArray(plans) ? plans : [],
             coverageAreas: Array.isArray(coverageAreas) ? coverageAreas : [],
+            referralCustomers,
             mikrotikEnabled: hasUsableMikrotikRouter(integrationSettings)
         });
     } catch (error) {
@@ -1199,12 +1437,18 @@ technicianRouter.get('/', async (req, res, next) => {
 
 technicianRouter.post('/', async (req, res, next) => {
     try {
-        const [plans, coverageAreas] = await Promise.all([
+        const [plans, coverageAreas, customers] = await Promise.all([
             readPlans(req.technician.branchId),
-            readCoverageAreaNames(req.technician.branchId)
+            readCoverageAreaNames(req.technician.branchId),
+            readCustomers(req.technician.branchId)
         ]);
-        const draft = applyMonthlyBillingDefaults(
-            applyPlanDefaults(normalizeDraftPayload(req.body || {}), plans)
+        const draft = applyReferralDefaults(
+            applyFirstBillDefaults(
+                applyMonthlyBillingDefaults(
+                    applyPlanDefaults(normalizeDraftPayload(req.body || {}), plans)
+                )
+            ),
+            customers
         );
         validateDraftPayload(draft, { coverageAreas });
 
@@ -1324,14 +1568,22 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             const incomingDraftData = req.body?.draftData && typeof req.body.draftData === 'object' && !Array.isArray(req.body.draftData)
                 ? req.body.draftData
                 : {};
-            const [plans, coverageAreas] = await Promise.all([
+            const [plans, coverageAreas, customers] = await Promise.all([
                 readPlans(req.branchId),
-                readCoverageAreaNames(req.branchId)
+                readCoverageAreaNames(req.branchId),
+                readCustomers(req.branchId)
             ]);
             let reviewedDraft = preserveInstallationCompletion(
-                applyPlanDefaults(
-                    normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
-                    plans
+                applyReferralDefaults(
+                    applyFirstBillDefaults(
+                        applyMonthlyBillingDefaults(
+                            applyPlanDefaults(
+                                normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
+                                plans
+                            )
+                        )
+                    ),
+                    customers
                 ),
                 existingDraftData
             );
@@ -1364,6 +1616,20 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 });
             }
 
+            const firstBillPayment = await recordDraftFirstBillPayment({
+                branchId: req.branchId,
+                customer: persistedCustomer,
+                draft: reviewedDraft,
+                actor: req.user || null
+            });
+            const referralRecord = await createPendingDraftReferral({
+                branchId: req.branchId,
+                submissionId,
+                referredAccountNumber: persistedCustomer?.accountNumber || linkedCustomerAccountNumber,
+                draft: reviewedDraft,
+                actor: req.user || null
+            });
+
             const finalizedDraft = {
                 ...reviewedDraft,
                 accountNumber: persistedCustomer?.accountNumber || linkedCustomerAccountNumber || '',
@@ -1378,7 +1644,10 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 prepaidExpirationAt: persistedCustomer?.prepaidExpirationAt || reviewedDraft.prepaidExpirationAt || '',
                 loginUsername: persistedCustomer?.loginUsername || reviewedDraft.loginUsername || '',
                 loginPassword: persistedCustomer?.loginPassword || reviewedDraft.loginPassword || '',
-                status: persistedCustomer?.status || reviewedDraft.status || 'active'
+                status: persistedCustomer?.status || reviewedDraft.status || 'active',
+                firstBillPaymentStatus: firstBillPayment ? 'recorded' : 'not-paid',
+                firstBillPaymentEntryId: firstBillPayment?.id || '',
+                referralRecordId: referralRecord?.id || ''
             };
 
             const decisionReason = toSafeText(req.body?.reason, 2000) || null;
@@ -1456,14 +1725,22 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
         const incomingDraftData = req.body?.draftData && typeof req.body.draftData === 'object' && !Array.isArray(req.body.draftData)
             ? req.body.draftData
             : {};
-        const [plans, coverageAreas] = await Promise.all([
+        const [plans, coverageAreas, customers] = await Promise.all([
             readPlans(req.branchId),
-            readCoverageAreaNames(req.branchId)
+            readCoverageAreaNames(req.branchId),
+            readCustomers(req.branchId)
         ]);
         let reviewedDraft = preserveInstallationCompletion(
-            applyPlanDefaults(
-                normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
-                plans
+            applyReferralDefaults(
+                applyFirstBillDefaults(
+                    applyMonthlyBillingDefaults(
+                        applyPlanDefaults(
+                            normalizeDraftPayload({ ...existingDraftData, ...incomingDraftData }),
+                            plans
+                        )
+                    )
+                ),
+                customers
             ),
             existingDraftData
         );
@@ -1495,6 +1772,21 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             });
         }
 
+        const firstBillPayment = await recordDraftFirstBillPayment({
+            branchId: req.branchId,
+            customer: persistedCustomer,
+            draft: reviewedDraft,
+            actor: req.user || null,
+            executor: connection
+        });
+        const referralRecord = await createPendingDraftReferral({
+            branchId: req.branchId,
+            submissionId,
+            referredAccountNumber: persistedCustomer?.accountNumber || linkedCustomerAccountNumber,
+            draft: reviewedDraft,
+            actor: req.user || null
+        });
+
         const finalizedDraft = {
             ...reviewedDraft,
             accountNumber: persistedCustomer?.accountNumber || linkedCustomerAccountNumber || '',
@@ -1509,7 +1801,10 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             prepaidExpirationAt: persistedCustomer?.prepaidExpirationAt || reviewedDraft.prepaidExpirationAt || '',
             loginUsername: persistedCustomer?.loginUsername || reviewedDraft.loginUsername || '',
             loginPassword: persistedCustomer?.loginPassword || reviewedDraft.loginPassword || '',
-            status: persistedCustomer?.status || reviewedDraft.status || 'active'
+            status: persistedCustomer?.status || reviewedDraft.status || 'active',
+            firstBillPaymentStatus: firstBillPayment ? 'recorded' : 'not-paid',
+            firstBillPaymentEntryId: firstBillPayment?.id || '',
+            referralRecordId: referralRecord?.id || ''
         };
 
         const decisionReason = toSafeText(req.body?.reason, 2000) || null;
@@ -1737,6 +2032,9 @@ module.exports.buildTechnicianProfile = buildTechnicianProfile;
 module.exports.loadTechnicianByToken = loadTechnicianByToken;
 module.exports.requireTechnicianAuth = requireTechnicianAuth;
 module.exports.normalizeDraftPayload = normalizeDraftPayload;
+module.exports.applyFirstBillDefaults = applyFirstBillDefaults;
+module.exports.applyReferralDefaults = applyReferralDefaults;
+module.exports.computeFirstBillProration = computeFirstBillProration;
 module.exports.preserveInstallationCompletion = preserveInstallationCompletion;
 module.exports.findDraftDuplicateCandidates = findDraftDuplicateCandidates;
 module.exports.withDraftSubmissionLock = withDraftSubmissionLock;

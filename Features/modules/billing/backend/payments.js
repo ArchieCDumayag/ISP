@@ -2140,7 +2140,8 @@ const buildExistingPaymentHistoryGcashReconciliationPlan = ({
                 billingMonth: paymentImportBillingMonth(paymentDate),
                 paymentEntryId: String(entry?.id || '').trim(),
                 paymentMethod: normalizePaymentImportText(entry?.paymentMethod),
-                isCollectedPayment: isCollectedPaymentEntry(entry)
+                isCollectedPayment: isCollectedPaymentEntry(entry),
+                isPendingGcashVerification: isPendingGcashPaymentEntry(entry)
             };
         });
         const paymentDates = [...new Set(allocations.map((allocation) => allocation.paymentDate).filter(Boolean))];
@@ -2196,9 +2197,8 @@ const buildExistingPaymentHistoryGcashReconciliationPlan = ({
             || !allocation.paymentDate
             || !allocation.billingMonth
             || !allocation.paymentEntryId
-            || !allocation.isCollectedPayment
         ))) {
-            groups.push(finish('review_required', 'A same-reference Payment History row is not a complete collected payment.'));
+            groups.push(finish('review_required', 'A same-reference Payment History row is incomplete.'));
             return;
         }
         if (allocations.some((allocation) => allocation.paymentMethod.toLowerCase() !== 'gcash')) {
@@ -2211,6 +2211,21 @@ const buildExistingPaymentHistoryGcashReconciliationPlan = ({
         }
         if (totalAmount == null || officialAmount == null || Math.abs(totalAmount - officialAmount) > 0.009) {
             groups.push(finish('review_required', 'The same-reference Payment History total does not match the official GCash credit.'));
+            return;
+        }
+        if (allocations.some((allocation) => !allocation.isCollectedPayment)) {
+            const pendingAllocation = allocations.length === 1
+                && allocations[0].isPendingGcashVerification
+                ? allocations[0]
+                : null;
+            if (pendingAllocation && !assignment) {
+                groups.push(finish(
+                    'bind_pending',
+                    'Reference, amount, date, and customer match one pending GCash payment awaiting Admin confirmation.'
+                ));
+                return;
+            }
+            groups.push(finish('review_required', 'A same-reference Payment History row is not a complete collected payment.'));
             return;
         }
 
@@ -2236,7 +2251,7 @@ const buildExistingPaymentHistoryGcashReconciliationPlan = ({
     return {
         groups,
         bindExistingGroups: groups.filter((group) => group.action === 'bind_existing'),
-        suggestionGroups: groups.filter((group) => group.action === 'review_required')
+        suggestionGroups: groups.filter((group) => ['bind_pending', 'review_required'].includes(group.action))
     };
 };
 const readExistingPaymentHistoryGcashReconciliation = async ({ branchId, transactions = null } = {}) => {
@@ -2254,21 +2269,37 @@ const readExistingPaymentHistoryGcashReconciliation = async ({ branchId, transac
         branchId
     });
 };
-const serializeExistingPaymentHistoryGcashMatch = (group) => ({
-    status: group.action === 'bind_existing' ? 'exact_match' : 'review_required',
-    reason: group.reason,
-    totalAmount: group.totalAmount,
-    paymentDate: group.paymentDate || null,
-    allocations: group.allocations.slice(0, 3).map((allocation) => ({
-        accountNumber: allocation.accountNumber,
-        customerName: allocation.customerName,
-        amount: allocation.amount
-    }))
-});
+const serializeExistingPaymentHistoryGcashMatch = (group) => {
+    const pendingAllocation = group.action === 'bind_pending' ? group.allocations[0] : null;
+    return {
+        status: group.action === 'bind_existing'
+            ? 'exact_match'
+            : (pendingAllocation ? 'pending_match' : 'review_required'),
+        reason: group.reason,
+        totalAmount: group.totalAmount,
+        paymentDate: group.paymentDate || null,
+        allocations: group.allocations.slice(0, 3).map((allocation) => ({
+            accountNumber: allocation.accountNumber,
+            customerName: allocation.customerName,
+            amount: allocation.amount
+        })),
+        pendingPayment: pendingAllocation ? {
+            entryId: pendingAllocation.paymentEntryId,
+            accountNumber: pendingAllocation.accountNumber,
+            customerName: pendingAllocation.customerName,
+            amount: pendingAllocation.amount,
+            paymentDate: pendingAllocation.paymentDate,
+            enteredReference: group.reference,
+            paymentMethod: 'GCash',
+            status: PENDING_GCASH_STATUS,
+            statusLabel: 'Pending'
+        } : null
+    };
+};
 const getExistingPaymentHistoryGcashMatches = async ({ branchId, transactions = null } = {}) => {
     const reconciliation = await readExistingPaymentHistoryGcashReconciliation({ branchId, transactions });
     const visibleGroups = reconciliation.groups.filter((group) => (
-        ['bind_existing', 'review_required'].includes(group.action)
+        ['bind_existing', 'bind_pending', 'review_required'].includes(group.action)
         && group.allocations.some((allocation) => allocation.customerName)
     ));
     return {
@@ -2277,7 +2308,7 @@ const getExistingPaymentHistoryGcashMatches = async ({ branchId, transactions = 
             serializeExistingPaymentHistoryGcashMatch(group)
         ])),
         exactReferences: visibleGroups.filter((group) => group.action === 'bind_existing').length,
-        suggestedReferences: visibleGroups.filter((group) => group.action === 'review_required').length
+        suggestedReferences: visibleGroups.filter((group) => ['bind_pending', 'review_required'].includes(group.action)).length
     };
 };
 const reconcileExistingPaymentHistoryWithGcashTransactions = async ({

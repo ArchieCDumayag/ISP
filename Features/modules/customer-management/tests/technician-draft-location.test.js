@@ -5,11 +5,76 @@ const path = require('node:path');
 
 const {
   normalizeDraftPayload,
+  applyFirstBillDefaults,
+  applyReferralDefaults,
+  computeFirstBillProration,
   preserveInstallationCompletion,
   listAllCustomerDraftSubmissions,
   withDraftSubmissionLock,
   draftSubmissionFingerprint
 } = require('../backend/customer-draft-submissions');
+
+test('technician onboarding keeps structured identity, address, payment, and referral input', () => {
+  const draft = normalizeDraftPayload({
+    firstName: 'Ana',
+    middleName: 'Reyes',
+    lastName: 'Santos',
+    street: 'House 12',
+    province: 'Cagayan',
+    provinceCode: '015',
+    municipality: 'Baggao',
+    municipalityCode: '01506',
+    barangay: 'San Jose',
+    barangayCode: '01506001',
+    firstBillPaid: true,
+    referralCustomerAccountNumber: '100000001',
+    referralCustomerName: 'Existing Customer'
+  });
+  assert.equal(draft.name, 'Ana Reyes Santos');
+  assert.equal(draft.middleName, 'Reyes');
+  assert.equal(draft.provinceCode, '015');
+  assert.equal(draft.municipalityCode, '01506');
+  assert.equal(draft.barangayCode, '01506001');
+  assert.equal(draft.firstBillPaid, true);
+  assert.equal(draft.referralCustomerAccountNumber, '100000001');
+});
+
+test('postpaid technician first bill is recomputed server-side through month end', () => {
+  const proration = computeFirstBillProration('2026-08-24', 1000);
+  assert.deepEqual(proration, {
+    periodStart: '2026-08-24',
+    periodEnd: '2026-08-31',
+    activeDays: 8,
+    daysInMonth: 31,
+    amount: 258
+  });
+  const draft = applyFirstBillDefaults({
+    planCategory: 'postpaid',
+    planAmount: 1000,
+    activationDate: '2026-08-24',
+    billDate: '2030-01-01',
+    firstBillProratedAmount: 1,
+    firstBillPaid: true
+  });
+  assert.equal(draft.billDate, '2026-08-31');
+  assert.equal(draft.dueDate, '2026-08-31');
+  assert.equal(draft.firstBillProratedAmount, 258);
+  assert.equal(draft.firstBillPaid, true);
+});
+
+test('referral selection is resolved from the branch customer list', () => {
+  const resolved = applyReferralDefaults({
+    referralCustomerAccountNumber: '100000001',
+    referralCustomerName: 'Untrusted Name'
+  }, [{ accountNumber: '100000001', name: 'Canonical Customer' }]);
+  assert.equal(resolved.referralSourceType, 'customer');
+  assert.equal(resolved.referralCustomerName, 'Canonical Customer');
+  assert.equal(resolved.referredBy, 'Canonical Customer');
+  assert.throws(
+    () => applyReferralDefaults({ referralCustomerAccountNumber: 'missing' }, []),
+    /no longer exists/i
+  );
+});
 
 test('technician draft normalizes paired GPS coordinates and metadata', () => {
   const draft = normalizeDraftPayload({
@@ -171,6 +236,8 @@ test('draft decisions serialize JSON and claim MySQL state before destructive cl
     source.indexOf('const validateDraftPayload')
   );
   assert.match(approve, /return await withDraftSubmissionLock/);
+  assert.match(approve, /recordDraftFirstBillPayment/);
+  assert.match(approve, /createPendingDraftReferral/);
   assert.match(reject, /return await withDraftSubmissionLock/);
   assert.match(reject, /FOR UPDATE/);
   assert.ok(reject.indexOf('await connection.commit()')

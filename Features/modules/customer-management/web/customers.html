@@ -210,382 +210,422 @@
 </div>
 
     <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
-    <div id="customerModal" class="modal customer-modal" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle" aria-hidden="true">
+    <div id="customerModal" class="modal modal-blur customer-modal" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle" aria-hidden="true" tabindex="-1">
         <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <h2 id="customerModalTitle">Add customer</h2>
-                    <p class="modal-subtitle">Generate a customer profile, assign a plan, and set the first billing cycle.</p>
+                    <h2 class="modal-title" id="customerModalTitle">Add customer</h2>
+                    <p class="text-secondary small mb-0 mt-1">Generate a customer profile, assign billing, and confirm the network setup.</p>
                 </div>
-                <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeModalBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
-            <form class="customer-form" novalidate>
-                <div class="customer-form__body">
-                    <ol class="customer-wizard-progress" id="customerWizardProgress" aria-label="Customer form progress">
-                        <li class="customer-wizard-progress__item is-active" data-customer-step-state="1">
-                            <button type="button" class="btn btn-sm customer-wizard-progress__button" data-customer-step-target="1" aria-current="step">
-                                <span class="customer-wizard-progress__number">1</span>
-                                <span>
-                                    <span class="customer-wizard-progress__label">Customer</span>
-                                    <span class="customer-wizard-progress__meta">Identity &amp; address</span>
-                                </span>
-                            </button>
-                        </li>
-                        <li class="customer-wizard-progress__item" data-customer-step-state="2">
-                            <button type="button" class="btn btn-sm customer-wizard-progress__button" data-customer-step-target="2">
-                                <span class="customer-wizard-progress__number">2</span>
-                                <span>
-                                    <span class="customer-wizard-progress__label">Billing</span>
-                                    <span class="customer-wizard-progress__meta">Plan &amp; first cycle</span>
-                                </span>
-                            </button>
-                        </li>
-                        <li class="customer-wizard-progress__item" data-customer-step-state="3">
-                            <button type="button" class="btn btn-sm customer-wizard-progress__button" data-customer-step-target="3">
-                                <span class="customer-wizard-progress__number">3</span>
-                                <span>
-                                    <span class="customer-wizard-progress__label">Network &amp; Review</span>
-                                    <span class="customer-wizard-progress__meta">Assignment &amp; confirmation</span>
-                                </span>
-                            </button>
-                        </li>
-                    </ol>
+            <form class="customer-form d-flex flex-column flex-fill overflow-hidden" novalidate>
+                <div class="modal-body d-flex flex-column gap-3">
+                    <div class="overflow-x-auto pb-1 flex-shrink-0">
+                        <ol class="steps steps-counter" id="customerWizardProgress" aria-label="Customer form progress">
+                            <li class="step-item active" data-customer-step-state="1">
+                                <button type="button" class="btn btn-link btn-sm w-100 p-0 border-0 text-reset text-decoration-none" data-customer-step-target="1" aria-current="step">
+                                    <span class="d-block fw-semibold">Customer</span>
+                                    <span class="d-block small text-secondary">Account, identity, contact, address</span>
+                                </button>
+                            </li>
+                            <li class="step-item" data-customer-step-state="2">
+                                <button type="button" class="btn btn-link btn-sm w-100 p-0 border-0 text-reset text-decoration-none" data-customer-step-target="2">
+                                    <span class="d-block fw-semibold">Billing</span>
+                                    <span class="d-block small text-secondary">Plan, dates, opening balance</span>
+                                </button>
+                            </li>
+                            <li class="step-item" data-customer-step-state="3">
+                                <button type="button" class="btn btn-link btn-sm w-100 p-0 border-0 text-reset text-decoration-none" data-customer-step-target="3">
+                                    <span class="d-block fw-semibold">Network &amp; Review</span>
+                                    <span class="d-block small text-secondary">Router, PPPoE, NAP, confirmation</span>
+                                </button>
+                            </li>
+                        </ol>
+                    </div>
 
-                    <div class="alert alert-danger customer-form-error-summary" id="customerFormErrorSummary" role="alert" tabindex="-1" hidden>
+                    <div class="alert alert-danger mb-0 py-2" id="customerFormErrorSummary" role="alert" tabindex="-1" hidden>
                         <div class="d-flex align-items-start gap-2">
                             <i class="ti ti-alert-circle" aria-hidden="true"></i>
                             <div>
                                 <strong>Please review the highlighted fields.</strong>
-                                <ul class="customer-form-error-list" data-customer-error-list></ul>
+                                <ul class="mb-0 mt-1 ps-3" data-customer-error-list></ul>
                             </div>
                         </div>
                     </div>
 
-                    <section class="customer-form-step is-active" id="customerStepCustomer" data-customer-step="1" aria-labelledby="customerStepCustomerTitle">
-                        <h3 class="customer-form-step__title" id="customerStepCustomerTitle">Customer details</h3>
-                        <p class="customer-form-step__intro"><span class="required-mark" aria-hidden="true">*</span> Required fields must be completed before continuing.</p>
+                    <section class="vstack gap-3" id="customerStepCustomer" data-customer-step="1" aria-labelledby="customerStepCustomerTitle">
+                        <div>
+                            <h3 class="h3 mb-1" id="customerStepCustomerTitle">Customer details</h3>
+                            <p class="text-secondary small mb-0"><span class="text-danger" aria-hidden="true">*</span> Required fields must be completed before continuing.</p>
+                        </div>
 
-                <div class="form-card form-card--primary">
-                    <div class="form-card__header">
-                        <p class="form-card__eyebrow">Account &amp; customer</p>
-                        <p class="form-card__subhead">The account shown here is a preview. The server confirms the final account when the customer is saved.</p>
-                    </div>
-                    <div class="form-card__grid">
-                        <div class="form-field" id="accountNumberField">
-                            <label for="accountNumber">Account Number <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                            <input type="text" id="accountNumber" name="accountNumber" readonly required maxlength="9" pattern="[0-9]{9}" inputmode="numeric" aria-describedby="accountAllocationStatus">
-                            <div class="account-allocation-status" id="accountAllocationStatus" role="status" aria-live="polite">
-                                <i class="ti ti-loader-2 ti-spin" data-account-allocation-icon aria-hidden="true"></i>
-                                <span data-account-allocation-message>Preparing account preview...</span>
-                                <button type="button" class="btn btn-link btn-sm account-allocation-retry" id="retryAccountAllocationBtn" hidden>Retry</button>
+                        <div class="card">
+                            <div class="card-status-top bg-primary"></div>
+                            <div class="card-header py-2">
+                                <div>
+                                    <h4 class="card-title mb-0">Account &amp; customer</h4>
+                                    <div class="card-subtitle mt-1">The server confirms the final account number when the customer is saved.</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="form-field">
-                            <label for="firstName">First Name <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                            <input type="text" id="firstName" name="firstName" required>
-                        </div>
-                        <div class="form-field">
-                            <label for="lastName">Last Name <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                            <input type="text" id="lastName" name="lastName" required>
-                        </div>
-                        <div class="form-field">
-                            <label for="contactNumber">Mobile Number</label>
-                            <input type="tel" id="contactNumber" name="contactNumber" maxlength="16" inputmode="tel" title="Accepts 09xxxxxxxxx or +639xxxxxxxxx">
-                        </div>
-                        <div class="form-field">
-                            <label for="email">Email</label>
-                            <input type="email" id="email" name="email">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-card form-card--soft" id="loginInfoSection" style="display: none;">
-                    <div class="form-card__header">
-                        <p class="form-card__eyebrow">Portal credentials</p>
-                        <p class="form-card__subhead">The current password is protected. Leave the password blank to keep it, or enter a replacement.</p>
-                    </div>
-                    <div class="form-card__grid">
-                        <div class="form-field">
-                            <label for="loginUsername">Login Username</label>
-                            <input type="text" id="loginUsername" name="loginUsername" autocomplete="off">
-                        </div>
-                        <div class="form-field">
-                            <label for="loginPassword">Login Password</label>
-                            <div class="secure-input-row">
-                                <input type="password" id="loginPassword" name="loginPassword" autocomplete="off">
-                                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm secure-input-toggle" id="loginPasswordToggleBtn" aria-label="Show password" title="Show password">
-                                    <i class="ti ti-eye" aria-hidden="true"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <fieldset class="form-section form-section--address">
-                    <legend>Service address</legend>
-                    <div class="form-grid">
-                        <div class="form-field">
-                            <label for="street">Street/House No.</label>
-                            <input type="text" id="street" name="street">
-                        </div>
-                        <div class="form-field">
-                            <label for="province">Province <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                            <select id="province" name="province" required>
-                                <option value="">Select province / independent city</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="municipality">Municipality/City <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                            <select id="municipality" name="municipality" required disabled>
-                                <option value="">Select province first</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="barangay">Barangay <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                            <select id="barangay" name="barangay" required disabled>
-                                <option value="">Select municipality first</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="area">Area / Cluster</label>
-                            <select id="area" name="area">
-                                <option value="" selected>Select area</option>
-                            </select>
-                        </div>
-                        <div class="form-field map-pin-field">
-                            <label for="mapPin">Coordinates</label>
-                            <div class="map-pin-card">
-                                <div class="map-pin-input-row">
-                                    <input type="text" id="mapPin" name="mapPin" inputmode="text" placeholder="e.g. 14.599500, 120.984200">
-                                    <button type="button" class="btn btn-icon btn-outline-secondary btn-sm map-pin-trigger" id="openMapPinPickerBtn" aria-label="View map" title="View map">
-                                        <i class="ti ti-map-pin" aria-hidden="true"></i>
-                                    </button>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-4" id="accountNumberField">
+                                        <label class="form-label" for="accountNumber">Account Number <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="accountNumber" name="accountNumber" readonly required maxlength="9" pattern="[0-9]{9}" inputmode="numeric" aria-describedby="accountAllocationStatus">
+                                        <div class="d-flex align-items-center gap-1 mt-1 small text-secondary" id="accountAllocationStatus" role="status" aria-live="polite">
+                                            <i class="ti ti-loader-2 ti-spin" data-account-allocation-icon aria-hidden="true"></i>
+                                            <span data-account-allocation-message>Preparing account preview...</span>
+                                            <button type="button" class="btn btn-link btn-sm p-0" id="retryAccountAllocationBtn" hidden>Retry</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="firstName">First Name <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="firstName" name="firstName" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="lastName">Last Name <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="lastName" name="lastName" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="contactNumber">Mobile Number</label>
+                                        <input type="tel" class="form-control form-control-sm" id="contactNumber" name="contactNumber" maxlength="16" inputmode="tel" title="Accepts 09xxxxxxxxx or +639xxxxxxxxx">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="email">Email</label>
+                                        <input type="email" class="form-control form-control-sm" id="email" name="email">
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </fieldset>
-                    </section>
 
-                    <section class="customer-form-step" id="customerStepBilling" data-customer-step="2" aria-labelledby="customerStepBillingTitle" hidden>
-                        <h3 class="customer-form-step__title" id="customerStepBillingTitle">Billing setup</h3>
-                        <p class="customer-form-step__intro">Choose how this account enters billing and confirm its first cycle.</p>
-                <fieldset class="form-section form-section--billing">
-                    <div class="form-grid">
-                    <div class="form-field">
-                        <label for="planCategory">Plan Type</label>
-                        <select id="planCategory" name="planCategory">
-                            <option value="postpaid">Postpaid</option>
-                            <option value="prepaid">Prepaid</option>
-                        </select>
-                    </div>
-                    <div class="form-field" id="planField">
-                        <label for="plan">Plan <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                        <select id="plan" name="plan" required>
-                            <option value="">Loading plans...</option>
-                        </select>
-                    </div>
-                    <div class="form-field form-field--status-control" style="grid-column: 1 / -1;">
-                        <label for="statusToggle">Account Status</label>
-                        <label class="switch-field status-switch-field" for="statusToggle">
-                            <input type="checkbox" id="statusToggle" role="switch" aria-checked="false">
-                            <span class="status-switch-copy">
-                                <span class="status-switch-state" id="statusSwitchState">Pending setup</span>
-                                <span class="status-switch-meta" id="statusSwitchMeta">Inactive until service setup is complete.</span>
-                            </span>
-                        </label>
-                        <p class="status-switch-hint" id="statusSwitchHint">Select Activate now only when service requirements are complete.</p>
-                        <select id="status" name="status" hidden aria-hidden="true" tabindex="-1">
-                            <option value="active">Active</option>
-                            <option value="inactive" selected>Inactive</option>
-                            <option value="disabled">Disabled</option>
-                        </select>
-                    </div>
-                    <div class="form-field" id="customerStartTypeField" style="grid-column: 1 / -1;">
-                        <label>Customer Type</label>
-                        <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column flex-md-row gap-2">
-                            <label class="form-selectgroup-item flex-fill">
-                                <input type="radio" name="customerStartType" value="new" class="form-selectgroup-input" checked>
-                                <span class="form-selectgroup-label d-flex align-items-center gap-2">
-                                    <span class="avatar avatar-sm bg-primary-lt text-primary">
-                                        <i class="ti ti-user-plus" aria-hidden="true"></i>
-                                    </span>
-                                    <span>
-                                        <span class="fw-semibold">New customer</span>
-                                        <span class="d-block text-secondary small">Use prorated first-bill computation.</span>
-                                    </span>
-                                </span>
-                            </label>
-                            <label class="form-selectgroup-item flex-fill">
-                                <input type="radio" name="customerStartType" value="existing" class="form-selectgroup-input">
-                                <span class="form-selectgroup-label d-flex align-items-center gap-2">
-                                    <span class="avatar avatar-sm bg-orange-lt text-orange">
-                                        <i class="ti ti-user-check" aria-hidden="true"></i>
-                                    </span>
-                                    <span>
-                                        <span class="fw-semibold">Migrated customer</span>
-                                        <span class="d-block text-secondary small">Optional opening debit or credit; no prorated first bill.</span>
-                                    </span>
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="form-field" id="existingCustomerOpeningField" style="grid-column: 1 / -1; display: none;">
-                        <label>Current Month Opening Amount <span class="optional-label">Optional</span></label>
-                        <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label" for="openingPreviousBalance">Previous Balance</label>
-                                <input type="number" class="form-control" id="openingPreviousBalance" name="openingPreviousBalance" min="0" step="0.01" placeholder="0.00" disabled>
-                                <small class="text-secondary">Adds an opening debit.</small>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="openingAdvancePayment">Advance Payment</label>
-                                <input type="number" class="form-control" id="openingAdvancePayment" name="openingAdvancePayment" min="0" step="0.01" placeholder="0.00" disabled>
-                                <small class="text-secondary">Adds an opening credit.</small>
-                            </div>
-                        </div>
-                        <small class="muted">Both may be left at zero. If needed, enter only one: a previous-balance debit or advance-payment credit.</small>
-                    </div>
-                    <div class="form-field" id="activationDateField">
-                        <label for="activationDate">Activation Date</label>
-                        <input type="date" id="activationDate" name="activationDate">
-                    </div>
-                    <div class="form-field" id="billDateField">
-                        <label for="billDate">Next Bill Date <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                        <input type="date" id="billDate" name="billDate" required>
-                    </div>
-                    <div class="form-field" id="dueOffsetField">
-                        <label for="dueOffset">Due after (days) <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                        <input type="number" id="dueOffset" name="dueOffset" min="0" step="1" required>
-                        <small class="muted" id="dueOffsetHelp"></small>
-                    </div>
-                    <div class="form-field" id="dueDateField">
-                        <label for="dueDateDisplay">Computed Due Date <span class="required-mark" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
-                        <input type="text" id="dueDateDisplay" readonly>
-                        <input type="hidden" id="dueDate" name="dueDate" required>
-                    </div>
-                    <div class="form-field" id="firstBillPeriodField">
-                        <label for="firstBillPeriodDisplay">First Bill (Prorated)</label>
-                        <input type="text" id="firstBillPeriodDisplay" readonly>
-                        <small class="muted">First month is billed from activation date until month-end.</small>
-                    </div>
-                    <div class="form-field" id="creditLimitField">
-                        <label for="creditLimit">Credit Limit (amount)</label>
-                        <input type="number" id="creditLimit" name="creditLimit" min="0" step="1">
-                    </div>
-                    <div class="form-field" id="referralSourceTypeField">
-                        <label for="referralSourceType">Invited By</label>
-                        <select id="referralSourceType" name="referralSourceType">
-                            <option value="">No referral</option>
-                            <option value="customer">Existing customer</option>
-                            <option value="agent">Agent</option>
-                        </select>
-                    </div>
-                    <div class="form-field" id="referralCustomerField" style="display: none;">
-                        <label for="referralCustomerAccountNumber">Referral Customer</label>
-                        <select id="referralCustomerAccountNumber" name="referralCustomerAccountNumber">
-                            <option value="">Select customer</option>
-                        </select>
-                    </div>
-                    <div class="form-field" id="referralAgentField" style="display: none;">
-                        <label for="referralAgentId">Referral Agent</label>
-                        <select id="referralAgentId" name="referralAgentId">
-                            <option value="">Select agent</option>
-                        </select>
-                    </div>
-                </div>
-            </fieldset>
-                    </section>
-
-                    <section class="customer-form-step" id="customerStepReview" data-customer-step="3" aria-labelledby="customerStepReviewTitle" hidden>
-                        <h3 class="customer-form-step__title" id="customerStepReviewTitle">Network &amp; review</h3>
-                        <p class="customer-form-step__intro">Add an optional NAP assignment, then confirm the record before saving.</p>
-                <fieldset class="form-section form-section--nap">
-                    <legend>NAP Assignment</legend>
-                    <div class="form-grid">
-                        <div class="form-field">
-                            <label for="customerNapId">NAP Pin</label>
-                            <div class="customer-nap-input-row">
-                                <select id="customerNapId" name="napId">
-                                    <option value="">No NAP assignment</option>
-                                </select>
-                                <button type="button" class="btn btn-icon btn-outline-secondary btn-sm customer-nap-map-btn" id="viewSelectedNapMapBtn" aria-label="Pick NAP on map" title="Pick NAP on map" aria-disabled="false">
-                                    <i class="ti ti-map-pin" aria-hidden="true"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="form-field">
-                            <label for="customerNapPort">NAP Port</label>
-                            <select id="customerNapPort" name="napPort" disabled>
-                                <option value="">Select NAP pin first</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="customerOpticalInfo">Optical Power</label>
-                            <input type="text" id="customerOpticalInfo" name="opticalInfo" inputmode="decimal" disabled>
-                        </div>
-                    </div>
-                    <p class="muted customer-nap-meta" id="customerNapHint">Optional: assign a NAP pin and port to record where this customer is connected.</p>
-                </fieldset>
-
-                <div class="form-field">
-                    <label for="remarks">Remarks</label>
-                    <textarea id="remarks" name="remarks" rows="3"></textarea>
-                </div>
-
-                        <section class="customer-review-card" id="customerReviewSummary" aria-labelledby="customerReviewSummaryTitle" aria-live="polite">
-                            <div class="customer-review-card__header">
+                        <div class="card bg-body-tertiary" id="loginInfoSection" style="display: none;">
+                            <div class="card-header py-2">
                                 <div>
-                                    <p class="form-card__eyebrow">Final review</p>
-                                    <h4 id="customerReviewSummaryTitle">Confirm customer setup</h4>
+                                    <h4 class="card-title mb-0">Portal credentials</h4>
+                                    <div class="card-subtitle mt-1">Leave the password blank to keep the protected current password, or enter a replacement.</div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="loginUsername">Login Username</label>
+                                        <input type="text" class="form-control form-control-sm" id="loginUsername" name="loginUsername" autocomplete="off">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="loginPassword">Login Password</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="password" class="form-control form-control-sm" id="loginPassword" name="loginPassword" autocomplete="off">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="loginPasswordToggleBtn" aria-label="Show password" title="Show password">
+                                                <i class="ti ti-eye" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card" role="group" aria-labelledby="customerServiceAddressTitle">
+                            <div class="card-header py-2">
+                                <h4 class="card-title mb-0" id="customerServiceAddressTitle">Service address</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="street">Street/House No.</label>
+                                        <input type="text" class="form-control form-control-sm" id="street" name="street">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="province">Province <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <select class="form-select form-select-sm" id="province" name="province" required>
+                                            <option value="">Select province / independent city</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="municipality">Municipality/City <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <select class="form-select form-select-sm" id="municipality" name="municipality" required disabled>
+                                            <option value="">Select province first</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="barangay">Barangay <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <select class="form-select form-select-sm" id="barangay" name="barangay" required disabled>
+                                            <option value="">Select municipality first</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="area">Area / Cluster</label>
+                                        <select class="form-select form-select-sm" id="area" name="area">
+                                            <option value="" selected>Select area</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="mapPin">Coordinates</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control form-control-sm" id="mapPin" name="mapPin" inputmode="text" placeholder="e.g. 14.599500, 120.984200">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="openMapPinPickerBtn" aria-label="View map" title="View map">
+                                                <i class="ti ti-map-pin" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="vstack gap-3" id="customerStepBilling" data-customer-step="2" aria-labelledby="customerStepBillingTitle" hidden>
+                        <div>
+                            <h3 class="h3 mb-1" id="customerStepBillingTitle">Billing setup</h3>
+                            <p class="text-secondary small mb-0">Choose how this account enters billing and confirm its first cycle.</p>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-status-top bg-primary"></div>
+                            <div class="card-header py-2">
+                                <h4 class="card-title mb-0">Plan &amp; account status</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="planCategory">Plan Type</label>
+                                        <select class="form-select form-select-sm" id="planCategory" name="planCategory">
+                                            <option value="postpaid">Postpaid</option>
+                                            <option value="prepaid">Prepaid</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6" id="planField">
+                                        <label class="form-label" for="plan">Plan <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <select class="form-select form-select-sm" id="plan" name="plan" required>
+                                            <option value="">Loading plans...</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12">
+                                        <span class="form-label">Account Status</span>
+                                        <label class="form-check form-switch status-switch-field mb-1" for="statusToggle">
+                                            <input type="checkbox" class="form-check-input" id="statusToggle" role="switch" aria-checked="false">
+                                            <span class="form-check-label">
+                                                <span class="d-block fw-semibold" id="statusSwitchState">Pending setup</span>
+                                                <span class="d-block text-secondary small" id="statusSwitchMeta">Inactive until service setup is complete.</span>
+                                            </span>
+                                        </label>
+                                        <p class="text-secondary small mb-0" id="statusSwitchHint">Select Activate now only when service requirements are complete.</p>
+                                        <select id="status" name="status" hidden aria-hidden="true" tabindex="-1">
+                                            <option value="active">Active</option>
+                                            <option value="inactive" selected>Inactive</option>
+                                            <option value="disabled">Disabled</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12" id="customerStartTypeField">
+                                        <span class="form-label">Customer Type</span>
+                                        <div class="form-selectgroup form-selectgroup-boxes d-flex flex-column flex-md-row gap-2">
+                                            <label class="form-selectgroup-item flex-fill">
+                                                <input type="radio" name="customerStartType" value="new" class="form-selectgroup-input" checked>
+                                                <span class="form-selectgroup-label d-flex align-items-center gap-2">
+                                                    <span class="avatar avatar-sm bg-primary-lt text-primary"><i class="ti ti-user-plus" aria-hidden="true"></i></span>
+                                                    <span>
+                                                        <span class="fw-semibold">New customer</span>
+                                                        <span class="d-block text-secondary small">Use prorated first-bill computation.</span>
+                                                    </span>
+                                                </span>
+                                            </label>
+                                            <label class="form-selectgroup-item flex-fill">
+                                                <input type="radio" name="customerStartType" value="existing" class="form-selectgroup-input">
+                                                <span class="form-selectgroup-label d-flex align-items-center gap-2">
+                                                    <span class="avatar avatar-sm bg-orange-lt text-orange"><i class="ti ti-user-check" aria-hidden="true"></i></span>
+                                                    <span>
+                                                        <span class="fw-semibold">Migrated customer</span>
+                                                        <span class="d-block text-secondary small">Optional opening debit or credit; no prorated first bill.</span>
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12" id="existingCustomerOpeningField" style="display: none;">
+                                        <div class="alert alert-warning mb-0">
+                                            <div class="fw-semibold mb-2">Current Month Opening Amount <span class="text-secondary fw-normal">Optional</span></div>
+                                            <div class="row g-2">
+                                                <div class="col-md-6">
+                                                    <label class="form-label" for="openingPreviousBalance">Previous Balance</label>
+                                                    <input type="number" class="form-control form-control-sm" id="openingPreviousBalance" name="openingPreviousBalance" min="0" step="0.01" placeholder="0.00" disabled>
+                                                    <small class="text-secondary">Adds an opening debit.</small>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label" for="openingAdvancePayment">Advance Payment</label>
+                                                    <input type="number" class="form-control form-control-sm" id="openingAdvancePayment" name="openingAdvancePayment" min="0" step="0.01" placeholder="0.00" disabled>
+                                                    <small class="text-secondary">Adds an opening credit.</small>
+                                                </div>
+                                            </div>
+                                            <small class="d-block text-secondary mt-2">Both may be zero. If needed, enter only one debit or credit.</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header py-2">
+                                <h4 class="card-title mb-0">Billing schedule &amp; referral</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-4" id="activationDateField">
+                                        <label class="form-label" for="activationDate">Activation Date</label>
+                                        <input type="date" class="form-control form-control-sm" id="activationDate" name="activationDate">
+                                    </div>
+                                    <div class="col-md-4" id="billDateField">
+                                        <label class="form-label" for="billDate">Next Bill Date <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <input type="date" class="form-control form-control-sm" id="billDate" name="billDate" required>
+                                    </div>
+                                    <div class="col-md-4" id="dueOffsetField">
+                                        <label class="form-label" for="dueOffset">Due after (days) <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <input type="number" class="form-control form-control-sm" id="dueOffset" name="dueOffset" min="0" step="1" required>
+                                        <small class="text-secondary" id="dueOffsetHelp"></small>
+                                    </div>
+                                    <div class="col-md-4" id="dueDateField">
+                                        <label class="form-label" for="dueDateDisplay">Computed Due Date <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <input type="text" class="form-control form-control-sm" id="dueDateDisplay" readonly>
+                                        <input type="hidden" id="dueDate" name="dueDate" required>
+                                    </div>
+                                    <div class="col-md-4" id="firstBillPeriodField">
+                                        <label class="form-label" for="firstBillPeriodDisplay">First Bill (Prorated)</label>
+                                        <input type="text" class="form-control form-control-sm" id="firstBillPeriodDisplay" readonly>
+                                        <small class="text-secondary">From activation date until month-end.</small>
+                                    </div>
+                                    <div class="col-md-4" id="creditLimitField">
+                                        <label class="form-label" for="creditLimit">Credit Limit (amount)</label>
+                                        <input type="number" class="form-control form-control-sm" id="creditLimit" name="creditLimit" min="0" step="1">
+                                    </div>
+                                    <div class="col-md-6" id="referralSourceTypeField">
+                                        <label class="form-label" for="referralSourceType">Invited By</label>
+                                        <select class="form-select form-select-sm" id="referralSourceType" name="referralSourceType">
+                                            <option value="">No referral</option>
+                                            <option value="customer">Existing customer</option>
+                                            <option value="agent">Agent</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6" id="referralCustomerField" style="display: none;">
+                                        <label class="form-label" for="referralCustomerAccountNumber">Referral Customer</label>
+                                        <select class="form-select form-select-sm" id="referralCustomerAccountNumber" name="referralCustomerAccountNumber">
+                                            <option value="">Select customer</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6" id="referralAgentField" style="display: none;">
+                                        <label class="form-label" for="referralAgentId">Referral Agent</label>
+                                        <select class="form-select form-select-sm" id="referralAgentId" name="referralAgentId">
+                                            <option value="">Select agent</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="vstack gap-3" id="customerStepReview" data-customer-step="3" aria-labelledby="customerStepReviewTitle" hidden>
+                        <div>
+                            <h3 class="h3 mb-1" id="customerStepReviewTitle">Network &amp; review</h3>
+                            <p class="text-secondary small mb-0">Confirm Router, PPPoE, NAP, and customer details before saving.</p>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-status-top bg-primary"></div>
+                            <div class="card-header py-2">
+                                <h4 class="card-title mb-0">Network assignment</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-12" id="pppoeHiddenMessage">
+                                        <div class="alert alert-info mb-0">MikroTik is unavailable. PPPoE fields will not be changed.</div>
+                                    </div>
+                                    <div class="col-md-6" id="pppoeRouterField">
+                                        <label class="form-label" for="pppoeRouter">Router</label>
+                                        <select class="form-select form-select-sm" id="pppoeRouter" name="mikrotikId">
+                                            <option value="">Loading routers...</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6" id="pppoeModeField">
+                                        <label class="form-label" for="pppoeMode">PPPoE Setup</label>
+                                        <select class="form-select form-select-sm" id="pppoeMode" name="pppoeMode">
+                                            <option value="auto">Auto-generate credentials</option>
+                                            <option value="manual">Use MikroTik account</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12" id="pppoeAccountField" style="display: none;">
+                                        <label class="form-label" for="pppoeAccount">MikroTik PPPoE Account</label>
+                                        <select class="form-select form-select-sm" id="pppoeAccount">
+                                            <option value="">Select PPPoE from MikroTik</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6" id="pppoeUsernameField">
+                                        <label class="form-label" for="pppoeUsername">PPPoE Username</label>
+                                        <input type="text" class="form-control form-control-sm" id="pppoeUsername" name="pppoeUsername" autocomplete="off">
+                                    </div>
+                                    <div class="col-md-6" id="pppoePasswordField">
+                                        <label class="form-label" for="pppoePassword">PPPoE Password</label>
+                                        <input type="text" class="form-control form-control-sm" id="pppoePassword" name="pppoePassword" autocomplete="off">
+                                    </div>
+                                    <div class="col-12"><hr class="my-0"></div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="customerNapId">NAP Pin</label>
+                                        <div class="input-group input-group-sm">
+                                            <select class="form-select form-select-sm" id="customerNapId" name="napId">
+                                                <option value="">No NAP assignment</option>
+                                            </select>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="viewSelectedNapMapBtn" aria-label="Pick NAP on map" title="Pick NAP on map" aria-disabled="false">
+                                                <i class="ti ti-map-pin" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="customerNapPort">NAP Port</label>
+                                        <select class="form-select form-select-sm" id="customerNapPort" name="napPort" disabled>
+                                            <option value="">Select NAP pin first</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="customerOpticalInfo">Optical Power</label>
+                                        <input type="text" class="form-control form-control-sm" id="customerOpticalInfo" name="opticalInfo" inputmode="decimal" disabled>
+                                    </div>
+                                    <div class="col-12">
+                                        <p class="text-secondary small mb-0" id="customerNapHint">Optional: assign a NAP pin and port to record where this customer is connected.</p>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label" for="remarks">Remarks</label>
+                                        <textarea class="form-control form-control-sm" id="remarks" name="remarks" rows="3"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <section class="card" id="customerReviewSummary" aria-labelledby="customerReviewSummaryTitle" aria-live="polite">
+                            <div class="card-header d-flex align-items-start justify-content-between gap-2 py-2">
+                                <div>
+                                    <div class="text-uppercase text-secondary small fw-semibold">Final review</div>
+                                    <h4 class="card-title mb-0 mt-1" id="customerReviewSummaryTitle">Confirm customer setup</h4>
                                 </div>
                                 <span class="badge bg-yellow-lt text-yellow" data-review-status-badge>Pending / Inactive</span>
                             </div>
-                            <dl class="customer-review-grid">
-                                <div class="customer-review-item">
-                                    <dt>Account</dt>
-                                    <dd data-review-field="account">Preparing preview...</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>Customer</dt>
-                                    <dd data-review-field="customer">Not entered</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>Plan</dt>
-                                    <dd data-review-field="plan">Not selected</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>Activation</dt>
-                                    <dd data-review-field="activationDate">Not set</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>Bill date</dt>
-                                    <dd data-review-field="billDate">Not set</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>Due date</dt>
-                                    <dd data-review-field="dueDate">Not set</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>First amount</dt>
-                                    <dd data-review-field="firstAmount">Not available</dd>
-                                </div>
-                                <div class="customer-review-item">
-                                    <dt>Status</dt>
-                                    <dd data-review-field="status">Pending / Inactive</dd>
-                                </div>
-                                <div class="customer-review-item customer-review-item--wide">
-                                    <dt>NAP assignment</dt>
-                                    <dd data-review-field="nap">No NAP assignment</dd>
-                                </div>
-                            </dl>
-                            <p class="customer-review-note">The displayed account is a preview. Use the final account confirmed after saving.</p>
+                            <div class="card-body">
+                                <dl class="row g-3 mb-0">
+                                    <div class="col-md-4"><dt class="text-secondary small">Account</dt><dd class="mb-0 fw-semibold" data-review-field="account">Preparing preview...</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Customer</dt><dd class="mb-0 fw-semibold" data-review-field="customer">Not entered</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Plan</dt><dd class="mb-0 fw-semibold" data-review-field="plan">Not selected</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Activation</dt><dd class="mb-0 fw-semibold" data-review-field="activationDate">Not set</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Bill date</dt><dd class="mb-0 fw-semibold" data-review-field="billDate">Not set</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Due date</dt><dd class="mb-0 fw-semibold" data-review-field="dueDate">Not set</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">First amount</dt><dd class="mb-0 fw-semibold" data-review-field="firstAmount">Not available</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Status</dt><dd class="mb-0 fw-semibold" data-review-field="status">Pending / Inactive</dd></div>
+                                    <div class="col-md-4"><dt class="text-secondary small">Router</dt><dd class="mb-0 fw-semibold" data-review-field="router">Not configured</dd></div>
+                                    <div class="col-md-6"><dt class="text-secondary small">PPPoE</dt><dd class="mb-0 fw-semibold" data-review-field="pppoe">Not configured</dd></div>
+                                    <div class="col-md-6"><dt class="text-secondary small">NAP assignment</dt><dd class="mb-0 fw-semibold" data-review-field="nap">No NAP assignment</dd></div>
+                                </dl>
+                            </div>
+                            <div class="card-footer text-secondary small">The displayed account is a preview. Use the final account confirmed after saving.</div>
                         </section>
                     </section>
                 </div>
-                <div class="form-actions">
-                    <span class="customer-step-counter" id="customerStepCounter" aria-live="polite">Step 1 of 3</span>
-                    <div class="customer-form-actions__buttons">
+                <div class="modal-footer d-flex align-items-center justify-content-between gap-2">
+                    <span class="text-secondary small" id="customerStepCounter" aria-live="polite">Step 1 of 3</span>
+                    <div class="d-flex flex-wrap justify-content-end gap-2">
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="closeModalFooter">Cancel</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="customerStepBackBtn" hidden><i class="ti ti-arrow-left" aria-hidden="true"></i> Back</button>
                         <button type="button" class="btn btn-primary btn-sm" id="customerStepNextBtn">Continue <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
@@ -1316,6 +1356,8 @@
             const PHILIPPINES_PROVINCES_ENDPOINT = '/api/public/philippines/provinces';
             const PHILIPPINES_MUNICIPALITIES_ENDPOINT = '/api/public/philippines/municipalities';
             const PHILIPPINES_BARANGAYS_ENDPOINT = '/api/public/philippines/barangays';
+            const DEFAULT_CUSTOMER_PROVINCE = 'Cagayan';
+            const DEFAULT_CUSTOMER_MUNICIPALITY = 'Baggao';
             const MAP_PIN_PICKER_DEFAULT_LAYER = 'satellite';
             const MAP_PIN_PICKER_LAYER_MAX_ZOOM = {
                 satellite: 22,
@@ -2249,7 +2291,7 @@
             }
 
             function getCustomerFieldErrorContainer(field) {
-                return field?.closest?.('.col-md-6, .form-field') || field?.parentElement || null;
+                return field?.closest?.('[class*="col-md-"], .col-12, .form-field') || field?.parentElement || null;
             }
 
             function getCustomerFieldErrorKey(field) {
@@ -2498,14 +2540,12 @@
                     const stepNumber = Number(step.dataset.customerStep);
                     const isActive = stepNumber === currentCustomerStep;
                     step.hidden = !isActive;
-                    step.classList.toggle('is-active', isActive);
                     step.setAttribute('aria-hidden', isActive ? 'false' : 'true');
                 });
                 customerStepButtons.forEach((button) => {
                     const stepNumber = Number(button.dataset.customerStepTarget);
                     const item = button.closest('[data-customer-step-state]');
-                    item?.classList.toggle('is-active', stepNumber === currentCustomerStep);
-                    item?.classList.toggle('is-complete', stepNumber < currentCustomerStep);
+                    item?.classList.toggle('active', stepNumber === currentCustomerStep);
                     if (stepNumber === currentCustomerStep) {
                         button.setAttribute('aria-current', 'step');
                     } else {
@@ -2513,6 +2553,14 @@
                     }
                     button.disabled = submitting;
                 });
+                const activeStepItem = customerWizardProgress?.querySelector(`[data-customer-step-state="${currentCustomerStep}"]`);
+                const stepScroller = customerWizardProgress?.parentElement;
+                if (activeStepItem && stepScroller) {
+                    const centeredStepLeft = activeStepItem.offsetLeft
+                        + (activeStepItem.offsetWidth / 2)
+                        - (stepScroller.clientWidth / 2);
+                    stepScroller.scrollTo({ left: Math.max(0, centeredStepLeft), behavior: 'smooth' });
+                }
                 if (customerStepBackBtn) {
                     customerStepBackBtn.hidden = currentCustomerStep === 1;
                     customerStepBackBtn.disabled = submitting;
@@ -2538,7 +2586,7 @@
                 }
                 currentCustomerStep = targetStep;
                 syncCustomerStepControls();
-                const body = form?.querySelector('.customer-form__body');
+                const body = form?.querySelector('.modal-body');
                 if (body) body.scrollTop = 0;
                 return true;
             }
@@ -2546,8 +2594,9 @@
             function setAccountAllocationState(state, message = '') {
                 const normalizedState = ['loading', 'ready', 'error'].includes(state) ? state : 'loading';
                 accountAllocationLoading = normalizedState === 'loading';
-                accountAllocationStatus?.classList.toggle('is-ready', normalizedState === 'ready');
-                accountAllocationStatus?.classList.toggle('is-error', normalizedState === 'error');
+                accountAllocationStatus?.classList.toggle('text-secondary', normalizedState === 'loading');
+                accountAllocationStatus?.classList.toggle('text-success', normalizedState === 'ready');
+                accountAllocationStatus?.classList.toggle('text-danger', normalizedState === 'error');
                 if (accountAllocationMessage) accountAllocationMessage.textContent = message;
                 if (accountAllocationIcon) {
                     accountAllocationIcon.className = normalizedState === 'loading'
@@ -2671,6 +2720,15 @@
                 const napText = normalizeNapValue(customerNapIdSelect?.value)
                     ? `${selectedNapLabel || 'Selected NAP'}${selectedNapPort ? ` · Port ${selectedNapPort}` : ' · Port not selected'}`
                     : 'No NAP assignment';
+                const selectedRouterLabel = String(pppoeRouterSelect?.selectedOptions?.[0]?.textContent || '').trim();
+                const routerText = mikrotikEnabled
+                    ? (selectedRouterLabel || 'Router not selected')
+                    : 'MikroTik unavailable';
+                const pppoeMode = String(pppoeModeSelect?.value || 'auto').trim().toLowerCase();
+                const pppoeUsername = String(pppoeUserInput?.value || '').trim();
+                const pppoeText = mikrotikEnabled
+                    ? `${pppoeMode === 'manual' ? 'MikroTik account' : 'Auto-generate'}${pppoeUsername ? ` - ${pppoeUsername}` : ''}`
+                    : 'Not configured';
 
                 setCustomerReviewField('account', String(acctInput?.value || '').trim() || (accountAllocationLoading ? 'Preparing preview...' : 'Preview unavailable'));
                 setCustomerReviewField('customer', name ? `${name}${mobile ? ` · ${mobile}` : ''}` : 'Not entered');
@@ -2680,6 +2738,8 @@
                 setCustomerReviewField('dueDate', formatPeriodDate(dueDateInput?.value || '') || 'Not set');
                 setCustomerReviewField('firstAmount', firstAmountText);
                 setCustomerReviewField('status', statusText);
+                setCustomerReviewField('router', routerText);
+                setCustomerReviewField('pppoe', pppoeText);
                 setCustomerReviewField('nap', napText);
             }
 
@@ -5699,7 +5759,10 @@
                 applyPlanCategoryUI('postpaid');
                 if (form.elements.creditLimit) form.elements.creditLimit.value = '';
                 if (areaSelectField) areaSelectField.value = '';
-                startCustomerAddressPicker();
+                startCustomerAddressPicker({
+                    province: DEFAULT_CUSTOMER_PROVINCE,
+                    municipality: DEFAULT_CUSTOMER_MUNICIPALITY
+                });
                 renderCustomerNapAssignment({ napId: '', napPort: null });
                 loadNapCatalog({ quiet: true }).then(() => {
                     if (!modal?.classList.contains('show') || isEditMode()) return;
@@ -7564,6 +7627,11 @@
                     planName: selectedPlanName,
                     planCategory: planCategory,
                     mikrotikId: getSelectedRouterId(),
+                    ...(mikrotikEnabled ? {
+                        pppoeMode: String(formData.get('pppoeMode') || 'auto').trim().toLowerCase(),
+                        pppoeUsername: String(formData.get('pppoeUsername') || '').trim(),
+                        pppoePassword: String(formData.get('pppoePassword') || '')
+                    } : {}),
                     status: statusValue,
                     mobileRaw: normalizedContactNumber,
                     email: formData.get('email'),

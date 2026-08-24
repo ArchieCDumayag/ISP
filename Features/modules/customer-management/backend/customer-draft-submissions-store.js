@@ -6,7 +6,7 @@ const { isRelationalReady } = require('../../../../core/data/db-relational');
 const {
     readCustomers,
     resolveStoredAccountPrefixId,
-    generateAccountNumber
+    reserveNextAccountNumber
 } = require('./customers');
 
 const CUSTOMER_DRAFT_SUBMISSIONS_TABLE = 'customer_draft_submissions';
@@ -103,8 +103,9 @@ const buildCustomerName = (draft = {}) => {
     const explicit = toSafeText(draft.name, 200);
     if (explicit) return explicit;
     const firstName = toSafeText(draft.firstName, 100);
+    const middleName = toSafeText(draft.middleName, 100);
     const lastName = toSafeText(draft.lastName, 100);
-    return `${firstName} ${lastName}`.trim();
+    return [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
 };
 
 const buildAddressText = (draft = {}) =>
@@ -231,7 +232,7 @@ const collectReservedAccountNumbers = async () => {
 const generateReservedDraftAccountNumber = async (existingSet = null) => {
     const reserved = existingSet instanceof Set ? existingSet : await collectReservedAccountNumbers();
     const prefixId = await resolveStoredAccountPrefixId();
-    const nextAccountNumber = generateAccountNumber(reserved, prefixId);
+    const nextAccountNumber = await reserveNextAccountNumber(reserved, prefixId);
     reserved.add(nextAccountNumber);
     return nextAccountNumber;
 };

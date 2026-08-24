@@ -382,10 +382,15 @@ const importGcashTransactionBatch = async ({
     });
 };
 
-const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false } = {}) => {
+const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false, month = '' } = {}) => {
     const safeBranchId = Number(branchId);
     if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
         throw createError(400, 'Branch assignment is required.');
+    }
+    const requestedMonth = toSafeText(month, 20);
+    const safeMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : '';
+    if (requestedMonth && !safeMonth) {
+        throw createError(400, 'GCash history month must use YYYY-MM format.');
     }
     const store = await readHistoryStore();
     const bucket = getBranchBucket(store, safeBranchId);
@@ -399,10 +404,21 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false 
         postingLockAudit: sanitizePostingLockAudit(transaction?.postingLockAudit),
         remark: getTransactionRemark(transaction)
     })).sort((a, b) => String(b.transactionAt).localeCompare(String(a.transactionAt)));
+    const availableMonths = Array.from(new Set(sortedTransactions.map((transaction) => (
+        normalizeBillingMonth(normalizeDateOnly(transaction?.transactionDate || transaction?.transactionAt).slice(0, 7))
+    )).filter(Boolean))).sort((left, right) => right.localeCompare(left));
+    const filteredTransactions = safeMonth
+        ? sortedTransactions.filter((transaction) => (
+            normalizeDateOnly(transaction?.transactionDate || transaction?.transactionAt).slice(0, 7) === safeMonth
+        ))
+        : sortedTransactions;
     return {
         batches: bucket.batches.slice().sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt))),
-        transactions: all ? sortedTransactions : sortedTransactions.slice(0, safeLimit),
+        transactions: all ? filteredTransactions : filteredTransactions.slice(0, safeLimit),
         totalTransactions: bucket.transactions.length,
+        filteredTotalTransactions: filteredTransactions.length,
+        selectedMonth: safeMonth || null,
+        availableMonths,
         updatedAt: bucket.updatedAt || null
     };
 };

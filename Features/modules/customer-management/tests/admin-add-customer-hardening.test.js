@@ -58,6 +58,7 @@ const assertValidationError = (overrides, messagePattern, existingCustomers = []
 test('admin create helpers remain explicit public contracts', () => {
   assert.equal(typeof validateAdminCustomerCreatePayload, 'function');
   assert.equal(typeof findCustomerCreateDuplicate, 'function');
+  assert.equal(typeof generateAccountNumber, 'function');
   assert.equal(typeof generateTemporaryPortalPassword, 'function');
   assert.equal(typeof sanitizeCustomerForAdmin, 'function');
 });
@@ -82,18 +83,27 @@ test('server create validation requires identity, service address, and valid con
   assertValidationError({ openingPreviousBalance: -1 }, /previous balance/i);
 });
 
-test('generated account helper retries collisions and preserves the configured server prefix', () => {
-  const originalRandom = Math.random;
-  const randomValues = [111 / 1_000_000, 111 / 1_000_000, 112 / 1_000_000];
-  Math.random = () => randomValues.shift() ?? (999999 / 1_000_000);
-  try {
-    assert.equal(
-      generateAccountNumber(new Set(['321000111']), '321'),
-      '321000112'
-    );
-  } finally {
-    Math.random = originalRandom;
-  }
+test('generated account helper follows the sequential frontier without jumping to legacy random reservations', () => {
+  assert.equal(
+    generateAccountNumber(
+      new Set(['321000001', '321000002', '321000003', '321580792', '100999999']),
+      '321'
+    ),
+    '321000004'
+  );
+  assert.equal(
+    generateAccountNumber(new Set(['321580792']), '321', '321000356'),
+    '321000357'
+  );
+  assert.equal(
+    generateAccountNumber(new Set(['321000357', '321580792']), '321', '321000356'),
+    '321000358'
+  );
+  assert.equal(generateAccountNumber(new Set(), '321'), '321000001');
+  assert.throws(
+    () => generateAccountNumber(new Set(), '321', '321999999'),
+    /sequence.*exhausted/i
+  );
 });
 
 test('server duplicate checks normalize username, mobile, and email', () => {
@@ -220,6 +230,10 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
     path.resolve(__dirname, '../backend/customers.js'),
     'utf8'
   );
+  const draftStoreSource = fs.readFileSync(
+    path.resolve(__dirname, '../backend/customer-draft-submissions-store.js'),
+    'utf8'
+  );
   const createStart = backendSource.indexOf('const createCustomerRecordUnlocked = async');
   const createEnd = backendSource.indexOf('const updateCustomerRecord = async', createStart);
   const createSource = backendSource.slice(createStart, createEnd);
@@ -230,7 +244,15 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
   assert.ok(createStart >= 0 && createEnd > createStart);
   assert.match(backendSource, /const withCustomerCreateMutationLock =/);
   assert.match(backendSource, /withCustomerCreateMutationLock\(\(\) => createCustomerRecordUnlocked/);
-  assert.match(createSource, /generateAccountNumber\(/);
+  assert.match(createSource, /await reserveNextAccountNumber\(/);
+  assert.match(createSource, /await recordIssuedAccountNumber\(/);
+  assert.match(backendSource, /customer_account_number_sequence/);
+  assert.match(backendSource, /const withAccountNumberSequenceMutationLock =/);
+  assert.match(backendSource, /collectAccountNumberReservations/);
+  assert.match(backendSource, /reservedAccountNumbers/);
+  assert.match(backendSource, /sourceVersion >= 2/);
+  assert.match(backendSource, /previewNextAccountNumber/);
+  assert.match(draftStoreSource, /await reserveNextAccountNumber\(reserved, prefixId\)/);
   assert.match(createSource, /insertOnly:\s*true/);
   assert.match(createSource, /isAccountNumberDuplicateError/);
   assert.match(createSource, /CUSTOMER_CREATE_MAX_RETRIES/);
@@ -292,11 +314,16 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
   assert.match(migrationSource, /ALTER TABLE customers ADD COLUMN customer_start_type/i);
 });
 
-test('Add Customer uses guided steps, inline errors, review, and one atomic create request', () => {
+test('Add Customer uses a Tabler horizontal wizard, inline errors, network review, and one atomic create request', () => {
   const page = fs.readFileSync(
     path.resolve(__dirname, '../web/customers.html'),
     'utf8'
   );
+  const modalStart = page.indexOf('<div id="customerModal"');
+  const modalEnd = page.indexOf('<div id="portalSetupModal"', modalStart);
+  const modalMarkup = page.slice(modalStart, modalEnd);
+
+  assert.ok(modalStart >= 0 && modalEnd > modalStart);
 
   [
     'customerWizardProgress',
@@ -314,10 +341,38 @@ test('Add Customer uses guided steps, inline errors, review, and one atomic crea
   assert.match(page, /data-customer-step-target/);
   assert.match(page, /data-customer-step/);
   assert.match(page, /data-review-field/);
+  assert.match(modalMarkup, /class=["'][^"']*\bsteps\b[^"']*\bsteps-counter\b/);
+  assert.equal((modalMarkup.match(/class=["'][^"']*\bstep-item\b/g) || []).length, 3);
+  assert.match(modalMarkup, /class=["'][^"']*\boverflow-x-auto\b[^"']*\bflex-shrink-0\b/);
+  assert.equal((modalMarkup.match(/class=["']vstack gap-3["'][^>]*data-customer-step=["'][123]["']/g) || []).length, 3);
+  ['card', 'row', 'col-md-', 'form-control', 'form-select', 'input-group', 'alert', 'modal-footer']
+    .forEach((className) => assert.ok(modalMarkup.includes(className), `Missing Tabler ${className} class`));
+  ['pppoeRouter', 'pppoeMode', 'pppoeAccount', 'pppoeUsername', 'pppoePassword']
+    .forEach((id) => assert.match(modalMarkup, new RegExp(`id=["']${id}["']`)));
+  [
+    'customer-wizard-progress',
+    'customer-form__body',
+    'customer-form-step',
+    'form-card',
+    'form-section',
+    'form-grid',
+    'form-actions',
+    'customer-review-card'
+  ].forEach((legacyClass) => assert.equal(modalMarkup.includes(legacyClass), false));
   assert.match(page, /value=["'](?:existing|migrated)["']/i);
   assert.match(page, />Migrated customer</i);
   assert.match(page, /openingPreviousBalance\s*:/);
   assert.match(page, /openingAdvancePayment\s*:/);
+  assert.match(page, /\.\.\.\(mikrotikEnabled \? \{\s*pppoeMode:/);
+  assert.match(page, /setCustomerReviewField\(['"]router['"], routerText\)/);
+  assert.match(page, /setCustomerReviewField\(['"]pppoe['"], pppoeText\)/);
+  assert.match(page, /stepScroller\.scrollTo\(\{ left: Math\.max\(0, centeredStepLeft\), behavior: ['"]smooth['"] \}\)/);
+  assert.match(page, /const DEFAULT_CUSTOMER_PROVINCE = ['"]Cagayan['"]/);
+  assert.match(page, /const DEFAULT_CUSTOMER_MUNICIPALITY = ['"]Baggao['"]/);
+  assert.match(
+    page,
+    /startCustomerAddressPicker\(\{\s*province: DEFAULT_CUSTOMER_PROVINCE,\s*municipality: DEFAULT_CUSTOMER_MUNICIPALITY\s*\}\)/
+  );
   assert.equal(page.includes('async function postOpeningPaymentEntries('), false);
   assert.equal(
     page.includes('Enter previous balance or advance payment for the existing customer.'),

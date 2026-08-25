@@ -534,6 +534,10 @@ body.modal-active {
     width: min(920px, calc(100vw - 2rem));
 }
 
+.map-pin-picker-modal > .modal-content {
+    width: min(760px, calc(100vw - 2rem));
+}
+
 .map-picker-toolbar {
     display: flex;
     flex-wrap: wrap;

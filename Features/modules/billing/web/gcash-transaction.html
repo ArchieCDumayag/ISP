@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.10">
+    <link rel="stylesheet" href="css/payment-confirmation-queue.css?v=4.11">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
@@ -108,15 +108,29 @@
                                 </button>
                             </nav>
                         </div>
+                        <div class="queue-credit-use-tabs" id="queueGcashCreditUseTabs">
+                            <span class="form-label mb-0">Match Use</span>
+                            <nav class="nav nav-tabs" aria-label="Imported GCash credit use" role="tablist">
+                                <button type="button" class="nav-link active" id="queueGcashAvailableCreditsBtn" data-gcash-credit-use="available" role="tab" aria-selected="true" aria-controls="queueGcashHistoryBody">
+                                    <i class="ti ti-circle-check me-1" aria-hidden="true"></i> Available
+                                    <span class="badge bg-green-lt text-green ms-1" id="queueGcashAvailableCreditsCount" aria-label="Available imported GCash credits this month">0</span>
+                                </button>
+                                <button type="button" class="nav-link" id="queueGcashUsedCreditsBtn" data-gcash-credit-use="used" role="tab" aria-selected="false" aria-controls="queueGcashHistoryBody">
+                                    <i class="ti ti-lock-check me-1" aria-hidden="true"></i> Used
+                                    <span class="badge bg-blue-lt text-blue ms-1" id="queueGcashUsedCreditsCount" aria-label="Used imported GCash credits this month">0</span>
+                                </button>
+                            </nav>
+                            <small class="text-secondary">Used credits are read-only. Select an assigned customer to view the payment breakdown.</small>
+                        </div>
                         <div class="row g-2 align-items-end">
-                            <div class="col-12 col-lg-4">
+                            <div class="col-12 col-lg-5">
                                 <label class="form-label" for="queueGcashHistorySearch">Search transactions</label>
                                 <div class="input-icon">
                                     <span class="input-icon-addon" aria-hidden="true"><i class="ti ti-search"></i></span>
                                     <input type="search" class="form-control" id="queueGcashHistorySearch" placeholder="Reference, description, sender, or recipient" autocomplete="off">
                                 </div>
                             </div>
-                            <div class="col-12 col-sm-6 col-lg-3">
+                            <div class="col-12 col-sm-7 col-lg-4">
                                 <label class="form-label" for="queueGcashHistoryMonth">Statement month</label>
                                 <div class="input-group">
                                     <button type="button" class="btn btn-outline-secondary btn-icon" id="queueGcashHistoryOlderMonthBtn" data-gcash-month-step="older" title="Older month" aria-label="Show older GCash transaction month">
@@ -130,16 +144,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="col-12 col-sm-6 col-lg-3" id="queueGcashHistoryStatusField">
-                                <label class="form-label" for="queueGcashHistoryFilter">Record status</label>
-                                <select class="form-select" id="queueGcashHistoryFilter">
-                                    <option value="all">All credits</option>
-                                    <option value="available">Available credits</option>
-                                    <option value="reserved">Reserved credits</option>
-                                    <option value="posted">Posted credits</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-lg-2">
+                            <div class="col-12 col-sm-5 col-lg-3">
                                 <div class="queue-visible-count text-secondary" id="queueGcashVisibleCount" aria-live="polite">Loading records...</div>
                             </div>
                         </div>
@@ -727,7 +732,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payment-confirmation-queue.js?v=5.20"></script>
+    <script src="payment-confirmation-queue.js?v=5.21"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

@@ -209,6 +209,8 @@ const buildNearbyCandidates = ({
   limit = 3,
   maxDistanceMeters = 10000,
   includeOffline = false,
+  includeUnavailable = false,
+  allowExpandedLimit = false,
   nowMs = Date.now()
 }) => {
   const originLatitude = finiteNumber(latitude);
@@ -219,7 +221,7 @@ const buildNearbyCandidates = ({
   if (originLongitude == null || originLongitude < -180 || originLongitude > 180) {
     throw createServiceError(400, 'Longitude must be between -180 and 180.');
   }
-  const safeLimit = Math.min(Math.max(positiveInt(limit, 3), 1), 10);
+  const safeLimit = Math.min(Math.max(positiveInt(limit, 3), 1), allowExpandedLimit ? 500 : 10);
   const safeRadius = Math.min(Math.max(finiteNumber(maxDistanceMeters, 10000), 100), 100000);
   const olts = Array.isArray(state?.olts) ? state.olts : [];
   const naps = Array.isArray(state?.naps) ? state.naps : [];
@@ -244,18 +246,46 @@ const buildNearbyCandidates = ({
     );
     if (distanceMeters > safeRadius) return null;
     const capacity = napCapacity(nap);
-    const occupied = new Set((Array.isArray(nap?.connections) ? nap.connections : [])
-      .map((connection) => positiveInt(connection?.port))
-      .filter(Boolean));
-    const reserved = new Set(reservations
-      .filter((reservation) => activeReservation(reservation, nowMs) && text(reservation?.napId) === text(nap?.id))
-      .map((reservation) => positiveInt(reservation?.port))
-      .filter(Boolean));
+    const connections = Array.isArray(nap?.connections) ? nap.connections : [];
+    const occupiedByPort = new Map(connections
+      .map((connection) => [positiveInt(connection?.port), connection])
+      .filter(([port]) => Boolean(port)));
+    const activeReservations = reservations.filter((reservation) => (
+      activeReservation(reservation, nowMs) && text(reservation?.napId) === text(nap?.id)
+    ));
+    const reservedByPort = new Map(activeReservations
+      .map((reservation) => [positiveInt(reservation?.port), reservation])
+      .filter(([port]) => Boolean(port)));
     const availablePortNumbers = [];
+    const ports = [];
     for (let port = 1; port <= capacity; port += 1) {
-      if (!occupied.has(port) && !reserved.has(port)) availablePortNumbers.push(port);
+      const connection = occupiedByPort.get(port);
+      const reservation = reservedByPort.get(port);
+      let status = 'available';
+      if (connection) status = 'occupied';
+      else if (reservation) status = 'reserved';
+      else if (oltStatus !== 'online') status = 'unavailable';
+      const available = status === 'available';
+      if (available) availablePortNumbers.push(port);
+      ports.push({
+        port,
+        status,
+        available,
+        ...(connection ? {
+          customerAccountNumber: text(
+            connection?.customerAccountNumber || connection?.customerId || connection?.customerRef
+          ),
+          customerName: text(connection?.customerName)
+        } : {}),
+        ...(!connection && reservation ? {
+          customerAccountNumber: text(
+            reservation?.customerAccountNumber || reservation?.customerRef || reservation?.customer_ref
+          ),
+          customerName: text(reservation?.customerName)
+        } : {})
+      });
     }
-    if (!availablePortNumbers.length) return null;
+    if (!includeUnavailable && !availablePortNumbers.length) return null;
     const ponRef = normalizePonRef(nap?.ponRef);
     const ponPortNames = normalizePonPortNames(olt?.ponPortNames || olt?.pon_port_names_json);
     return {
@@ -269,10 +299,11 @@ const buildNearbyCandidates = ({
       ponRef,
       ponPortName: text(ponPortNames[ponRef]) || ponRef,
       capacity,
-      usedPorts: occupied.size,
-      reservedPorts: reserved.size,
+      usedPorts: occupiedByPort.size,
+      reservedPorts: reservedByPort.size,
       availablePorts: availablePortNumbers.length,
       availablePortNumbers,
+      ports,
       oltStatus,
       opticalPower: text(nap?.opticalPower)
     };
@@ -376,14 +407,18 @@ const loadRelationalCandidateState = async (branchId) => {
     [branchId]
   );
   const [connectionRows] = await pool.query(
-    `SELECT n.client_uid AS napId, c.port
+    `SELECT n.client_uid AS napId, c.port,
+            c.customer_account_number AS customerAccountNumber,
+            c.customer_ref AS customerRef,
+            c.customer_name AS customerName
        FROM pon_nap_connections c
        INNER JOIN pon_naps n ON n.id = c.nap_id
       WHERE n.branch_id = ?`,
     [branchId]
   );
   const [reservationRows] = await pool.query(
-    `SELECT n.client_uid AS napId, r.port, r.expires_at AS expiresAt, r.status
+    `SELECT n.client_uid AS napId, r.port, r.customer_ref AS customerAccountNumber,
+            r.expires_at AS expiresAt, r.status
        FROM pon_port_reservations r
        INNER JOIN pon_naps n ON n.id = r.nap_id
       WHERE r.branch_id = ? AND r.status = 'active' AND r.expires_at > CURRENT_TIMESTAMP`,
@@ -392,7 +427,12 @@ const loadRelationalCandidateState = async (branchId) => {
   const connectionsByNap = new Map();
   connectionRows.forEach((row) => {
     const list = connectionsByNap.get(text(row.napId)) || [];
-    list.push({ port: positiveInt(row.port) });
+    list.push({
+      port: positiveInt(row.port),
+      customerAccountNumber: text(row.customerAccountNumber),
+      customerRef: text(row.customerRef),
+      customerName: text(row.customerName)
+    });
     connectionsByNap.set(text(row.napId), list);
   });
   return {
@@ -414,7 +454,9 @@ const findNearbyPonNaps = async ({
   longitude,
   limit = 3,
   maxDistanceMeters = 10000,
-  includeOffline = false
+  includeOffline = false,
+  includeUnavailable = false,
+  allowExpandedLimit = false
 }) => withPonBranchLock(branchId, async () => {
   let state;
   if (isJsonStorageMode()) {
@@ -434,7 +476,9 @@ const findNearbyPonNaps = async ({
     longitude,
     limit,
     maxDistanceMeters,
-    includeOffline
+    includeOffline,
+    includeUnavailable,
+    allowExpandedLimit
   });
 });
 

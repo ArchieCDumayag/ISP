@@ -53,6 +53,7 @@ const { readCoverage } = require('../../customer-management/backend/api_coverage
 const { resolvePlanProfileForRouter } = require('../../billing/backend/plan-profile-utils');
 
 const router = express.Router();
+const TECHNICIAN_COVERAGE_RADIUS_METERS = 600;
 
 const toSafeText = (value, maxLen = 0) => {
     const text = String(value == null ? '' : value).trim();
@@ -103,6 +104,59 @@ const normalizeInstallationMaterials = (value) => {
     });
 };
 
+const ONU_BRANDS = new Set([
+    'Huawei', 'ZTE', 'FiberHome', 'YOTC', 'ZXIC', 'CIOT',
+    'RTEG', 'XPON', 'SKYWORTH'
+]);
+
+const normalizeInstallationQuantity = (value, label, { minimum = 0 } = {}) => {
+    const parsed = Number(value == null || value === '' ? 0 : value);
+    if (!Number.isInteger(parsed) || parsed < minimum || parsed > 10000) {
+        throw createError(400, `${label} must be a whole number between ${minimum} and 10000.`);
+    }
+    return parsed;
+};
+
+const normalizeInstallationMaterialUsage = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw createError(400, 'installationMaterials must be an object.');
+    }
+    const indoorOpticalOutletInstalled = normalizeBoolean(
+        value.indoorOpticalOutletInstalled,
+        false
+    );
+    const patchCordInstalled = normalizeBoolean(value.patchCordInstalled, false);
+    const rawPatchCordType = toSafeText(value.patchCordType, 30).toLowerCase();
+    const patchCordType = rawPatchCordType.replace(/_/g, '-');
+    if (patchCordInstalled && !['upc-to-apc', 'upc-to-upc'].includes(patchCordType)) {
+        throw createError(400, 'Patch cord type must be UPC to APC or UPC to UPC.');
+    }
+    return {
+        indoorOpticalOutletInstalled,
+        patchCordInstalled,
+        patchCordType: patchCordInstalled ? patchCordType : '',
+        patchCordQuantity: normalizeInstallationQuantity(
+            patchCordInstalled ? value.patchCordQuantity : 0,
+            'Patch cord quantity',
+            { minimum: patchCordInstalled ? 1 : 0 }
+        ),
+        scConnectorQuantity: normalizeInstallationQuantity(
+            value.scConnectorQuantity,
+            'SC connector quantity'
+        ),
+        cClipQuantity: normalizeInstallationQuantity(value.cClipQuantity, 'C-Clip quantity'),
+        cableClipQuantity: normalizeInstallationQuantity(
+            value.cableClipQuantity,
+            'Cable clip quantity'
+        ),
+        cableTieQuantity: normalizeInstallationQuantity(
+            value.cableTieQuantity,
+            'Cable tie quantity'
+        ),
+        fClampQuantity: normalizeInstallationQuantity(value.fClampQuantity, 'F-Clamp quantity')
+    };
+};
+
 const normalizeInstallationCompletion = (value) => {
     if (value == null) return null;
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -110,15 +164,38 @@ const normalizeInstallationCompletion = (value) => {
     }
     const clientEventId = toSafeText(value.clientEventId, 100);
     const onuSerialNumber = toSafeText(value.onuSerialNumber || value.onuSerial, 160);
+    const onuBrand = toSafeText(value.onuBrand, 40);
     const opticalSignal = toSafeText(value.opticalSignal || value.rxPower, 80);
     if (!clientEventId) throw createError(400, 'Installation completion clientEventId is required.');
     if (!onuSerialNumber) throw createError(400, 'ONU serial number is required for installation completion.');
     if (!opticalSignal) throw createError(400, 'Optical signal is required for installation completion.');
+    if (onuBrand && !ONU_BRANDS.has(onuBrand)) {
+        throw createError(400, 'ONU brand is not supported.');
+    }
 
-    const rawCableLength = value.cableLengthMeters;
+    const rawCableMeterStart = value.cableMeterStart;
+    const rawCableMeterEnd = value.cableMeterEnd;
+    const hasCableMeterStart = rawCableMeterStart != null && String(rawCableMeterStart).trim() !== '';
+    const hasCableMeterEnd = rawCableMeterEnd != null && String(rawCableMeterEnd).trim() !== '';
+    let cableMeterStart = null;
+    let cableMeterEnd = null;
     let cableLengthMeters = null;
-    if (rawCableLength != null && String(rawCableLength).trim() !== '') {
-        cableLengthMeters = Number(rawCableLength);
+    if (hasCableMeterStart || hasCableMeterEnd) {
+        if (!hasCableMeterStart || !hasCableMeterEnd) {
+            throw createError(400, 'Both drop-cable start and end meter readings are required.');
+        }
+        cableMeterStart = Number(rawCableMeterStart);
+        cableMeterEnd = Number(rawCableMeterEnd);
+        if (!Number.isFinite(cableMeterStart) || !Number.isFinite(cableMeterEnd)
+            || cableMeterStart < 0 || cableMeterEnd < cableMeterStart
+            || cableMeterEnd > 1000000) {
+            throw createError(400, 'Drop-cable meter readings are invalid.');
+        }
+        cableMeterStart = Math.round(cableMeterStart * 1000) / 1000;
+        cableMeterEnd = Math.round(cableMeterEnd * 1000) / 1000;
+        cableLengthMeters = Math.round((cableMeterEnd - cableMeterStart) * 1000) / 1000;
+    } else if (value.cableLengthMeters != null && String(value.cableLengthMeters).trim() !== '') {
+        cableLengthMeters = Number(value.cableLengthMeters);
         if (!Number.isFinite(cableLengthMeters) || cableLengthMeters < 0 || cableLengthMeters > 100000) {
             throw createError(400, 'Drop cable length must be between 0 and 100000 meters.');
         }
@@ -129,9 +206,14 @@ const normalizeInstallationCompletion = (value) => {
         clientEventId,
         onuSerialNumber,
         macAddress: toSafeText(value.macAddress, 80),
+        ...(onuBrand ? { onuBrand } : {}),
         opticalSignal,
+        ...(hasCableMeterStart ? { cableMeterStart, cableMeterEnd } : {}),
         cableLengthMeters,
         materials: normalizeInstallationMaterials(value.materials),
+        ...(value.installationMaterials != null ? {
+            installationMaterials: normalizeInstallationMaterialUsage(value.installationMaterials)
+        } : {}),
         notes: toSafeText(value.notes || value.completionNotes, 2000)
     };
 };
@@ -880,6 +962,45 @@ const sanitizeTechnicianPonOverview = (overview = {}, targetAccountNumber = '') 
     }))
 });
 
+const sanitizeTechnicianNearbyCandidate = (candidate = {}, { includeClientLabels = false } = {}) => ({
+    napId: toSafeText(candidate?.napId || candidate?.id, 120),
+    napCode: toSafeText(candidate?.napCode || candidate?.code, 120),
+    location: toSafeText(candidate?.location || candidate?.area, 150),
+    latitude: Number(candidate?.latitude),
+    longitude: Number(candidate?.longitude),
+    distanceMeters: Math.max(0, Number(candidate?.distanceMeters) || 0),
+    linkedOlt: toSafeText(candidate?.linkedOlt, 120),
+    ponRef: toSafeText(candidate?.ponRef, 60),
+    ponPortName: toSafeText(candidate?.ponPortName, 80),
+    capacity: Math.max(0, Number(candidate?.capacity) || 0),
+    usedPorts: Math.max(0, Number(candidate?.usedPorts) || 0),
+    reservedPorts: Math.max(0, Number(candidate?.reservedPorts) || 0),
+    availablePorts: Math.max(0, Number(candidate?.availablePorts) || 0),
+    availablePortNumbers: (Array.isArray(candidate?.availablePortNumbers)
+        ? candidate.availablePortNumbers : []).map((value) => toPositiveInt(value)).filter(Boolean),
+    ports: (Array.isArray(candidate?.ports) ? candidate.ports : []).map((entry) => {
+        const status = ['available', 'occupied', 'reserved', 'unavailable']
+            .includes(toSafeText(entry?.status, 20).toLowerCase())
+            ? toSafeText(entry.status, 20).toLowerCase()
+            : 'unavailable';
+        const accountNumber = toSafeText(
+            entry?.customerAccountNumber || entry?.customerId || entry?.customerRef,
+            20
+        );
+        return {
+            port: toPositiveInt(entry?.port),
+            status,
+            available: status === 'available',
+            ...(includeClientLabels && status !== 'available' && accountNumber ? {
+                customerAccountNumber: accountNumber,
+                customerName: toSafeText(entry?.customerName, 200)
+            } : {})
+        };
+    }).filter((entry) => entry.port),
+    oltStatus: toSafeText(candidate?.oltStatus, 30),
+    opticalPower: toSafeText(candidate?.opticalPower, 120)
+});
+
 const loadPonContext = async (branchId, { allowMissingSchema = false } = {}) => {
     if (isJsonStorageMode()) {
         const state = await loadPonStateForBranch(branchId);
@@ -1193,13 +1314,18 @@ router.get('/pon/nearby', async (req, res, next) => {
         if (latitude == null || longitude == null) {
             throw createError(400, 'Valid customer latitude and longitude are required.');
         }
+        const coverageMap = normalizeBoolean(req.query?.coverageMap, false);
         const result = await findNearbyPonNaps({
             branchId,
             latitude,
             longitude,
-            limit: req.query?.limit,
-            maxDistanceMeters: req.query?.maxDistanceMeters,
-            includeOffline: false
+            limit: coverageMap ? (req.query?.limit || 500) : req.query?.limit,
+            maxDistanceMeters: coverageMap
+                ? TECHNICIAN_COVERAGE_RADIUS_METERS
+                : req.query?.maxDistanceMeters,
+            includeOffline: coverageMap,
+            includeUnavailable: coverageMap,
+            allowExpandedLimit: coverageMap
         });
         return res.json({
             ok: true,
@@ -1209,7 +1335,11 @@ router.get('/pon/nearby', async (req, res, next) => {
                 latitude: Number(latitude),
                 longitude: Number(longitude)
             },
-            candidates: result.candidates,
+            coverageMap,
+            candidates: result.candidates.map((candidate) => sanitizeTechnicianNearbyCandidate(
+                candidate,
+                { includeClientLabels: coverageMap }
+            )),
             skippedInvalidCoordinates: result.skippedInvalidCoordinates,
             radiusMeters: result.radiusMeters
         });
@@ -1689,10 +1819,12 @@ router.post('/pppoe/generate', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.TECHNICIAN_COVERAGE_RADIUS_METERS = TECHNICIAN_COVERAGE_RADIUS_METERS;
 module.exports.resolveJobCustomerAccountNumber = resolveJobCustomerAccountNumber;
 module.exports.technicianOwnsPendingDraft = technicianOwnsPendingDraft;
 module.exports.jobGrantsCustomerAccess = jobGrantsCustomerAccess;
 module.exports.sanitizeTechnicianPonOverview = sanitizeTechnicianPonOverview;
+module.exports.sanitizeTechnicianNearbyCandidate = sanitizeTechnicianNearbyCandidate;
 module.exports.assertPonOverrideFlagsDenied = assertPonOverrideFlagsDenied;
 module.exports.normalizeInstallationCompletion = normalizeInstallationCompletion;
 module.exports.installationCompletionFingerprint = installationCompletionFingerprint;

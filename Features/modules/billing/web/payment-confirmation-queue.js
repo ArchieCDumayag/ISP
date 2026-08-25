@@ -5,12 +5,14 @@
     const gcashHistorySummary = document.getElementById('queueGcashHistorySummary');
     const gcashHistoryRefreshButton = document.getElementById('queueGcashHistoryRefreshBtn');
     const gcashHistorySearch = document.getElementById('queueGcashHistorySearch');
-    const gcashHistoryFilter = document.getElementById('queueGcashHistoryFilter');
-    const gcashHistoryStatusField = document.getElementById('queueGcashHistoryStatusField');
     const gcashHistoryMonth = document.getElementById('queueGcashHistoryMonth');
     const gcashHistoryOlderMonthButton = document.getElementById('queueGcashHistoryOlderMonthBtn');
     const gcashHistoryNewerMonthButton = document.getElementById('queueGcashHistoryNewerMonthBtn');
     const gcashHistoryTypeButtons = Array.from(document.querySelectorAll('[data-gcash-history-type]'));
+    const gcashCreditUseTabs = document.getElementById('queueGcashCreditUseTabs');
+    const gcashCreditUseButtons = Array.from(document.querySelectorAll('[data-gcash-credit-use]'));
+    const gcashAvailableCreditsCount = document.getElementById('queueGcashAvailableCreditsCount');
+    const gcashUsedCreditsCount = document.getElementById('queueGcashUsedCreditsCount');
     const gcashHistoryDebitNotice = document.getElementById('queueGcashDebitNotice');
     const gcashHistoryNotForPostingNotice = document.getElementById('queueGcashNotForPostingNotice');
     const gcashHistoryNotForPostingCount = document.getElementById('queueGcashNotForPostingCount');
@@ -159,8 +161,8 @@
         gcashHistoryTotalTransactions: 0,
         gcashHistoryMonthTotalTransactions: 0,
         gcashHistorySearchTerm: '',
-        gcashHistoryFilter: 'all',
         gcashHistoryType: 'credit',
+        gcashHistoryCreditUse: 'available',
         gcashHistoryMonth: getManilaMonthKey(),
         gcashHistoryAvailableMonths: [],
         gcashPageTab: 'imported',
@@ -1655,6 +1657,13 @@
         return category !== 'debit' && category !== 'remarked';
     };
 
+    const isGcashHistoryCreditUse = (transaction, creditUse = state.gcashHistoryCreditUse) => {
+        const category = getGcashHistoryCategory(transaction);
+        return creditUse === 'used'
+            ? category === 'reserved' || category === 'posted'
+            : category === 'available';
+    };
+
     const syncGcashHistoryMonthControls = (availableMonths = state.gcashHistoryAvailableMonths) => {
         const normalizedMonths = Array.from(new Set([
             state.gcashHistoryMonth,
@@ -1680,12 +1689,18 @@
     const syncGcashHistoryTypeControls = () => {
         const isDebit = state.gcashHistoryType === 'debit';
         const isNotForPosting = state.gcashHistoryType === 'remarked';
+        const isCredit = state.gcashHistoryType === 'credit';
         gcashHistoryTypeButtons.forEach((button) => {
             const active = button.dataset.gcashHistoryType === state.gcashHistoryType;
             button.classList.toggle('active', active);
             button.setAttribute('aria-selected', active ? 'true' : 'false');
         });
-        if (gcashHistoryStatusField) gcashHistoryStatusField.hidden = isDebit || isNotForPosting;
+        if (gcashCreditUseTabs) gcashCreditUseTabs.hidden = !isCredit;
+        gcashCreditUseButtons.forEach((button) => {
+            const active = button.dataset.gcashCreditUse === state.gcashHistoryCreditUse;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
         if (gcashHistoryDebitNotice) gcashHistoryDebitNotice.hidden = !isDebit;
         if (gcashHistoryNotForPostingNotice) gcashHistoryNotForPostingNotice.hidden = !isNotForPosting;
         if (gcashHistoryTitle) {
@@ -1729,6 +1744,7 @@
     const renderGcashHistoryStats = (transactions, batches, totalTransactions, scopeLabel = '') => {
         const grouped = {
             available: [],
+            reserved: [],
             posted: [],
             remarked: [],
             debit: []
@@ -1746,6 +1762,8 @@
                 || `${batches.length} official PDF${batches.length === 1 ? '' : 's'}`;
         }
         if (gcashHistoryStatAvailable) gcashHistoryStatAvailable.textContent = String(grouped.available.length);
+        if (gcashAvailableCreditsCount) gcashAvailableCreditsCount.textContent = String(grouped.available.length);
+        if (gcashUsedCreditsCount) gcashUsedCreditsCount.textContent = String(grouped.reserved.length + grouped.posted.length);
         if (gcashHistoryStatAvailableMeta) {
             gcashHistoryStatAvailableMeta.textContent = `(${formatCurrency(sumGcashHistoryAmount(grouped.available, 'credit'))})`;
         }
@@ -1769,21 +1787,21 @@
             .filter(Boolean)
             .forEach((element) => { element.textContent = '—'; });
         if (gcashHistoryNotForPostingCount) gcashHistoryNotForPostingCount.textContent = '—';
+        if (gcashAvailableCreditsCount) gcashAvailableCreditsCount.textContent = '—';
+        if (gcashUsedCreditsCount) gcashUsedCreditsCount.textContent = '—';
         [gcashHistoryStatTotalMeta, gcashHistoryStatAvailableMeta, gcashHistoryStatPostedMeta, gcashHistoryStatRemarkedMeta, gcashHistoryStatDebitMeta]
             .filter(Boolean)
             .forEach((element) => { element.textContent = 'History unavailable'; });
     };
 
     const getFilteredGcashHistoryTransactions = (transactions) => transactions.filter((transaction) => {
-        const category = getGcashHistoryCategory(transaction);
         const matchesMonth = getGcashHistoryTransactionMonth(transaction) === state.gcashHistoryMonth;
         const matchesType = isGcashHistoryType(transaction);
-        const matchesFilter = state.gcashHistoryType !== 'credit'
-            || state.gcashHistoryFilter === 'all'
-            || category === state.gcashHistoryFilter;
+        const matchesCreditUse = state.gcashHistoryType !== 'credit'
+            || isGcashHistoryCreditUse(transaction);
         const matchesSearch = !state.gcashHistorySearchTerm
             || getGcashHistorySearchText(transaction).includes(state.gcashHistorySearchTerm);
-        return matchesMonth && matchesType && matchesFilter && matchesSearch;
+        return matchesMonth && matchesType && matchesCreditUse && matchesSearch;
     });
 
     const renderGcashHistoryError = (message) => {
@@ -1826,21 +1844,25 @@
         state.gcashHistoryMonthTotalTransactions = monthTotalTransactions;
         const latestBatch = batches[0] || null;
         const visibleTransactions = getFilteredGcashHistoryTransactions(monthTransactions);
-        const typeTransactions = monthTransactions.filter((transaction) => isGcashHistoryType(transaction));
+        const scopedTransactions = monthTransactions.filter((transaction) => (
+            isGcashHistoryType(transaction)
+            && (state.gcashHistoryType !== 'credit' || isGcashHistoryCreditUse(transaction))
+        ));
         const monthLabel = formatBillingMonth(state.gcashHistoryMonth);
         const typeLabel = state.gcashHistoryType === 'debit'
             ? 'debits'
-            : (state.gcashHistoryType === 'remarked' ? 'not-for-posting credits' : 'credits');
+            : (state.gcashHistoryType === 'remarked'
+                ? 'not-for-posting credits'
+                : `${state.gcashHistoryCreditUse} credits`);
         syncGcashHistoryMonthControls();
         syncGcashHistoryTypeControls();
         renderGcashHistoryStats(monthTransactions, batches, monthTotalTransactions, monthLabel);
 
         if (gcashHistoryVisibleCount) {
-            const isFiltered = Boolean(state.gcashHistorySearchTerm)
-                || (state.gcashHistoryType === 'credit' && state.gcashHistoryFilter !== 'all');
+            const isFiltered = Boolean(state.gcashHistorySearchTerm);
             gcashHistoryVisibleCount.textContent = isFiltered
-                ? `Showing ${visibleTransactions.length} of ${typeTransactions.length} ${typeLabel} for ${monthLabel}`
-                : `Showing ${typeTransactions.length} ${typeLabel} for ${monthLabel}`;
+                ? `Showing ${visibleTransactions.length} of ${scopedTransactions.length} ${typeLabel} for ${monthLabel}`
+                : `Showing ${scopedTransactions.length} ${typeLabel} for ${monthLabel}`;
         }
 
         if (gcashHistorySummary) {
@@ -1870,7 +1892,7 @@
 
         if (!visibleTransactions.length) {
             gcashHistoryBody.innerHTML = `
-                <tr><td colspan="8" class="queue-empty">No ${escapeHtml(typeLabel)} match the current search${state.gcashHistoryType === 'credit' ? ' and status filter' : ''} for ${escapeHtml(monthLabel)}.</td></tr>
+                <tr><td colspan="8" class="queue-empty">No ${escapeHtml(typeLabel)} match the current search for ${escapeHtml(monthLabel)}.</td></tr>
             `;
             return;
         }
@@ -1896,9 +1918,14 @@
                 : [];
             const assignmentDetails = assignmentAllocations.map((allocation) => {
                 const customerName = String(allocation?.customerName || '').trim();
+                const accountNumber = String(allocation?.accountNumber || '').trim();
                 const amount = Number(allocation?.amount);
+                const customerLabel = customerName || 'Assigned customer';
+                const customerDisplay = accountNumber
+                    ? `<a class="gcash-match-name gcash-match-link" href="payment-breakdown.html?account=${escapeHtml(encodeURIComponent(accountNumber))}" title="View payment breakdown for ${escapeHtml(customerLabel)}">${escapeHtml(customerLabel)} <i class="ti ti-external-link" aria-hidden="true"></i></a>`
+                    : `<span class="gcash-match-name">${escapeHtml(customerLabel)}</span>`;
                 return `<div class="gcash-match-allocation">
-                    <span class="gcash-match-name">${escapeHtml(customerName || 'Assigned customer')}</span>
+                    ${customerDisplay}
                     <span class="gcash-match-amount">${escapeHtml(Number.isFinite(amount) ? formatCurrency(amount) : '-')}</span>
                 </div>`;
             }).join('');
@@ -3120,16 +3147,21 @@
         state.gcashHistorySearchTerm = String(gcashHistorySearch.value || '').trim().toLowerCase();
         rerenderGcashHistory();
     });
-    gcashHistoryFilter?.addEventListener('change', () => {
-        state.gcashHistoryFilter = String(gcashHistoryFilter.value || 'all').trim().toLowerCase();
-        rerenderGcashHistory();
-    });
     gcashHistoryTypeButtons.forEach((button) => {
         button.addEventListener('click', () => {
             const requestedType = String(button.dataset.gcashHistoryType || '').trim().toLowerCase();
             const type = ['credit', 'debit', 'remarked'].includes(requestedType) ? requestedType : 'credit';
             if (type === state.gcashHistoryType) return;
             state.gcashHistoryType = type;
+            rerenderGcashHistory();
+        });
+    });
+    gcashCreditUseButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const requestedUse = String(button.dataset.gcashCreditUse || '').trim().toLowerCase();
+            const creditUse = requestedUse === 'used' ? 'used' : 'available';
+            if (creditUse === state.gcashHistoryCreditUse) return;
+            state.gcashHistoryCreditUse = creditUse;
             rerenderGcashHistory();
         });
     });

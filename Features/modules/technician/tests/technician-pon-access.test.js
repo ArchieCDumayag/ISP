@@ -7,13 +7,29 @@ test('installation completion evidence is normalized and replay-safe', () => {
   const completion = installationsRouter.normalizeInstallationCompletion({
     clientEventId: 'install-event-1',
     onuSerialNumber: 'ONU-001',
-    macAddress: 'AA:BB:CC:DD:EE:FF',
+    onuBrand: 'Huawei',
     opticalSignal: '-18.4 dBm',
-    cableLengthMeters: '42.5',
+    cableMeterStart: '100.5',
+    cableMeterEnd: '143',
+    cableLengthMeters: '999',
+    installationMaterials: {
+      indoorOpticalOutletInstalled: true,
+      patchCordInstalled: true,
+      patchCordType: 'upc-to-apc',
+      patchCordQuantity: 1,
+      scConnectorQuantity: 2,
+      cClipQuantity: 10,
+      cableClipQuantity: 8,
+      cableTieQuantity: 4,
+      fClampQuantity: 1
+    },
     materials: [{ name: 'Drop cable', quantity: 42.5, unit: 'm' }],
     notes: 'Speed test passed.'
   });
   assert.equal(completion.cableLengthMeters, 42.5);
+  assert.equal(completion.onuBrand, 'Huawei');
+  assert.equal(completion.installationMaterials.patchCordType, 'upc-to-apc');
+  assert.equal(completion.installationMaterials.scConnectorQuantity, 2);
   assert.equal(completion.materials[0].quantity, 42.5);
   const existing = {
     ...completion,
@@ -29,6 +45,37 @@ test('installation completion evidence is normalized and replay-safe', () => {
       notes: 'Different evidence'
     }),
     (error) => error.statusCode === 409 && /different evidence/.test(error.message)
+  );
+});
+
+test('installation completion rejects reversed meter readings and incomplete patch-cord evidence', () => {
+  const base = {
+    clientEventId: 'install-event-materials',
+    onuSerialNumber: 'ONU-003',
+    onuBrand: 'ZTE',
+    opticalSignal: '-19.2 dBm'
+  };
+  assert.throws(
+    () => installationsRouter.normalizeInstallationCompletion({
+      ...base,
+      cableMeterStart: 200,
+      cableMeterEnd: 150
+    }),
+    (error) => error.statusCode === 400 && /meter readings/.test(error.message)
+  );
+  assert.throws(
+    () => installationsRouter.normalizeInstallationCompletion({
+      ...base,
+      installationMaterials: { patchCordInstalled: true, patchCordQuantity: 1 }
+    }),
+    (error) => error.statusCode === 400 && /Patch cord type/.test(error.message)
+  );
+  assert.throws(
+    () => installationsRouter.normalizeInstallationCompletion({
+      ...base,
+      onuBrand: 'Unsupported'
+    }),
+    (error) => error.statusCode === 400 && /ONU brand/.test(error.message)
   );
 });
 
@@ -90,6 +137,44 @@ test('technician PON overview redacts every other subscriber identity', () => {
   assert.equal('opticalInfo' in safe.naps[0].connections[1], false);
   assert.equal(safe.naps[0].ports[1].occupied, true);
   assert.equal('customerId' in safe.naps[0].ports[1], false);
+});
+
+test('technician coverage-map candidates expose only safe port client labels', () => {
+  assert.equal(installationsRouter.TECHNICIAN_COVERAGE_RADIUS_METERS, 600);
+  const safe = installationsRouter.sanitizeTechnicianNearbyCandidate({
+    napId: 'nap-1',
+    napCode: 'NAP-01',
+    latitude: 17.9,
+    longitude: 121.9,
+    capacity: 4,
+    availablePorts: 1,
+    availablePortNumbers: [4],
+    ports: [
+      {
+        port: 1,
+        status: 'occupied',
+        customerAccountNumber: '30010001',
+        customerName: 'Client One',
+        opticalInfo: '-19 dBm',
+        technicianUserId: 'private-tech-id'
+      },
+      { port: 2, status: 'reserved', customerAccountNumber: '30010002' },
+      { port: 3, status: 'unavailable' },
+      { port: 4, status: 'available', customerAccountNumber: 'must-not-leak' }
+    ]
+  }, { includeClientLabels: true });
+
+  assert.equal(safe.ports[0].customerName, 'Client One');
+  assert.equal(safe.ports[0].customerAccountNumber, '30010001');
+  assert.equal('opticalInfo' in safe.ports[0], false);
+  assert.equal('technicianUserId' in safe.ports[0], false);
+  assert.equal('customerAccountNumber' in safe.ports[3], false);
+  assert.equal(safe.ports[3].available, true);
+
+  const legacyNearby = installationsRouter.sanitizeTechnicianNearbyCandidate({
+    ports: [{ port: 1, status: 'occupied', customerAccountNumber: '30010001' }]
+  });
+  assert.equal('customerAccountNumber' in legacyNearby.ports[0], false);
 });
 
 test('technician PON assignment rejects replace, move, force, and override flags', () => {

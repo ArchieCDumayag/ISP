@@ -35,7 +35,10 @@ test('ranks only online NAPs with exact free ports by real distance', () => {
         {
           id: 'nap-near', code: 'NAP-01', linkedOlt: 'OLT-A', ponRef: 'PON-1',
           coordinate: '17.967000, 121.758300', splitter: '1:8', capacity: 8,
-          connections: [{ port: 1 }, { port: 3 }]
+          connections: [
+            { port: 1, customerId: '30010001', customerName: 'Client One' },
+            { port: 3, customerRef: '30010003', customerName: 'Client Three' }
+          ]
         },
         {
           id: 'nap-far', code: 'NAP-02', linkedOlt: 'OLT-A', ponRef: 'PON-1',
@@ -66,8 +69,67 @@ test('ranks only online NAPs with exact free ports by real distance', () => {
   assert.equal(result.candidates[0].usedPorts, 2);
   assert.equal(result.candidates[0].reservedPorts, 1);
   assert.deepEqual(result.candidates[0].availablePortNumbers, [4, 5, 6, 7, 8]);
+  assert.deepEqual(result.candidates[0].ports.slice(0, 4), [
+    {
+      port: 1, status: 'occupied', available: false,
+      customerAccountNumber: '30010001', customerName: 'Client One'
+    },
+    { port: 2, status: 'reserved', available: false, customerAccountNumber: '', customerName: '' },
+    {
+      port: 3, status: 'occupied', available: false,
+      customerAccountNumber: '30010003', customerName: 'Client Three'
+    },
+    { port: 4, status: 'available', available: true }
+  ]);
   assert.equal(result.candidates[0].ponPortName, 'Baggao North');
   assert.equal(result.skippedInvalidCoordinates, 1);
+});
+
+test('coverage-map mode returns every NAP within 600 meters and excludes farther NAPs', () => {
+  const result = buildNearbyCandidates({
+    latitude: 17.9667,
+    longitude: 121.7583,
+    limit: 500,
+    maxDistanceMeters: 600,
+    allowExpandedLimit: true,
+    includeOffline: true,
+    includeUnavailable: true,
+    state: {
+      olts: [
+        { name: 'OLT-A', status: 'online' },
+        { name: 'OLT-B', status: 'offline' }
+      ],
+      naps: [
+        {
+          id: 'nap-full', code: 'NAP-FULL', linkedOlt: 'OLT-A',
+          coordinate: '17.967000, 121.758300', splitter: '1:8',
+          connections: Array.from({ length: 8 }, (_, index) => ({
+            port: index + 1,
+            customerId: `3001000${index + 1}`,
+            customerName: `Client ${index + 1}`
+          }))
+        },
+        {
+          id: 'nap-offline', code: 'NAP-OFFLINE', linkedOlt: 'OLT-B',
+          coordinate: '17.968000, 121.758300', splitter: '1:8', connections: []
+        },
+        {
+          id: 'nap-far', code: 'NAP-FAR', linkedOlt: 'OLT-A',
+          coordinate: '17.976700, 121.758300', splitter: '1:8', connections: []
+        }
+      ],
+      reservations: []
+    }
+  });
+
+  assert.deepEqual(result.candidates.map((candidate) => candidate.napId), [
+    'nap-full', 'nap-offline'
+  ]);
+  assert.equal(result.candidates[0].availablePorts, 0);
+  assert.ok(result.candidates[0].ports.every((port) => port.status === 'occupied'));
+  assert.equal(result.candidates[1].availablePorts, 0);
+  assert.ok(result.candidates[1].ports.every((port) => port.status === 'unavailable'));
+  assert.equal(result.radiusMeters, 600);
 });
 
 test('haversine distance is stable for nearby field coordinates', () => {

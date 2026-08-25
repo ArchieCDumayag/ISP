@@ -74,6 +74,7 @@ test('server create validation requires identity, service address, and valid con
   assertValidationError({ barangay: '' }, /barangay|address/i);
   assertValidationError({ municipality: '' }, /municipality|city|address/i);
   assertValidationError({ province: '' }, /province|address/i);
+  assertValidationError({ area: '' }, /area|cluster|coverage/i);
   assertValidationError({ planId: '', planName: '' }, /plan/i);
   assertValidationError({ activationDate: '2026-02-31' }, /valid activation date/i);
   assertValidationError({ billDate: '2026-13-01' }, /valid next bill date/i);
@@ -369,6 +370,11 @@ test('Add Customer uses a Tabler horizontal wizard, inline errors, network revie
   assert.match(page, /stepScroller\.scrollTo\(\{ left: Math\.max\(0, centeredStepLeft\), behavior: ['"]smooth['"] \}\)/);
   assert.match(page, /const DEFAULT_CUSTOMER_PROVINCE = ['"]Cagayan['"]/);
   assert.match(page, /const DEFAULT_CUSTOMER_MUNICIPALITY = ['"]Baggao['"]/);
+  assert.match(modalMarkup, /id=["']area["'][^>]*name=["']area["'][^>]*required/);
+  assert.match(page, /function findCoverageAreaName\(value\)/);
+  assert.match(page, /function syncAreaFromSelectedBarangay\(/);
+  assert.match(page, /customerBarangaySelect\?\.addEventListener\(['"]change['"],/);
+  assert.match(page, /if \(!isEditMode\(\) && areaSelectField\) areaSelectField\.value = ['"]['"]/);
   assert.match(
     page,
     /startCustomerAddressPicker\(\{\s*province: DEFAULT_CUSTOMER_PROVINCE,\s*municipality: DEFAULT_CUSTOMER_MUNICIPALITY\s*\}\)/

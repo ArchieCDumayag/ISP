@@ -35,6 +35,12 @@ assert.equal(customersTablerCss.includes('grid-template-columns: 248px minmax(0,
 assert.equal(customersTablerCss.includes('grid-template-columns: repeat(12, minmax(0, 1fr));'), true);
 assert.equal(customersTablerCss.includes('.view-panel--history {'), true);
 assert.equal(customersTablerCss.includes('grid-column: 1 / -1;'), true);
+assert.match(customersPage, /id="mapPinPickerModal" class="[^"]*\bmap-pin-picker-modal\b/);
+assert.match(customersPage, /id="useCurrentMapPinLocationBtn"/);
+assert.match(customersPage, /navigator\?\.geolocation/);
+assert.match(customersPage, /enableHighAccuracy:\s*true/);
+assert.match(customersPage, /useCurrentMapPinLocationBtn\.addEventListener\('click', useCurrentMapPinLocation\)/);
+assert.match(customersTablerCss, /\.map-pin-picker-modal\s*>\s*\.modal-content\s*\{[^}]*width:\s*min\(760px,/s);
 
 for (const match of customersPage.matchAll(/<button\b[\s\S]*?>/g)) {
   assert.match(match[0], /class="[^"]*\bbtn\b[^"]*"/);

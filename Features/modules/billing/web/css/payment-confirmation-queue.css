@@ -1627,6 +1627,37 @@ body.theme-dark .queue-duplicate-modal__footer {
     font-weight: 700;
 }
 
+.queue-credit-use-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0 0 0.875rem;
+    padding: 0.625rem 0.75rem 0;
+    border: 1px solid var(--app-border, var(--tblr-border-color));
+    border-radius: var(--tblr-border-radius, 4px);
+    background: var(--app-surface, var(--tblr-bg-surface));
+}
+
+.queue-credit-use-tabs[hidden] {
+    display: none;
+}
+
+.queue-credit-use-tabs .nav {
+    flex: 0 0 auto;
+    border-bottom: 0;
+}
+
+.queue-credit-use-tabs .nav-link {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+
+.queue-credit-use-tabs > small {
+    margin: 0 0 0.625rem auto;
+    text-align: right;
+}
+
 #queueGcashHistoryMonth {
     min-width: 8.75rem;
 }
@@ -1764,6 +1795,16 @@ body.theme-dark .queue-duplicate-modal__footer {
     min-width: 0;
     font-weight: 600;
     overflow-wrap: anywhere;
+}
+
+.gcash-match-link {
+    color: var(--tblr-primary, #206bc4);
+    text-decoration: none;
+}
+
+.gcash-match-link:hover,
+.gcash-match-link:focus-visible {
+    text-decoration: underline;
 }
 
 .gcash-match-amount {
@@ -2233,6 +2274,28 @@ body.theme-dark .queue-bind-pending-check {
     .queue-history-view-bar .nav-link {
         flex: 1 1 11rem;
         justify-content: center;
+    }
+
+    .queue-credit-use-tabs {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.375rem;
+        padding: 0.625rem 0.625rem 0;
+    }
+
+    .queue-credit-use-tabs .nav,
+    .queue-credit-use-tabs .nav-link {
+        width: 100%;
+    }
+
+    .queue-credit-use-tabs .nav-link {
+        flex: 1 1 50%;
+        justify-content: center;
+    }
+
+    .queue-credit-use-tabs > small {
+        margin: 0 0 0.625rem;
+        text-align: left;
     }
 
     .queue-tabler-modal .modal-footer .btn {

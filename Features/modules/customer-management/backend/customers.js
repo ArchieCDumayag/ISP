@@ -274,7 +274,7 @@ const validateAdminCustomerCreatePayload = (payload = {}, existingCustomers = []
     normalized.municipality = normalizeCustomerField(payload?.municipality, 'municipality', { required: true });
     normalized.barangay = normalizeCustomerField(payload?.barangay, 'barangay', { required: true });
     normalized.street = normalizeCustomerField(payload?.street, 'street');
-    normalized.area = normalizeCustomerField(payload?.area, 'area');
+    normalized.area = normalizeCustomerField(payload?.area, 'area', { required: true });
     normalized.remarks = normalizeCustomerField(payload?.remarks, 'remarks');
     normalized.planName = normalizeCustomerField(payload?.planName, 'planName', { required: true });
 

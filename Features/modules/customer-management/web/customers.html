@@ -354,10 +354,11 @@
                                         </select>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label" for="area">Area / Cluster</label>
-                                        <select class="form-select form-select-sm" id="area" name="area">
+                                        <label class="form-label" for="area">Area / Cluster <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
+                                        <select class="form-select form-select-sm" id="area" name="area" required aria-describedby="areaHint">
                                             <option value="" selected>Select area</option>
                                         </select>
+                                        <div class="form-hint" id="areaHint">Uses registered Coverage Areas. An exact Barangay match is selected automatically.</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label" for="mapPin">Coordinates</label>
@@ -679,7 +680,7 @@
         </div>
     </div>
 
-    <div id="mapPinPickerModal" class="modal customer-modal map-picker-modal" role="dialog" aria-modal="true" aria-labelledby="mapPinPickerTitle" aria-hidden="true">
+    <div id="mapPinPickerModal" class="modal customer-modal map-picker-modal map-pin-picker-modal" role="dialog" aria-modal="true" aria-labelledby="mapPinPickerTitle" aria-hidden="true">
         <div class="modal-content">
             <div class="modal-header">
                 <div>
@@ -695,6 +696,10 @@
                         <input type="search" id="mapPinSearchInput" placeholder="Search place or coordinates">
                     </div>
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="mapPinSearchBtn"><i class="ti ti-search" aria-hidden="true"></i> Search</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="useCurrentMapPinLocationBtn" aria-busy="false">
+                        <i class="ti ti-current-location" data-current-location-icon aria-hidden="true"></i>
+                        <span data-current-location-label>Use Current Location</span>
+                    </button>
                     <div class="map-picker-layer-switcher" role="group" aria-label="Map layer picker">
                         <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn is-active" data-map-pin-layer="satellite" aria-pressed="true">
                             <i class="ti ti-satellite" aria-hidden="true"></i> Satellite
@@ -707,7 +712,7 @@
                         </button>
                     </div>
                 </div>
-                <p class="map-picker-status" id="mapPinPickerStatus"></p>
+                <p class="map-picker-status" id="mapPinPickerStatus" role="status" aria-live="polite"></p>
                 <div id="mapPinPickerMap" class="map-picker-canvas" aria-label="Customer location map"></div>
             </div>
             <div class="modal-footer">
@@ -1192,6 +1197,9 @@
             const applyMapPinPickerBtn = document.getElementById('applyMapPinPickerBtn');
             const mapPinSearchInput = document.getElementById('mapPinSearchInput');
             const mapPinSearchBtn = document.getElementById('mapPinSearchBtn');
+            const useCurrentMapPinLocationBtn = document.getElementById('useCurrentMapPinLocationBtn');
+            const currentLocationButtonIcon = useCurrentMapPinLocationBtn?.querySelector('[data-current-location-icon]') || null;
+            const currentLocationButtonLabel = useCurrentMapPinLocationBtn?.querySelector('[data-current-location-label]') || null;
             const mapPinPickerStatus = document.getElementById('mapPinPickerStatus');
             const napMapPreviewModal = document.getElementById('napMapPreviewModal');
             const napMapPreviewInfo = document.getElementById('napMapPreviewInfo');
@@ -1372,6 +1380,7 @@
             let mapPinPickerMarker = null;
             let mapPinPickerSelection = null;
             let mapPinPickerLastTrigger = null;
+            let mapPinPickerLocationRequestId = 0;
             let mapPinPickerActiveLayer = MAP_PIN_PICKER_DEFAULT_LAYER;
             let mapPinPickerTileLayers = {};
             let napMapPreviewMap = null;
@@ -2793,6 +2802,7 @@
                         [/province/i, customerProvinceSelect],
                         [/municipality|city/i, customerMunicipalitySelect],
                         [/barangay/i, customerBarangaySelect],
+                        [/area|cluster|coverage/i, areaSelectField],
                         [/plan/i, planSelect],
                         [/previous balance|opening amount/i, openingPreviousBalanceInput],
                         [/advance payment/i, openingAdvancePaymentInput],
@@ -3154,7 +3164,13 @@
                     coverageAreaNames.forEach((name) => {
                         areaSelectField.add(new Option(name, name));
                     });
-                    if (currentValue) ensureAreaOption(currentValue);
+                    const matchedCurrentValue = findCoverageAreaName(currentValue);
+                    if (matchedCurrentValue) {
+                        areaSelectField.value = matchedCurrentValue;
+                    } else if (currentValue && isEditMode()) {
+                        ensureAreaOption(currentValue);
+                    }
+                    syncAreaFromSelectedBarangay();
                 }
                 if (filterAreaSelect) {
                     const previousOptions = Array.from(filterAreaSelect.options || [])
@@ -3178,6 +3194,27 @@
                     setMultiSelectValues(filterAreaSelect, nextFilters);
                     areaFilterPicker.rebuildOptions();
                 }
+            }
+
+            function findCoverageAreaName(value) {
+                const normalizedValue = normalizeAddressPickerText(value).toLowerCase();
+                if (!normalizedValue) return '';
+                return coverageAreaNames.find((name) => (
+                    normalizeAddressPickerText(name).toLowerCase() === normalizedValue
+                )) || '';
+            }
+
+            function syncAreaFromSelectedBarangay({ clearUnmatched = true } = {}) {
+                if (!areaSelectField || !modal?.classList.contains('show') || isEditMode()) return false;
+                const barangay = getAddressPickerSelectedLabel(customerBarangaySelect);
+                const matchedArea = findCoverageAreaName(barangay);
+                const nextValue = matchedArea || (clearUnmatched ? '' : areaSelectField.value);
+                if (areaSelectField.value !== nextValue) {
+                    areaSelectField.value = nextValue;
+                    clearCustomerFieldError(areaSelectField);
+                    updateCustomerReviewSummary();
+                }
+                return Boolean(matchedArea);
             }
 
             function normalizeRouterId(value) {
@@ -4304,6 +4341,20 @@
                 mapPinPickerStatus.classList.toggle('is-error', Boolean(isError));
             };
 
+            const setCurrentLocationButtonLoading = (loading) => {
+                if (!useCurrentMapPinLocationBtn) return;
+                useCurrentMapPinLocationBtn.disabled = Boolean(loading);
+                useCurrentMapPinLocationBtn.setAttribute('aria-busy', loading ? 'true' : 'false');
+                if (currentLocationButtonIcon) {
+                    currentLocationButtonIcon.className = loading
+                        ? 'ti ti-loader-2 ti-spin'
+                        : 'ti ti-current-location';
+                }
+                if (currentLocationButtonLabel) {
+                    currentLocationButtonLabel.textContent = loading ? 'Locating...' : 'Use Current Location';
+                }
+            };
+
             const formatCoordinatePair = (lat, lng) => `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
 
             const isValidCoordinatePair = (lat, lng) => (
@@ -4618,8 +4669,68 @@
                 }
             };
 
+            const useCurrentMapPinLocation = () => {
+                const geolocation = window.navigator?.geolocation;
+                if (!geolocation) {
+                    setMapPinPickerStatusText('Current location is not supported by this browser.', true);
+                    return;
+                }
+                if (!window.isSecureContext) {
+                    setMapPinPickerStatusText('Current location requires HTTPS or localhost.', true);
+                    return;
+                }
+
+                const requestId = ++mapPinPickerLocationRequestId;
+                setCurrentLocationButtonLoading(true);
+                setMapPinPickerStatusText('Getting your current location...');
+
+                geolocation.getCurrentPosition(
+                    (position) => {
+                        if (requestId !== mapPinPickerLocationRequestId) return;
+                        setCurrentLocationButtonLoading(false);
+
+                        const lat = Number(position?.coords?.latitude);
+                        const lng = Number(position?.coords?.longitude);
+                        if (!isValidCoordinatePair(lat, lng)) {
+                            setMapPinPickerStatusText('The browser returned invalid coordinates. Try again.', true);
+                            return;
+                        }
+
+                        const formattedCoordinates = formatCoordinatePair(lat, lng);
+                        if (mapPinSearchInput) mapPinSearchInput.value = formattedCoordinates;
+                        const accuracy = Number(position?.coords?.accuracy);
+                        const accuracyText = Number.isFinite(accuracy) && accuracy > 0
+                            ? ` (accuracy about ${Math.round(accuracy)} m)`
+                            : '';
+                        setMapPinPickerSelection(lat, lng, {
+                            center: true,
+                            statusMessage: `Current location pinned${accuracyText}. Review the pin, then use the coordinates.`
+                        });
+                    },
+                    (error) => {
+                        if (requestId !== mapPinPickerLocationRequestId) return;
+                        setCurrentLocationButtonLoading(false);
+                        const errorMessage = error?.code === 1
+                            ? 'Location permission was denied. Allow location access and try again.'
+                            : error?.code === 2
+                                ? 'Your current location is unavailable. Check device location services and try again.'
+                                : error?.code === 3
+                                    ? 'Getting your location timed out. Try again in an open area.'
+                                    : 'Could not get your current location. Try again.';
+                        setMapPinPickerStatusText(errorMessage, true);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 30000
+                    }
+                );
+            };
+
             const closeMapPinPicker = ({ restoreFocus = true } = {}) => {
                 if (!mapPinPickerModal) return;
+                mapPinPickerLocationRequestId += 1;
+                setCurrentLocationButtonLoading(false);
                 mapPinPickerModal.classList.remove('show');
                 mapPinPickerModal.setAttribute('aria-hidden', 'true');
                 refreshModalBackdrop();
@@ -6511,6 +6622,9 @@
                     searchMapPinLocation(mapPinSearchInput?.value || '');
                 });
             }
+            if (useCurrentMapPinLocationBtn) {
+                useCurrentMapPinLocationBtn.addEventListener('click', useCurrentMapPinLocation);
+            }
             if (mapPinSearchInput) {
                 mapPinSearchInput.addEventListener('keydown', (event) => {
                     if (event.key === 'Enter') {
@@ -8263,13 +8377,19 @@
             });
 
             customerProvinceSelect?.addEventListener('change', () => {
+                if (!isEditMode() && areaSelectField) areaSelectField.value = '';
                 const sessionToken = beginCustomerAddressSession();
                 void loadCustomerMunicipalitySelect(customerProvinceSelect.value, '', { sessionToken });
             });
 
             customerMunicipalitySelect?.addEventListener('change', () => {
+                if (!isEditMode() && areaSelectField) areaSelectField.value = '';
                 const sessionToken = beginCustomerAddressSession();
                 void loadCustomerBarangaySelect(customerMunicipalitySelect.value, '', { sessionToken });
+            });
+
+            customerBarangaySelect?.addEventListener('change', () => {
+                syncAreaFromSelectedBarangay();
             });
 
             updateSelectionUi();

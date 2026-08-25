@@ -1,6 +1,6 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-08-24
+Last reviewed: 2026-08-25
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -48,7 +48,9 @@ Module-owned CSS and JavaScript retain URLs such as `/css/customers.css`, `/css/
 
 Customers uses native Tabler structure for its compact header, small Import/Export/Add controls, four-item filtered summary strip, search/filter controls, fitted eight-column desktop table, pagination, modal form controls, and every row/dialog action. All buttons use Tabler `btn-sm`; desktop actions use compact icon buttons and the table becomes responsive customer cards on narrow screens. Only customer-specific layout additions for the summary, filters, table cards, maps, and dialogs remain in `css/customers-tabler.css`. The existing row/detail-modal workflow remains available through row selection and the explicit View action.
 
-Add Customer is a native Tabler horizontal three-step modal: Customer covers account, identity, contact, and address; Billing covers plan, activation, cycle dates, and optional migrated opening amounts; Network & Review covers Router, PPPoE, NAP, remarks, and final confirmation. The modal uses Tabler steps, cards, responsive grid controls, input groups, alerts, and a footer outside the scrolling body, with horizontal step scrolling on narrow screens. New forms preselect the editable service address Province **Cagayan** and Municipality/City **Baggao** while leaving Barangay for the Admin to choose. The browser submits customer, available MikroTik/PPPoE data, NAP, and migrated Previous Balance/Advance data once, trusts the account returned by `POST /api/customers`, and shows server-generated temporary portal credentials only in a dismissible one-time setup dialog.
+Add Customer is a native Tabler horizontal three-step modal: Customer covers account, identity, contact, and address; Billing covers plan, activation, cycle dates, and optional migrated opening amounts; Network & Review covers Router, PPPoE, NAP, remarks, and final confirmation. The modal uses Tabler steps, cards, responsive grid controls, input groups, alerts, and a footer outside the scrolling body, with horizontal step scrolling on narrow screens. New forms preselect the editable service address Province **Cagayan** and Municipality/City **Baggao** while leaving Barangay for the Admin to choose. Area / Cluster is required and remains restricted to registered `/api/coverage` names; for new customers, selecting a Barangay automatically selects the same-named Coverage Area when an exact case-insensitive match exists, while unmatched Barangays require an explicit area choice and legacy edit values remain intact. The browser submits customer, available MikroTik/PPPoE data, NAP, and migrated Previous Balance/Advance data once, trusts the account returned by `POST /api/customers`, and shows server-generated temporary portal credentials only in a dismissible one-time setup dialog.
+
+The Add Customer Coordinates picker is a focused 760px-wide responsive dialog. **Use Current Location** requests high-accuracy browser geolocation only after an Admin clicks it, centers a reviewable customer pin, reports permission/device/timeout errors inline, and keeps the existing **Use Coordinates** confirmation as the only action that writes the selected value to the customer form.
 
 The View Customer Account dialog is a compact, responsive Tabler detail workspace. Its profile and financial summary stay in a narrow sidebar on wide screens; Account Information, Billing Schedule, MikroTik/PPPoE, NAP Management, and Payment History use an explicit twelve-column panel grid that collapses safely for tablet and mobile. The page-scoped stylesheet supplies the complete detail grid after the shared account-view layer, so the Admin page does not depend on legacy `customers.css`. Existing customer, Billing, payment-history, MikroTik, NAP, statement, copy, and action bindings are unchanged.
 
@@ -117,6 +119,10 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Vision AI is disabled unless the operator configures Billing's environment opt-in. Provider failures degrade to local OCR/manual review and never prevent a customer from submitting evidence or turn the screenshot into confirmed payment.
 
 ## Latest meaningful changes
+
+- 2026-08-25: Added an explicit **Use Current Location** action to the Add Customer Coordinates picker with high-accuracy geolocation, loading/error feedback, centered pin review, and safe cancellation. Reduced only that picker from 920px to a responsive 760px maximum while leaving the NAP map preview width unchanged.
+
+- 2026-08-25: Made Add Customer Area / Cluster a required registered Coverage Area. New-customer Barangay changes select the exact same-named area when available and clear stale area choices when the address hierarchy changes; unmatched Barangays require manual selection. Backend Admin-create validation also rejects a missing area, while edit mode preserves legacy values.
 
 - 2026-08-24: Extended technician customer onboarding for Android parity: structured names/address codes, server-authoritative month-end proration, approval-time first-bill payment recording, branch customer referral options, and Pending referral creation. The stable draft fingerprint now covers the new billing/referral material, while trusted installation completion evidence remains immutable through Admin review.
 

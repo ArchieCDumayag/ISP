@@ -1,6 +1,6 @@
 # Network Module Context
 
-Last reviewed: 2026-08-16
+Last reviewed: 2026-08-25
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -20,6 +20,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - `backend/mikrotik-client.js` and `backend/mikrotik-endpoint.js`: RouterOS connectivity and endpoint normalization.
 - `backend/mikrotik-audit-log.js`: records network commands through the Admin activity log.
 - `backend/pon-management-api.js`: `/api/pon/state`, `/api/pon/overview`, and PON state updates. State and overview reads expose an opaque `revision`; full-state `PUT /api/pon/state` requires the matching `expectedRevision`, returns the next revision, and rejects stale snapshots with `409 PON_STATE_CONFLICT` before changing records.
+- `backend/pon-serviceability.js` supplies both the distance-limited online/free-port candidate contract and an expanded-limit coverage-map mode that still enforces its requested radius while retaining full or offline NAPs inside it, with a numbered `ports` roster. Each port is classified as `available`, `occupied`, `reserved`, or `unavailable`; only an online unoccupied/unreserved port is selectable. Customer labels remain internal until the Technician route applies its dedicated coverage-map sanitizer.
 - PON revisions hash only persisted OLT, NAP, and port-assignment fields, excluding live/derived subscriber status. JSON comparisons run under the shared branch mutation lock. MySQL saves acquire the branch row and PON rows inside one transaction before comparing, and Technician reservation/finalization mutations acquire the same branch row so a later admin snapshot cannot overwrite a completed field assignment. Before either JSON or MySQL accepts a full Admin save, active reservations are also checked against the proposed topology: their NAP cannot be removed or reduced below the reserved port, and the held port cannot be assigned through PON Management.
 - `backend/pppoe-account-utils.js`: shared PPPoE normalization, merge, and deduplication helpers.
 - The former six repository-root backend shims were retired in Phase 11; consumers use canonical Network paths or the module descriptor.
@@ -74,9 +75,11 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - 2026-08-14 warning/column validation: JavaScript syntax and `npm run refactor:network` passed; an authenticated browser check confirmed the connected-router warning is hidden, Caller ID is absent, all eight headers fit, Username is widened, and 50 rows still render without any record-changing action.
 - 2026-08-16 PON revision validation: backend/UI/test JavaScript syntax passed, the focused revision regression proved a stale JSON admin snapshot cannot erase a technician-added connection, the existing six serviceability tests passed, and `npm run refactor:network` passed. MySQL compatibility additionally asserts the shared branch-row transaction lock and revision helper contract without connecting to a live database.
 - 2026-08-16 reservation-save validation: the isolated JSON regression proves a pre-reservation Admin snapshot cannot assign a held port, while an unrelated topology edit still succeeds and preserves the reservation; the same compatibility helper runs against MySQL reservation rows locked inside the Admin transaction.
+- 2026-08-25 coverage-map validation: focused serviceability tests prove full and offline NAPs inside 600 meters remain visible, farther NAPs are excluded, every numbered port has a deterministic status, occupied ports retain the internal client label, and only online free ports are marked available.
 
 ## Latest meaningful changes
 
+- 2026-08-25: Added expanded-limit coverage-map candidates to PON serviceability, then constrained the Android technician contract to all coordinate-valid NAPs within a server-enforced 600-meter radius. Complete port-status rosters remain available inside the radius while original nearby endpoint defaults remain unchanged.
 - 2026-08-16: Added an active-reservation compatibility guard to JSON/MySQL full-state Admin saves so PON Management cannot remove a held NAP, shrink past its held port, or assign that port while a technician reservation is live.
 - 2026-08-16: Added optimistic PON branch revisions to state/overview reads and full-state saves, required `expectedRevision`, serialized MySQL admin and Technician mutations on the same branch row, and made the PON browser reload authoritative state after a `409` conflict so a stale admin tab cannot erase a technician finalize.
 - 2026-08-14: Fixed the false MikroTik warning by removing the conflicting Tabler display utility and synchronizing its hidden state with integration/connection success; removed Caller ID from the list, widened Username, and rebalanced all eight columns without changing stored PPPoE data.

@@ -512,6 +512,7 @@
         return {
             available: 'Available',
             reconcile: 'Needs review',
+            mixed: 'Main + Temp split',
             conflict: 'Already in Main',
             claimed: 'Posting pending',
             posted: 'Posted to Temp'
@@ -523,6 +524,7 @@
         const transactions = Array.isArray(state.gcash.transactions) ? state.gcash.transactions : [];
         byId('gcashAvailableCount').textContent = String(summary.availableCount || 0);
         byId('gcashReconcileCount').textContent = String(summary.reconcileCount || 0);
+        byId('gcashMixedCount').textContent = String(summary.mixedCount || 0);
         byId('gcashConflictCount').textContent = String(summary.conflictCount || 0);
         byId('gcashPostedCount').textContent = String(summary.postedCount || 0);
         byId('gcashAvailableAmount').textContent = formatMoney(summary.availableAmount);
@@ -533,7 +535,10 @@
             const transactionState = transaction.state || 'available';
             const allocationSource = transaction.assignment?.allocations?.length
                 ? transaction.assignment.allocations
-                : transaction.legacyPayments;
+                : [
+                    ...(transactionState === 'mixed' ? (transaction.mainPayments || []) : []),
+                    ...(transaction.legacyPayments || [])
+                ];
             const allocations = (Array.isArray(allocationSource) ? allocationSource : []).map((allocation) => {
                 const customerName = allocation.customerName
                     || state.customers.find((customer) => customer.accountNumber === allocation.accountNumber)?.fullName
@@ -542,15 +547,19 @@
             });
             const actionLabel = transactionState === 'reconcile'
                 ? 'Review & post'
-                : (transactionState === 'claimed' ? 'Complete posting' : 'Allocate');
+                : (transactionState === 'claimed'
+                    ? 'Complete posting'
+                    : (transactionState === 'mixed' ? 'Split remainder' : 'Allocate'));
             const action = transactionState === 'conflict'
                 ? '<span class="text-danger small"><i class="ti ti-shield-x"></i> Already in Main</span>'
                 : transactionState === 'posted'
                 ? '<span class="text-success small"><i class="ti ti-circle-check"></i> Complete</span>'
                 : `<button class="btn btn-sm ${transactionState === 'reconcile' || transactionState === 'claimed' ? 'btn-warning' : 'btn-primary'}" type="button" data-gcash-action="allocate" data-gcash-reference="${escapeHtml(transaction.reference)}"><i class="ti ti-users-plus"></i> ${actionLabel}</button>`;
-            const mainConflictNote = transactionState === 'conflict'
-                ? `<span class="cell-secondary gcash-allocation-summary">${(transaction.mainPayments || []).length} matching Main payment${(transaction.mainPayments || []).length === 1 ? '' : 's'}; Temp posting disabled.</span>`
-                : '';
+            const mainConflictNote = transactionState === 'mixed'
+                ? `<span class="cell-secondary gcash-allocation-summary">${formatMoney(transaction.mainAmount)} already in Main; allocate ${formatMoney(transaction.remainingAmount)} to Temp.</span>`
+                : (transactionState === 'conflict'
+                    ? `<span class="cell-secondary gcash-allocation-summary">${escapeHtml(transaction.mainPlanReason || `${(transaction.mainPayments || []).length} matching Main payment${(transaction.mainPayments || []).length === 1 ? '' : 's'}; Temp posting disabled.`)}</span>`
+                    : '');
             return `<tr>
                 <td><span class="cell-primary">${formatDate(transaction.transactionDate)}</span><span class="cell-secondary">${escapeHtml(transaction.transactionAt || '')}</span></td>
                 <td><span class="account-code">${escapeHtml(transaction.reference)}</span></td>
@@ -815,6 +824,9 @@
         const officialAmount = gcashTransactionAmount(gcashAllocationTransaction);
         const allocated = roundMoney(gcashAllocationRows.reduce((total, allocation) => total + Number(allocation.amount || 0), 0));
         const remaining = roundMoney(officialAmount - allocated);
+        const mainAmount = roundMoney(gcashAllocationRows
+            .filter((allocation) => allocation.workspace === 'main')
+            .reduce((total, allocation) => total + Number(allocation.amount || 0), 0));
         byId('gcashAllocatedAmount').textContent = formatMoney(allocated);
         byId('gcashRemainingAmount').textContent = formatMoney(remaining);
         byId('gcashRemainingAmount').className = Math.abs(remaining) < 0.005 ? 'transaction-credit' : 'balance-due';
@@ -822,7 +834,9 @@
         const guidance = byId('gcashAllocationGuidance');
         if (Math.abs(remaining) < 0.005) {
             guidance.className = 'alert alert-success mt-3 mb-3';
-            guidance.innerHTML = '<i class="ti ti-circle-check me-2"></i><span>The allocation exactly matches the imported credit.</span>';
+            guidance.innerHTML = mainAmount > 0
+                ? `<i class="ti ti-circle-check me-2"></i><span>The existing Main payment and Temp allocation exactly match the imported credit. Main will not be posted again; the Temp portion will be finalized once.</span>`
+                : '<i class="ti ti-circle-check me-2"></i><span>The allocation exactly matches the imported credit.</span>';
         } else if (remaining > 0) {
             guidance.className = 'alert alert-info mt-3 mb-3';
             guidance.innerHTML = `<i class="ti ti-info-circle me-2"></i><span>Allocate the remaining <strong>${formatMoney(remaining)}</strong>.</span>`;
@@ -835,13 +849,16 @@
 
     function renderGcashAllocationRows() {
         byId('gcashAllocationRows').innerHTML = gcashAllocationRows.map((allocation, index) => {
+            const isMain = allocation.workspace === 'main';
             const lockedNote = allocation.locked
-                ? `<span class="allocation-lock"><i class="ti ti-lock"></i> ${allocation.source === 'legacy' ? `Existing receipt ${escapeHtml(allocation.receiptNumber || '')}` : 'Claimed allocation'}</span>`
+                ? `<span class="allocation-lock"><i class="ti ti-lock"></i> ${isMain ? 'Existing Main payment; will not be posted again' : (allocation.source === 'legacy' ? `Existing receipt ${escapeHtml(allocation.receiptNumber || '')}` : 'Claimed allocation')}</span>`
                 : '<span class="allocation-hint">Editable allocation</span>';
             const canRemove = !allocation.locked && gcashAllocationRows.filter((row) => !row.locked).length > 1;
             return `<div class="gcash-allocation-row" data-allocation-row="${index}">
-                <div class="gcash-allocation-row__heading"><strong>Allocation ${index + 1}</strong>${lockedNote}</div>
-                <label class="form-field"><span>Temp customer</span><select class="form-select" data-allocation-account="${index}"${allocation.locked ? ' disabled' : ''}>${gcashAllocationCustomerOptions(allocation.accountNumber)}</select></label>
+                <div class="gcash-allocation-row__heading"><strong>${isMain ? 'Main' : 'Temp'} allocation ${index + 1}</strong>${lockedNote}</div>
+                ${isMain
+                    ? `<label class="form-field"><span>Main customer</span><span class="gcash-allocation-main"><i class="ti ti-building-bank"></i><strong>${escapeHtml(allocation.customerName || allocation.accountNumber)}</strong><span class="account-code">${escapeHtml(allocation.accountNumber)}</span></span></label>`
+                    : `<label class="form-field"><span>Temp customer</span><select class="form-select" data-allocation-account="${index}"${allocation.locked ? ' disabled' : ''}>${gcashAllocationCustomerOptions(allocation.accountNumber)}</select></label>`}
                 <label class="form-field"><span>Amount</span><div class="money-input"><span>&#8369;</span><input class="form-control" data-allocation-amount="${index}" type="number" min="0.01" step="0.01" value="${escapeHtml(allocation.amount || '')}"${allocation.locked ? ' disabled' : ''}></div></label>
                 <button class="icon-button icon-button--danger allocation-remove" type="button" data-remove-allocation="${index}" title="Remove allocation" aria-label="Remove allocation"${canRemove ? '' : ' hidden'}><i class="ti ti-x"></i></button>
             </div>`;
@@ -865,24 +882,43 @@
             ? transaction.assignment.allocations
             : [];
         const legacyPayments = Array.isArray(transaction.legacyPayments) ? transaction.legacyPayments : [];
-        const lockedSource = assignmentAllocations.length ? assignmentAllocations : legacyPayments;
-        gcashAllocationRows = lockedSource.map((allocation) => ({
+        const mainPayments = Array.isArray(transaction.mainPayments) ? transaction.mainPayments : [];
+        const mainPaymentIds = new Set(mainPayments.map((payment) => String(payment.paymentEntryId || payment.id || '')).filter(Boolean));
+        const lockedSource = assignmentAllocations.length
+            ? assignmentAllocations
+            : [
+                ...mainPayments.map((payment) => ({ ...payment, workspace: 'main' })),
+                ...legacyPayments.map((payment) => ({ ...payment, workspace: 'temp' }))
+            ];
+        gcashAllocationRows = lockedSource.map((allocation) => {
+            const isMain = allocation.workspace === 'main'
+                || String(allocation.customerName || '').startsWith('Main - ')
+                || mainPaymentIds.has(String(allocation.paymentEntryId || allocation.id || ''));
+            return {
             accountNumber: allocation.accountNumber || '',
+            customerName: String(allocation.customerName || '').replace(/^Main - /, ''),
             amount: roundMoney(allocation.amount),
             locked: true,
-            source: assignmentAllocations.length ? 'claimed' : 'legacy',
+            source: isMain ? 'main' : (assignmentAllocations.length ? 'claimed' : 'legacy'),
+            workspace: isMain ? 'main' : 'temp',
             receiptNumber: allocation.receiptNumber || ''
-        }));
+        };
+        });
         const officialAmount = gcashTransactionAmount(transaction);
         const lockedTotal = roundMoney(gcashAllocationRows.reduce((total, allocation) => total + allocation.amount, 0));
         const remaining = roundMoney(officialAmount - lockedTotal);
         if (!gcashAllocationRows.length || (remaining > 0 && gcashAllocationRows.length < GCASH_MAX_ALLOCATIONS)) {
-            gcashAllocationRows.push({ accountNumber: '', amount: remaining > 0 ? remaining : officialAmount, locked: false, source: 'new' });
+            gcashAllocationRows.push({ accountNumber: '', amount: remaining > 0 ? remaining : officialAmount, locked: false, source: 'new', workspace: 'temp' });
         }
         byId('gcashAllocationReference').value = transaction.reference;
         byId('gcashProofReference').textContent = transaction.reference;
         byId('gcashProofDate').textContent = formatDate(transaction.transactionDate);
         byId('gcashProofAmount').textContent = formatMoney(officialAmount);
+        const mixedPosting = gcashAllocationRows.some((allocation) => allocation.workspace === 'main');
+        byId('gcashAllocationTitle').textContent = mixedPosting ? 'Complete Main + Temp GCash split' : 'Post GCash to Temp customers';
+        byId('gcashAssignmentConfirmationLabel').textContent = mixedPosting
+            ? 'I verified the existing Main payment, Temp customers, amounts, and official reference. Link them as one locked payment group without duplicating Main.'
+            : 'I verified the Temp customers, amounts, and official GCash reference. Post this allocation once.';
         byId('gcashAssignmentConfirmed').checked = false;
         renderGcashAllocationRows();
         byId('gcashAllocationDialog').showModal();
@@ -890,7 +926,7 @@
 
     function addGcashAllocation() {
         if (gcashAllocationRows.length >= GCASH_MAX_ALLOCATIONS) return;
-        gcashAllocationRows.push({ accountNumber: '', amount: '', locked: false, source: 'new' });
+        gcashAllocationRows.push({ accountNumber: '', amount: '', locked: false, source: 'new', workspace: 'temp' });
         renderGcashAllocationRows();
     }
 
@@ -916,20 +952,22 @@
     async function postGcashAllocation(event) {
         event.preventDefault();
         if (!gcashAllocationTransaction) return;
-        const allocations = gcashAllocationRows.map((allocation) => ({
+        const allAllocations = gcashAllocationRows.map((allocation) => ({
             accountNumber: String(allocation.accountNumber || '').trim(),
-            amount: roundMoney(allocation.amount)
+            amount: roundMoney(allocation.amount),
+            workspace: allocation.workspace || 'temp'
         }));
-        if (!allocations.length || allocations.length > GCASH_MAX_ALLOCATIONS
+        const allocations = allAllocations.filter((allocation) => allocation.workspace !== 'main');
+        if (!allocations.length || allAllocations.length > GCASH_MAX_ALLOCATIONS
             || allocations.some((allocation) => !allocation.accountNumber || allocation.amount <= 0)) {
             showToast('Select a Temp customer and positive amount for every allocation.', 'error');
             return;
         }
-        if (new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length) {
-            showToast('Each Temp account can appear only once in an allocation.', 'error');
+        if (new Set(allAllocations.map((allocation) => allocation.accountNumber)).size !== allAllocations.length) {
+            showToast('Each Main or Temp account can appear only once in an allocation.', 'error');
             return;
         }
-        const total = roundMoney(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
+        const total = roundMoney(allAllocations.reduce((sum, allocation) => sum + allocation.amount, 0));
         if (Math.abs(total - gcashTransactionAmount(gcashAllocationTransaction)) >= 0.005) {
             showToast('The allocation total must exactly match the imported GCash credit.', 'error');
             return;

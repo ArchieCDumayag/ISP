@@ -26,11 +26,39 @@ async function main() {
   const storeModule = require(path.join(projectRoot, 'Features/modules/temp/backend/workspace-store'));
   const cycleModule = require(path.join(projectRoot, 'Features/modules/temp/backend/billing-cycle'));
   const excelModule = require(path.join(projectRoot, 'Features/modules/temp/backend/workspace-excel'));
+  const mixedAllocationModule = require(path.join(projectRoot, 'Features/modules/temp/backend/gcash-mixed-allocation'));
   assert.strictEqual(storeModule.STORE_KEY, 'temp_workspace_isolated_v1');
   assert.strictEqual(storeModule.SCHEMA_VERSION, 4);
   assert(!['customers', 'payments', 'plans'].includes(storeModule.STORE_KEY));
   assert.deepStrictEqual(Array.from(cycleModule.PLAN_TYPES).sort(), ['postpaid', 'prepaid', 'prorate']);
   assert.deepStrictEqual(Array.from(cycleModule.BILLING_SCHEDULE_MODES).sort(), ['date', 'day']);
+  const mixedMainPlan = mixedAllocationModule.buildMainGcashAllocationPlan({
+    officialAmount: 2000,
+    transactionDate: '2026-08-07',
+    mainPayments: [{
+      id: 'main-payment-entry-1',
+      accountNumber: '100000202',
+      customerName: 'Janice Juanang',
+      amount: 1000,
+      date: '2026-08-07'
+    }]
+  });
+  assert.strictEqual(mixedMainPlan.status, 'partial');
+  assert.strictEqual(mixedMainPlan.mainAmount, 1000);
+  assert.strictEqual(mixedMainPlan.remainingAmount, 1000);
+  assert.strictEqual(mixedMainPlan.allocations[0].customerName, 'Main - Janice Juanang');
+  assert.strictEqual(mixedMainPlan.allocations[0].paymentEntryId, 'main-payment-entry-1');
+  assert.strictEqual(mixedAllocationModule.buildMainGcashAllocationPlan({
+    officialAmount: 1000,
+    transactionDate: '2026-08-07',
+    mainPayments: [{ ...mixedMainPlan.allocations[0], date: '2026-08-07', pending: true }]
+  }).status, 'conflict');
+  assert.strictEqual(mixedAllocationModule.buildMainGcashAllocationPlan({
+    officialAmount: 1000,
+    transactionDate: '2026-08-07',
+    mainPayments: [{ ...mixedMainPlan.allocations[0], date: '2026-08-07' }]
+  }).status, 'complete');
+  console.log('PASS mixed Main and Temp GCash allocation planning guards');
   const prorateState = cycleModule.resolveInitialCycleState({
     planType: 'prorate',
     billingScheduleMode: 'day',
@@ -748,6 +776,61 @@ async function main() {
   assert.deepStrictEqual(historyWorkbook.SheetNames, [excelModule.SHEET_NAMES.paymentHistory]);
   console.log('PASS duplicate-safe official GCash adoption, idempotency, immutability, receipts, and Temp-only history export');
 
+  const mixedPostingMemory = new Map();
+  let mixedClock = 0;
+  const mixedPostingStore = storeModule.createWorkspaceStore({
+    readJson: async (key, fallback) => mixedPostingMemory.has(key) ? mixedPostingMemory.get(key) : fallback,
+    writeJson: async (key, value) => mixedPostingMemory.set(key, JSON.parse(JSON.stringify(value))),
+    today: () => '2026-08-07',
+    now: () => `2026-08-07T15:35:${String(mixedClock++).padStart(2, '0')}.000Z`
+  });
+  const mixedTempCustomer = await mixedPostingStore.createCustomer({
+    firstName: 'Mixed',
+    lastName: 'Temp Client',
+    monthlyRate: 1000,
+    openingBalance: 1000,
+    activationDate: '2026-08-01',
+    billingScheduleMode: 'day',
+    billingDay: 20
+  });
+  const mixedTempPosting = await mixedPostingStore.recordImportedGcashPayments({
+    branchId: 1,
+    reference: '8043715523830',
+    date: '2026-08-07',
+    paymentReceivedAt: '2026-08-07T15:35:00+08:00',
+    officialAmount: 2000,
+    allocationAmount: 1000,
+    allocations: [{ accountNumber: mixedTempCustomer.accountNumber, amount: 1000 }],
+    recordedBy: 'Admin'
+  });
+  assert.strictEqual(mixedTempPosting.entries.length, 1);
+  assert.strictEqual(mixedTempPosting.entries[0].amount, 1000);
+  assert.strictEqual((await mixedPostingStore.getSnapshot()).payments.length, 1);
+  const mixedTempRetry = await mixedPostingStore.recordImportedGcashPayments({
+    branchId: 1,
+    reference: '8043715523830',
+    date: '2026-08-07',
+    paymentReceivedAt: '2026-08-07T15:35:00+08:00',
+    officialAmount: 2000,
+    allocationAmount: 1000,
+    allocations: [{ accountNumber: mixedTempCustomer.accountNumber, amount: 1000 }],
+    recordedBy: 'Admin'
+  });
+  assert.strictEqual(mixedTempRetry.idempotent, true);
+  assert.strictEqual((await mixedPostingStore.getSnapshot()).payments.length, 1);
+  await assert.rejects(
+    mixedPostingStore.recordImportedGcashPayments({
+      branchId: 1,
+      reference: 'MIXED-TOTAL-MISMATCH',
+      date: '2026-08-07',
+      officialAmount: 2000,
+      allocationAmount: 1000,
+      allocations: [{ accountNumber: mixedTempCustomer.accountNumber, amount: 900 }]
+    }),
+    (error) => error.code === 'TEMP_GCASH_TOTAL_MISMATCH'
+  );
+  console.log('PASS mixed GCash stores only the exact Temp remainder and retries without duplication');
+
   await assert.rejects(
     cycleStore.updatePayment(postpaidCharges[0].id, { amount: 1 }, 'Admin'),
     (error) => error.code === 'TEMP_SYSTEM_CHARGE_IMMUTABLE'
@@ -783,8 +866,8 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=2.3'));
-  assert(tempHtml.includes('/temp.css?v=2.2'));
+  assert(tempHtml.includes('/temp.js?v=2.4'));
+  assert(tempHtml.includes('/temp.css?v=2.3'));
   assert(tempHtml.includes('id="historyTab"'));
   assert(tempHtml.includes('id="gcashTab"'));
   assert(tempHtml.includes('id="historyMonth" type="month"'));
@@ -792,7 +875,9 @@ async function main() {
   assert(tempHtml.includes('id="receiptDialog"'));
   assert(tempHtml.includes('id="gcashAllocationDialog"'));
   assert(tempHtml.includes('id="gcashConflictCount"'));
-  assert(tempHtml.includes('already found in Main is shown for warning only'));
+  assert(tempHtml.includes('id="gcashMixedCount"'));
+  assert(tempHtml.includes('partial Main payment can be linked'));
+  assert(tempHtml.includes('id="gcashAllocationTitle"'));
   ['customerPageSize', 'paymentPageSize', 'historyPageSize'].forEach((id) => {
     assert(tempHtml.includes(`id="${id}"`));
   });
@@ -925,6 +1010,9 @@ async function main() {
   assert(tempCss.includes('.temp-dialog--export'));
   assert(tempCss.includes('.export-format-grid'));
   assert(tempCss.includes('.export-format-option'));
+  assert(tempCss.includes('.gcash-state--mixed'));
+  assert(tempCss.includes('grid-template-columns: repeat(6, minmax(0, 1fr))'));
+  assert(tempCss.includes('.gcash-allocation-main'));
   assert(tempCss.includes('grid-template-columns: repeat(5, 1fr)'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
@@ -932,6 +1020,9 @@ async function main() {
   assert(tempJs.includes("fetch(`${API_ROOT}/payment-history-export?month="));
   assert(tempJs.includes('`/gcash?month=${encodeURIComponent(month)}`'));
   assert(tempJs.includes('assignmentConfirmed: true'));
+  assert(tempJs.includes("mixed: 'Main + Temp split'"));
+  assert(tempJs.includes("allocation.workspace !== 'main'"));
+  assert(tempJs.includes('without duplicating Main'));
   assert(tempJs.includes("conflict: 'Already in Main'"));
   assert(tempJs.includes("transaction.state === 'conflict'"));
   assert(tempJs.includes('payment?.immutable || payment?.systemGenerated || payment?.officialGcash'));
@@ -959,6 +1050,10 @@ async function main() {
   assert(routerSource.includes("router.post('/gcash/:reference/post'"));
   assert(routerSource.includes('claimGcashTransactionAllocations'));
   assert(routerSource.includes('finalizeGcashTransactionAllocations'));
+  assert(routerSource.includes('buildMainGcashAllocationPlan'));
+  assert(routerSource.includes('const combinedAllocations = [...mainPlan.allocations, ...allocations]'));
+  assert(routerSource.includes('allocationAmount: tempTargetAmount'));
+  assert(routerSource.includes("'TEMP_GCASH_MIXED_ALLOCATION_LIMIT'"));
   assert(!routerSource.includes('releaseGcashTransactionClaim'));
   assert(routerSource.includes('const branchId = Number(req.user?.branchId);'));
   assert(routerSource.includes("'TEMP_GCASH_ACCOUNT_NUMBER_TOO_LONG'"));

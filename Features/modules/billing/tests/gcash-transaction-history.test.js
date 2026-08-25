@@ -1033,6 +1033,13 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     }), null);
     const collectedMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
         references: ['00 4389-1500420', 'UNUSED-REFERENCE'],
+        includeCustomerNames: true,
+        customers: [{
+            accountNumber: 'ACC-MAIN-GCASH',
+            firstName: 'Janice',
+            middleName: 'A.',
+            lastName: 'Juanang'
+        }],
         payments: {
             'ACC-MAIN-GCASH': {
                 history: [{
@@ -1063,6 +1070,7 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     assert.strictEqual(collectedMainMatches.length, 1);
     assert.strictEqual(collectedMainMatches[0].accountNumber, 'ACC-MAIN-GCASH');
     assert.strictEqual(collectedMainMatches[0].paymentEntryId, 'main-gcash-payment-1');
+    assert.strictEqual(collectedMainMatches[0].customerName, 'Janice A. Juanang');
     const mislabeledMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
         reference: '0043891500420',
         officialTransactions: [{

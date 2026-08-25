@@ -471,7 +471,8 @@
                                 <div class="row g-3">
                                     <div class="col-md-4" id="activationDateField">
                                         <label class="form-label" for="activationDate">Activation Date</label>
-                                        <input type="date" class="form-control form-control-sm" id="activationDate" name="activationDate">
+                                        <input type="date" class="form-control form-control-sm" id="activationDate" name="activationDate" aria-describedby="activationDateHint">
+                                        <div class="form-hint" id="activationDateHint">Select today or an earlier date. Billing dates and first-bill proration update automatically.</div>
                                     </div>
                                     <div class="col-md-4" id="billDateField">
                                         <label class="form-label" for="billDate">Next Bill Date <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> required</span></label>
@@ -495,6 +496,7 @@
                                     <div class="col-md-4" id="creditLimitField">
                                         <label class="form-label" for="creditLimit">Credit Limit (amount)</label>
                                         <input type="number" class="form-control form-control-sm" id="creditLimit" name="creditLimit" min="0" step="1">
+                                        <div class="form-hint">Defaults to three months of the selected plan and can be edited.</div>
                                     </div>
                                     <div class="col-md-6" id="referralSourceTypeField">
                                         <label class="form-label" for="referralSourceType">Invited By</label>
@@ -1460,6 +1462,7 @@
             const prepaidExpirationField = document.getElementById('prepaidExpirationField');
             const activationDateField = document.getElementById('activationDateField');
             const creditLimitField = document.getElementById('creditLimitField');
+            const creditLimitInput = document.getElementById('creditLimit');
             const billDateLabel = document.querySelector('label[for="billDate"]');
             const dueDateLabel = document.querySelector('label[for="dueDateDisplay"]');
             const dueOffsetHelp = document.getElementById('dueOffsetHelp');
@@ -2187,6 +2190,7 @@
 
             let toastTimer = null;
             const DEFAULT_DUE_OFFSET = 0;
+            const DEFAULT_CREDIT_LIMIT_MONTHS = 3;
             const formatDateInputValue = (date) => {
                 if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
                 const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -2245,6 +2249,13 @@
                 });
                 const amount = Number(selectedPlan?.price ?? selectedPlan?.amount ?? selectedPlan?.planAmount);
                 return Number.isFinite(amount) && amount > 0 ? amount : 0;
+            };
+            const syncDefaultCreditLimitFromSelectedPlan = () => {
+                if (!creditLimitInput || isEditMode()) return;
+                const selectedPlanAmount = getSelectedPlanAmount();
+                creditLimitInput.value = selectedPlanAmount > 0
+                    ? String(Math.floor(selectedPlanAmount * DEFAULT_CREDIT_LIMIT_MONTHS))
+                    : '';
             };
             const parseOpeningAmount = (value) => {
                 const amount = Number(value);
@@ -2494,7 +2505,11 @@
 
                     if (!isEditMode() && normalizePlanCategory(planCategorySelect?.value) === 'postpaid') {
                         const billDate = formatDateISO(parseDateOnly(billDateInput?.value || ''));
-                        if (billDate && billDate < getMinimumNextBillDateInputValue()) {
+                        if (
+                            billDate
+                            && billDate < getMinimumNextBillDateInputValue()
+                            && !isDerivedActivationCycleBillDate()
+                        ) {
                             addCustomerValidationError(errors, billDateInput, 'Next bill date cannot be earlier than today.');
                         }
                     }
@@ -3806,6 +3821,18 @@
                 billDateInput.min = effectiveValue && effectiveValue < minimumValue ? effectiveValue : minimumValue;
             }
 
+            function isDerivedActivationCycleBillDate() {
+                const activationValue = formatDateISO(parseDateOnly(activationDateInput?.value || ''));
+                const billDateValue = formatDateISO(parseDateOnly(billDateInput?.value || ''));
+                if (!activationValue || !billDateValue || activationValue > getTodayDateInputValue()) {
+                    return false;
+                }
+                return billDateValue === getPlanTypeDueDateInputValue(
+                    planCategorySelect?.value || 'postpaid',
+                    activationValue
+                );
+            }
+
             function enforceNonPastBillDateSelection() {
                 if (!billDateInput) return true;
                 if (normalizePlanCategory(planCategorySelect?.value || 'postpaid') === 'prepaid') {
@@ -3816,7 +3843,8 @@
                 const originalValue = formatDateISO(parseDateOnly(billDateInput.dataset.originalValue || ''));
                 const currentValue = formatDateISO(parseDateOnly(billDateInput.value || ''));
                 const canKeepOriginalValue = isEditMode() && originalValue && currentValue === originalValue;
-                if (!currentValue || currentValue >= minimumValue || canKeepOriginalValue) {
+                const canKeepActivationCycle = !isEditMode() && isDerivedActivationCycleBillDate();
+                if (!currentValue || currentValue >= minimumValue || canKeepOriginalValue || canKeepActivationCycle) {
                     syncBillDateInputMin();
                     return true;
                 }
@@ -4012,10 +4040,11 @@
                 }
                 if (activationDateInput) {
                     activationDateInput.required = false;
+                    activationDateInput.removeAttribute('min');
                     if (isEditMode()) {
-                        activationDateInput.removeAttribute('min');
+                        activationDateInput.removeAttribute('max');
                     } else {
-                        activationDateInput.min = getTodayDateInputValue();
+                        activationDateInput.max = getTodayDateInputValue();
                     }
                 }
                 if (activationDateInput && !activationDateInput.value) {
@@ -7014,6 +7043,7 @@
                 planCategorySelect.addEventListener('change', () => {
                     const nextCategory = planCategorySelect.value;
                     populatePlanDropdown(plansCatalog, nextCategory);
+                    syncDefaultCreditLimitFromSelectedPlan();
                     applyPlanCategoryUI(nextCategory);
                 });
             }
@@ -7039,6 +7069,7 @@
             }
             if (planSelect) {
                 planSelect.addEventListener('change', () => {
+                    syncDefaultCreditLimitFromSelectedPlan();
                     recomputeDueDate();
                     applyServiceStatus();
                 });

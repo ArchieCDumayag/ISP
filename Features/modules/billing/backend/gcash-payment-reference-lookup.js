@@ -119,12 +119,53 @@ const loadMainPaymentRecords = async (branchId) => {
   return readJson('payments', {});
 };
 
+const customerDisplayName = (customer = {}) => [
+  customer?.firstName || customer?.first_name,
+  customer?.middleName || customer?.middle_name,
+  customer?.lastName || customer?.last_name
+].map((value) => String(value || '').trim()).filter(Boolean).join(' ');
+
+const loadMainCustomerNames = async (branchId) => {
+  if (await isRelationalReady()) {
+    const safeBranchId = Number(branchId);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) return new Map();
+    const [rows] = await query(
+      `SELECT
+         account_number AS accountNumber,
+         first_name AS firstName,
+         last_name AS lastName
+       FROM customers
+       WHERE branch_id = ?`,
+      [safeBranchId]
+    );
+    return new Map((rows || []).map((customer) => [
+      String(customer?.accountNumber || '').trim(),
+      customerDisplayName(customer)
+    ]));
+  }
+  const safeBranchId = Number(branchId);
+  const customers = await readJson('customers', []);
+  return new Map((Array.isArray(customers) ? customers : [])
+    .filter((customer) => (
+      !Number.isInteger(safeBranchId)
+      || safeBranchId <= 0
+      || !customer?.branchId
+      || Number(customer.branchId) === safeBranchId
+    ))
+    .map((customer) => [
+      String(customer?.accountNumber || '').trim(),
+      customerDisplayName(customer)
+    ]));
+};
+
 const findMainGcashPaymentsByReference = async ({
   branchId,
   reference,
   references = [],
   payments = null,
+  customers = null,
   includePending = false,
+  includeCustomerNames = false,
   officialTransactions = []
 } = {}) => {
   const requestedKeys = new Set(
@@ -136,6 +177,16 @@ const findMainGcashPaymentsByReference = async ({
   const paymentRecords = payments && typeof payments === 'object'
     ? payments
     : await loadMainPaymentRecords(branchId);
+  const customerNames = includeCustomerNames
+    ? (customers instanceof Map
+      ? customers
+      : (Array.isArray(customers)
+        ? new Map(customers.map((customer) => [
+          String(customer?.accountNumber || '').trim(),
+          customerDisplayName(customer)
+        ]))
+        : await loadMainCustomerNames(branchId)))
+    : new Map();
   const matches = [];
   Object.entries(paymentRecords || {}).forEach(([accountNumber, record]) => {
     (Array.isArray(record?.history) ? record.history : []).forEach((rawEntry) => {
@@ -150,10 +201,12 @@ const findMainGcashPaymentsByReference = async ({
         .find((candidate) => requestedKeys.has(candidate));
       if (!referenceKey) return;
       if (paymentMethod !== 'gcash' && !resolveMislabeledOfficialCredit(entry, officialTransactions)) return;
+      const resolvedAccountNumber = String(accountNumber || entry?.accountNumber || '').trim();
       matches.push({
         id: String(entry?.id || '').trim(),
         paymentEntryId: String(entry?.id || '').trim(),
-        accountNumber: String(accountNumber || entry?.accountNumber || '').trim(),
+        accountNumber: resolvedAccountNumber,
+        customerName: customerNames.get(resolvedAccountNumber) || '',
         amount: Number(Number(entry?.amount || 0).toFixed(2)),
         date: String(entry?.date || entry?.recordedAt || '').slice(0, 10),
         reference: String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim(),

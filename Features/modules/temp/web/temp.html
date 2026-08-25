@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="/css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="/temp.css?v=2.2">
+    <link rel="stylesheet" href="/temp.css?v=2.3">
     <script src="/theme-init.js?v=2.6"></script>
 </head>
 <body class="temp-workspace">
@@ -204,7 +204,7 @@
 
             <section class="workspace-panel" id="gcashPanel" role="tabpanel" aria-labelledby="gcashTab" hidden>
                 <div class="panel-toolbar">
-                    <div class="gcash-panel-heading"><span class="gcash-panel-heading__icon"><i class="ti ti-shield-check"></i></span><div><strong>Official imported GCash credits</strong><small>Assign each reference once to one to three Temp customers. The allocation total must equal the imported credit.</small></div></div>
+                    <div class="gcash-panel-heading"><span class="gcash-panel-heading__icon"><i class="ti ti-shield-check"></i></span><div><strong>Official imported GCash credits</strong><small>Post to Temp only, or link an existing Main portion and assign the exact remainder to Temp.</small></div></div>
                     <div class="panel-toolbar__actions">
                         <label class="compact-field" for="gcashMonth"><span>Month</span><input class="form-control" id="gcashMonth" type="month" list="gcashAvailableMonths"></label>
                         <datalist id="gcashAvailableMonths"></datalist>
@@ -214,11 +214,12 @@
                 <div class="gcash-summary" aria-label="GCash posting summary">
                     <div><span>Available</span><strong id="gcashAvailableCount">0</strong></div>
                     <div><span>Needs review</span><strong id="gcashReconcileCount">0</strong></div>
+                    <div><span>Main + Temp split</span><strong id="gcashMixedCount">0</strong></div>
                     <div><span>Already in Main</span><strong id="gcashConflictCount">0</strong></div>
                     <div><span>Posted to Temp</span><strong id="gcashPostedCount">0</strong></div>
                     <div><span>Available amount</span><strong id="gcashAvailableAmount">&#8369;0.00</strong></div>
                 </div>
-                <div class="gcash-safety-note"><i class="ti ti-info-circle"></i><span>Incoming unlocked credits are checked across both workspaces. A reference already found in Main is shown for warning only and cannot be posted to Temp.</span></div>
+                <div class="gcash-safety-note"><i class="ti ti-info-circle"></i><span>A partial Main payment can be linked to the same official reference while only the exact remainder is posted to Temp. The combined total must equal the imported credit; the reference is then permanently locked.</span></div>
                 <div class="table-responsive">
                     <table class="table table-vcenter temp-table temp-table--gcash">
                         <thead><tr><th>Date</th><th>Reference</th><th>Sender / Description</th><th>Recipient</th><th class="text-end">Credit</th><th>Temp use</th><th class="text-end">Action</th></tr></thead>
@@ -319,7 +320,7 @@
 
     <dialog class="temp-dialog temp-dialog--gcash" id="gcashAllocationDialog">
         <form id="gcashAllocationForm" method="dialog" novalidate>
-            <header class="dialog-header"><div><span class="dialog-eyebrow">Verified imported credit</span><h2>Post GCash to Temp customers</h2></div><button class="icon-button" type="button" data-close-dialog="gcashAllocationDialog" aria-label="Close"><i class="ti ti-x"></i></button></header>
+            <header class="dialog-header"><div><span class="dialog-eyebrow">Verified imported credit</span><h2 id="gcashAllocationTitle">Post GCash to Temp customers</h2></div><button class="icon-button" type="button" data-close-dialog="gcashAllocationDialog" aria-label="Close"><i class="ti ti-x"></i></button></header>
             <div class="dialog-body">
                 <input id="gcashAllocationReference" type="hidden">
                 <div class="gcash-allocation-proof">
@@ -328,16 +329,16 @@
                     <div><span>Imported credit</span><strong class="transaction-credit" id="gcashProofAmount">&#8369;0.00</strong></div>
                 </div>
                 <div class="alert alert-info mt-3 mb-3" id="gcashAllocationGuidance" role="status"><i class="ti ti-info-circle me-2"></i><span>Allocate the exact imported amount.</span></div>
-                <div class="allocation-heading"><div><strong>Customer allocations</strong><small>One reference can pay up to three Temp accounts.</small></div><button class="btn btn-outline-primary btn-sm" id="addGcashAllocationBtn" type="button"><i class="ti ti-plus"></i> Add split</button></div>
+                <div class="allocation-heading"><div><strong>Customer allocations</strong><small>One official reference supports up to three combined Main and Temp accounts.</small></div><button class="btn btn-outline-primary btn-sm" id="addGcashAllocationBtn" type="button"><i class="ti ti-plus"></i> Add Temp split</button></div>
                 <div class="gcash-allocation-list" id="gcashAllocationRows"></div>
                 <div class="allocation-total"><span>Allocated <strong id="gcashAllocatedAmount">&#8369;0.00</strong></span><span>Remaining <strong id="gcashRemainingAmount">&#8369;0.00</strong></span></div>
-                <label class="form-check mt-3 mb-0"><input class="form-check-input" id="gcashAssignmentConfirmed" type="checkbox" required><span class="form-check-label">I verified the Temp customers, amounts, and official GCash reference. Post this allocation once.</span></label>
+                <label class="form-check mt-3 mb-0"><input class="form-check-input" id="gcashAssignmentConfirmed" type="checkbox" required><span class="form-check-label" id="gcashAssignmentConfirmationLabel">I verified the Temp customers, amounts, and official GCash reference. Post this allocation once.</span></label>
             </div>
             <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="gcashAllocationDialog">Cancel</button><button class="btn btn-primary" id="postGcashBtn" type="submit"><i class="ti ti-check"></i> Verify &amp; post</button></footer>
         </form>
     </dialog>
 
     <div class="temp-toast" id="tempToast" role="status" aria-live="polite" hidden><i class="ti ti-circle-check"></i><span></span></div>
-    <script src="/temp.js?v=2.3"></script>
+    <script src="/temp.js?v=2.4"></script>
 </body>
 </html>

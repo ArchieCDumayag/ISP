@@ -11,6 +11,7 @@ const {
   paymentReferencesMatch
 } = require('../../billing/backend/gcash-payment-reference-lookup');
 const workspaceStore = require('./workspace-store');
+const { buildMainGcashAllocationPlan } = require('./gcash-mixed-allocation');
 const {
   EXCEL_MIME_TYPE,
   buildWorkspaceExcelBuffer,
@@ -144,8 +145,14 @@ const validateImportedOfficialPayments = async (officialPayments, branchId) => {
       amount: payment.amount,
       billingMonth: payment.billingMonth || payment.date.slice(0, 7)
     }));
+    const importedPaymentIds = new Set(payments.map((payment) => String(payment.id || '')).filter(Boolean));
+    const assignmentTempAllocations = (Array.isArray(assignment.allocations) ? assignment.allocations : [])
+      .filter((allocation) => (
+        String(allocation?.customerName || '').startsWith('Temp - ')
+        || importedPaymentIds.has(String(allocation?.paymentEntryId || ''))
+      ));
     if (workspaceStore.allocationSignature(importedAllocations)
-      !== workspaceStore.allocationSignature(assignment.allocations)) {
+      !== workspaceStore.allocationSignature(assignmentTempAllocations)) {
       throw createRouterError(
         `Official GCash reference ${referenceKey} does not match its shared allocation.`,
         409,
@@ -153,7 +160,10 @@ const validateImportedOfficialPayments = async (officialPayments, branchId) => {
       );
     }
     const importedTotal = money(payments.reduce((total, payment) => total + Number(payment.amount || 0), 0));
-    if (importedTotal !== money(transaction.credit)) {
+    const assignedTempTotal = money(assignmentTempAllocations.reduce((total, allocation) => (
+      total + Number(allocation?.amount || 0)
+    ), 0));
+    if (importedTotal !== assignedTempTotal || money(assignment.amount) !== money(transaction.credit)) {
       throw createRouterError(
         `Official GCash reference ${referenceKey} does not match the imported credit amount.`,
         409,
@@ -299,6 +309,7 @@ router.get('/gcash', async (req, res) => {
       branchId,
       references: history.transactions.map((transaction) => transaction.reference),
       includePending: true,
+      includeCustomerNames: true,
       officialTransactions: history.transactions
     });
     const paymentsByReference = new Map();
@@ -344,11 +355,20 @@ router.get('/gcash', async (req, res) => {
             date: payment.date
           }));
         const assignment = transaction.assignment || null;
-        const state = matchingMainPayments.length
-          ? 'conflict'
-          : (assignment
-            ? (assignment.status === 'posted' ? 'posted' : 'claimed')
-            : (legacyPayments.length ? 'reconcile' : 'available'));
+        const officialAmount = money(transaction.credit);
+        const transactionDate = String(transaction.transactionDate || transaction.transactionAt || '').slice(0, 10);
+        const mainPlan = buildMainGcashAllocationPlan({
+          mainPayments: matchingMainPayments,
+          officialAmount,
+          transactionDate
+        });
+        const state = assignment
+          ? (assignment.status === 'posted' ? 'posted' : 'claimed')
+          : (mainPlan.status === 'partial'
+            ? 'mixed'
+            : (mainPlan.status === 'complete' || mainPlan.status === 'conflict'
+              ? 'conflict'
+              : (legacyPayments.length ? 'reconcile' : 'available')));
         return {
           reference: transaction.reference,
           transactionAt: transaction.transactionAt,
@@ -357,15 +377,19 @@ router.get('/gcash', async (req, res) => {
           sender: transaction.sender,
           recipient: transaction.recipient,
           recipientLabel: transaction.recipientLabel,
-          amount: money(transaction.credit),
+          amount: officialAmount,
           state,
           assignment,
           legacyPayments,
-          mainPayments: matchingMainPayments
+          mainPayments: matchingMainPayments,
+          mainAmount: mainPlan.mainAmount,
+          remainingAmount: mainPlan.remainingAmount,
+          mainPlanStatus: mainPlan.status,
+          mainPlanReason: mainPlan.reason
         };
       });
     const availableRows = transactions.filter((transaction) => (
-      transaction.state === 'available' || transaction.state === 'reconcile'
+      transaction.state === 'available' || transaction.state === 'reconcile' || transaction.state === 'mixed'
     ));
     return res.json({
       ok: true,
@@ -374,10 +398,13 @@ router.get('/gcash', async (req, res) => {
       summary: {
         availableCount: transactions.filter((transaction) => transaction.state === 'available').length,
         reconcileCount: transactions.filter((transaction) => transaction.state === 'reconcile').length,
+        mixedCount: transactions.filter((transaction) => transaction.state === 'mixed').length,
         conflictCount: transactions.filter((transaction) => transaction.state === 'conflict').length,
         postedCount: transactions.filter((transaction) => transaction.state === 'posted').length,
         claimedCount: transactions.filter((transaction) => transaction.state === 'claimed').length,
-        availableAmount: money(availableRows.reduce((total, transaction) => total + transaction.amount, 0))
+        availableAmount: money(availableRows.reduce((total, transaction) => (
+          total + (transaction.state === 'mixed' ? transaction.remainingAmount : transaction.amount)
+        ), 0))
       },
       transactions
     });
@@ -422,22 +449,6 @@ router.post('/gcash/:reference/post', async (req, res) => {
         'GCASH_TRANSACTION_POSTING_LOCKED'
       );
     }
-    const mainPayments = await findMainGcashPaymentsByReference({
-      branchId,
-      reference,
-      includePending: true,
-      officialTransactions: [transaction]
-    });
-    if (mainPayments.length) {
-      const mainConflictKind = mainPayments[0].pending ? 'pending in' : 'already recorded in';
-      const conflict = createRouterError(
-        `This GCash reference is ${mainConflictKind} Main Payment History for account ${mainPayments[0].accountNumber || 'unknown'}. Resolve it in Main before using it for Temp.`,
-        409,
-        'TEMP_GCASH_MAIN_PAYMENT_CONFLICT'
-      );
-      conflict.referenceKey = reference;
-      throw conflict;
-    }
     const officialAmount = money(transaction.credit);
     const transactionDate = String(transaction.transactionDate || transaction.transactionAt || '').slice(0, 10);
     if (
@@ -450,6 +461,37 @@ router.post('/gcash/:reference/post', async (req, res) => {
         'Only a valid incoming imported GCash credit can be posted.',
         409,
         'TEMP_GCASH_INCOMING_CREDIT_REQUIRED'
+      );
+    }
+    const mainPayments = await findMainGcashPaymentsByReference({
+      branchId,
+      reference,
+      includePending: true,
+      includeCustomerNames: true,
+      officialTransactions: [transaction]
+    });
+    const mainPlan = buildMainGcashAllocationPlan({
+      mainPayments,
+      officialAmount,
+      transactionDate
+    });
+    if (mainPlan.status === 'complete' || mainPlan.status === 'conflict') {
+      const conflict = createRouterError(
+        mainPlan.reason || 'This GCash reference cannot be split because its Main payment records conflict with the official credit.',
+        409,
+        'TEMP_GCASH_MAIN_PAYMENT_CONFLICT'
+      );
+      conflict.referenceKey = reference;
+      throw conflict;
+    }
+    const mixedPosting = mainPlan.status === 'partial';
+    const tempTargetAmount = mixedPosting ? mainPlan.remainingAmount : officialAmount;
+    const maxTempAllocations = 3 - mainPlan.allocations.length;
+    if (mixedPosting && maxTempAllocations < 1) {
+      throw createRouterError(
+        'The Main portion already uses all three allocation slots, so no Temp allocation can be added.',
+        409,
+        'TEMP_GCASH_MIXED_ALLOCATION_LIMIT'
       );
     }
     submissionId = workspaceStore.buildOfficialGcashGroupId(branchId, reference);
@@ -465,8 +507,12 @@ router.post('/gcash/:reference/post', async (req, res) => {
     }
 
     const sourceAllocations = Array.isArray(req.body?.allocations) ? req.body.allocations : [];
-    if (sourceAllocations.length < 1 || sourceAllocations.length > 3) {
-      throw new workspaceStore.WorkspaceValidationError('Provide one to three Temp GCash allocations.');
+    if (sourceAllocations.length < 1 || sourceAllocations.length > maxTempAllocations) {
+      throw new workspaceStore.WorkspaceValidationError(
+        mixedPosting
+          ? `Provide one to ${maxTempAllocations} Temp allocation${maxTempAllocations === 1 ? '' : 's'} for the remaining amount.`
+          : 'Provide one to three Temp GCash allocations.'
+      );
     }
     const customerByAccount = new Map(snapshot.customers.map((customer) => [customer.accountNumber, customer]));
     const billingMonth = transactionDate.slice(0, 7);
@@ -502,15 +548,26 @@ router.post('/gcash/:reference/post', async (req, res) => {
       throw new workspaceStore.WorkspaceValidationError('Each allocation must use a different Temp customer.');
     }
     const allocatedTotal = money(allocations.reduce((total, allocation) => total + allocation.amount, 0));
-    if (allocatedTotal !== officialAmount) {
+    if (allocatedTotal !== tempTargetAmount) {
       const mismatch = createRouterError(
-        'Temp allocations must equal the exact imported GCash credit amount.',
+        mixedPosting
+          ? 'Temp allocations must equal the exact amount remaining after the Main payment.'
+          : 'Temp allocations must equal the exact imported GCash credit amount.',
         409,
         'TEMP_GCASH_TOTAL_MISMATCH'
       );
-      mismatch.officialAmount = officialAmount;
+      mismatch.officialAmount = tempTargetAmount;
       mismatch.allocatedTotal = allocatedTotal;
       throw mismatch;
+    }
+
+    const combinedAllocations = [...mainPlan.allocations, ...allocations];
+    if (new Set(combinedAllocations.map((allocation) => allocation.accountNumber)).size !== combinedAllocations.length) {
+      throw createRouterError(
+        'A Main and Temp allocation cannot use the same account number.',
+        409,
+        'TEMP_GCASH_MIXED_ACCOUNT_CONFLICT'
+      );
     }
 
     const allocationByAccount = new Map(
@@ -546,7 +603,7 @@ router.post('/gcash/:reference/post', async (req, res) => {
       branchId,
       reference,
       submissionId,
-      allocations,
+      allocations: combinedAllocations,
       amount: officialAmount,
       paymentDate: transactionDate,
       claimedBy: auditActor(req.user)
@@ -558,6 +615,7 @@ router.post('/gcash/:reference/post', async (req, res) => {
       date: transactionDate,
       paymentReceivedAt: transaction.transactionAt,
       officialAmount,
+      allocationAmount: tempTargetAmount,
       allocations,
       recordedBy: actorLabel(req.user)
     });
@@ -568,11 +626,18 @@ router.post('/gcash/:reference/post', async (req, res) => {
         branchId,
         reference,
         submissionId,
-        paymentEntries: recorded.entries.map((payment) => ({
-          accountNumber: payment.accountNumber,
-          billingMonth: payment.billingMonth || transactionDate.slice(0, 7),
-          paymentEntryId: payment.id
-        }))
+        paymentEntries: [
+          ...mainPlan.allocations.map((allocation) => ({
+            accountNumber: allocation.accountNumber,
+            billingMonth: allocation.billingMonth,
+            paymentEntryId: allocation.paymentEntryId
+          })),
+          ...recorded.entries.map((payment) => ({
+            accountNumber: payment.accountNumber,
+            billingMonth: payment.billingMonth || transactionDate.slice(0, 7),
+            paymentEntryId: payment.id
+          }))
+        ]
       });
     } catch (_error) {
       throw createRouterError(
@@ -587,8 +652,11 @@ router.post('/gcash/:reference/post', async (req, res) => {
       : '';
     return res.json({
       ok: true,
-      message: `Official GCash credit posted to ${recorded.entries.length} Temp account${recorded.entries.length === 1 ? '' : 's'}.${adoptedMessage}`,
+      message: mixedPosting
+        ? `Main payment ${mainPlan.mainAmount.toFixed(2)} was linked and the remaining ${tempTargetAmount.toFixed(2)} was posted to ${recorded.entries.length} Temp account${recorded.entries.length === 1 ? '' : 's'} without duplicating the Main payment.${adoptedMessage}`
+        : `Official GCash credit posted to ${recorded.entries.length} Temp account${recorded.entries.length === 1 ? '' : 's'}.${adoptedMessage}`,
       idempotent: Boolean(claim?.idempotent && recorded.idempotent),
+      mixed: mixedPosting,
       adoptedCount: recorded.adoptedCount,
       payments: recorded.entries,
       assignment: finalized.assignment,

@@ -578,6 +578,7 @@ function createWorkspaceStore(options = {}) {
       date,
       paymentReceivedAt,
       officialAmount,
+      allocationAmount,
       allocations,
       recordedBy
     } = {}) {
@@ -588,6 +589,9 @@ function createWorkspaceStore(options = {}) {
       const receivedAt = normalizeIsoTimestamp(paymentReceivedAt);
       const sourceAllocations = Array.isArray(allocations) ? allocations : [];
       const creditedAmount = roundMoney(officialAmount, Number.NaN);
+      const requiredAllocationAmount = allocationAmount == null
+        ? creditedAmount
+        : roundMoney(allocationAmount, Number.NaN);
       if (!sourceBranchId) throw new WorkspaceValidationError('Branch ID is required.');
       if (!referenceKey) throw new WorkspaceValidationError('GCash reference number is required.');
       if (!isIsoDate(paymentDate)) throw new WorkspaceValidationError('GCash payment date must use YYYY-MM-DD.');
@@ -596,6 +600,13 @@ function createWorkspaceStore(options = {}) {
       }
       if (!Number.isFinite(creditedAmount) || creditedAmount <= 0) {
         throw new WorkspaceValidationError('The imported GCash credit amount is invalid.');
+      }
+      if (
+        !Number.isFinite(requiredAllocationAmount)
+        || requiredAllocationAmount <= 0
+        || requiredAllocationAmount > creditedAmount
+      ) {
+        throw new WorkspaceValidationError('The Temp portion of the imported GCash credit is invalid.');
       }
       if (sourceAllocations.length < 1 || sourceAllocations.length > 3) {
         throw new WorkspaceValidationError('Provide one to three Temp GCash allocations.');
@@ -627,12 +638,12 @@ function createWorkspaceStore(options = {}) {
       const allocatedTotal = roundMoney(
         safeAllocations.reduce((total, allocation) => total + allocation.amount, 0)
       );
-      if (allocatedTotal !== creditedAmount) {
+      if (allocatedTotal !== requiredAllocationAmount) {
         throw createCodedValidationError(
-          'Temp allocations must equal the exact imported GCash credit amount.',
+          'Temp allocations must equal the exact Temp portion of the imported GCash credit.',
           409,
           'TEMP_GCASH_TOTAL_MISMATCH',
-          { officialAmount: creditedAmount, allocatedTotal }
+          { officialAmount: requiredAllocationAmount, allocatedTotal }
         );
       }
       safeAllocations.sort((left, right) => left.accountNumber.localeCompare(right.accountNumber));

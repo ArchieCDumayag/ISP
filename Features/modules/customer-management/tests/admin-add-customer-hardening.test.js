@@ -55,6 +55,12 @@ const assertValidationError = (overrides, messagePattern, existingCustomers = []
   );
 };
 
+const formatLocalDateOnly = (date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0')
+].join('-');
+
 test('admin create helpers remain explicit public contracts', () => {
   assert.equal(typeof validateAdminCustomerCreatePayload, 'function');
   assert.equal(typeof findCustomerCreateDuplicate, 'function');
@@ -77,7 +83,13 @@ test('server create validation requires identity, service address, and valid con
   assertValidationError({ area: '' }, /area|cluster|coverage/i);
   assertValidationError({ planId: '', planName: '' }, /plan/i);
   assertValidationError({ activationDate: '2026-02-31' }, /valid activation date/i);
+  assert.doesNotThrow(() => validate({ activationDate: '2026-07-20', billDate: '2026-07-31' }));
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  assertValidationError({ activationDate: formatLocalDateOnly(tomorrow) }, /activation date.*later than today/i);
   assertValidationError({ billDate: '2026-13-01' }, /valid next bill date/i);
+  assertValidationError({ billDate: '2026-08-30' }, /last day of the activation month/i);
+  assertValidationError({ planCategory: 'prepaid', billDate: '2026-08-02' }, /first day of the activation month/i);
   assertValidationError({ dueOffset: 1.5 }, /due-after days/i);
   assertValidationError({ customerStartType: 'unknown' }, /customer type/i);
   assertValidationError({ creditLimit: -1 }, /credit limit/i);
@@ -294,6 +306,7 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
   assert.match(createSource, /removeOpeningAdjustmentForRollback/);
   assert.match(createSource, /removeCustomerForOnboardingRollback/);
   assert.match(routeSource, /enforceAdminValidation:\s*true/);
+  assert.match(routeSource, /allowPastBillingDates:\s*true/);
   assert.match(routeSource, /defaultStatus:\s*STATUS_INACTIVE/);
   assert.match(routeSource, /actor:\s*req\.user/);
   assert.ok(createSource.indexOf('auditEntry = await recordCustomerCreateAudit')
@@ -370,6 +383,25 @@ test('Add Customer uses a Tabler horizontal wizard, inline errors, network revie
   assert.match(page, /stepScroller\.scrollTo\(\{ left: Math\.max\(0, centeredStepLeft\), behavior: ['"]smooth['"] \}\)/);
   assert.match(page, /const DEFAULT_CUSTOMER_PROVINCE = ['"]Cagayan['"]/);
   assert.match(page, /const DEFAULT_CUSTOMER_MUNICIPALITY = ['"]Baggao['"]/);
+  assert.match(page, /const DEFAULT_CREDIT_LIMIT_MONTHS = 3;/);
+  assert.match(
+    page,
+    /const syncDefaultCreditLimitFromSelectedPlan = \(\) => \{\s*if \(!creditLimitInput \|\| isEditMode\(\)\) return;[\s\S]*selectedPlanAmount \* DEFAULT_CREDIT_LIMIT_MONTHS/
+  );
+  assert.match(page, /planSelect\.addEventListener\(['"]change['"], \(\) => \{\s*syncDefaultCreditLimitFromSelectedPlan\(\);/);
+  assert.match(modalMarkup, /Defaults to three months of the selected plan and can be edited\./);
+  assert.match(modalMarkup, /Select today or an earlier date\. Billing dates and first-bill proration update automatically\./);
+  assert.match(page, /activationDateInput\.removeAttribute\(['"]min['"]\);/);
+  assert.match(page, /activationDateInput\.max = getTodayDateInputValue\(\);/);
+  assert.equal(page.includes('activationDateInput.min = getTodayDateInputValue()'), false);
+  assert.match(
+    page,
+    /activationDateInput\.addEventListener\(['"]change['"], \(\) => \{\s*enforceActivationSafeBillDateSelection\(\);\s*recomputeDueDate\(\);/
+  );
+  assert.match(page, /const dueValue = getPlanTypeDueDateInputValue\(category, activationValue\);/);
+  assert.match(page, /const proratedAmount = daysInMonth > 0 && selectedPlanAmount > 0/);
+  assert.match(page, /function isDerivedActivationCycleBillDate\(\)/);
+  assert.match(page, /canKeepActivationCycle = !isEditMode\(\) && isDerivedActivationCycleBillDate\(\)/);
   assert.match(modalMarkup, /id=["']area["'][^>]*name=["']area["'][^>]*required/);
   assert.match(page, /function findCoverageAreaName\(value\)/);
   assert.match(page, /function syncAreaFromSelectedBarangay\(/);

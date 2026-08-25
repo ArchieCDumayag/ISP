@@ -344,8 +344,20 @@ const validateAdminCustomerCreatePayload = (payload = {}, existingCustomers = []
     if (!isExactDateOnly(activationDate)) {
         throw createError(400, 'Enter a valid activation date.');
     }
+    if (activationDate > getTodayDateOnly()) {
+        throw createError(400, 'Activation date cannot be later than today.');
+    }
     if (!isExactDateOnly(billDate)) {
         throw createError(400, 'Enter a valid next bill date.');
+    }
+    const parsedActivationDate = parseDateOnly(activationDate);
+    const expectedBillDate = planCategory === 'prepaid'
+        ? formatDateOnly(new Date(parsedActivationDate.getFullYear(), parsedActivationDate.getMonth(), 1))
+        : formatDateOnly(new Date(parsedActivationDate.getFullYear(), parsedActivationDate.getMonth() + 1, 0));
+    if (billDate !== expectedBillDate) {
+        throw createError(400, planCategory === 'prepaid'
+            ? 'Billing date must be the first day of the activation month.'
+            : 'Billing date must be the last day of the activation month.');
     }
     normalized.activationDate = activationDate;
     normalized.billDate = billDate;
@@ -7682,6 +7694,7 @@ router.post('/', async (req, res, next) => {
         const onboardingResult = await createCustomerRecord(req.body || {}, {
             branchId,
             refreshSource: 'customers-create',
+            allowPastBillingDates: true,
             enforceAdminValidation: true,
             defaultStatus: STATUS_INACTIVE,
             includePortalSetup: true,

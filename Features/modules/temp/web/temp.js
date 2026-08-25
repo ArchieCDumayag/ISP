@@ -11,6 +11,8 @@
     const TEMP_SERVICE_ADDRESSES = Object.freeze(['Poblacion', 'Masical']);
     const TEMP_PLAN_TYPES = Object.freeze(['prepaid', 'postpaid', 'prorate']);
     const TEMP_BILLING_SCHEDULE_MODES = Object.freeze(['date', 'day']);
+    const MANILA_TIME_ZONE = 'Asia/Manila';
+    const GCASH_MAX_ALLOCATIONS = 3;
     const TABLE_SORT_OPTIONS = Object.freeze({
         customer: Object.freeze({
             account: Object.freeze(['account-asc', 'account-desc']),
@@ -56,14 +58,28 @@
         'amount-asc': 'lowest amount first'
     });
     const tableSortState = { customer: 'name-asc', payment: 'date-desc' };
+    const pageState = {
+        customer: { page: 1, pageSize: 25 },
+        payment: { page: 1, pageSize: 25 },
+        history: { page: 1, pageSize: 25 }
+    };
     const currency = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
     const dateFormatter = new Intl.DateTimeFormat('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
     const state = {
         workspace: { locationName: 'Secondary Location', updatedAt: null },
         customers: [],
         payments: [],
-        summary: {}
+        summary: {},
+        gcash: {
+            selectedMonth: '',
+            availableMonths: [],
+            summary: {},
+            transactions: [],
+            loaded: false
+        }
     };
+    let gcashAllocationRows = [];
+    let gcashAllocationTransaction = null;
     let toastTimer = null;
 
     const byId = (id) => document.getElementById(id);
@@ -78,7 +94,19 @@
         const parsed = new Date(`${value}T00:00:00`);
         return Number.isNaN(parsed.getTime()) ? String(value || '') : dateFormatter.format(parsed);
     };
-    const today = () => new Date().toISOString().slice(0, 10);
+    const manilaDateParts = (date = new Date()) => Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', {
+            timeZone: MANILA_TIME_ZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value])
+    );
+    const today = () => {
+        const parts = manilaDateParts();
+        return `${parts.year}-${parts.month}-${parts.day}`;
+    };
+    const currentMonth = () => today().slice(0, 7);
     const defaultNextBillingDate = () => {
         const current = new Date(`${today()}T00:00:00Z`);
         const targetYear = current.getUTCFullYear() + (current.getUTCMonth() === 11 ? 1 : 0);
@@ -106,6 +134,13 @@
         numeric: true,
         sensitivity: 'base'
     });
+    const normalizedPaymentMethod = (value) => String(value || '').trim().toLowerCase();
+    const paymentIsImmutable = (payment) => Boolean(
+        payment?.immutable || payment?.systemGenerated || payment?.officialGcash
+    );
+    const paymentIsOfficialGcash = (payment) => Boolean(payment?.officialGcash)
+        || (normalizedPaymentMethod(payment?.paymentMethod) === 'gcash' && paymentIsImmutable(payment));
+    const roundMoney = (value) => Number((Number(value) || 0).toFixed(2));
 
     function sortCustomerRows(customers, sortKey) {
         const addressOrder = sortKey === 'address-masical'
@@ -159,6 +194,57 @@
             : 'ascending';
     }
 
+    function paginateRows(rows, group) {
+        const settings = pageState[group];
+        const pageCount = Math.max(1, Math.ceil(rows.length / settings.pageSize));
+        settings.page = Math.min(Math.max(1, settings.page), pageCount);
+        const startIndex = (settings.page - 1) * settings.pageSize;
+        return {
+            rows: rows.slice(startIndex, startIndex + settings.pageSize),
+            page: settings.page,
+            pageCount,
+            start: rows.length ? startIndex + 1 : 0,
+            end: Math.min(startIndex + settings.pageSize, rows.length),
+            total: rows.length
+        };
+    }
+
+    function renderPager(group, pagination) {
+        const pager = byId(`${group}Pager`);
+        if (!pager) return;
+        pager.innerHTML = `
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-page-group="${group}" data-page-action="previous"${pagination.page <= 1 ? ' disabled' : ''} aria-label="Previous page"><i class="ti ti-chevron-left"></i></button>
+            <label class="pager__selector"><span class="visually-hidden">${titleCase(group)} page</span><select class="form-select form-select-sm" data-page-select="${group}" aria-label="${titleCase(group)} page">${Array.from({ length: pagination.pageCount }, (_item, index) => `<option value="${index + 1}"${pagination.page === index + 1 ? ' selected' : ''}>Page ${index + 1} of ${pagination.pageCount}</option>`).join('')}</select></label>
+            <button class="btn btn-sm btn-outline-secondary" type="button" data-page-group="${group}" data-page-action="next"${pagination.page >= pagination.pageCount ? ' disabled' : ''} aria-label="Next page"><i class="ti ti-chevron-right"></i></button>`;
+    }
+
+    function handlePagerClick(event) {
+        const button = event.target.closest('[data-page-group]');
+        if (!button) return;
+        const group = button.dataset.pageGroup;
+        const settings = pageState[group];
+        if (!settings) return;
+        settings.page += button.dataset.pageAction === 'previous' ? -1 : 1;
+        if (group === 'customer') renderCustomers();
+        if (group === 'payment') renderPayments();
+        if (group === 'history') renderPaymentHistory();
+    }
+
+    function handlePageSelect(event) {
+        const select = event.target.closest('[data-page-select]');
+        if (!select) return;
+        const group = select.dataset.pageSelect;
+        if (!pageState[group]) return;
+        pageState[group].page = Math.max(1, Number(select.value) || 1);
+        if (group === 'customer') renderCustomers();
+        if (group === 'payment') renderPayments();
+        if (group === 'history') renderPaymentHistory();
+    }
+
+    function resetPage(group) {
+        if (pageState[group]) pageState[group].page = 1;
+    }
+
     function renderSortHeaders(group) {
         const currentSort = tableSortState[group];
         document.querySelectorAll(`[data-sort-group="${group}"]`).forEach((button) => {
@@ -188,6 +274,7 @@
         tableSortState[group] = options.includes(tableSortState[group]) && tableSortState[group] === options[0]
             ? options[1]
             : options[0];
+        resetPage(group);
         if (group === 'customer') renderCustomers();
         if (group === 'payment') renderPayments();
         renderSortHeaders(group);
@@ -232,7 +319,9 @@
         byId('metricCustomers').textContent = String(state.summary.customerCount || 0);
         byId('metricActive').textContent = `${state.summary.activeCustomerCount || 0} active`;
         byId('metricPayments').textContent = formatMoney(state.summary.totalPayments);
-        byId('metricPaymentCount').textContent = `${state.summary.paymentCount || 0} transactions`;
+        const receivedPaymentCount = state.summary.receivedPaymentCount
+            ?? state.payments.filter((payment) => payment.kind === 'payment').length;
+        byId('metricPaymentCount').textContent = `${receivedPaymentCount || 0} payment${receivedPaymentCount === 1 ? '' : 's'}`;
         byId('metricCharges').textContent = formatMoney(state.summary.totalCharges);
         byId('metricOutstanding').textContent = formatMoney(state.summary.outstandingBalance);
         byId('metricAdvance').textContent = `${formatMoney(state.summary.advanceBalance)} advance`;
@@ -247,7 +336,7 @@
     function renderCustomers() {
         const term = byId('customerSearch').value.trim().toLowerCase();
         const status = byId('customerStatusFilter').value;
-        const customers = sortCustomerRows(state.customers.filter((customer) => {
+        const filteredCustomers = sortCustomerRows(state.customers.filter((customer) => {
             if (status && customer.status !== status) return false;
             if (!term) return true;
             return [
@@ -260,6 +349,8 @@
                 customer.planType
             ].some((value) => String(value || '').toLowerCase().includes(term));
         }), tableSortState.customer);
+        const pagination = paginateRows(filteredCustomers, 'customer');
+        const customers = pagination.rows;
 
         byId('customerTableBody').innerHTML = customers.map((customer) => {
             const planType = TEMP_PLAN_TYPES.includes(customer.planType) ? customer.planType : 'postpaid';
@@ -286,16 +377,19 @@
             </tr>`;
         }).join('');
 
-        const noResults = customers.length === 0;
+        const noResults = filteredCustomers.length === 0;
         byId('customerEmpty').hidden = !noResults;
         byId('customerTableBody').closest('.table-responsive').hidden = noResults;
-        byId('customerResultCount').textContent = `${customers.length} of ${state.customers.length} customers`;
+        byId('customerResultCount').textContent = filteredCustomers.length
+            ? `Showing ${pagination.start}–${pagination.end} of ${filteredCustomers.length} customer${filteredCustomers.length === 1 ? '' : 's'}${filteredCustomers.length !== state.customers.length ? ` (${state.customers.length} total)` : ''}`
+            : `0 of ${state.customers.length} customers`;
+        renderPager('customer', pagination);
     }
 
     function renderPayments() {
         const term = byId('paymentSearch').value.trim().toLowerCase();
         const kind = byId('paymentKindFilter').value;
-        const payments = sortPaymentRows(state.payments.filter((payment) => {
+        const filteredPayments = sortPaymentRows(state.payments.filter((payment) => {
             if (kind && payment.kind !== kind) return false;
             if (!term) return true;
             return [
@@ -307,29 +401,41 @@
                 payment.description
             ].some((value) => String(value || '').toLowerCase().includes(term));
         }), tableSortState.payment);
+        const pagination = paginateRows(filteredPayments, 'payment');
+        const payments = pagination.rows;
 
         byId('paymentTableBody').innerHTML = payments.map((payment) => {
             const credit = payment.kind !== 'charge';
+            const immutable = paymentIsImmutable(payment);
+            const legacyGcash = normalizedPaymentMethod(payment.paymentMethod) === 'gcash'
+                && !paymentIsOfficialGcash(payment);
+            const immutableLabel = payment.systemGenerated
+                ? 'Automatic cycle charge'
+                : (paymentIsOfficialGcash(payment) ? 'Official imported GCash' : 'Protected transaction');
             return `
                 <tr>
                     <td><span class="cell-primary">${formatDate(payment.date)}</span></td>
                     <td><span class="account-code">${escapeHtml(payment.receiptNumber)}</span></td>
                     <td><span class="cell-primary">${escapeHtml(payment.customerName)}</span><span class="cell-secondary account-code">${escapeHtml(payment.accountNumber)}</span></td>
-                    <td><span class="kind-pill kind-pill--${escapeHtml(payment.kind)}">${escapeHtml(titleCase(payment.kind))}</span></td>
+                    <td><span class="kind-pill kind-pill--${escapeHtml(payment.kind)}">${escapeHtml(titleCase(payment.kind))}</span>${immutable ? `<span class="cell-secondary"><i class="ti ti-lock"></i> ${escapeHtml(immutableLabel)}</span>` : (legacyGcash ? '<span class="cell-secondary"><i class="ti ti-alert-triangle"></i> Unverified legacy GCash</span>' : '')}</td>
                     <td><span class="cell-primary">${escapeHtml(payment.paymentMethod || '—')}</span><span class="cell-secondary" title="${escapeHtml(payment.reference)}">${escapeHtml(payment.reference || payment.description || '')}</span></td>
                     <td><span class="cell-primary">${escapeHtml(payment.recordedBy || 'Admin')}</span></td>
                     <td class="text-end"><strong class="${credit ? 'transaction-credit' : 'transaction-debit'}">${credit ? '−' : '+'}${formatMoney(payment.amount)}</strong></td>
                     <td><div class="row-actions">
-                        <button class="icon-button" type="button" data-payment-action="edit" data-payment-id="${escapeHtml(payment.id)}" title="Edit" aria-label="Edit transaction"><i class="ti ti-edit"></i></button>
-                        <button class="icon-button icon-button--danger" type="button" data-payment-action="delete" data-payment-id="${escapeHtml(payment.id)}" title="Delete" aria-label="Delete transaction"><i class="ti ti-trash"></i></button>
+                        ${payment.kind === 'payment' ? `<button class="icon-button" type="button" data-payment-action="receipt" data-payment-id="${escapeHtml(payment.id)}" title="View receipt" aria-label="View receipt"><i class="ti ti-receipt"></i></button>` : ''}
+                        ${immutable || legacyGcash ? '' : `<button class="icon-button" type="button" data-payment-action="edit" data-payment-id="${escapeHtml(payment.id)}" title="Edit" aria-label="Edit transaction"><i class="ti ti-edit"></i></button>`}
+                        ${immutable ? '' : `<button class="icon-button icon-button--danger" type="button" data-payment-action="delete" data-payment-id="${escapeHtml(payment.id)}" title="Delete" aria-label="Delete transaction"><i class="ti ti-trash"></i></button>`}
                     </div></td>
                 </tr>`;
         }).join('');
 
-        const noResults = payments.length === 0;
+        const noResults = filteredPayments.length === 0;
         byId('paymentEmpty').hidden = !noResults;
         byId('paymentTableBody').closest('.table-responsive').hidden = noResults;
-        byId('paymentResultCount').textContent = `${payments.length} of ${state.payments.length} transactions`;
+        byId('paymentResultCount').textContent = filteredPayments.length
+            ? `Showing ${pagination.start}–${pagination.end} of ${filteredPayments.length} transaction${filteredPayments.length === 1 ? '' : 's'}${filteredPayments.length !== state.payments.length ? ` (${state.payments.length} total)` : ''}`
+            : `0 of ${state.payments.length} transactions`;
+        renderPager('payment', pagination);
     }
 
     function renderPaymentCustomerOptions(selectedAccount = '') {
@@ -339,10 +445,136 @@
         ].join('');
     }
 
+    function renderHistoryFilterOptions() {
+        const selectedMethod = byId('historyMethodFilter').value;
+        const selectedRecorder = byId('historyRecorderFilter').value;
+        const payments = state.payments.filter((payment) => payment.kind === 'payment');
+        const methods = Array.from(new Set(payments.map((payment) => String(payment.paymentMethod || '').trim()).filter(Boolean)))
+            .sort(compareText);
+        const recorders = Array.from(new Set(payments.map((payment) => String(payment.recordedBy || 'Admin').trim()).filter(Boolean)))
+            .sort(compareText);
+        byId('historyMethodFilter').innerHTML = ['<option value="">All methods</option>', ...methods.map((method) => `<option value="${escapeHtml(method)}">${escapeHtml(method)}</option>`)].join('');
+        byId('historyRecorderFilter').innerHTML = ['<option value="">All recorders</option>', ...recorders.map((recorder) => `<option value="${escapeHtml(recorder)}">${escapeHtml(recorder)}</option>`)].join('');
+        if (methods.includes(selectedMethod)) byId('historyMethodFilter').value = selectedMethod;
+        if (recorders.includes(selectedRecorder)) byId('historyRecorderFilter').value = selectedRecorder;
+    }
+
+    function renderPaymentHistory() {
+        const month = byId('historyMonth').value || currentMonth();
+        const term = byId('historySearch').value.trim().toLowerCase();
+        const method = byId('historyMethodFilter').value;
+        const recorder = byId('historyRecorderFilter').value;
+        const sort = byId('historySort').value || 'date-desc';
+        const filteredPayments = sortPaymentRows(state.payments.filter((payment) => {
+            if (payment.kind !== 'payment') return false;
+            if (month && !String(payment.date || '').startsWith(month)) return false;
+            if (method && payment.paymentMethod !== method) return false;
+            if (recorder && (payment.recordedBy || 'Admin') !== recorder) return false;
+            if (!term) return true;
+            return [
+                payment.customerName,
+                payment.accountNumber,
+                payment.receiptNumber,
+                payment.reference,
+                payment.paymentMethod,
+                payment.recordedBy,
+                payment.description
+            ].some((value) => String(value || '').toLowerCase().includes(term));
+        }), sort);
+        const pagination = paginateRows(filteredPayments, 'history');
+        byId('historyTableBody').innerHTML = pagination.rows.map((payment) => {
+            const customer = state.customers.find((item) => item.accountNumber === payment.accountNumber);
+            const officialBadge = paymentIsOfficialGcash(payment)
+                ? '<span class="cell-secondary"><i class="ti ti-shield-check"></i> Official imported credit</span>'
+                : '';
+            return `<tr>
+                <td><span class="cell-primary">${formatDate(payment.date)}</span></td>
+                <td><span class="account-code">${escapeHtml(payment.receiptNumber)}</span></td>
+                <td><span class="cell-primary">${escapeHtml(payment.customerName)}</span><span class="cell-secondary account-code">${escapeHtml(payment.accountNumber)}</span></td>
+                <td>${escapeHtml(customer?.address || '—')}</td>
+                <td><span class="cell-primary">${escapeHtml(payment.paymentMethod || '—')}</span><span class="cell-secondary">${escapeHtml(payment.reference || payment.description || '')}</span>${officialBadge}</td>
+                <td>${escapeHtml(payment.recordedBy || 'Admin')}</td>
+                <td class="text-end"><strong class="transaction-credit">${formatMoney(payment.amount)}</strong></td>
+                <td><div class="row-actions"><button class="icon-button" type="button" data-payment-action="receipt" data-payment-id="${escapeHtml(payment.id)}" title="View receipt" aria-label="View receipt"><i class="ti ti-receipt"></i></button></div></td>
+            </tr>`;
+        }).join('');
+
+        const noResults = filteredPayments.length === 0;
+        byId('historyEmpty').hidden = !noResults;
+        byId('historyTableBody').closest('.table-responsive').hidden = noResults;
+        byId('historyResultCount').textContent = filteredPayments.length
+            ? `Showing ${pagination.start}–${pagination.end} of ${filteredPayments.length} Temp payment${filteredPayments.length === 1 ? '' : 's'} for ${month}`
+            : `0 Temp payments for ${month}`;
+        renderPager('history', pagination);
+    }
+
+    function gcashStateLabel(value) {
+        return {
+            available: 'Available',
+            reconcile: 'Needs review',
+            conflict: 'Already in Main',
+            claimed: 'Posting pending',
+            posted: 'Posted to Temp'
+        }[value] || titleCase(value || 'Available');
+    }
+
+    function renderGcash() {
+        const summary = state.gcash.summary || {};
+        const transactions = Array.isArray(state.gcash.transactions) ? state.gcash.transactions : [];
+        byId('gcashAvailableCount').textContent = String(summary.availableCount || 0);
+        byId('gcashReconcileCount').textContent = String(summary.reconcileCount || 0);
+        byId('gcashConflictCount').textContent = String(summary.conflictCount || 0);
+        byId('gcashPostedCount').textContent = String(summary.postedCount || 0);
+        byId('gcashAvailableAmount').textContent = formatMoney(summary.availableAmount);
+        byId('gcashAvailableMonths').innerHTML = (state.gcash.availableMonths || [])
+            .map((month) => `<option value="${escapeHtml(month)}"></option>`).join('');
+
+        byId('gcashTableBody').innerHTML = transactions.map((transaction) => {
+            const transactionState = transaction.state || 'available';
+            const allocationSource = transaction.assignment?.allocations?.length
+                ? transaction.assignment.allocations
+                : transaction.legacyPayments;
+            const allocations = (Array.isArray(allocationSource) ? allocationSource : []).map((allocation) => {
+                const customerName = allocation.customerName
+                    || state.customers.find((customer) => customer.accountNumber === allocation.accountNumber)?.fullName
+                    || allocation.accountNumber;
+                return `${escapeHtml(customerName)} (${formatMoney(allocation.amount)})`;
+            });
+            const actionLabel = transactionState === 'reconcile'
+                ? 'Review & post'
+                : (transactionState === 'claimed' ? 'Complete posting' : 'Allocate');
+            const action = transactionState === 'conflict'
+                ? '<span class="text-danger small"><i class="ti ti-shield-x"></i> Already in Main</span>'
+                : transactionState === 'posted'
+                ? '<span class="text-success small"><i class="ti ti-circle-check"></i> Complete</span>'
+                : `<button class="btn btn-sm ${transactionState === 'reconcile' || transactionState === 'claimed' ? 'btn-warning' : 'btn-primary'}" type="button" data-gcash-action="allocate" data-gcash-reference="${escapeHtml(transaction.reference)}"><i class="ti ti-users-plus"></i> ${actionLabel}</button>`;
+            const mainConflictNote = transactionState === 'conflict'
+                ? `<span class="cell-secondary gcash-allocation-summary">${(transaction.mainPayments || []).length} matching Main payment${(transaction.mainPayments || []).length === 1 ? '' : 's'}; Temp posting disabled.</span>`
+                : '';
+            return `<tr>
+                <td><span class="cell-primary">${formatDate(transaction.transactionDate)}</span><span class="cell-secondary">${escapeHtml(transaction.transactionAt || '')}</span></td>
+                <td><span class="account-code">${escapeHtml(transaction.reference)}</span></td>
+                <td><span class="cell-primary">${escapeHtml(transaction.sender || 'Sender unavailable')}</span><span class="cell-secondary" title="${escapeHtml(transaction.description || '')}">${escapeHtml(transaction.description || '')}</span></td>
+                <td><span class="cell-primary">${escapeHtml(transaction.recipientLabel || transaction.recipient || '—')}</span><span class="cell-secondary">${escapeHtml(transaction.recipientLabel ? transaction.recipient : '')}</span></td>
+                <td class="text-end"><strong class="transaction-credit">${formatMoney(transaction.amount)}</strong></td>
+                <td><span class="gcash-state gcash-state--${escapeHtml(transactionState)}">${escapeHtml(gcashStateLabel(transactionState))}</span>${mainConflictNote}${allocations.length ? `<span class="cell-secondary gcash-allocation-summary">${allocations.join(' · ')}</span>` : ''}</td>
+                <td class="text-end">${action}</td>
+            </tr>`;
+        }).join('');
+
+        const noResults = transactions.length === 0;
+        byId('gcashEmpty').hidden = !noResults;
+        byId('gcashTableBody').closest('.table-responsive').hidden = noResults;
+        byId('gcashResultCount').textContent = `${transactions.length} imported credit${transactions.length === 1 ? '' : 's'} for ${state.gcash.selectedMonth || byId('gcashMonth').value}`;
+    }
+
     function renderAll() {
         renderSummary();
         renderCustomers();
         renderPayments();
+        renderHistoryFilterOptions();
+        renderPaymentHistory();
+        if (state.gcash.loaded) renderGcash();
         renderSortHeaders('customer');
         renderSortHeaders('payment');
         renderPaymentCustomerOptions(byId('paymentCustomer').value);
@@ -359,18 +591,44 @@
         }
     }
 
+    async function loadGcash(options = {}) {
+        const month = byId('gcashMonth').value || currentMonth();
+        const button = byId('refreshGcashBtn');
+        if (button) button.disabled = true;
+        try {
+            const payload = await api(`/gcash?month=${encodeURIComponent(month)}`);
+            state.gcash = {
+                selectedMonth: payload.selectedMonth || month,
+                availableMonths: Array.isArray(payload.availableMonths) ? payload.availableMonths : [],
+                summary: payload.summary || {},
+                transactions: Array.isArray(payload.transactions) ? payload.transactions : [],
+                loaded: true
+            };
+            byId('gcashMonth').value = state.gcash.selectedMonth;
+            renderGcash();
+            if (options.notify) showToast('Imported GCash credits refreshed.');
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     function activatePanel(panelName, options = {}) {
-        const isBilling = panelName === 'billing';
-        byId('customersPanel').hidden = isBilling;
-        byId('billingPanel').hidden = !isBilling;
-        byId('customersTab').classList.toggle('active', !isBilling);
-        byId('billingTab').classList.toggle('active', isBilling);
-        byId('customersTab').setAttribute('aria-selected', isBilling ? 'false' : 'true');
-        byId('billingTab').setAttribute('aria-selected', isBilling ? 'true' : 'false');
-        byId('customersTab').tabIndex = isBilling ? -1 : 0;
-        byId('billingTab').tabIndex = isBilling ? 0 : -1;
-        if (options.updateHash !== false) history.replaceState(null, '', isBilling ? '#billing' : '#customers');
-        if (options.focus) (isBilling ? byId('billingTab') : byId('customersTab')).focus();
+        const panelNames = ['customers', 'billing', 'history', 'gcash'];
+        const selectedPanel = panelNames.includes(panelName) ? panelName : 'customers';
+        panelNames.forEach((name) => {
+            const tab = byId(`${name}Tab`);
+            const panel = byId(`${name}Panel`);
+            const selected = name === selectedPanel;
+            panel.hidden = !selected;
+            tab.classList.toggle('active', selected);
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+        });
+        if (options.updateHash !== false) history.replaceState(null, '', `#${selectedPanel}`);
+        if (options.focus) byId(`${selectedPanel}Tab`).focus();
+        if (selectedPanel === 'gcash' && !state.gcash.loaded) loadGcash();
     }
 
     function openCustomerDialog(customer = null) {
@@ -415,6 +673,10 @@
             showToast('Add a Temp customer before recording a transaction.', 'error');
             return;
         }
+        if (payment && (paymentIsImmutable(payment) || normalizedPaymentMethod(payment.paymentMethod) === 'gcash')) {
+            showToast('This protected transaction cannot be edited.', 'error');
+            return;
+        }
         byId('paymentForm').reset();
         byId('paymentEditId').value = payment?.id || '';
         byId('paymentDialogTitle').textContent = payment ? 'Edit transaction' : 'Add transaction';
@@ -426,8 +688,45 @@
         byId('paymentMethod').value = payment?.paymentMethod || 'Cash';
         byId('paymentReference').value = payment?.reference || '';
         byId('paymentDescription').value = payment?.description || '';
+        updateManualGcashNotice();
         byId('paymentDialog').showModal();
         window.setTimeout(() => byId('paymentCustomer').focus(), 0);
+    }
+
+    function updateManualGcashNotice() {
+        const isManualGcash = normalizedPaymentMethod(byId('paymentMethod').value) === 'gcash';
+        byId('manualGcashNotice').hidden = !isManualGcash;
+        byId('savePaymentBtn').disabled = isManualGcash;
+        byId('paymentReference').required = false;
+    }
+
+    function openReceipt(paymentId) {
+        const payment = state.payments.find((item) => item.id === paymentId);
+        if (!payment || payment.kind !== 'payment') return;
+        const customer = state.customers.find((item) => item.accountNumber === payment.accountNumber);
+        const officialNote = paymentIsOfficialGcash(payment)
+            ? '<div class="receipt-verification"><i class="ti ti-shield-check"></i><span>Verified against an official imported GCash credit.</span></div>'
+            : '';
+        byId('receiptDialogTitle').textContent = `Receipt ${payment.receiptNumber}`;
+        byId('receiptContent').innerHTML = `
+            <article class="payment-receipt">
+                <header class="payment-receipt__header"><div><span class="payment-receipt__eyebrow">Secondary location</span><h3>${escapeHtml(state.workspace.locationName || 'Secondary Location')}</h3><p>Official Temp payment receipt</p></div><span class="payment-receipt__mark"><i class="ti ti-receipt"></i></span></header>
+                <div class="payment-receipt__number"><span>Receipt number</span><strong class="account-code">${escapeHtml(payment.receiptNumber)}</strong></div>
+                <dl class="payment-receipt__details">
+                    <div><dt>Received from</dt><dd>${escapeHtml(payment.customerName)}</dd></div>
+                    <div><dt>Account number</dt><dd class="account-code">${escapeHtml(payment.accountNumber)}</dd></div>
+                    <div><dt>Service address</dt><dd>${escapeHtml(customer?.address || '—')}</dd></div>
+                    <div><dt>Payment date</dt><dd>${formatDate(payment.date)}</dd></div>
+                    <div><dt>Payment method</dt><dd>${escapeHtml(payment.paymentMethod || '—')}</dd></div>
+                    <div><dt>Reference</dt><dd class="account-code">${escapeHtml(payment.reference || '—')}</dd></div>
+                    <div><dt>Recorded by</dt><dd>${escapeHtml(payment.recordedBy || 'Admin')}</dd></div>
+                    <div><dt>Description</dt><dd>${escapeHtml(payment.description || 'Payment received')}</dd></div>
+                </dl>
+                <div class="payment-receipt__amount"><span>Amount received</span><strong>${formatMoney(payment.amount)}</strong></div>
+                ${officialNote}
+                <footer class="payment-receipt__footer"><span>Temp workspace only</span><span>Printed ${formatDate(today())}</span></footer>
+            </article>`;
+        byId('receiptDialog').showModal();
     }
 
     function openStatement(accountNumber) {
@@ -497,6 +796,164 @@
                 </section>
             </article>`;
         byId('statementDialog').showModal();
+    }
+
+    function gcashTransactionAmount(transaction) {
+        return roundMoney(transaction?.amount ?? transaction?.credit);
+    }
+
+    function gcashAllocationCustomerOptions(selectedAccount = '') {
+        const selectedExists = state.customers.some((customer) => customer.accountNumber === selectedAccount);
+        return [
+            '<option value="">Select a Temp customer</option>',
+            ...(!selectedExists && selectedAccount ? [`<option value="${escapeHtml(selectedAccount)}" selected>${escapeHtml(selectedAccount)} — unavailable</option>`] : []),
+            ...state.customers.map((customer) => `<option value="${escapeHtml(customer.accountNumber)}"${customer.accountNumber === selectedAccount ? ' selected' : ''}>${escapeHtml(customer.accountNumber)} — ${escapeHtml(customer.fullName)}</option>`)
+        ].join('');
+    }
+
+    function updateGcashAllocationTotals() {
+        const officialAmount = gcashTransactionAmount(gcashAllocationTransaction);
+        const allocated = roundMoney(gcashAllocationRows.reduce((total, allocation) => total + Number(allocation.amount || 0), 0));
+        const remaining = roundMoney(officialAmount - allocated);
+        byId('gcashAllocatedAmount').textContent = formatMoney(allocated);
+        byId('gcashRemainingAmount').textContent = formatMoney(remaining);
+        byId('gcashRemainingAmount').className = Math.abs(remaining) < 0.005 ? 'transaction-credit' : 'balance-due';
+        byId('postGcashBtn').disabled = Math.abs(remaining) >= 0.005;
+        const guidance = byId('gcashAllocationGuidance');
+        if (Math.abs(remaining) < 0.005) {
+            guidance.className = 'alert alert-success mt-3 mb-3';
+            guidance.innerHTML = '<i class="ti ti-circle-check me-2"></i><span>The allocation exactly matches the imported credit.</span>';
+        } else if (remaining > 0) {
+            guidance.className = 'alert alert-info mt-3 mb-3';
+            guidance.innerHTML = `<i class="ti ti-info-circle me-2"></i><span>Allocate the remaining <strong>${formatMoney(remaining)}</strong>.</span>`;
+        } else {
+            guidance.className = 'alert alert-danger mt-3 mb-3';
+            guidance.innerHTML = `<i class="ti ti-alert-circle me-2"></i><span>Reduce allocations by <strong>${formatMoney(Math.abs(remaining))}</strong>.</span>`;
+        }
+        byId('addGcashAllocationBtn').disabled = gcashAllocationRows.length >= GCASH_MAX_ALLOCATIONS;
+    }
+
+    function renderGcashAllocationRows() {
+        byId('gcashAllocationRows').innerHTML = gcashAllocationRows.map((allocation, index) => {
+            const lockedNote = allocation.locked
+                ? `<span class="allocation-lock"><i class="ti ti-lock"></i> ${allocation.source === 'legacy' ? `Existing receipt ${escapeHtml(allocation.receiptNumber || '')}` : 'Claimed allocation'}</span>`
+                : '<span class="allocation-hint">Editable allocation</span>';
+            const canRemove = !allocation.locked && gcashAllocationRows.filter((row) => !row.locked).length > 1;
+            return `<div class="gcash-allocation-row" data-allocation-row="${index}">
+                <div class="gcash-allocation-row__heading"><strong>Allocation ${index + 1}</strong>${lockedNote}</div>
+                <label class="form-field"><span>Temp customer</span><select class="form-select" data-allocation-account="${index}"${allocation.locked ? ' disabled' : ''}>${gcashAllocationCustomerOptions(allocation.accountNumber)}</select></label>
+                <label class="form-field"><span>Amount</span><div class="money-input"><span>&#8369;</span><input class="form-control" data-allocation-amount="${index}" type="number" min="0.01" step="0.01" value="${escapeHtml(allocation.amount || '')}"${allocation.locked ? ' disabled' : ''}></div></label>
+                <button class="icon-button icon-button--danger allocation-remove" type="button" data-remove-allocation="${index}" title="Remove allocation" aria-label="Remove allocation"${canRemove ? '' : ' hidden'}><i class="ti ti-x"></i></button>
+            </div>`;
+        }).join('');
+        updateGcashAllocationTotals();
+    }
+
+    function openGcashAllocation(reference) {
+        const transaction = state.gcash.transactions.find((item) => item.reference === reference);
+        if (!transaction || transaction.state === 'posted') return;
+        if (transaction.state === 'conflict') {
+            showToast('This reference already exists in Main Payment History and cannot be posted to Temp.', 'error');
+            return;
+        }
+        if (!state.customers.length) {
+            showToast('Add a Temp customer before allocating an imported GCash credit.', 'error');
+            return;
+        }
+        gcashAllocationTransaction = transaction;
+        const assignmentAllocations = Array.isArray(transaction.assignment?.allocations)
+            ? transaction.assignment.allocations
+            : [];
+        const legacyPayments = Array.isArray(transaction.legacyPayments) ? transaction.legacyPayments : [];
+        const lockedSource = assignmentAllocations.length ? assignmentAllocations : legacyPayments;
+        gcashAllocationRows = lockedSource.map((allocation) => ({
+            accountNumber: allocation.accountNumber || '',
+            amount: roundMoney(allocation.amount),
+            locked: true,
+            source: assignmentAllocations.length ? 'claimed' : 'legacy',
+            receiptNumber: allocation.receiptNumber || ''
+        }));
+        const officialAmount = gcashTransactionAmount(transaction);
+        const lockedTotal = roundMoney(gcashAllocationRows.reduce((total, allocation) => total + allocation.amount, 0));
+        const remaining = roundMoney(officialAmount - lockedTotal);
+        if (!gcashAllocationRows.length || (remaining > 0 && gcashAllocationRows.length < GCASH_MAX_ALLOCATIONS)) {
+            gcashAllocationRows.push({ accountNumber: '', amount: remaining > 0 ? remaining : officialAmount, locked: false, source: 'new' });
+        }
+        byId('gcashAllocationReference').value = transaction.reference;
+        byId('gcashProofReference').textContent = transaction.reference;
+        byId('gcashProofDate').textContent = formatDate(transaction.transactionDate);
+        byId('gcashProofAmount').textContent = formatMoney(officialAmount);
+        byId('gcashAssignmentConfirmed').checked = false;
+        renderGcashAllocationRows();
+        byId('gcashAllocationDialog').showModal();
+    }
+
+    function addGcashAllocation() {
+        if (gcashAllocationRows.length >= GCASH_MAX_ALLOCATIONS) return;
+        gcashAllocationRows.push({ accountNumber: '', amount: '', locked: false, source: 'new' });
+        renderGcashAllocationRows();
+    }
+
+    function handleGcashAllocationInput(event) {
+        const accountIndex = event.target.dataset.allocationAccount;
+        const amountIndex = event.target.dataset.allocationAmount;
+        const index = Number(accountIndex ?? amountIndex);
+        if (!Number.isInteger(index) || !gcashAllocationRows[index] || gcashAllocationRows[index].locked) return;
+        if (accountIndex != null) gcashAllocationRows[index].accountNumber = event.target.value;
+        if (amountIndex != null) gcashAllocationRows[index].amount = event.target.value;
+        updateGcashAllocationTotals();
+    }
+
+    function handleGcashAllocationRemove(event) {
+        const button = event.target.closest('[data-remove-allocation]');
+        if (!button) return;
+        const index = Number(button.dataset.removeAllocation);
+        if (!Number.isInteger(index) || gcashAllocationRows[index]?.locked) return;
+        gcashAllocationRows.splice(index, 1);
+        renderGcashAllocationRows();
+    }
+
+    async function postGcashAllocation(event) {
+        event.preventDefault();
+        if (!gcashAllocationTransaction) return;
+        const allocations = gcashAllocationRows.map((allocation) => ({
+            accountNumber: String(allocation.accountNumber || '').trim(),
+            amount: roundMoney(allocation.amount)
+        }));
+        if (!allocations.length || allocations.length > GCASH_MAX_ALLOCATIONS
+            || allocations.some((allocation) => !allocation.accountNumber || allocation.amount <= 0)) {
+            showToast('Select a Temp customer and positive amount for every allocation.', 'error');
+            return;
+        }
+        if (new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length) {
+            showToast('Each Temp account can appear only once in an allocation.', 'error');
+            return;
+        }
+        const total = roundMoney(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
+        if (Math.abs(total - gcashTransactionAmount(gcashAllocationTransaction)) >= 0.005) {
+            showToast('The allocation total must exactly match the imported GCash credit.', 'error');
+            return;
+        }
+        if (!byId('gcashAssignmentConfirmed').checked) {
+            showToast('Confirm the customers, amounts, and official reference before posting.', 'error');
+            return;
+        }
+        const button = byId('postGcashBtn');
+        button.disabled = true;
+        try {
+            const result = await api(`/gcash/${encodeURIComponent(gcashAllocationTransaction.reference)}/post`, {
+                method: 'POST',
+                body: { allocations, assignmentConfirmed: true }
+            });
+            byId('gcashAllocationDialog').close();
+            await loadWorkspace();
+            await loadGcash();
+            showToast(result.message || (result.idempotent ? 'This official GCash allocation was already posted.' : 'Official GCash payment posted to Temp.'));
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
     }
 
     async function saveCustomer(event) {
@@ -573,6 +1030,10 @@
         event.preventDefault();
         const form = event.currentTarget;
         if (!form.reportValidity()) return;
+        if (normalizedPaymentMethod(byId('paymentMethod').value) === 'gcash') {
+            showToast('Use GCash Posting to verify an imported official credit and prevent duplicates.', 'error');
+            return;
+        }
         const paymentId = byId('paymentEditId').value;
         const payload = Object.fromEntries(new FormData(form).entries());
         payload.amount = Number(payload.amount);
@@ -590,6 +1051,7 @@
             showToast(error.message, 'error');
         } finally {
             button.disabled = false;
+            updateManualGcashNotice();
         }
     }
 
@@ -619,8 +1081,13 @@
         if (!button) return;
         const payment = state.payments.find((item) => item.id === button.dataset.paymentId);
         if (!payment) return;
+        if (button.dataset.paymentAction === 'receipt') openReceipt(payment.id);
         if (button.dataset.paymentAction === 'edit') openPaymentDialog(payment);
         if (button.dataset.paymentAction === 'delete') {
+            if (paymentIsImmutable(payment)) {
+                showToast('This protected transaction cannot be deleted.', 'error');
+                return;
+            }
             if (!window.confirm(`Delete transaction ${payment.receiptNumber}?`)) return;
             try {
                 await api(`/payments/${encodeURIComponent(payment.id)}`, { method: 'DELETE' });
@@ -704,6 +1171,47 @@
         }
     }
 
+    async function exportPaymentHistory() {
+        const month = byId('historyMonth').value || currentMonth();
+        const button = byId('exportPaymentHistoryBtn');
+        button.disabled = true;
+        try {
+            const response = await fetch(`${API_ROOT}/payment-history-export?month=${encodeURIComponent(month)}`, {
+                credentials: 'same-origin'
+            });
+            if (response.status === 401) {
+                window.location.assign('/login.html');
+                throw new Error('Your session expired. Sign in again.');
+            }
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.error || `Payment history export failed (${response.status}).`);
+            }
+            const blob = await response.blob();
+            const filename = filenameFromDisposition(response.headers.get('Content-Disposition'), `temp-payment-history-${month}.xlsx`);
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = filename;
+            link.hidden = true;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+            showToast(`Temp-only payment history for ${month} exported.`);
+        } catch (error) {
+            showToast(error.message || 'Unable to export Temp payment history.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function handleGcashTableAction(event) {
+        const button = event.target.closest('[data-gcash-action="allocate"]');
+        if (!button) return;
+        openGcashAllocation(button.dataset.gcashReference);
+    }
+
     async function importWorkspace(file) {
         if (!file) return;
         const extension = file.name.toLowerCase().match(/\.(json|xlsx|xls)$/)?.[1];
@@ -736,6 +1244,7 @@
             if (!response.ok) throw new Error(result.error || `Import failed (${response.status}).`);
             updateState(result);
             renderAll();
+            if (state.gcash.loaded) await loadGcash();
             showToast(result.message || 'Temp workspace imported.');
         } catch (error) {
             showToast(error.message || 'Unable to import that file.', 'error');
@@ -764,6 +1273,7 @@
             const result = await api('/workspace', { method: 'DELETE' });
             updateState(result);
             renderAll();
+            if (state.gcash.loaded) await loadGcash();
             showToast(result.message || 'All Temp data was cleared.');
         } catch (error) {
             showToast(error.message || 'Unable to clear the Temp workspace.', 'error');
@@ -777,7 +1287,11 @@
         tab.addEventListener('keydown', (event) => {
             if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
             event.preventDefault();
-            activatePanel(tab.dataset.panel === 'customers' ? 'billing' : 'customers', { focus: true });
+            const tabs = Array.from(document.querySelectorAll('[data-panel]'));
+            const currentIndex = tabs.indexOf(tab);
+            const offset = event.key === 'ArrowRight' ? 1 : -1;
+            const nextTab = tabs[(currentIndex + offset + tabs.length) % tabs.length];
+            activatePanel(nextTab.dataset.panel, { focus: true });
         });
     });
     document.querySelectorAll('[data-close-dialog]').forEach((button) => {
@@ -789,13 +1303,31 @@
         });
     });
 
-    byId('customerSearch').addEventListener('input', renderCustomers);
-    byId('customerStatusFilter').addEventListener('change', renderCustomers);
-    byId('paymentSearch').addEventListener('input', renderPayments);
-    byId('paymentKindFilter').addEventListener('change', renderPayments);
+    byId('historyMonth').value = currentMonth();
+    byId('gcashMonth').value = currentMonth();
+    byId('customerSearch').addEventListener('input', () => { resetPage('customer'); renderCustomers(); });
+    byId('customerStatusFilter').addEventListener('change', () => { resetPage('customer'); renderCustomers(); });
+    byId('paymentSearch').addEventListener('input', () => { resetPage('payment'); renderPayments(); });
+    byId('paymentKindFilter').addEventListener('change', () => { resetPage('payment'); renderPayments(); });
+    ['historySearch', 'historyMonth', 'historyMethodFilter', 'historyRecorderFilter', 'historySort'].forEach((id) => {
+        byId(id).addEventListener(id === 'historySearch' ? 'input' : 'change', () => { resetPage('history'); renderPaymentHistory(); });
+    });
+    ['customer', 'payment', 'history'].forEach((group) => {
+        byId(`${group}PageSize`).addEventListener('change', (event) => {
+            pageState[group].pageSize = Math.max(1, Number(event.target.value) || 25);
+            resetPage(group);
+            if (group === 'customer') renderCustomers();
+            if (group === 'payment') renderPayments();
+            if (group === 'history') renderPaymentHistory();
+        });
+    });
+    document.addEventListener('click', handlePagerClick);
+    document.addEventListener('change', handlePageSelect);
     document.querySelectorAll('[data-sort-group]').forEach((button) => button.addEventListener('click', handleTableSort));
     byId('customerTableBody').addEventListener('click', handleCustomerAction);
     byId('paymentTableBody').addEventListener('click', handlePaymentAction);
+    byId('historyTableBody').addEventListener('click', handlePaymentAction);
+    byId('gcashTableBody').addEventListener('click', handleGcashTableAction);
     byId('addCustomerBtn').addEventListener('click', () => openCustomerDialog());
     byId('addPaymentBtn').addEventListener('click', () => openPaymentDialog());
     byId('customerForm').addEventListener('submit', saveCustomer);
@@ -806,19 +1338,40 @@
     byId('customerNextBillingDate').addEventListener('change', updateCustomerCycleHint);
     byId('customerBillingDay').addEventListener('input', updateCustomerCycleHint);
     byId('paymentForm').addEventListener('submit', savePayment);
+    byId('paymentMethod').addEventListener('change', updateManualGcashNotice);
+    byId('paymentKind').addEventListener('change', updateManualGcashNotice);
+    byId('openGcashPostingBtn').addEventListener('click', () => {
+        byId('paymentDialog').close();
+        const wasLoaded = state.gcash.loaded;
+        activatePanel('gcash');
+        if (wasLoaded) loadGcash();
+    });
     byId('clearWorkspaceBtn').addEventListener('click', clearWorkspaceData);
     byId('refreshWorkspaceBtn').addEventListener('click', () => loadWorkspace({ notify: true }));
     byId('exportWorkspaceBtn').addEventListener('click', () => byId('exportFormatDialog').showModal());
     byId('exportCollectorBtn').addEventListener('click', exportCollectorWorkbook);
+    byId('exportPaymentHistoryBtn').addEventListener('click', exportPaymentHistory);
     byId('exportJsonBtn').addEventListener('click', () => exportWorkspace('json'));
     byId('exportExcelBtn').addEventListener('click', () => exportWorkspace('xlsx'));
     byId('importWorkspaceBtn').addEventListener('click', () => byId('importWorkspaceFile').click());
     byId('importWorkspaceFile').addEventListener('change', (event) => importWorkspace(event.target.files?.[0]));
     byId('printStatementBtn').addEventListener('click', () => window.print());
-    window.addEventListener('hashchange', () => activatePanel(location.hash.toLowerCase() === '#billing' ? 'billing' : 'customers', { updateHash: false }));
+    byId('printReceiptBtn').addEventListener('click', () => window.print());
+    byId('gcashMonth').addEventListener('change', () => loadGcash());
+    byId('refreshGcashBtn').addEventListener('click', () => loadGcash({ notify: true }));
+    byId('addGcashAllocationBtn').addEventListener('click', addGcashAllocation);
+    byId('gcashAllocationRows').addEventListener('input', handleGcashAllocationInput);
+    byId('gcashAllocationRows').addEventListener('change', handleGcashAllocationInput);
+    byId('gcashAllocationRows').addEventListener('click', handleGcashAllocationRemove);
+    byId('gcashAllocationForm').addEventListener('submit', postGcashAllocation);
+    const panelFromHash = () => {
+        const requested = location.hash.toLowerCase().replace(/^#/, '');
+        return ['customers', 'billing', 'history', 'gcash'].includes(requested) ? requested : 'customers';
+    };
+    window.addEventListener('hashchange', () => activatePanel(panelFromHash(), { updateHash: false }));
 
     renderSortHeaders('customer');
     renderSortHeaders('payment');
-    activatePanel(location.hash.toLowerCase() === '#billing' ? 'billing' : 'customers', { updateHash: false });
+    activatePanel(panelFromHash(), { updateHash: false });
     loadWorkspace();
 })();

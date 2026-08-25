@@ -1,4 +1,5 @@
 const assert = require('assert/strict');
+const crypto = require('crypto');
 const express = require('express');
 const { isEffectivePaymentEntryStatus } = require('../../billing/backend/payment-entry-normalizer');
 
@@ -16,6 +17,20 @@ const COLLECTOR = {
   role: 'Collector',
   branchId: 'branch-1'
 };
+const GCASH_ADMIN = {
+  id: 'admin-gcash-1',
+  username: 'admin.gcash',
+  name: 'GCash Admin',
+  role: 'Admin',
+  branchId: 1
+};
+const GCASH_COLLECTOR = {
+  id: 'collector-gcash-1',
+  username: 'collector.gcash',
+  name: 'GCash Collector',
+  role: 'Collector',
+  branchId: 1
+};
 
 const stores = {
   customers: [{
@@ -26,14 +41,24 @@ const stores = {
     planName: 'Postpaid 1000',
     planAmount: 1000,
     planBilling: 'Postpaid'
+  }, {
+    accountNumber: 'ACC-GCASH',
+    name: 'GCash Approval Client',
+    area: 'GCash Area',
+    branchId: 1,
+    planName: 'Postpaid 1000',
+    planAmount: 1000,
+    planBilling: 'Postpaid'
   }],
   collectors: {
     assignments: {
-      'North Area': ['collector-1']
+      'North Area': ['collector-1'],
+      'GCash Area': ['collector-gcash-1']
     }
   },
   payments: {},
-  collector_remittances: { records: [] }
+  collector_remittances: { records: [] },
+  gcash_transaction_history: { version: 2, branches: {} }
 };
 let relationalReady = false;
 const relationalPaymentRows = [];
@@ -116,7 +141,7 @@ replaceModule('../../../../core/data/db-relational', {
   isRelationalReady: async () => relationalReady
 });
 replaceModule('../../admin/backend/accounts-store', {
-  loadAccounts: async () => [ADMIN, COLLECTOR]
+  loadAccounts: async () => [ADMIN, COLLECTOR, GCASH_ADMIN, GCASH_COLLECTOR]
 });
 replaceModule('../../billing/backend/payment-numbering', {
   assignEntryNumbers: async () => {},
@@ -135,6 +160,21 @@ replaceModule('../../billing/backend/payment-records', {
   })
 });
 
+const gcashHistoryModulePath = require.resolve('../../billing/backend/gcash-transaction-history-store');
+delete require.cache[gcashHistoryModulePath];
+const actualGcashHistoryStore = require(gcashHistoryModulePath);
+let failNextCollectorGcashFinalize = false;
+replaceModule('../../billing/backend/gcash-transaction-history-store', {
+  ...actualGcashHistoryStore,
+  finalizeGcashTransactionAssignment: async (payload) => {
+    if (failNextCollectorGcashFinalize) {
+      failNextCollectorGcashFinalize = false;
+      throw new Error('Simulated GCash finalization interruption');
+    }
+    return actualGcashHistoryStore.finalizeGcashTransactionAssignment(payload);
+  }
+});
+
 const routerPath = require.resolve('../backend/collector-payments');
 delete require.cache[routerPath];
 const collectorPaymentsRouter = require(routerPath);
@@ -143,14 +183,17 @@ async function run() {
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => {
-    if (req.get('x-test-actor') === 'admin') req.user = { ...ADMIN };
+    const actor = req.get('x-test-actor');
+    if (actor === 'admin') req.user = { ...ADMIN };
+    else if (actor === 'admin-gcash') req.user = { ...GCASH_ADMIN };
+    else if (actor === 'collector-gcash') req.collector = { ...GCASH_COLLECTOR };
     else req.collector = { ...COLLECTOR };
     next();
   });
   app.use('/payments', collectorPaymentsRouter);
   app.use((error, req, res, next) => {
     void next;
-    res.status(error.status || 500).json({ ok: false, error: error.message });
+    res.status(error.status || 500).json({ ok: false, error: error.message, code: error.code || null });
   });
 
   const server = await new Promise((resolve) => {
@@ -462,6 +505,309 @@ async function run() {
     assert.equal(relationalReviewRows[0].paymentEntryId, 'rel-pay-001');
     assert.equal(relationalReviewRows[0].status, 'approved');
     assert.equal(relationalReviewRows[0].reviewedById, 'admin-1');
+    relationalReady = false;
+
+    let gcashImportIndex = 0;
+    const importOfficialGcashCredit = async (reference, amount, date) => {
+      gcashImportIndex += 1;
+      await actualGcashHistoryStore.importGcashTransactionBatch({
+        branchId: 1,
+        fileName: `collector-gcash-${gcashImportIndex}.pdf`,
+        pdfSha256: String(gcashImportIndex).padStart(64, '0'),
+        parsed: {
+          title: 'GCash Transaction History',
+          statementFrom: date,
+          statementTo: date,
+          transactions: [{
+            reference,
+            transactionAt: `${date} 09:30:00`,
+            transactionDate: date,
+            description: 'Transfer from 09111111111 to 09361565251',
+            sender: '09111111111',
+            recipient: '09361565251',
+            debit: null,
+            credit: amount,
+            balance: amount,
+            status: 'received',
+            pageNumber: 1
+          }]
+        },
+        importedBy: GCASH_ADMIN
+      });
+    };
+    const submitCollectorGcash = (reference, amount, date, clientPaymentId) => request('/ACC-GCASH', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector-gcash' },
+      body: JSON.stringify({
+        amount,
+        date,
+        recordedAt: `${date}T09:30:00+08:00`,
+        reference,
+        paymentMethod: 'GCash',
+        kind: 'payment',
+        clientPaymentId
+      })
+    });
+    const approveCollectorGcash = (entryId) => request(`/approvals/${encodeURIComponent(entryId)}/approve`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin-gcash' },
+      body: JSON.stringify({})
+    });
+    const findOfficialGcashTransaction = (history, reference) => (
+      history.transactions.find((row) => (
+        actualGcashHistoryStore.normalizeReference(row.reference)
+        === actualGcashHistoryStore.normalizeReference(reference)
+      ))
+    );
+
+    await importOfficialGcashCredit('GCASH-TEMP-OWNED-1', 700, '2026-08-10');
+    const tempConflictSubmission = await submitCollectorGcash(
+      'GCASH-TEMP-OWNED-1',
+      700,
+      '2026-08-10',
+      'gcash-temp-owned-1'
+    );
+    assert.equal(tempConflictSubmission.status, 201);
+    assert.equal(tempConflictSubmission.body.status, 'pending_approval');
+    let gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    let officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-TEMP-OWNED-1');
+    assert.equal(officialTransaction.assignment, null);
+    await actualGcashHistoryStore.claimGcashTransaction({
+      branchId: 1,
+      reference: 'GCASH-TEMP-OWNED-1',
+      submissionId: 'temp-gcash-owned-test',
+      accountNumber: 'TMP0000001',
+      customerName: 'Temp Customer',
+      amount: 700,
+      paymentDate: '2026-08-10',
+      billingMonth: '2026-08',
+      claimedBy: GCASH_ADMIN
+    });
+    const tempConflictApproval = await approveCollectorGcash(tempConflictSubmission.body.id);
+    assert.equal(tempConflictApproval.status, 409);
+    assert.equal(tempConflictApproval.body.code, 'GCASH_TRANSACTION_ALREADY_ASSIGNED');
+    assert.equal(
+      stores.payments['ACC-GCASH'].history.find((entry) => entry.id === tempConflictSubmission.body.id).status,
+      'pending_approval'
+    );
+    const tempConflictBatch = await request('/approvals/approve-all', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin-gcash' },
+      body: JSON.stringify({ entryIds: [tempConflictSubmission.body.id] })
+    });
+    assert.equal(tempConflictBatch.status, 200);
+    assert.equal(tempConflictBatch.body.approved, 0);
+    assert.equal(tempConflictBatch.body.skipped, 1);
+    assert.equal(tempConflictBatch.body.firstError.code, 'GCASH_TRANSACTION_ALREADY_ASSIGNED');
+    await actualGcashHistoryStore.releaseGcashTransactionClaim({
+      branchId: 1,
+      reference: 'GCASH-TEMP-OWNED-1',
+      submissionId: 'temp-gcash-owned-test',
+      accountNumber: 'TMP0000001'
+    });
+
+    await importOfficialGcashCredit('GCASH-COLLECTOR-OK-2', 800, '2026-08-11');
+    const gcashSubmission = await submitCollectorGcash(
+      'GCASH-COLLECTOR-OK-2',
+      800,
+      '2026-08-11',
+      'gcash-collector-ok-2'
+    );
+    assert.equal(gcashSubmission.status, 201);
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-COLLECTOR-OK-2');
+    assert.equal(officialTransaction.assignment, null);
+    const gcashApproval = await approveCollectorGcash(gcashSubmission.body.id);
+    assert.equal(gcashApproval.status, 200);
+    assert.equal(gcashApproval.body.record.status, 'approved');
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-COLLECTOR-OK-2');
+    assert.equal(officialTransaction.assignment.status, 'posted');
+    assert.equal(officialTransaction.assignment.paymentEntryId, gcashSubmission.body.id);
+    assert.equal(stores.payments['ACC-GCASH'].history.filter((entry) => entry.id === gcashSubmission.body.id).length, 1);
+
+    await importOfficialGcashCredit('GCASH-COLLECTOR-RETRY-3', 900, '2026-08-12');
+    const retrySubmission = await submitCollectorGcash(
+      'GCASH-COLLECTOR-RETRY-3',
+      900,
+      '2026-08-12',
+      'gcash-collector-retry-3'
+    );
+    failNextCollectorGcashFinalize = true;
+    const interruptedApproval = await approveCollectorGcash(retrySubmission.body.id);
+    assert.equal(interruptedApproval.status, 409);
+    assert.equal(interruptedApproval.body.code, 'COLLECTOR_GCASH_FINALIZATION_PENDING');
+    const interruptedStored = stores.payments['ACC-GCASH'].history
+      .find((entry) => entry.id === retrySubmission.body.id);
+    assert.equal(interruptedStored.status, 'approved');
+    const originalReviewedAt = interruptedStored.reviewedAt;
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-COLLECTOR-RETRY-3');
+    assert.equal(officialTransaction.assignment.status, 'claimed');
+    const recoveredApproval = await request('/approvals/approve-all', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin-gcash' },
+      body: JSON.stringify({ entryIds: [retrySubmission.body.id] })
+    });
+    assert.equal(recoveredApproval.status, 200);
+    assert.equal(recoveredApproval.body.approved, 1);
+    assert.equal(recoveredApproval.body.skipped, 0);
+    assert.equal(
+      stores.payments['ACC-GCASH'].history.find((entry) => entry.id === retrySubmission.body.id).reviewedAt,
+      originalReviewedAt
+    );
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-COLLECTOR-RETRY-3');
+    assert.equal(officialTransaction.assignment.status, 'posted');
+    assert.equal(officialTransaction.assignment.paymentEntryId, retrySubmission.body.id);
+
+    await importOfficialGcashCredit('GCASH-COLLECTOR-RACE-4', 1000, '2026-08-13');
+    const raceSubmission = await submitCollectorGcash(
+      'GCASH-COLLECTOR-RACE-4',
+      1000,
+      '2026-08-13',
+      'gcash-collector-race-4'
+    );
+    const concurrentApprovals = await Promise.all([
+      approveCollectorGcash(raceSubmission.body.id),
+      approveCollectorGcash(raceSubmission.body.id)
+    ]);
+    assert.deepEqual(concurrentApprovals.map((result) => result.status), [200, 200]);
+    assert.equal(concurrentApprovals.filter((result) => result.body.replayed === true).length, 1);
+    assert.equal(stores.payments['ACC-GCASH'].history.filter((entry) => entry.id === raceSubmission.body.id).length, 1);
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-COLLECTOR-RACE-4');
+    assert.equal(officialTransaction.assignment.status, 'posted');
+    assert.equal(officialTransaction.assignment.paymentEntryId, raceSubmission.body.id);
+
+    await importOfficialGcashCredit('GCASH-BATCH-RETRY-5', 550, '2026-08-14');
+    const batchRetrySubmission = await submitCollectorGcash(
+      'GCASH-BATCH-RETRY-5',
+      550,
+      '2026-08-14',
+      'gcash-batch-retry-5'
+    );
+    failNextCollectorGcashFinalize = true;
+    const automaticBatchRetry = await request('/approvals/approve-all', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin-gcash' },
+      body: JSON.stringify({ entryIds: [batchRetrySubmission.body.id] })
+    });
+    assert.equal(automaticBatchRetry.status, 200);
+    assert.equal(automaticBatchRetry.body.approved, 1);
+    assert.equal(automaticBatchRetry.body.skipped, 0);
+    assert.equal(stores.payments['ACC-GCASH'].history
+      .filter((entry) => entry.id === batchRetrySubmission.body.id).length, 1);
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-BATCH-RETRY-5');
+    assert.equal(officialTransaction.assignment.status, 'posted');
+    assert.equal(officialTransaction.assignment.paymentEntryId, batchRetrySubmission.body.id);
+
+    const unimportedGcashSubmission = await submitCollectorGcash(
+      'GCASH-NOT-IMPORTED-6',
+      500,
+      '2026-08-15',
+      'gcash-not-imported-6'
+    );
+    const unimportedGcashApproval = await approveCollectorGcash(unimportedGcashSubmission.body.id);
+    assert.equal(unimportedGcashApproval.status, 409);
+    assert.equal(unimportedGcashApproval.body.code, 'GCASH_HISTORY_MATCH_REQUIRED');
+    assert.equal(
+      stores.payments['ACC-GCASH'].history.find((entry) => entry.id === unimportedGcashSubmission.body.id).status,
+      'pending_approval'
+    );
+
+    await importOfficialGcashCredit('GCASH-MISLABELED-CASH-7', 600, '2026-08-16');
+    const mislabeledSubmission = await request('/ACC-GCASH', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'collector-gcash' },
+      body: JSON.stringify({
+        amount: 600,
+        date: '2026-08-16',
+        recordedAt: '2026-08-16T09:30:00+08:00',
+        reference: 'GCASH-MISLABELED-CASH-7',
+        paymentMethod: 'Cash',
+        kind: 'payment',
+        clientPaymentId: 'gcash-mislabeled-cash-7'
+      })
+    });
+    assert.equal(mislabeledSubmission.status, 201);
+    const mislabeledApproval = await approveCollectorGcash(mislabeledSubmission.body.id);
+    assert.equal(mislabeledApproval.status, 200);
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-MISLABELED-CASH-7');
+    assert.equal(officialTransaction.assignment.status, 'posted');
+    assert.equal(officialTransaction.assignment.paymentEntryId, mislabeledSubmission.body.id);
+
+    await importOfficialGcashCredit('0043891500999', 650, '2026-08-17');
+    const leadingZeroRejectSubmission = await submitCollectorGcash(
+      '43891500999',
+      650,
+      '2026-08-17',
+      'gcash-leading-zero-reject-8'
+    );
+    assert.equal(leadingZeroRejectSubmission.status, 201);
+    const leadingZeroSubmissionId = `collector-gcash-${crypto.createHash('sha256')
+      .update(`1|${leadingZeroRejectSubmission.body.id}`)
+      .digest('hex')
+      .slice(0, 32)}`;
+    await actualGcashHistoryStore.claimGcashTransaction({
+      branchId: 1,
+      reference: '0043891500999',
+      submissionId: leadingZeroSubmissionId,
+      accountNumber: 'ACC-GCASH',
+      customerName: 'Main - ACC-GCASH',
+      amount: 650,
+      paymentDate: '2026-08-17',
+      billingMonth: '2026-08',
+      claimedBy: GCASH_ADMIN
+    });
+    const leadingZeroRejected = await request(
+      `/approvals/${encodeURIComponent(leadingZeroRejectSubmission.body.id)}/reject`,
+      {
+        method: 'POST',
+        headers: { 'x-test-actor': 'admin-gcash' },
+        body: JSON.stringify({ reason: 'Official GCash proof was not accepted.' })
+      }
+    );
+    assert.equal(leadingZeroRejected.status, 200);
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, '0043891500999');
+    assert.equal(officialTransaction.assignment, null);
+
+    await importOfficialGcashCredit('GCASH-RELATIONAL-9', 1100, '2026-08-18');
+    relationalPaymentRows.push({
+      id: 'rel-gcash-007',
+      branchId: 1,
+      accountNumber: 'ACC-GCASH',
+      amount: 1100,
+      date: '2026-08-18',
+      kind: 'payment',
+      direction: 'credit',
+      reference: 'GCASH-RELATIONAL-9',
+      orNumber: 'OR-REL-GCASH-007',
+      description: 'Relational Collector GCash payment',
+      type: 'payment',
+      recordedAt: '2026-08-16 10:00:00',
+      recordedByUserId: 'collector-gcash-1',
+      recordedByUsername: 'collector.gcash',
+      recordedByName: 'GCash Collector',
+      recordedByRole: 'Collector',
+      payer: 'GCash Approval Client',
+      status: 'pending_approval',
+      paymentMethod: 'GCash',
+      fingerprint: 'acc-gcash|gcash-relational-7|payment|1100.00',
+      xenditId: null
+    });
+    relationalReady = true;
+    const relationalGcashApproval = await approveCollectorGcash('rel-gcash-007');
+    assert.equal(relationalGcashApproval.status, 200);
+    assert.equal(relationalPaymentRows.find((row) => row.id === 'rel-gcash-007').status, 'approved');
+    assert.equal(relationalReviewRows.find((row) => row.paymentEntryId === 'rel-gcash-007').status, 'approved');
+    gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
+    officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-RELATIONAL-9');
+    assert.equal(officialTransaction.assignment.status, 'posted');
+    assert.equal(officialTransaction.assignment.paymentEntryId, 'rel-gcash-007');
     relationalReady = false;
 
     console.log('COLLECTOR PAYMENT APPROVAL GATE PASSED');

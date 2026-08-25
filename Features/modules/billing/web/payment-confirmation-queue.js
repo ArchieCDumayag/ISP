@@ -1921,9 +1921,10 @@
                 const accountNumber = String(allocation?.accountNumber || '').trim();
                 const amount = Number(allocation?.amount);
                 const customerLabel = customerName || 'Assigned customer';
-                const customerDisplay = accountNumber
+                const isTempAccount = /^TMP\d/i.test(accountNumber);
+                const customerDisplay = accountNumber && !isTempAccount
                     ? `<a class="gcash-match-name gcash-match-link" href="payment-breakdown.html?account=${escapeHtml(encodeURIComponent(accountNumber))}" title="View payment breakdown for ${escapeHtml(customerLabel)}">${escapeHtml(customerLabel)} <i class="ti ti-external-link" aria-hidden="true"></i></a>`
-                    : `<span class="gcash-match-name">${escapeHtml(customerLabel)}</span>`;
+                    : `<span class="gcash-match-name">${escapeHtml(customerLabel)}${isTempAccount ? ' <span class="badge bg-azure-lt text-azure">Temp</span>' : ''}</span>`;
                 return `<div class="gcash-match-allocation">
                     ${customerDisplay}
                     <span class="gcash-match-amount">${escapeHtml(Number.isFinite(amount) ? formatCurrency(amount) : '-')}</span>

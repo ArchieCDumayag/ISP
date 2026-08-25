@@ -27,7 +27,7 @@ async function main() {
   const cycleModule = require(path.join(projectRoot, 'Features/modules/temp/backend/billing-cycle'));
   const excelModule = require(path.join(projectRoot, 'Features/modules/temp/backend/workspace-excel'));
   assert.strictEqual(storeModule.STORE_KEY, 'temp_workspace_isolated_v1');
-  assert.strictEqual(storeModule.SCHEMA_VERSION, 3);
+  assert.strictEqual(storeModule.SCHEMA_VERSION, 4);
   assert(!['customers', 'payments', 'plans'].includes(storeModule.STORE_KEY));
   assert.deepStrictEqual(Array.from(cycleModule.PLAN_TYPES).sort(), ['postpaid', 'prepaid', 'prorate']);
   assert.deepStrictEqual(Array.from(cycleModule.BILLING_SCHEDULE_MODES).sort(), ['date', 'day']);
@@ -321,6 +321,10 @@ async function main() {
   assert.strictEqual(excelBuffer[1], 0x4b);
   const parsedExcelExport = excelModule.parseWorkspaceExcelBuffer(excelBuffer);
   assert.deepStrictEqual(parsedExcelExport, exported);
+  const isolatedPaymentHistory = excelModule.buildPaymentHistoryRows(exported, { month: '2026-07' });
+  assert.strictEqual(isolatedPaymentHistory.rows.length, 1);
+  assert.strictEqual(isolatedPaymentHistory.rows[0].Amount, 700);
+  assert.strictEqual(isolatedPaymentHistory.rows[0].Customer, 'Other Edited Location');
   const workbook = XLSX.read(excelBuffer, { type: 'buffer' });
   assert.deepStrictEqual(workbook.SheetNames, [
     excelModule.SHEET_NAMES.metadata,
@@ -418,6 +422,342 @@ async function main() {
   );
   console.log('PASS complete Temp JSON and Excel export/import round-trip contract');
 
+  const legacyWorkbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.json_to_sheet([
+    { Field: 'kind', Value: storeModule.EXPORT_KIND },
+    { Field: 'version', Value: 3 },
+    { Field: 'exportedAt', Value: exported.exportedAt },
+    { Field: 'schemaVersion', Value: 3 },
+    { Field: 'locationName', Value: exported.data.locationName },
+    { Field: 'updatedAt', Value: exported.data.updatedAt || '' },
+    { Field: 'customerSequence', Value: exported.data.sequences.customer },
+    { Field: 'paymentSequence', Value: exported.data.sequences.payment },
+    { Field: 'customerCount', Value: exported.data.customers.length },
+    { Field: 'transactionCount', Value: exported.data.payments.length }
+  ], { header: ['Field', 'Value'] }), excelModule.SHEET_NAMES.metadata);
+  XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.json_to_sheet(
+    exported.data.customers.map((record) => Object.fromEntries(
+      excelModule.CUSTOMER_FIELDS.map((field) => [field, record[field] ?? ''])
+    )),
+    { header: Array.from(excelModule.CUSTOMER_FIELDS) }
+  ), excelModule.SHEET_NAMES.customers);
+  XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.json_to_sheet(
+    exported.data.payments.map((record) => Object.fromEntries(
+      excelModule.LEGACY_PAYMENT_FIELDS_V3.map((field) => [field, record[field] ?? ''])
+    )),
+    { header: Array.from(excelModule.LEGACY_PAYMENT_FIELDS_V3) }
+  ), excelModule.SHEET_NAMES.payments);
+  const parsedLegacyExcel = excelModule.parseWorkspaceExcelBuffer(
+    XLSX.write(legacyWorkbook, { bookType: 'xlsx', type: 'buffer' })
+  );
+  assert.strictEqual(parsedLegacyExcel.version, 3);
+  assert.strictEqual(parsedLegacyExcel.data.schemaVersion, 3);
+  assert.strictEqual(parsedLegacyExcel.data.payments.length, exported.data.payments.length);
+  assert.strictEqual(Object.hasOwn(parsedLegacyExcel.data.payments[0], 'source'), false);
+  const legacyExcelRestore = await isolatedStore.replaceFromExport(parsedLegacyExcel);
+  assert.strictEqual(legacyExcelRestore.summary.paymentCount, 2);
+  console.log('PASS schema-v3 Temp Excel imports remain backward compatible');
+
+  const officialMemory = new Map();
+  let officialClock = 0;
+  let officialUuid = 0;
+  const officialStore = storeModule.createWorkspaceStore({
+    readJson: async (key, fallback) => officialMemory.has(key) ? officialMemory.get(key) : fallback,
+    writeJson: async (key, value) => officialMemory.set(key, JSON.parse(JSON.stringify(value))),
+    today: () => '2026-08-08',
+    now: () => `2026-08-08T10:00:${String(officialClock++).padStart(2, '0')}.000Z`,
+    uuid: () => `official-manual-${++officialUuid}`
+  });
+  const officialCustomerOne = await officialStore.createCustomer({
+    firstName: 'Legacy',
+    lastName: 'Temp Payer',
+    monthlyRate: 800,
+    openingBalance: 800,
+    activationDate: '2026-08-01',
+    billingScheduleMode: 'day',
+    billingDay: 20
+  });
+  const officialCustomerTwo = await officialStore.createCustomer({
+    firstName: 'Split',
+    lastName: 'Temp Payer',
+    monthlyRate: 1200,
+    openingBalance: 1200,
+    activationDate: '2026-08-01',
+    billingScheduleMode: 'day',
+    billingDay: 20
+  });
+  const longAccountCustomer = await officialStore.createCustomer({
+    accountNumber: 'TMP-ACCOUNT-1234567890',
+    firstName: 'Long',
+    lastName: 'Account',
+    monthlyRate: 500,
+    openingBalance: 500,
+    activationDate: '2026-08-01',
+    billingScheduleMode: 'day',
+    billingDay: 20
+  });
+  assert(longAccountCustomer.accountNumber.length > 20);
+  await assert.rejects(
+    officialStore.recordImportedGcashPayments({
+      branchId: 1,
+      reference: 'LONG-ACCOUNT-GCASH',
+      date: '2026-08-08',
+      officialAmount: 500,
+      allocations: [{ accountNumber: longAccountCustomer.accountNumber, amount: 500 }]
+    }),
+    (error) => error.code === 'TEMP_GCASH_ACCOUNT_NUMBER_TOO_LONG'
+  );
+  await assert.rejects(
+    officialStore.createPayment({
+      accountNumber: officialCustomerOne.accountNumber,
+      kind: 'payment',
+      amount: 800,
+      date: '2026-08-08',
+      paymentMethod: 'GCash',
+      reference: 'GCASH-SPLIT-2000'
+    }, 'Admin'),
+    (error) => error.code === 'TEMP_GCASH_OFFICIAL_POSTING_REQUIRED'
+  );
+  const legacyOfficialWorkspace = officialMemory.get(storeModule.STORE_KEY);
+  legacyOfficialWorkspace.sequences.payment = 1;
+  legacyOfficialWorkspace.payments.push({
+    id: 'legacy-temp-gcash-payment',
+    receiptNumber: 'TMP-0000001',
+    accountNumber: officialCustomerOne.accountNumber,
+    kind: 'payment',
+    amount: 800,
+    date: '2026-08-08',
+    paymentMethod: 'GCash',
+    reference: '43891500420',
+    description: 'Legacy Temp GCash payment',
+    recordedBy: 'Admin',
+    systemGenerated: false,
+    cycleKey: '',
+    createdAt: '2026-08-08T09:00:00.000Z',
+    updatedAt: '2026-08-08T09:00:00.000Z'
+  });
+  const officialAllocations = [
+    { accountNumber: officialCustomerOne.accountNumber, amount: 800 },
+    { accountNumber: officialCustomerTwo.accountNumber, amount: 1200 }
+  ];
+  await assert.rejects(
+    officialStore.updatePayment('legacy-temp-gcash-payment', { reference: 'CHANGED-REFERENCE' }, 'Admin'),
+    (error) => error.code === 'TEMP_GCASH_OFFICIAL_POSTING_REQUIRED'
+  );
+  const officialPosting = await officialStore.recordImportedGcashPayments({
+    branchId: 1,
+    reference: '0043891500420',
+    date: '2026-08-08',
+    paymentReceivedAt: '2026-08-08T17:45:00+08:00',
+    officialAmount: 2000,
+    allocations: officialAllocations,
+    recordedBy: 'Admin'
+  });
+  assert.strictEqual(officialPosting.adoptedCount, 1);
+  assert.strictEqual(officialPosting.insertedCount, 1);
+  assert.strictEqual(officialPosting.entries.length, 2);
+  assert.strictEqual(new Set(officialPosting.paymentEntryIds).size, 2);
+  assert(officialPosting.paymentEntryIds.every((paymentEntryId) => paymentEntryId.length <= 64));
+  assert(officialPosting.entries.every((payment) => payment.officialGcash && payment.immutable));
+  assert.strictEqual(officialPosting.entries.find((payment) => (
+    payment.accountNumber === officialCustomerOne.accountNumber
+  )).id, 'legacy-temp-gcash-payment');
+  const officialRetry = await officialStore.recordImportedGcashPayments({
+    branchId: 1,
+    reference: '0043 8915 00420',
+    date: '2026-08-08',
+    paymentReceivedAt: '2026-08-08T17:45:00+08:00',
+    officialAmount: 2000,
+    allocations: officialAllocations.slice().reverse(),
+    recordedBy: 'Admin'
+  });
+  assert.strictEqual(officialRetry.idempotent, true);
+  assert.strictEqual(officialRetry.entries.length, 2);
+  assert.strictEqual((await officialStore.getSnapshot()).payments.length, 2);
+  await assert.rejects(
+    officialStore.recordImportedGcashPayments({
+      branchId: 1,
+      reference: '0043891500420',
+      date: '2026-08-08',
+      officialAmount: 2000,
+      allocations: [
+        { accountNumber: officialCustomerOne.accountNumber, amount: 700 },
+        { accountNumber: officialCustomerTwo.accountNumber, amount: 1300 }
+      ]
+    }),
+    (error) => error.code === 'TEMP_GCASH_GROUP_CONFLICT'
+  );
+  await assert.rejects(
+    officialStore.updatePayment(officialPosting.entries[0].id, { amount: 1 }, 'Admin'),
+    (error) => error.code === 'TEMP_GCASH_PAYMENT_IMMUTABLE'
+  );
+  await assert.rejects(
+    officialStore.createPayment({
+      accountNumber: officialCustomerOne.accountNumber,
+      kind: 'payment',
+      amount: 800,
+      date: '2026-08-08',
+      paymentMethod: 'Cash',
+      reference: '43891500420'
+    }, 'Admin'),
+    (error) => error.code === 'TEMP_GCASH_REFERENCE_PROTECTED'
+  );
+  await assert.rejects(
+    officialStore.deletePayment(officialPosting.entries[0].id),
+    (error) => error.code === 'TEMP_GCASH_PAYMENT_IMMUTABLE'
+  );
+  await assert.rejects(
+    officialStore.clearAllData(),
+    (error) => error.code === 'TEMP_GCASH_WORKSPACE_CLEAR_BLOCKED'
+  );
+  const officialReceipt = await officialStore.getPaymentReceipt(officialPosting.entries[0].id);
+  assert.strictEqual(officialReceipt.receipt.officialGcash, true);
+  assert.strictEqual(officialReceipt.receipt.amount, officialPosting.entries[0].amount);
+  const officialExport = await officialStore.createExport();
+  const officialReferenceFixture = [{
+    reference: '0043891500420',
+    status: 'received',
+    credit: 2000
+  }];
+  assert.strictEqual(
+    storeModule.resolveOfficialIncomingGcashReference(officialReferenceFixture, '43891500420')?.transaction?.reference,
+    '0043891500420'
+  );
+  let officialImportValidated = false;
+  let allImportedPaymentsValidated = false;
+  const officialRestore = await officialStore.replaceFromExport(officialExport, {
+    validateImportedPayments: async (payments) => {
+      allImportedPaymentsValidated = true;
+      assert.strictEqual(payments.length, 2);
+    },
+    validateOfficialPayments: async (payments) => {
+      officialImportValidated = true;
+      assert.strictEqual(payments.length, 2);
+    }
+  });
+  assert.strictEqual(allImportedPaymentsValidated, true);
+  assert.strictEqual(officialImportValidated, true);
+  assert.strictEqual(officialRestore.summary.receivedPaymentCount, 2);
+  const officialRemovalExport = JSON.parse(JSON.stringify(officialExport));
+  officialRemovalExport.data.payments.pop();
+  await assert.rejects(
+    officialStore.replaceFromExport(officialRemovalExport),
+    (error) => error.code === 'TEMP_GCASH_IMPORT_IMMUTABLE'
+  );
+  const officialMetadataRewriteExport = JSON.parse(JSON.stringify(officialExport));
+  officialMetadataRewriteExport.data.payments[0].receiptNumber = 'TMP-8888888';
+  officialMetadataRewriteExport.data.payments[0].recordedBy = 'Changed by import';
+  officialMetadataRewriteExport.data.payments[0].description = 'Changed official description';
+  officialMetadataRewriteExport.data.payments[0].paymentReceivedAt = '2026-08-09T00:00:00+08:00';
+  await assert.rejects(
+    officialStore.replaceFromExport(officialMetadataRewriteExport),
+    (error) => error.code === 'TEMP_GCASH_IMPORT_IMMUTABLE'
+  );
+  const officialReferenceRewriteExport = JSON.parse(JSON.stringify(officialExport));
+  officialReferenceRewriteExport.data.payments[0].reference = '00 4389-1500420';
+  officialReferenceRewriteExport.data.payments[0].paymentMethod = 'gcash';
+  await assert.rejects(
+    officialStore.replaceFromExport(officialReferenceRewriteExport),
+    (error) => error.code === 'TEMP_GCASH_IMPORT_IMMUTABLE'
+  );
+  const duplicateReceiptExport = JSON.parse(JSON.stringify(officialExport));
+  duplicateReceiptExport.data.payments[1].receiptNumber = duplicateReceiptExport.data.payments[0].receiptNumber;
+  await assert.rejects(
+    officialStore.replaceFromExport(duplicateReceiptExport),
+    /duplicate receipt numbers/
+  );
+  const injectedLegacyGcashExport = JSON.parse(JSON.stringify(officialExport));
+  injectedLegacyGcashExport.data.payments.push({
+    id: 'injected-legacy-gcash',
+    receiptNumber: 'TMP-9999999',
+    accountNumber: officialCustomerOne.accountNumber,
+    kind: 'payment',
+    amount: 2000,
+    date: '2026-08-08',
+    paymentMethod: 'GCash',
+    reference: 'UNRELATED-LEGACY-GCASH',
+    description: 'Injected legacy row',
+    recordedBy: 'Import',
+    systemGenerated: false,
+    cycleKey: '',
+    billingMonth: '2026-08',
+    createdAt: '2026-08-08T09:00:00.000Z',
+    updatedAt: '2026-08-08T09:00:00.000Z'
+  });
+  await assert.rejects(
+    officialStore.replaceFromExport(injectedLegacyGcashExport),
+    (error) => error.code === 'TEMP_GCASH_LEGACY_IMPORT_IMMUTABLE'
+  );
+  const officialAndLegacyDuplicateExport = JSON.parse(JSON.stringify(officialExport));
+  officialAndLegacyDuplicateExport.data.payments.push({
+    ...injectedLegacyGcashExport.data.payments.at(-1),
+    id: 'duplicate-legacy-gcash-owned-reference',
+    receiptNumber: 'TMP-9999998',
+    reference: '43891500420'
+  });
+  await assert.rejects(
+    officialStore.replaceFromExport(officialAndLegacyDuplicateExport),
+    (error) => error.code === 'TEMP_GCASH_IMPORT_REFERENCE_CONFLICT'
+  );
+  const officialAndCashDuplicateExport = JSON.parse(JSON.stringify(officialExport));
+  officialAndCashDuplicateExport.data.payments.push({
+    ...injectedLegacyGcashExport.data.payments.at(-1),
+    id: 'duplicate-cash-gcash-owned-reference',
+    receiptNumber: 'TMP-9999997',
+    paymentMethod: 'Cash',
+    reference: '43891500420'
+  });
+  await assert.rejects(
+    officialStore.replaceFromExport(officialAndCashDuplicateExport),
+    (error) => error.code === 'TEMP_GCASH_IMPORT_REFERENCE_CONFLICT'
+  );
+  const legacyTimestampWorkspace = JSON.parse(JSON.stringify(officialExport));
+  legacyTimestampWorkspace.data.payments = legacyTimestampWorkspace.data.payments.map((payment) => ({
+    ...payment,
+    source: '',
+    sourceBranchId: null,
+    sourceGroupId: '',
+    sourceAllocationId: '',
+    officialReferenceKey: '',
+    paymentReceivedAt: ''
+  }));
+  officialMemory.set(storeModule.STORE_KEY, JSON.parse(JSON.stringify(legacyTimestampWorkspace.data)));
+  const legacyTimestampExport = await officialStore.createExport();
+  const rewrittenLegacyReferenceExport = JSON.parse(JSON.stringify(legacyTimestampExport));
+  rewrittenLegacyReferenceExport.data.payments[0].reference = '00 4389-1500420';
+  rewrittenLegacyReferenceExport.data.payments[0].paymentMethod = 'gcash';
+  await assert.rejects(
+    officialStore.replaceFromExport(rewrittenLegacyReferenceExport),
+    (error) => error.code === 'TEMP_GCASH_LEGACY_IMPORT_IMMUTABLE'
+  );
+  const rewrittenLegacyTimestampExport = JSON.parse(JSON.stringify(legacyTimestampExport));
+  rewrittenLegacyTimestampExport.data.payments[0].createdAt = '1999-01-01T00:00:00.000Z';
+  rewrittenLegacyTimestampExport.data.payments[0].updatedAt = '1999-01-01T00:00:00.000Z';
+  await assert.rejects(
+    officialStore.replaceFromExport(rewrittenLegacyTimestampExport),
+    (error) => error.code === 'TEMP_GCASH_LEGACY_IMPORT_IMMUTABLE'
+  );
+  officialMemory.set(storeModule.STORE_KEY, JSON.parse(JSON.stringify(officialExport.data)));
+  const historyRows = excelModule.buildPaymentHistoryRows(officialExport, { month: '2026-08' });
+  assert.strictEqual(historyRows.rows.length, 2);
+  assert(historyRows.rows.every((row) => row['Official GCash'] === 'Yes'));
+  const historyWorkbook = XLSX.read(
+    excelModule.buildPaymentHistoryExcelBuffer(officialExport, { month: '2026-08' }),
+    { type: 'buffer' }
+  );
+  assert.deepStrictEqual(historyWorkbook.SheetNames, [excelModule.SHEET_NAMES.paymentHistory]);
+  console.log('PASS duplicate-safe official GCash adoption, idempotency, immutability, receipts, and Temp-only history export');
+
+  await assert.rejects(
+    cycleStore.updatePayment(postpaidCharges[0].id, { amount: 1 }, 'Admin'),
+    (error) => error.code === 'TEMP_SYSTEM_CHARGE_IMMUTABLE'
+  );
+  await assert.rejects(
+    cycleStore.deletePayment(postpaidCharges[0].id),
+    (error) => error.code === 'TEMP_SYSTEM_CHARGE_IMMUTABLE'
+  );
+  console.log('PASS system-generated Temp billing charges are immutable');
+
   const clearedSnapshot = await isolatedStore.clearAllData();
   assert.strictEqual(clearedSnapshot.summary.customerCount, 0);
   assert.strictEqual(clearedSnapshot.summary.paymentCount, 0);
@@ -443,8 +783,19 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=2.1'));
-  assert(tempHtml.includes('/temp.css?v=1.9'));
+  assert(tempHtml.includes('/temp.js?v=2.3'));
+  assert(tempHtml.includes('/temp.css?v=2.2'));
+  assert(tempHtml.includes('id="historyTab"'));
+  assert(tempHtml.includes('id="gcashTab"'));
+  assert(tempHtml.includes('id="historyMonth" type="month"'));
+  assert(tempHtml.includes('id="exportPaymentHistoryBtn"'));
+  assert(tempHtml.includes('id="receiptDialog"'));
+  assert(tempHtml.includes('id="gcashAllocationDialog"'));
+  assert(tempHtml.includes('id="gcashConflictCount"'));
+  assert(tempHtml.includes('already found in Main is shown for warning only'));
+  ['customerPageSize', 'paymentPageSize', 'historyPageSize'].forEach((id) => {
+    assert(tempHtml.includes(`id="${id}"`));
+  });
   assert(tempHtml.includes('id="clearWorkspaceBtn"'));
   assert(tempHtml.includes('id="exportCollectorBtn"'));
   assert(tempHtml.includes('Collector Excel'));
@@ -577,6 +928,15 @@ async function main() {
   assert(tempCss.includes('grid-template-columns: repeat(5, 1fr)'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
+  assert(tempJs.includes("const MANILA_TIME_ZONE = 'Asia/Manila'"));
+  assert(tempJs.includes("fetch(`${API_ROOT}/payment-history-export?month="));
+  assert(tempJs.includes('`/gcash?month=${encodeURIComponent(month)}`'));
+  assert(tempJs.includes('assignmentConfirmed: true'));
+  assert(tempJs.includes("conflict: 'Already in Main'"));
+  assert(tempJs.includes("transaction.state === 'conflict'"));
+  assert(tempJs.includes('payment?.immutable || payment?.systemGenerated || payment?.officialGcash'));
+  assert(tempJs.includes('function openReceipt(paymentId)'));
+  assert(tempJs.includes('function paginateRows(rows, group)'));
   assert(!tempHtml.includes('<iframe'), 'Temp must not embed canonical business pages');
   [tempHtml, tempCss, tempJs].forEach((source) => {
     assert(!source.includes('/customers.html'), 'Temp must not open or embed the main customer page');
@@ -594,6 +954,25 @@ async function main() {
   assert(routerSource.includes('workspaceStore.clearAllData()'));
   assert(routerSource.includes("router.get('/collector-export'"));
   assert(routerSource.includes('buildCollectorExcelBuffer(payload, { reportDate })'));
+  assert(routerSource.includes("router.get('/payment-history-export'"));
+  assert(routerSource.includes("router.get('/gcash'"));
+  assert(routerSource.includes("router.post('/gcash/:reference/post'"));
+  assert(routerSource.includes('claimGcashTransactionAllocations'));
+  assert(routerSource.includes('finalizeGcashTransactionAllocations'));
+  assert(!routerSource.includes('releaseGcashTransactionClaim'));
+  assert(routerSource.includes('const branchId = Number(req.user?.branchId);'));
+  assert(routerSource.includes("'TEMP_GCASH_ACCOUNT_NUMBER_TOO_LONG'"));
+  assert(routerSource.includes('findMainGcashPaymentsByReference'));
+  assert(routerSource.includes('rejectManualOfficialGcashReference'));
+  assert(routerSource.includes('validateImportedPaymentReferences'));
+  assert(routerSource.includes('validateImportedPayments: (payments)'));
+  assert(routerSource.includes("'TEMP_GCASH_IMPORT_OFFICIAL_REFERENCE_CONFLICT'"));
+  assert(routerSource.includes('This reference belongs to an imported GCash credit.'));
+  assert(routerSource.includes('officialTransactions: history.transactions'));
+  assert(routerSource.includes('officialTransactions: [transaction]'));
+  assert(routerSource.includes("gcash-payment-reference-lookup"));
+  assert(routerSource.includes("'TEMP_GCASH_MAIN_PAYMENT_CONFLICT'"));
+  assert(routerSource.includes("accountHasRole(req.user, 'Admin')"));
   assert(routerSource.includes("express.raw({ type: 'application/octet-stream', limit: '20mb' })"));
   assert(routerSource.includes('parseWorkspaceExcelBuffer(req.body)'));
   console.log('PASS standalone one-page Customer and Billing workspace');

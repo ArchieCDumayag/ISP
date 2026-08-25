@@ -1,6 +1,6 @@
 # Temp Workspace Module Context
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-08-25
 Status: Hidden auxiliary module with isolated secondary-location customer and billing storage.
 
 ## Purpose and current scope
@@ -8,7 +8,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - Provide one Admin-only page at `/temp.html` for a secondary location's customers and billing ledger.
 - Keep the workspace absent from the shared sidebar, dashboard, and all visible navigation.
 - Keep every Temp customer, balance, charge, payment, rebate, discount, statement, import, and export separate from the main location.
-- Support customer search/filter/sort, create/edit/delete, plan/rate/billing details, opening balances, ledger transaction search/filter/sort, calculated balances, printable customer ledgers with payment history, and complete Temp-only JSON/Excel backup and restore.
+- Support customer search/filter/sort/pagination, create/edit/delete, plan/rate/billing details, opening balances, ledger transaction search/filter/sort/pagination, calculated balances, printable customer ledgers and individual receipts, monthly payments-only history/export, official imported-GCash allocation, and complete Temp-only JSON/Excel backup and restore.
 - Customer entry uses synchronized fixed plan/rate selectors: Old plan/700, Basic/800, Standard/1000, and Premium/1200.
 - Service address entry is limited to the Poblacion and Masical dropdown choices, with Poblacion as the default for new customers and legacy unmatched values.
 - Customer entry includes Prepaid, Postpaid, and Prorate plan types plus an Activation date. Billing schedule can use an exact next-bill date or a monthly day number. Opening balance remains a direct manual starting value and is never recalculated by the cycle engine.
@@ -16,13 +16,13 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 ## Canonical runtime layout
 
 - `backend/index.js` exposes the `workspace` router entry through the module runtime.
-- `backend/workspace-router.js` owns authenticated `/api/temp` request/response handling.
+- `backend/workspace-router.js` owns Admin-role-protected `/api/temp` request/response handling and orchestrates shared imported-GCash claim/finalize plus the read-only Main-ledger duplicate check.
 - `backend/workspace-store.js` owns validation, account/receipt numbering, balance calculations, serialized mutations, persistence, and Temp export/import validation.
 - `backend/billing-cycle.js` owns pure Temp-only monthly date alignment and Billing-day proration calculations; it has no dependency on canonical Billing or Customer Management code.
-- `backend/workspace-excel.js` owns the strict Metadata, Customers, and Transactions workbook contract and preserves every stored customer and transaction field.
-- `web/temp.html` is the module's only browser entry point and contains the combined Customer and Billing panels and dialogs.
+- `backend/workspace-excel.js` owns schema-v4 Metadata/Customers/Transactions backup workbooks, backward-compatible schema-v3 reads, and report-only Collector and Temp monthly Payment History workbooks.
+- `web/temp.html` is the module's only browser entry point and contains Customers, Billing & Payments, Payment History, and GCash Posting panels plus their dialogs.
 - `web/temp.css` uses Tabler's default font variable and owns the responsive standalone layout.
-- `web/temp.js` calls only `/api/temp`, renders both panels, and handles CRUD, statements, filtering, backup, and restore.
+- `web/temp.js` calls only `/api/temp`, renders all four panels, and handles CRUD, paging, statements, receipts, payment-history reporting, official GCash allocation, backup, and restore with Asia/Manila date defaults.
 - Native Temp dialogs ignore Escape and backdrop clicks. They close only through their explicit Close/Cancel controls or after a successful completed action.
 - The plan and monthly-rate dropdowns synchronize in both directions so the stored plan/rate pair cannot disagree through normal form entry.
 - The service-address dropdown stores only Poblacion or Masical through normal form entry.
@@ -40,23 +40,29 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - `GET /api/temp/workspace` returns Temp customers, billing schedule mode/next date, ledger transactions, calculated balances, and summary totals.
 - `POST/PUT/DELETE /api/temp/customers` manages only Temp customers. Customers with ledger transactions cannot be deleted until those Temp transactions are removed.
 - `POST/PUT/DELETE /api/temp/payments` manages only Temp ledger entries. Charges increase balances; payments, rebates, and discounts reduce balances.
-- `DELETE /api/temp/workspace` clears all Temp customers and transactions and resets Temp account/receipt sequences. The page requires explicit destructive confirmation and recommends exporting a backup first.
+- Generic payment CRUD rejects new manual GCash entries and any non-charge credit that reuses an existing official/legacy GCash-owned reference. The router also blocks a Cash/blank-method manual credit when its exact or numeric-leading-zero reference identifies an incoming official history row. System-generated cycle charges and official imported-GCash payment rows are immutable. Unverified legacy GCash rows cannot be edited but may be deleted for correction; an exact account/amount/date/reference match can instead be adopted in place without creating another payment.
+- `GET /api/temp/payments/:paymentId/receipt` returns one Temp payment receipt. The UI also renders the same receipt from its current authenticated snapshot for printing.
+- `GET /api/temp/gcash?month=YYYY-MM` returns unlocked incoming official credits that are unassigned or assigned to Temp. It classifies Available, legacy reconciliation, claimed, posted, and Main-conflict rows. `POST /api/temp/gcash/:reference/post` accepts one to three distinct Temp accounts whose exact total equals the official credit, claims the shared branch reference before the atomic Temp write, then finalizes it with binding IDs capped to the shared 64-character contract. Exact retries are idempotent, leading-zero-equivalent legacy references are adopted safely, and any uncertain failure after a claim retains the reservation for deterministic retry instead of reopening the reference.
+- Billing's lightweight read-only Main lookup blocks collected and pending GCash references before Temp can claim them. A Main credit mislabeled Cash or blank is also blocked only when its exact/unique-leading-zero reference, amount, and calendar date identify the official credit. Collector GCash approval independently claims the same shared imported-history row before becoming effective, so a Temp-owned reference cannot later be approved through Collector. One official reference belongs to Main or Temp; this isolated endpoint does not create a mixed Main-and-Temp allocation group.
+- `DELETE /api/temp/workspace` clears all Temp customers and transactions and resets Temp account/receipt sequences only when no official GCash row would be orphaned. The page requires explicit destructive confirmation and recommends exporting a backup first.
 - `GET /api/temp/export?format=json|xlsx` downloads the same complete `isp-temp-workspace-export` backup as JSON or Excel. Excel contains Metadata, Customers, and Transactions sheets.
 - `GET /api/temp/collector-export` downloads a report-only Collector workbook with Account, Customer, Service address, Plan, Plan type, Billing, current Balance, and Due. Due equals Balance before the next billing date; on/after that date it adds the monthly rate only if the automatic cycle charge is not already in Balance. The report date is resolved in Asia/Manila, matching the Temp cycle engine even while UTC is still on the prior calendar date.
-- `POST /api/temp/import` retains the JSON API contract. `POST /api/temp/import-file` accepts exported JSON, XLSX, or XLS bytes, validates the complete file, and replaces only the isolated Temp workspace.
+- `GET /api/temp/payment-history-export?month=YYYY-MM` downloads only received Temp payments for the selected month. Main customers, Main payments, charges, rebates, and discounts are never included.
+- `POST /api/temp/import` retains the JSON API contract. `POST /api/temp/import-file` accepts exported JSON, XLSX, or XLS bytes, validates version, row counts, unique accounts/payment IDs/receipts/cycle keys, and complete official-GCash group metadata, and replaces only the isolated Temp workspace. Schema-v3 JSON/Excel exports remain importable. Imports cannot add, remove, or change unverified legacy GCash rows; no field of an existing official row can change, every imported official group must still match the current branch's shared claim, and no official/legacy GCash-owned reference may coexist with an ordinary Cash/blank or other effective credit.
 - Temp account numbers default to `TMP` plus six digits; receipt numbers default to `TMP-` plus seven digits.
 
 ## Access and integration contracts
 
-- Shared `server.js` lists `temp.html` in `PROTECTED_PAGES`, loads `tempBackend.load('workspace')`, and mounts it at `/api/temp` behind `requireAuth`.
-- Both the page and API require an Admin session. Signed-out page requests redirect to `/login.html`; signed-out API requests return `401`.
+- Shared `server.js` lists `temp.html` in `PROTECTED_PAGES`, loads `tempBackend.load('workspace')`, and mounts it at `/api/temp` behind `requireAuth`; the Temp router independently rejects authenticated non-Admin roles with `403`.
+- Both the page and API require an Admin session. Signed-out page requests redirect to `/login.html`; signed-out API requests return `401`; non-Admin API requests return `403`.
 - No Temp link exists in `public/sidebar.html`, `public/topbar.html`, `public/index.html`, or business-module pages.
 - The Temp UI contains no iframe, link, or API call to `/customers.html`, `/payments.html`, `/api/customers`, or `/api/payments`.
-- Customer Management and Billing source and records are unchanged by this module.
+- Customer Management pages and records remain unchanged. Billing exposes only a read-only canonical GCash-reference lookup for cross-store duplicate prevention, while its imported-history claim/finalize store remains the single assignment authority. Used rows with `TMP` accounts render as Temp badges rather than invalid Main Payment Breakdown links.
 
 ## Validation
 
-- `npm run refactor:temp` verifies the runtime descriptor, distinct storage key, in-memory isolation from canonical store sentinels, balance behavior, exact JSON and Excel export/import round trips, workbook columns and sheets, standalone page assets, absence of canonical page/API references, hidden navigation, and Admin guards.
+- `npm run refactor:temp` verifies the runtime descriptor, distinct storage key, in-memory isolation from canonical store sentinels, balance behavior, schema-v3/v4 JSON and Excel round trips, leading-zero legacy adoption, 64-character binding compatibility, exact official reference/method immutability, legacy audit-timestamp immutability, cross-method GCash-reference reuse rejection, receipt data, monthly Temp-only history export, system-charge immutability, standalone page assets, absence of canonical page/API calls, hidden navigation, and Admin guards.
+- `node Features/modules/collector/tests/collector-payment-approvals.test.js` verifies that Collector GCash stays pending until official proof exists, a Temp claim blocks individual and batch approval, successful JSON/MySQL approvals finalize the existing entry ID, interrupted finalization is retryable without another payment/review, mislabeled official references are still gated, and concurrent retries remain single-entry.
 - The focused Temp check also verifies all four plan/rate dropdown pairs, their two-way synchronization hooks, the exact Poblacion/Masical service-address choices, all three plan types, Date/Number schedule behavior, automatic full-rate Prepaid/Postpaid charges, day-mode Prorate computation, legacy no-back-bill migration, idempotency, customer/transaction sortable headers, the arranged ledger/payment-history structure, and explicit-only native dialog dismissal.
 - `npm run refactor:smoke` verifies `/temp.html` redirects unauthenticated users, Temp CSS/JS assets resolve, and `/api/temp/workspace` denies unauthenticated requests.
 - `npm run refactor:phase12` is the complete cross-module, security, HTTP, package, and cutover gate.
@@ -68,9 +74,12 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - Import replaces the complete Temp workspace and requires an explicit browser confirmation; export a current backup first when retaining existing Temp records matters.
 - Excel import is intentionally strict: missing sheets, changed column headings, count mismatches, or files not produced by the Temp exporter are rejected before storage replacement.
 - The URL is unlisted rather than secret. Admin authentication is the security boundary.
+- Mixed Main-and-Temp allocation of one official reference is intentionally outside this isolated workflow because it requires a coordinated two-ledger transaction. Such a credit must be assigned wholly to one workspace until that separate saga is explicitly implemented.
+- A Temp-only backup containing official GCash rows is restorable only while the matching shared imported-history assignment exists. Use the full-system backup for disaster recovery of both sides of that contract.
 
 ## Latest meaningful changes
 
+- 2026-08-25: Expanded the hidden page to four paginated panels, added payment-only month reports, individual receipts, Manila-safe defaults, and official imported-GCash posting for one to three Temp accounts. Cross-store hardening now blocks collected/pending Main and exact official credits mislabeled Cash/blank, prevents Collector reuse, retains ambiguous claims for retry, adopts leading-zero-equivalent legacy rows, caps binding IDs to the canonical limit, protects exact official fields and legacy timestamps during import, rejects cross-method reuse of GCash-owned references, and preserves the Main customer list and official Main payment-history export.
 - 2026-08-07: Prevented native Temp dialogs from closing through Escape or backdrop clicks; explicit Close/Cancel controls and successful actions remain available.
 - 2026-07-31: Corrected Collector Excel to use the same Asia/Manila calendar date as Temp billing, preventing due-date charges from disappearing during the UTC/local date boundary.
 - 2026-07-30: Updated Collector Excel so Balance is current, Due stays unchanged before billing, and the monthly rate is generated only when billing is reached without double-counting automatic charges.

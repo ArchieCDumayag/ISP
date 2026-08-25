@@ -7,6 +7,13 @@ const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = require('../../billing/backend/payment-numbering');
 const { triggerBranchServiceRefresh } = require('../../billing/backend/payment-service-refresh');
+const {
+  listGcashTransactionHistory,
+  claimGcashTransaction,
+  finalizeGcashTransactionAssignment,
+  releaseGcashTransactionClaim,
+  normalizeReference: normalizeOfficialGcashReference
+} = require('../../billing/backend/gcash-transaction-history-store');
 const { resolveCollectorNextDue } = require('./collector-next-due');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const paymentRecordsRouter = require('../../billing/backend/payment-records');
@@ -352,6 +359,182 @@ function isCollectorCreditApprovalEntry(entry = {}) {
     && kind !== 'charge'
     && role === 'collector'
     && isPendingCollectorPaymentStatus(entry.status);
+}
+
+function isCollectorGcashPayment(entry = {}) {
+  return String(entry.paymentMethod || entry.payment_method || '').trim().toLowerCase() === 'gcash'
+    && normalizeKind(entry.kind || entry.type) === 'payment';
+}
+
+function createCollectorGcashError(message, code) {
+  const error = createError(409, message);
+  error.code = code;
+  return error;
+}
+
+function collectorGcashSubmissionId(branchId, entryId) {
+  return `collector-gcash-${crypto.createHash('sha256')
+    .update(`${branchId}|${entryId}`)
+    .digest('hex')
+    .slice(0, 32)}`;
+}
+
+function collectorGcashNumericReference(value) {
+  const normalized = normalizeOfficialGcashReference(value);
+  return /^\d+$/.test(normalized) ? normalized.replace(/^0+(?=\d)/, '') : '';
+}
+
+function resolveCollectorOfficialGcashTransaction(transactions, reference) {
+  const requestedReference = normalizeOfficialGcashReference(reference);
+  const exactMatches = (Array.isArray(transactions) ? transactions : [])
+    .filter((transaction) => normalizeOfficialGcashReference(transaction?.reference) === requestedReference);
+  if (exactMatches.length === 1) return exactMatches[0];
+  if (exactMatches.length > 1) {
+    throw createCollectorGcashError(
+      'Multiple imported GCash credits use this exact reference. Resolve the imported history before approval.',
+      'GCASH_HISTORY_MATCH_REQUIRED'
+    );
+  }
+  const numericReference = collectorGcashNumericReference(requestedReference);
+  if (!numericReference) return null;
+  const numericMatches = (Array.isArray(transactions) ? transactions : [])
+    .filter((transaction) => collectorGcashNumericReference(transaction?.reference) === numericReference);
+  if (numericMatches.length === 1) return numericMatches[0];
+  if (numericMatches.length > 1) {
+    throw createCollectorGcashError(
+      'This numeric reference matches multiple imported GCash credits. Resolve the imported history before approval.',
+      'GCASH_HISTORY_MATCH_REQUIRED'
+    );
+  }
+  return null;
+}
+
+async function prepareCollectorGcashApproval({ actor, branchId, accountNumber, entry }) {
+  if (normalizeKind(entry?.kind || entry?.type) !== 'payment') return null;
+  const explicitlyGcash = isCollectorGcashPayment(entry);
+  const safeBranchId = Number(branchId);
+  const entryId = String(entry?.id || '').trim();
+  const reference = String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim();
+  const amount = Number(Number(entry?.amount || 0).toFixed(2));
+  const paymentDate = toPaymentDateOnly(entry?.date || entry?.recordedAt);
+  if (!reference) {
+    if (explicitlyGcash) {
+      throw createCollectorGcashError(
+        'Collector GCash approval requires a reference from imported history.',
+        'GCASH_HISTORY_MATCH_REQUIRED'
+      );
+    }
+    return null;
+  }
+  if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
+    if (!explicitlyGcash) return null;
+    throw createError(400, 'Branch assignment missing for this admin account.');
+  }
+  const history = await listGcashTransactionHistory({ branchId: safeBranchId, all: true });
+  const transaction = resolveCollectorOfficialGcashTransaction(history?.transactions, reference);
+  if (!transaction) {
+    if (explicitlyGcash) {
+      throw createCollectorGcashError(
+        'Collector GCash approval requires an imported official credit with the same reference.',
+        'GCASH_HISTORY_MATCH_REQUIRED'
+      );
+    }
+    return null;
+  }
+  const officialAmount = Number(Number(transaction?.credit || 0).toFixed(2));
+  const officialDate = toPaymentDateOnly(transaction?.transactionDate || transaction?.transactionAt);
+  if (
+    transaction.postingLock
+    || String(transaction.status || '').trim().toLowerCase() !== 'received'
+    || !Number.isFinite(officialAmount)
+    || officialAmount <= 0
+    || officialAmount !== amount
+    || !paymentDate
+    || officialDate !== paymentDate
+  ) {
+    throw createCollectorGcashError(
+      'Collector GCash approval requires one unlocked imported credit with the same reference, amount, and date.',
+      transaction?.postingLock ? 'GCASH_TRANSACTION_POSTING_LOCKED' : 'GCASH_HISTORY_MATCH_REQUIRED'
+    );
+  }
+  const submissionId = collectorGcashSubmissionId(safeBranchId, entryId);
+  const claim = await claimGcashTransaction({
+    branchId: safeBranchId,
+    reference: transaction.reference,
+    submissionId,
+    accountNumber,
+    customerName: `Main - ${accountNumber}`,
+    amount,
+    paymentDate,
+    billingMonth: paymentDate.slice(0, 7),
+    claimedBy: {
+      id: String(actor?.id || '').trim() || null,
+      username: String(actor?.username || '').trim() || null,
+      name: String(actor?.name || '').trim() || null
+    }
+  });
+  return {
+    branchId: safeBranchId,
+    reference: transaction.reference,
+    submissionId,
+    accountNumber,
+    paymentEntryId: entryId,
+    claim
+  };
+}
+
+async function finalizeCollectorGcashApproval(binding) {
+  if (!binding) return null;
+  const existingAssignment = binding.claim?.assignment || null;
+  if (
+    existingAssignment?.status === 'posted'
+    && existingAssignment.paymentEntryId === binding.paymentEntryId
+  ) {
+    return {
+      transaction: binding.claim.transaction,
+      assignment: existingAssignment,
+      idempotent: true
+    };
+  }
+  try {
+    return await finalizeGcashTransactionAssignment(binding);
+  } catch (error) {
+    const pendingError = createCollectorGcashError(
+      'The Collector payment was approved and the GCash credit remains reserved. Retry the same approval to finish the official binding.',
+      'COLLECTOR_GCASH_FINALIZATION_PENDING'
+    );
+    pendingError.cause = error;
+    throw pendingError;
+  }
+}
+
+async function releaseCollectorGcashClaimAfterRejection({ branchId, accountNumber, entry }) {
+  const safeBranchId = Number(branchId);
+  const entryId = String(entry?.id || '').trim();
+  if (!Number.isInteger(safeBranchId) || safeBranchId <= 0 || !entryId) return false;
+  const submissionId = collectorGcashSubmissionId(safeBranchId, entryId);
+  const rawReference = entry?.reference || entry?.orNumber || entry?.or_number;
+  let releaseReference = rawReference;
+  try {
+    const history = await listGcashTransactionHistory({ branchId: safeBranchId, all: true });
+    const claimedTransactions = (Array.isArray(history?.transactions) ? history.transactions : [])
+      .filter((transaction) => (
+        transaction?.assignment?.submissionId === submissionId
+        && String(transaction?.assignment?.accountNumber || '').trim() === String(accountNumber || '').trim()
+      ));
+    const officialTransaction = claimedTransactions.length === 1
+      ? claimedTransactions[0]
+      : resolveCollectorOfficialGcashTransaction(history?.transactions, rawReference);
+    if (officialTransaction?.reference) releaseReference = officialTransaction.reference;
+  } catch (_error) {
+    return false;
+  }
+  return releaseGcashTransactionClaim({
+    branchId: safeBranchId,
+    reference: releaseReference,
+    submissionId,
+    accountNumber
+  }).catch(() => false);
 }
 
 function getApprovalActor(req) {
@@ -1516,7 +1699,9 @@ function isPairedPrepaidChargeEntry(entry = {}, target = {}, pairedFingerprint =
     && (!entryRecorder || !targetRecorder || entryRecorder === targetRecorder);
 }
 
-async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
+let collectorPaymentApprovalMutationQueue = Promise.resolve();
+
+async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextStatus) {
   const actor = getApprovalActor(req);
   const entryId = String(rawEntryId || '').trim();
   if (!entryId) throw createError(400, 'Payment entry ID is required.');
@@ -1526,6 +1711,8 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
     nextStatus === COLLECTOR_PAYMENT_REJECTED_STATUS
   );
   const review = buildCollectorPaymentReview(actor, nextStatus, decisionReason);
+  let gcashBinding = null;
+  let replayedGcashApproval = false;
 
   if (await isRelationalReady()) {
     if (!branchId) {
@@ -1569,7 +1756,24 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
       targetEntry = mapReceiptPaymentRow(row);
       targetAccountNumber = String(row.accountNumber || '').trim();
       if (!isCollectorCreditApprovalEntry(targetEntry)) {
+        if (
+          nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS
+          && normalizeCollectorPaymentStatus(targetEntry.status) === COLLECTOR_PAYMENT_APPROVED_STATUS
+          && normalizeKind(targetEntry.kind || targetEntry.type) === 'payment'
+        ) {
+          replayedGcashApproval = true;
+          return;
+        }
         throw createError(409, 'Collector payment is not pending approval.');
+      }
+
+      if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+        gcashBinding = await prepareCollectorGcashApproval({
+          actor,
+          branchId,
+          accountNumber: targetAccountNumber,
+          entry: targetEntry
+        });
       }
 
       const [updateResult] = await connection.query(
@@ -1604,9 +1808,32 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
         targetAccountNumber
       );
     });
+    if (replayedGcashApproval) {
+      gcashBinding = await prepareCollectorGcashApproval({
+        actor,
+        branchId,
+        accountNumber: targetAccountNumber,
+        entry: targetEntry
+      });
+      if (!gcashBinding) throw createError(409, 'Collector payment is not pending approval.');
+    }
     triggerBranchServiceRefresh(branchId, `collector-payment-${nextStatus}`);
+    if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+      await finalizeCollectorGcashApproval(gcashBinding);
+    } else if (nextStatus === COLLECTOR_PAYMENT_REJECTED_STATUS) {
+      await releaseCollectorGcashClaimAfterRejection({
+        branchId,
+        accountNumber: targetAccountNumber,
+        entry: targetEntry
+      });
+    }
     return {
-      record: mapCollectorPaymentApprovalItem({ ...targetEntry, ...review }, {}, targetAccountNumber)
+      record: mapCollectorPaymentApprovalItem(
+        replayedGcashApproval ? targetEntry : { ...targetEntry, ...review },
+        {},
+        targetAccountNumber
+      ),
+      replayed: replayedGcashApproval
     };
   }
 
@@ -1639,7 +1866,34 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
     throw createError(404, 'Pending collector payment was not found.');
   }
   if (!isCollectorCreditApprovalEntry(targetEntry)) {
+    if (
+      nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS
+      && normalizeCollectorPaymentStatus(targetEntry.status) === COLLECTOR_PAYMENT_APPROVED_STATUS
+      && normalizeKind(targetEntry.kind || targetEntry.type) === 'payment'
+    ) {
+      gcashBinding = await prepareCollectorGcashApproval({
+        actor,
+        branchId: branchId || targetCustomer?.branchId,
+        accountNumber: targetAccount,
+        entry: targetEntry
+      });
+      if (!gcashBinding) throw createError(409, 'Collector payment is not pending approval.');
+      await finalizeCollectorGcashApproval(gcashBinding);
+      return {
+        record: mapCollectorPaymentApprovalItem(targetEntry, targetCustomer, targetAccount),
+        replayed: true
+      };
+    }
     throw createError(409, 'Collector payment is not pending approval.');
+  }
+
+  if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+    gcashBinding = await prepareCollectorGcashApproval({
+      actor,
+      branchId: branchId || targetCustomer?.branchId,
+      accountNumber: targetAccount,
+      entry: targetEntry
+    });
   }
 
   Object.assign(targetEntry, review);
@@ -1652,9 +1906,27 @@ async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
   });
   await writeJson(STORE_KEYS.payments, payments);
   triggerBranchServiceRefresh(branchId || targetCustomer?.branchId || null, `collector-payment-${nextStatus}`);
+  if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+    await finalizeCollectorGcashApproval(gcashBinding);
+  } else if (nextStatus === COLLECTOR_PAYMENT_REJECTED_STATUS) {
+    await releaseCollectorGcashClaimAfterRejection({
+      branchId: branchId || targetCustomer?.branchId,
+      accountNumber: targetAccount,
+      entry: targetEntry
+    });
+  }
   return {
-    record: mapCollectorPaymentApprovalItem(targetEntry, targetCustomer, targetAccount)
+    record: mapCollectorPaymentApprovalItem(targetEntry, targetCustomer, targetAccount),
+    replayed: false
   };
+}
+
+async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
+  const operation = collectorPaymentApprovalMutationQueue.then(() => (
+    updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextStatus)
+  ));
+  collectorPaymentApprovalMutationQueue = operation.catch(() => {});
+  return operation;
 }
 
 async function updateCollectorPaymentApproval(req, nextStatus) {
@@ -1667,32 +1939,45 @@ async function approveCollectorPaymentApprovalsBatch(req) {
       .map((id) => String(id || '').trim())
       .filter(Boolean)
   );
-  const { records } = await listCollectorPaymentApprovals(req);
-  const pendingRecords = Array.isArray(records) ? records : [];
-  const targets = requestedIds.size
-    ? pendingRecords.filter((record) => requestedIds.has(String(record?.id || '').trim()))
-    : pendingRecords;
-  const targetIds = new Set(targets.map((record) => String(record?.id || '').trim()).filter(Boolean));
-  const errors = requestedIds.size
-    ? [...requestedIds]
-      .filter((id) => !targetIds.has(id))
-      .map((id) => ({ id, error: 'Pending collector payment was not found.' }))
-    : [];
+  let targetEntryIds = [...requestedIds];
+  if (!targetEntryIds.length) {
+    const { records } = await listCollectorPaymentApprovals(req);
+    targetEntryIds = (Array.isArray(records) ? records : [])
+      .map((record) => String(record?.id || '').trim())
+      .filter(Boolean);
+  }
+  const errors = [];
   const approvedRecords = [];
 
-  for (const record of targets) {
-    const entryId = String(record?.id || '').trim();
-    if (!entryId) continue;
+  for (const entryId of targetEntryIds) {
     try {
       const result = await updateCollectorPaymentApprovalById(req, entryId, COLLECTOR_PAYMENT_APPROVED_STATUS);
       if (result?.record) approvedRecords.push(result.record);
     } catch (err) {
-      const status = Number(err?.status || err?.statusCode || 0);
+      let approvalError = err;
+      if (err?.code === 'COLLECTOR_GCASH_FINALIZATION_PENDING') {
+        try {
+          const retry = await updateCollectorPaymentApprovalById(
+            req,
+            entryId,
+            COLLECTOR_PAYMENT_APPROVED_STATUS
+          );
+          if (retry?.record) approvedRecords.push(retry.record);
+          continue;
+        } catch (retryError) {
+          approvalError = retryError;
+        }
+      }
+      const status = Number(approvalError?.status || approvalError?.statusCode || 0);
       if ([404, 409].includes(status)) {
-        errors.push({ id: entryId, error: err.message || 'Collector payment was skipped.' });
+        errors.push({
+          id: entryId,
+          code: String(approvalError?.code || '').trim() || null,
+          error: approvalError.message || 'Collector payment was skipped.'
+        });
         continue;
       }
-      throw err;
+      throw approvalError;
     }
   }
 
@@ -1702,7 +1987,8 @@ async function approveCollectorPaymentApprovalsBatch(req) {
     skipped: errors.length,
     totalAmount: Number(totalAmount.toFixed(2)),
     records: approvedRecords,
-    errors: errors.slice(0, 25)
+    errors: errors.slice(0, 25),
+    firstError: errors[0] || null
   };
 }
 

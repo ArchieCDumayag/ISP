@@ -1,5 +1,10 @@
 const XLSX = require('xlsx');
-const { EXPORT_KIND, WorkspaceValidationError } = require('./workspace-store');
+const {
+  EXPORT_KIND,
+  SCHEMA_VERSION,
+  OFFICIAL_GCASH_SOURCE,
+  WorkspaceValidationError
+} = require('./workspace-store');
 
 const EXCEL_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const MAX_IMPORT_ROWS = 100000;
@@ -13,7 +18,8 @@ const SHEET_NAMES = Object.freeze({
   metadata: 'Metadata',
   customers: 'Customers',
   payments: 'Transactions',
-  collector: 'Collector'
+  collector: 'Collector',
+  paymentHistory: 'Payment History'
 });
 const COLLECTOR_HEADERS = Object.freeze([
   'Account',
@@ -50,7 +56,7 @@ const CUSTOMER_FIELDS = Object.freeze([
   'updatedAt'
 ]);
 
-const PAYMENT_FIELDS = Object.freeze([
+const LEGACY_PAYMENT_FIELDS_V3 = Object.freeze([
   'id',
   'receiptNumber',
   'accountNumber',
@@ -67,13 +73,25 @@ const PAYMENT_FIELDS = Object.freeze([
   'updatedAt'
 ]);
 
+const PAYMENT_FIELDS = Object.freeze([
+  ...LEGACY_PAYMENT_FIELDS_V3.slice(0, -2),
+  'billingMonth',
+  'source',
+  'sourceBranchId',
+  'sourceGroupId',
+  'sourceAllocationId',
+  'officialReferenceKey',
+  'paymentReceivedAt',
+  ...LEGACY_PAYMENT_FIELDS_V3.slice(-2)
+]);
+
 const CUSTOMER_NUMBER_FIELDS = new Set(['monthlyRate', 'billingDay', 'openingBalance']);
 const CUSTOMER_BOOLEAN_FIELDS = new Set([
   'billingScheduleConfigured',
   'billingCycleInitialized',
   'proratePending'
 ]);
-const PAYMENT_NUMBER_FIELDS = new Set(['amount']);
+const PAYMENT_NUMBER_FIELDS = new Set(['amount', 'sourceBranchId']);
 const PAYMENT_BOOLEAN_FIELDS = new Set(['systemGenerated']);
 
 const invalidWorkbook = (message = 'Select a valid Temp workspace Excel export file.') => (
@@ -144,6 +162,11 @@ function buildWorkspaceExcelBuffer(payload) {
     description: 42,
     recordedBy: 22,
     cycleKey: 34,
+    source: 18,
+    sourceGroupId: 54,
+    sourceAllocationId: 66,
+    officialReferenceKey: 28,
+    paymentReceivedAt: 28,
     createdAt: 26,
     updatedAt: 26
   });
@@ -276,6 +299,95 @@ function buildCollectorExcelBuffer(payload, options = {}) {
   return XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer', compression: true });
 }
 
+const resolvePaymentHistoryMonth = (payload, requestedMonth) => {
+  const fallback = formatCollectorDate(payload.exportedAt).slice(0, 7);
+  const month = String(requestedMonth || fallback || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw invalidWorkbook('A valid payment-history month using YYYY-MM is required.');
+  }
+  return month;
+};
+
+function buildPaymentHistoryRows(payload, options = {}) {
+  assertExportPayload(payload);
+  const month = resolvePaymentHistoryMonth(payload, options.month);
+  const customerByAccount = new Map(payload.data.customers.map((customer) => [
+    String(customer?.accountNumber || '').trim(),
+    customer
+  ]));
+  const rows = payload.data.payments
+    .filter((payment) => (
+      String(payment?.kind || '').trim().toLowerCase() === 'payment'
+      && String(payment?.date || '').slice(0, 7) === month
+    ))
+    .map((payment) => {
+      const accountNumber = String(payment?.accountNumber || '').trim();
+      const customer = customerByAccount.get(accountNumber) || {};
+      return {
+        Date: String(payment?.date || ''),
+        Receipt: String(payment?.receiptNumber || ''),
+        Account: accountNumber,
+        Customer: `${String(customer?.firstName || '').trim()} ${String(customer?.lastName || '').trim()}`.trim(),
+        'Service address': String(customer?.address || '').trim(),
+        'Payment method': String(payment?.paymentMethod || '').trim(),
+        Reference: String(payment?.reference || '').trim(),
+        'Billing month': String(payment?.billingMonth || payment?.date || '').slice(0, 7),
+        'Recorded by': String(payment?.recordedBy || '').trim(),
+        'Official GCash': String(payment?.source || '').trim().toLowerCase() === OFFICIAL_GCASH_SOURCE ? 'Yes' : 'No',
+        Amount: moneyValue(payment?.amount)
+      };
+    })
+    .sort((left, right) => (
+      right.Date.localeCompare(left.Date)
+      || right.Receipt.localeCompare(left.Receipt, undefined, { numeric: true })
+    ));
+  return { month, rows };
+}
+
+function buildPaymentHistoryExcelBuffer(payload, options = {}) {
+  const report = buildPaymentHistoryRows(payload, options);
+  const headers = [
+    'Date',
+    'Receipt',
+    'Account',
+    'Customer',
+    'Service address',
+    'Payment method',
+    'Reference',
+    'Billing month',
+    'Recorded by',
+    'Official GCash',
+    'Amount'
+  ];
+  const sheet = XLSX.utils.json_to_sheet(report.rows, { header: headers });
+  sheet['!autofilter'] = { ref: sheet['!ref'] || 'A1:K1' };
+  sheet['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+  sheet['!cols'] = [
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 28 },
+    { wch: 18 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 14 }
+  ];
+  for (let row = 2; row <= report.rows.length + 1; row += 1) {
+    const amountCell = sheet[`K${row}`];
+    if (amountCell) amountCell.z = '#,##0.00';
+  }
+  const workbook = XLSX.utils.book_new();
+  workbook.Props = {
+    Title: `Temp Payment History ${report.month}`,
+    Subject: 'Temp-only received payments; Main customer records are not included.'
+  };
+  XLSX.utils.book_append_sheet(workbook, sheet, SHEET_NAMES.paymentHistory);
+  return XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer', compression: true });
+}
+
 const metadataFromSheet = (sheet) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
   const metadata = {};
@@ -300,7 +412,9 @@ const stringValue = (value) => {
 };
 
 const numberValue = (value, field, sheetName) => {
-  if (value === '' || value === null || value === undefined) return 0;
+  if (value === '' || value === null || value === undefined) {
+    return field === 'sourceBranchId' ? null : 0;
+  }
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw invalidWorkbook(`${sheetName} contains an invalid ${field} value.`);
   return parsed;
@@ -351,6 +465,12 @@ function parseWorkspaceExcelBuffer(buffer) {
 
   const metadata = metadataFromSheet(metadataSheet);
   if (metadata.kind !== EXPORT_KIND) throw invalidWorkbook();
+  const exportVersion = metadataNumber(metadata, 'version');
+  const schemaVersion = metadataNumber(metadata, 'schemaVersion');
+  if (exportVersion > SCHEMA_VERSION || schemaVersion > SCHEMA_VERSION) {
+    throw invalidWorkbook('This Temp workspace export was created by a newer unsupported version.');
+  }
+  const paymentFields = schemaVersion <= 3 ? LEGACY_PAYMENT_FIELDS_V3 : PAYMENT_FIELDS;
   const customers = recordsFromSheet(
     customerSheet,
     CUSTOMER_FIELDS,
@@ -360,7 +480,7 @@ function parseWorkspaceExcelBuffer(buffer) {
   );
   const payments = recordsFromSheet(
     paymentSheet,
-    PAYMENT_FIELDS,
+    paymentFields,
     SHEET_NAMES.payments,
     PAYMENT_NUMBER_FIELDS,
     PAYMENT_BOOLEAN_FIELDS
@@ -374,10 +494,10 @@ function parseWorkspaceExcelBuffer(buffer) {
 
   return {
     kind: EXPORT_KIND,
-    version: metadataNumber(metadata, 'version'),
+    version: exportVersion,
     exportedAt: stringValue(metadata.exportedAt),
     data: {
-      schemaVersion: metadataNumber(metadata, 'schemaVersion'),
+      schemaVersion,
       locationName: stringValue(metadata.locationName),
       customers,
       payments,
@@ -397,9 +517,12 @@ module.exports = {
   COLLECTOR_HEADERS,
   CUSTOMER_FIELDS,
   PAYMENT_FIELDS,
+  LEGACY_PAYMENT_FIELDS_V3,
   buildWorkspaceExcelBuffer,
   resolveCollectorReportDate,
   buildCollectorRows,
   buildCollectorExcelBuffer,
+  buildPaymentHistoryRows,
+  buildPaymentHistoryExcelBuffer,
   parseWorkspaceExcelBuffer
 };

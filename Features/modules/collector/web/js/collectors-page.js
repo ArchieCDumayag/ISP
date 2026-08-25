@@ -2517,11 +2517,14 @@
       }
       const approvedCount = Number(payload?.approved || (Array.isArray(payload?.records) ? payload.records.length : 0));
       const skippedCount = Number(payload?.skipped || 0);
-      const skippedText = skippedCount ? ` ${skippedCount} skipped.` : '';
+      const firstSkippedReason = String(payload?.firstError?.error || '').trim();
+      const skippedText = skippedCount
+        ? ` ${skippedCount} skipped.${firstSkippedReason ? ` ${firstSkippedReason}` : ''}`
+        : '';
       toast(
         approvedCount
           ? `Approved ${approvedCount} pending payment${approvedCount === 1 ? '' : 's'} for ${collectorName}.${skippedText}`
-          : 'No customer payments were approved.',
+          : (firstSkippedReason || 'No customer payments were approved.'),
         approvedCount ? 'ok' : 'danger'
       );
       await Promise.all([
@@ -2581,12 +2584,13 @@
       }
       const approvedCount = Number(payload?.approved || (Array.isArray(payload?.records) ? payload.records.length : 0));
       const skippedCount = Number(payload?.skipped || 0);
+      const firstSkippedReason = String(payload?.firstError?.error || '').trim();
       collectorApprovalSelectedIds.clear();
       updateCollectorApprovalSelectionState();
       toast(
         approvedCount
-          ? `Approved ${approvedCount} selected payment${approvedCount === 1 ? '' : 's'}.${skippedCount ? ` ${skippedCount} skipped.` : ''}`
-          : 'No selected collector payments were approved.',
+          ? `Approved ${approvedCount} selected payment${approvedCount === 1 ? '' : 's'}.${skippedCount ? ` ${skippedCount} skipped.${firstSkippedReason ? ` ${firstSkippedReason}` : ''}` : ''}`
+          : (firstSkippedReason || 'No selected collector payments were approved.'),
         approvedCount ? 'ok' : 'danger'
       );
       await Promise.all([

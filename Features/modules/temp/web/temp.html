@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="/css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="/temp.css?v=1.9">
+    <link rel="stylesheet" href="/temp.css?v=2.2">
     <script src="/theme-init.js?v=2.6"></script>
 </head>
 <body class="temp-workspace">
@@ -75,6 +75,12 @@
                 <button class="workspace-tab" id="billingTab" type="button" role="tab" aria-selected="false" aria-controls="billingPanel" data-panel="billing" tabindex="-1">
                     <i class="ti ti-receipt-2"></i> Billing &amp; Payments
                 </button>
+                <button class="workspace-tab" id="historyTab" type="button" role="tab" aria-selected="false" aria-controls="historyPanel" data-panel="history" tabindex="-1">
+                    <i class="ti ti-history"></i> Payment History
+                </button>
+                <button class="workspace-tab" id="gcashTab" type="button" role="tab" aria-selected="false" aria-controls="gcashPanel" data-panel="gcash" tabindex="-1">
+                    <i class="ti ti-device-mobile-dollar"></i> GCash Posting
+                </button>
             </div>
 
             <section class="workspace-panel" id="customersPanel" role="tabpanel" aria-labelledby="customersTab">
@@ -112,7 +118,13 @@
                 <div class="empty-state" id="customerEmpty" hidden>
                     <span><i class="ti ti-users-off"></i></span><h2>No Temp customers yet</h2><p>Add your other-location clients here. Main-location customers will never appear.</p>
                 </div>
-                <footer class="panel-footer"><span id="customerResultCount">0 customers</span></footer>
+                <footer class="panel-footer pagination-footer">
+                    <span id="customerResultCount">0 customers</span>
+                    <div class="pagination-footer__controls">
+                        <label class="page-size-label" for="customerPageSize">Show <select class="form-select form-select-sm" id="customerPageSize"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select></label>
+                        <nav class="pager" id="customerPager" aria-label="Customer pages"></nav>
+                    </div>
+                </footer>
             </section>
 
             <section class="workspace-panel" id="billingPanel" role="tabpanel" aria-labelledby="billingTab" hidden>
@@ -150,7 +162,71 @@
                 <div class="empty-state" id="paymentEmpty" hidden>
                     <span><i class="ti ti-receipt-off"></i></span><h2>No Temp transactions yet</h2><p>Add a customer first, then record charges and payments in this isolated ledger.</p>
                 </div>
-                <footer class="panel-footer"><span id="paymentResultCount">0 transactions</span></footer>
+                <footer class="panel-footer pagination-footer">
+                    <span id="paymentResultCount">0 transactions</span>
+                    <div class="pagination-footer__controls">
+                        <label class="page-size-label" for="paymentPageSize">Show <select class="form-select form-select-sm" id="paymentPageSize"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select></label>
+                        <nav class="pager" id="paymentPager" aria-label="Billing ledger pages"></nav>
+                    </div>
+                </footer>
+            </section>
+
+            <section class="workspace-panel" id="historyPanel" role="tabpanel" aria-labelledby="historyTab" hidden>
+                <div class="panel-toolbar panel-toolbar--history">
+                    <label class="search-box" for="historySearch">
+                        <i class="ti ti-search"></i>
+                        <input id="historySearch" type="search" placeholder="Search customer, account, receipt, or reference">
+                    </label>
+                    <div class="panel-toolbar__actions history-filters">
+                        <label class="compact-field" for="historyMonth"><span>Month</span><input class="form-control" id="historyMonth" type="month"></label>
+                        <label class="compact-field" for="historyMethodFilter"><span>Method</span><select class="form-select" id="historyMethodFilter"><option value="">All methods</option></select></label>
+                        <label class="compact-field" for="historyRecorderFilter"><span>Recorded by</span><select class="form-select" id="historyRecorderFilter"><option value="">All recorders</option></select></label>
+                        <label class="compact-field" for="historySort"><span>Sort</span><select class="form-select" id="historySort"><option value="date-desc">Newest</option><option value="date-asc">Oldest</option><option value="amount-desc">Highest amount</option><option value="amount-asc">Lowest amount</option><option value="customer-asc">Customer A–Z</option><option value="receipt-desc">Newest receipt</option></select></label>
+                        <button class="btn btn-success align-self-end" id="exportPaymentHistoryBtn" type="button"><i class="ti ti-file-spreadsheet"></i> Export month</button>
+                    </div>
+                </div>
+                <div class="history-note"><i class="ti ti-lock-check"></i><span>This report contains payments from the isolated Temp workspace only. Main-location payment exports remain unchanged.</span></div>
+                <div class="table-responsive">
+                    <table class="table table-vcenter temp-table temp-table--history">
+                        <thead><tr><th>Date</th><th>Receipt</th><th>Customer</th><th>Service address</th><th>Method / Reference</th><th>Recorded by</th><th class="text-end">Amount</th><th class="text-end">Receipt</th></tr></thead>
+                        <tbody id="historyTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="empty-state" id="historyEmpty" hidden><span><i class="ti ti-history-off"></i></span><h2>No Temp payments for this month</h2><p>Choose another month or record a payment in this isolated workspace.</p></div>
+                <footer class="panel-footer pagination-footer">
+                    <span id="historyResultCount">0 payments</span>
+                    <div class="pagination-footer__controls">
+                        <label class="page-size-label" for="historyPageSize">Show <select class="form-select form-select-sm" id="historyPageSize"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select></label>
+                        <nav class="pager" id="historyPager" aria-label="Payment history pages"></nav>
+                    </div>
+                </footer>
+            </section>
+
+            <section class="workspace-panel" id="gcashPanel" role="tabpanel" aria-labelledby="gcashTab" hidden>
+                <div class="panel-toolbar">
+                    <div class="gcash-panel-heading"><span class="gcash-panel-heading__icon"><i class="ti ti-shield-check"></i></span><div><strong>Official imported GCash credits</strong><small>Assign each reference once to one to three Temp customers. The allocation total must equal the imported credit.</small></div></div>
+                    <div class="panel-toolbar__actions">
+                        <label class="compact-field" for="gcashMonth"><span>Month</span><input class="form-control" id="gcashMonth" type="month" list="gcashAvailableMonths"></label>
+                        <datalist id="gcashAvailableMonths"></datalist>
+                        <button class="btn btn-outline-secondary align-self-end" id="refreshGcashBtn" type="button"><i class="ti ti-refresh"></i> Refresh</button>
+                    </div>
+                </div>
+                <div class="gcash-summary" aria-label="GCash posting summary">
+                    <div><span>Available</span><strong id="gcashAvailableCount">0</strong></div>
+                    <div><span>Needs review</span><strong id="gcashReconcileCount">0</strong></div>
+                    <div><span>Already in Main</span><strong id="gcashConflictCount">0</strong></div>
+                    <div><span>Posted to Temp</span><strong id="gcashPostedCount">0</strong></div>
+                    <div><span>Available amount</span><strong id="gcashAvailableAmount">&#8369;0.00</strong></div>
+                </div>
+                <div class="gcash-safety-note"><i class="ti ti-info-circle"></i><span>Incoming unlocked credits are checked across both workspaces. A reference already found in Main is shown for warning only and cannot be posted to Temp.</span></div>
+                <div class="table-responsive">
+                    <table class="table table-vcenter temp-table temp-table--gcash">
+                        <thead><tr><th>Date</th><th>Reference</th><th>Sender / Description</th><th>Recipient</th><th class="text-end">Credit</th><th>Temp use</th><th class="text-end">Action</th></tr></thead>
+                        <tbody id="gcashTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="empty-state" id="gcashEmpty" hidden><span><i class="ti ti-device-mobile-off"></i></span><h2>No imported GCash credits for this month</h2><p>Import the official GCash PDF on the GCash Transactions page, then return here to post Temp payments.</p></div>
+                <footer class="panel-footer"><span id="gcashResultCount">0 imported credits</span></footer>
             </section>
         </section>
     </main>
@@ -199,6 +275,7 @@
                 <label class="form-field"><span>Date</span><input class="form-control" id="paymentDate" name="date" type="date" required></label>
                 <label class="form-field"><span>Method</span><select class="form-select" id="paymentMethod" name="paymentMethod"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Bank transfer">Bank transfer</option><option value="Other">Other</option></select></label>
                 <label class="form-field"><span>Reference</span><input class="form-control" id="paymentReference" name="reference" maxlength="120"></label>
+                <div class="alert alert-warning form-field--wide mb-0" id="manualGcashNotice" role="alert" hidden><div class="d-flex align-items-start gap-2"><i class="ti ti-shield-exclamation mt-1"></i><div><strong>Use an official imported credit.</strong><div class="small mt-1">Manual GCash payments are blocked to prevent duplicate posting.</div><button class="btn btn-warning btn-sm mt-2" id="openGcashPostingBtn" type="button"><i class="ti ti-device-mobile-dollar"></i> Open GCash Posting</button></div></div></div>
                 <label class="form-field form-field--wide"><span>Description</span><textarea class="form-control" id="paymentDescription" name="description" rows="3" maxlength="500"></textarea></label>
             </div>
             <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="paymentDialog">Cancel</button><button class="btn btn-primary" id="savePaymentBtn" type="submit"><i class="ti ti-device-floppy"></i> Save transaction</button></footer>
@@ -235,7 +312,32 @@
         <div class="dialog-body" id="statementContent"></div>
     </dialog>
 
+    <dialog class="temp-dialog temp-dialog--receipt" id="receiptDialog">
+        <header class="dialog-header receipt-actions"><div><span class="dialog-eyebrow">Temp payment receipt</span><h2 id="receiptDialogTitle">Payment receipt</h2></div><div><button class="btn btn-outline-secondary" id="printReceiptBtn" type="button"><i class="ti ti-printer"></i> Print</button><button class="icon-button" type="button" data-close-dialog="receiptDialog" aria-label="Close"><i class="ti ti-x"></i></button></div></header>
+        <div class="dialog-body" id="receiptContent"></div>
+    </dialog>
+
+    <dialog class="temp-dialog temp-dialog--gcash" id="gcashAllocationDialog">
+        <form id="gcashAllocationForm" method="dialog" novalidate>
+            <header class="dialog-header"><div><span class="dialog-eyebrow">Verified imported credit</span><h2>Post GCash to Temp customers</h2></div><button class="icon-button" type="button" data-close-dialog="gcashAllocationDialog" aria-label="Close"><i class="ti ti-x"></i></button></header>
+            <div class="dialog-body">
+                <input id="gcashAllocationReference" type="hidden">
+                <div class="gcash-allocation-proof">
+                    <div><span>Reference</span><strong class="account-code" id="gcashProofReference">—</strong></div>
+                    <div><span>Official date</span><strong id="gcashProofDate">—</strong></div>
+                    <div><span>Imported credit</span><strong class="transaction-credit" id="gcashProofAmount">&#8369;0.00</strong></div>
+                </div>
+                <div class="alert alert-info mt-3 mb-3" id="gcashAllocationGuidance" role="status"><i class="ti ti-info-circle me-2"></i><span>Allocate the exact imported amount.</span></div>
+                <div class="allocation-heading"><div><strong>Customer allocations</strong><small>One reference can pay up to three Temp accounts.</small></div><button class="btn btn-outline-primary btn-sm" id="addGcashAllocationBtn" type="button"><i class="ti ti-plus"></i> Add split</button></div>
+                <div class="gcash-allocation-list" id="gcashAllocationRows"></div>
+                <div class="allocation-total"><span>Allocated <strong id="gcashAllocatedAmount">&#8369;0.00</strong></span><span>Remaining <strong id="gcashRemainingAmount">&#8369;0.00</strong></span></div>
+                <label class="form-check mt-3 mb-0"><input class="form-check-input" id="gcashAssignmentConfirmed" type="checkbox" required><span class="form-check-label">I verified the Temp customers, amounts, and official GCash reference. Post this allocation once.</span></label>
+            </div>
+            <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="gcashAllocationDialog">Cancel</button><button class="btn btn-primary" id="postGcashBtn" type="submit"><i class="ti ti-check"></i> Verify &amp; post</button></footer>
+        </form>
+    </dialog>
+
     <div class="temp-toast" id="tempToast" role="status" aria-live="polite" hidden><i class="ti ti-circle-check"></i><span></span></div>
-    <script src="/temp.js?v=2.1"></script>
+    <script src="/temp.js?v=2.3"></script>
 </body>
 </html>

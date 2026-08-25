@@ -390,6 +390,9 @@ assert(browserSource.includes('class="gcash-match-allocation"'));
 assert(browserSource.includes('class="gcash-match-name"'));
 assert(browserSource.includes('class="gcash-match-name gcash-match-link"'));
 assert(browserSource.includes('payment-breakdown.html?account='));
+assert(browserSource.includes('const isTempAccount = /^TMP\\d/i.test(accountNumber);'));
+assert(browserSource.includes('accountNumber && !isTempAccount'));
+assert(browserSource.includes('bg-azure-lt text-azure">Temp'));
 assert(browserSource.includes('class="gcash-match-amount"'));
 assert(browserSource.includes('transaction.paymentHistoryMatch'));
 assert(browserSource.includes("paymentHistoryMatch?.status === 'pending_match'"));
@@ -993,6 +996,7 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     };
     const paymentsModulePath = require.resolve('../backend/payments');
     const actualPaymentsRouter = require('../backend/payments');
+    const gcashReferenceLookup = require('../backend/gcash-payment-reference-lookup');
     assert.strictEqual(actualPaymentsRouter.normalizeManualPaymentReferenceKey(' OR-12 345 '), 'OR12345');
     assert.strictEqual(actualPaymentsRouter.paymentReferencesMatch('43891500420', '0043891500420'), true);
     assert.strictEqual(actualPaymentsRouter.paymentReferencesMatch('OR-12345', 'or 12345'), true);
@@ -1027,6 +1031,95 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         payments: paymentStoreMemory,
         gcashTransactions: []
     }), null);
+    const collectedMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
+        references: ['00 4389-1500420', 'UNUSED-REFERENCE'],
+        payments: {
+            'ACC-MAIN-GCASH': {
+                history: [{
+                    id: 'main-gcash-payment-1',
+                    reference: '43891500420',
+                    amount: 800,
+                    date: '2026-08-08',
+                    kind: 'payment',
+                    direction: 'credit',
+                    paymentMethod: 'GCash',
+                    status: 'Approved'
+                }]
+            },
+            'ACC-MAIN-CASH': {
+                history: [{
+                    id: 'main-cash-payment-1',
+                    reference: '0043891500420',
+                    amount: 800,
+                    date: '2026-08-08',
+                    kind: 'payment',
+                    direction: 'credit',
+                    paymentMethod: 'Cash',
+                    status: 'Approved'
+                }]
+            }
+        }
+    });
+    assert.strictEqual(collectedMainMatches.length, 1);
+    assert.strictEqual(collectedMainMatches[0].accountNumber, 'ACC-MAIN-GCASH');
+    assert.strictEqual(collectedMainMatches[0].paymentEntryId, 'main-gcash-payment-1');
+    const mislabeledMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
+        reference: '0043891500420',
+        officialTransactions: [{
+            reference: '0043891500420',
+            credit: 800,
+            transactionDate: '2026-08-08'
+        }],
+        payments: {
+            'ACC-MAIN-CASH': {
+                history: [{
+                    id: 'main-cash-payment-1',
+                    reference: '43891500420',
+                    amount: 800,
+                    date: '2026-08-08',
+                    kind: 'payment',
+                    direction: 'credit',
+                    paymentMethod: 'Cash',
+                    status: 'Approved'
+                }]
+            },
+            'ACC-MAIN-WRONG-AMOUNT': {
+                history: [{
+                    id: 'main-cash-wrong-amount',
+                    reference: '0043891500420',
+                    amount: 799,
+                    date: '2026-08-08',
+                    kind: 'payment',
+                    direction: 'credit',
+                    paymentMethod: '',
+                    status: 'Approved'
+                }]
+            }
+        }
+    });
+    assert.strictEqual(mislabeledMainMatches.length, 1);
+    assert.strictEqual(mislabeledMainMatches[0].paymentEntryId, 'main-cash-payment-1');
+    const pendingMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
+        reference: 'PENDING-MAIN-REF-1002',
+        includePending: true,
+        payments: {
+            'ACC-PENDING-MAIN': {
+                history: [{
+                    id: 'pending-main-gcash-payment-1',
+                    reference: 'PENDING MAIN REF 1002',
+                    amount: 900,
+                    date: '2026-08-08',
+                    kind: 'payment',
+                    direction: 'credit',
+                    paymentMethod: 'GCash',
+                    status: 'pending_gcash_verification'
+                }]
+            }
+        }
+    });
+    assert.strictEqual(pendingMainMatches.length, 1);
+    assert.strictEqual(pendingMainMatches[0].pending, true);
+    assert.strictEqual(pendingMainMatches[0].accountNumber, 'ACC-PENDING-MAIN');
     const pendingShortcutReference = 'PENDING-SHORTCUT-5005';
     const pendingShortcutEntry = {
         id: 'pending-shortcut-entry-5005',

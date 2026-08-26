@@ -41,6 +41,19 @@ assert.match(customersPage, /navigator\?\.geolocation/);
 assert.match(customersPage, /enableHighAccuracy:\s*true/);
 assert.match(customersPage, /useCurrentMapPinLocationBtn\.addEventListener\('click', useCurrentMapPinLocation\)/);
 assert.match(customersTablerCss, /\.map-pin-picker-modal\s*>\s*\.modal-content\s*\{[^}]*width:\s*min\(760px,/s);
+assert.match(customersPage, /id="closeAccountModal" class="[^"]*\baccount-closure-modal\b/);
+assert.match(customersPage, /class="[^"]*\bclose-customer-account\b[^"]*"/);
+assert.match(customersPage, /\/api\/customers\/\$\{encodeURIComponent\(accountNumber\)\}\/close-account/);
+assert.match(customersPage, /writeOffConfirmed:\s*closeAccountWriteOffConfirmed/);
+assert.match(customersPage, /No customer records will be deleted\./);
+const backdropZIndex = customersTablerCss.match(/\.modal-backdrop\s*\{[^}]*z-index:\s*(\d+)/s);
+const closeAccountModalZIndex = customersTablerCss.match(/\.modal\.account-closure-modal\s*\{[^}]*z-index:\s*(\d+)/s);
+assert.ok(backdropZIndex, 'Customers modal backdrop must define its stacking level.');
+assert.ok(closeAccountModalZIndex, 'Close Account modal must define its stacking level.');
+assert.ok(
+  Number(closeAccountModalZIndex[1]) > Number(backdropZIndex[1]),
+  'Close Account modal must remain above the shared backdrop so its controls receive clicks.'
+);
 
 for (const match of customersPage.matchAll(/<button\b[\s\S]*?>/g)) {
   assert.match(match[0], /class="[^"]*\bbtn\b[^"]*"/);

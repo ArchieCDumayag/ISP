@@ -600,8 +600,9 @@ const getDisconnectionState = (record = {}) => {
   if (normalizeText(raw.status) !== 'disconnected') return null;
   const disconnectedAt = safeDate(raw.disconnectedAt || raw.decidedAt || raw.updatedAt);
   if (!disconnectedAt) return null;
+  const billingThroughDate = safeDate(raw.billingThroughDate || raw.billing_through_date);
   const billingPolicy = normalizeText(raw.billingPolicy) === 'continue' ? 'continue' : 'stop';
-  return { disconnectedAt, billingPolicy };
+  return { disconnectedAt, billingThroughDate, billingPolicy };
 };
 
 const getIdentityValues = (customer = {}) => {
@@ -740,7 +741,7 @@ const isPaymentCredit = (entry = {}) => {
   if (entry.direction !== 'credit') return false;
   if (isOpeningAdvanceEntry(entry)) return false;
   const kind = normalizeText(entry.kind || entry.raw?.kind || entry.raw?.type);
-  return !kind || kind === 'payment' || kind === 'credit';
+  return !kind || ['payment', 'credit', 'discount', 'rebate'].includes(kind);
 };
 
 const shouldAttachCreditToBillMonth = (entry = {}, billDate = null, record = {}) => {
@@ -1678,7 +1679,7 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
   let lastBillDate = buildMonthlyDate(endParts.year, endParts.month, billingDay);
   const disconnection = getDisconnectionState(record);
   if (disconnection?.billingPolicy === 'stop') {
-    const disconnectionParts = getZonedDateParts(disconnection.disconnectedAt);
+    const disconnectionParts = getZonedDateParts(disconnection.billingThroughDate || disconnection.disconnectedAt);
     const disconnectionBillDate = disconnectionParts
       ? buildMonthlyDate(disconnectionParts.year, disconnectionParts.month, billingDay)
       : null;

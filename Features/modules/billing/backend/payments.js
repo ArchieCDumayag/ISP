@@ -4501,6 +4501,21 @@ const enablePppoeForCustomer = async (customer, branchId = null) => {
     }
 };
 
+const queuePppoeEnableForCustomer = (customer, branchId = null) => {
+    const customerSnapshot = customer && typeof customer === 'object'
+        ? { ...customer }
+        : customer;
+    setImmediate(() => {
+        enablePppoeForCustomer(customerSnapshot, branchId).catch((error) => {
+            console.warn(
+                'Queued PPPoE payment re-enable failed for customer',
+                customerSnapshot?.accountNumber,
+                error?.message || error
+            );
+        });
+    });
+};
+
 const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache = null, paymentEntry = null) => {
     const payments = paymentsCache || await readPayments(branchId);
     const balance = computeBalance(payments?.[accountNumber]?.history);
@@ -4584,7 +4599,6 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
         } else {
             await writeCustomers(customers, branchId);
         }
-        await enablePppoeForCustomer(nextCustomer, current.branchId || branchId);
         await upsertBranchDisconnection(branchId, accountNumber, {
             status: STATUS_KEPT_ACTIVE,
             billingPolicy: BILLING_POLICY_CONTINUE,
@@ -4596,6 +4610,7 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
             reconnectionHistory: updatedHistory,
             decidedBy: activationActor
         });
+        queuePppoeEnableForCustomer(nextCustomer, current.branchId || branchId);
         return;
     }
     if (currentStatus.status === STATUS_DISABLED) {
@@ -4618,7 +4633,7 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
         } else {
             await writeCustomers(customers, branchId);
         }
-        await enablePppoeForCustomer(customers[idx], current.branchId || branchId);
+        queuePppoeEnableForCustomer(customers[idx], current.branchId || branchId);
         return;
     }
     const creditLimit = deriveCreditLimit(current);
@@ -4637,7 +4652,7 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
             await writeCustomers(customers, branchId);
         }
     }
-    await enablePppoeForCustomer(nextCustomer, current.branchId || branchId);
+    queuePppoeEnableForCustomer(nextCustomer, current.branchId || branchId);
 };
 
 async function maybeAdvanceCustomerDueDate(accountNumber, paymentEntry, branchId = null) {

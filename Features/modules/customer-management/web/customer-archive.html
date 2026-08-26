@@ -21,11 +21,23 @@
                     <div class="page-title">
                         <p class="eyebrow">Customer Management</p>
                         <h1>Customer Archive</h1>
-                        <p class="subtitle">Deleted customers and deleted drafts stay here for 30 days before permanent cleanup.</p>
+                        <p class="subtitle">Manage deleted records separately from durable closed or disconnected accounts.</p>
                     </div>
                 </section>
 
-                <section class="section-frame archive-panel">
+                <nav class="nav nav-tabs archive-tabs" aria-label="Customer archive views">
+                    <button type="button" class="nav-link active" id="deletedArchiveTab" data-archive-tab="deleted" aria-controls="deletedArchivePanel" aria-selected="true">
+                        <i class="ti ti-archive" aria-hidden="true"></i>
+                        Deleted Records
+                    </button>
+                    <button type="button" class="nav-link" id="closedAccountsTab" data-archive-tab="closed" aria-controls="closedAccountsPanel" aria-selected="false">
+                        <i class="ti ti-user-off" aria-hidden="true"></i>
+                        Closed / Disconnected Accounts
+                        <span class="badge bg-secondary-lt text-secondary ms-1" id="closedAccountsCount">0</span>
+                    </button>
+                </nav>
+
+                <section class="section-frame archive-panel" id="deletedArchivePanel" data-archive-panel="deleted">
                     <div class="archive-notice">
                         <div class="archive-notice__icon">
                             <i class="ti ti-archive" aria-hidden="true"></i>
@@ -109,13 +121,124 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="section-frame archive-panel" id="closedAccountsPanel" data-archive-panel="closed" hidden>
+                    <div class="archive-notice archive-notice--closed">
+                        <div class="archive-notice__icon">
+                            <i class="ti ti-shield-lock" aria-hidden="true"></i>
+                        </div>
+                        <div class="archive-notice__content">
+                            <strong>Records are preserved permanently</strong>
+                            <p>Closed accounts do not receive new bills and are hidden from Customers and Collector queues. Payment, GCash, receipt, billing, and disconnection history remain intact.</p>
+                        </div>
+                    </div>
+
+                    <div class="archive-toolbar">
+                        <label class="archive-search-field" for="closedAccountsSearch">
+                            <i class="ti ti-search" aria-hidden="true"></i>
+                            <input
+                                type="search"
+                                id="closedAccountsSearch"
+                                placeholder="Search closed account, name, plan, or area"
+                                autocomplete="off"
+                                aria-label="Search closed accounts"
+                            >
+                        </label>
+                        <div class="archive-toolbar__actions">
+                            <div class="page-size-control">
+                                <label for="closedAccountsPageSize">Show</label>
+                                <div class="select-wrapper">
+                                    <select id="closedAccountsPageSize" name="closedAccountsPageSize">
+                                        <option value="10" selected>10</option>
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper archive-table-wrap">
+                        <table class="archive-table closed-accounts-table">
+                            <thead>
+                                <tr>
+                                    <th class="account-col">Account Number</th>
+                                    <th>Customer</th>
+                                    <th>Plan / Area</th>
+                                    <th>Closure</th>
+                                    <th>Final Balance</th>
+                                    <th class="actions-col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="closedAccountsTableBody">
+                                <tr>
+                                    <td colspan="6" class="archive-empty">Loading closed accounts...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="table-footer" id="closedAccountsFooter">
+                        <div class="footer-summary" id="closedAccountsSummary">Showing 0 of 0 closed accounts</div>
+                        <div class="footer-controls">
+                            <button type="button" class="footer-btn" id="closedAccountsPrev" aria-label="Previous page" disabled>&#8249;</button>
+                            <span class="footer-page-info" id="closedAccountsPageInfo">Page 1 of 1</span>
+                            <button type="button" class="footer-btn" id="closedAccountsNext" aria-label="Next page" disabled>&#8250;</button>
+                        </div>
+                    </div>
+                </section>
             </main>
+        </div>
+    </div>
+
+    <div class="modal modal-blur fade" id="reopenAccountModal" tabindex="-1" aria-labelledby="reopenAccountModalTitle" aria-hidden="true" data-tabler-modal>
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <form id="reopenAccountForm" novalidate>
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title" id="reopenAccountModalTitle">Reopen customer account</h2>
+                            <p class="text-secondary small mb-0 mt-1">Choose how the retained balance should be handled before service resumes.</p>
+                        </div>
+                        <button type="button" class="btn btn-icon btn-outline-secondary" id="reopenAccountClose" data-bs-dismiss="modal" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info" role="status">
+                            <div class="fw-semibold" id="reopenAccountCustomerName">Customer</div>
+                            <div class="small mt-1">Retained balance: <strong id="reopenAccountBalance">₱0.00</strong>. Reopening never erases or duplicates this balance.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label required" for="reopenAccountBalanceAction">Balance and service action</label>
+                            <select class="form-select" id="reopenAccountBalanceAction" required>
+                                <option value="collect-first" selected>Collect first — keep service stopped</option>
+                                <option value="keep">Keep outstanding — continue to reconnect</option>
+                                <option value="write-off">Write off — continue to reconnect</option>
+                            </select>
+                            <div class="form-hint" id="reopenAccountBalanceHint">The customer returns as Disabled. Record payment first, then reconnect from Billing.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label required" for="reopenAccountReason">Reopen reason</label>
+                            <textarea class="form-control" id="reopenAccountReason" rows="3" maxlength="500" placeholder="Example: Customer requested service restoration" required></textarea>
+                        </div>
+                        <label class="form-check">
+                            <input class="form-check-input" type="checkbox" id="reopenAccountConfirmed">
+                            <span class="form-check-label" id="reopenAccountConfirmationLabel">I confirm the account will reopen as Disabled and the retained balance will remain for collection.</span>
+                        </label>
+                        <div class="alert alert-danger mt-3 mb-0" id="reopenAccountError" role="alert" hidden></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" id="reopenAccountCancel" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="reopenAccountSubmit" disabled><i class="ti ti-user-check" aria-hidden="true"></i> Reopen Account</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
     <script src="layout.js?v=3.9"></script>
     <script src="js/confirm-dialog.js?v=1.1"></script>
-    <script src="js/customer-archive.js?v=1.7"></script>
+    <script src="js/customer-archive.js?v=2.0"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

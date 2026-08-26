@@ -46,6 +46,7 @@ const sanitizeDecisionRecord = (record = {}) => {
     hitCreditLimitAt: record.hitCreditLimitAt || null,
     decidedAt: record.decidedAt || null,
     disconnectedAt: record.disconnectedAt || null,
+    billingThroughDate: String(record.billingThroughDate || record.billing_through_date || '').trim() || null,
     reconnectedAt: record.reconnectedAt || null,
     updatedAt: record.updatedAt || record.decidedAt || record.disconnectedAt || null,
     notes: String(record.notes || '').trim(),
@@ -103,11 +104,17 @@ const upsertBranchDisconnection = async (branchId = null, accountNumber = '', pa
   const branchKey = branchStoreKey(branchId);
   const bucket = getBranchDisconnectionBucket(store, branchId);
   const current = sanitizeDecisionRecord({ ...(bucket[key] || {}), accountNumber: key }) || { accountNumber: key };
+  const normalizedPatch = { ...patch };
+  const changesDisconnectionLifecycle = ['status', 'billingPolicy', 'disconnectedAt', 'reconnectedAt']
+    .some((field) => Object.prototype.hasOwnProperty.call(normalizedPatch, field));
+  if (changesDisconnectionLifecycle && !Object.prototype.hasOwnProperty.call(normalizedPatch, 'billingThroughDate')) {
+    normalizedPatch.billingThroughDate = null;
+  }
   const next = sanitizeDecisionRecord({
     ...current,
-    ...patch,
+    ...normalizedPatch,
     accountNumber: key,
-    updatedAt: patch.updatedAt || new Date().toISOString()
+    updatedAt: normalizedPatch.updatedAt || new Date().toISOString()
   });
   bucket[key] = next;
   store[branchKey] = bucket;

@@ -672,3 +672,470 @@
 
     loadArchives();
 })();
+
+(() => {
+    const tabButtons = Array.from(document.querySelectorAll('[data-archive-tab]'));
+    const tabPanels = Array.from(document.querySelectorAll('[data-archive-panel]'));
+    const tableBody = document.getElementById('closedAccountsTableBody');
+    const searchInput = document.getElementById('closedAccountsSearch');
+    const pageSizeSelect = document.getElementById('closedAccountsPageSize');
+    const prevBtn = document.getElementById('closedAccountsPrev');
+    const nextBtn = document.getElementById('closedAccountsNext');
+    const pageInfo = document.getElementById('closedAccountsPageInfo');
+    const summary = document.getElementById('closedAccountsSummary');
+    const countBadge = document.getElementById('closedAccountsCount');
+    const reopenModal = document.getElementById('reopenAccountModal');
+    const reopenForm = document.getElementById('reopenAccountForm');
+    const reopenClose = document.getElementById('reopenAccountClose');
+    const reopenCancel = document.getElementById('reopenAccountCancel');
+    const reopenCustomerName = document.getElementById('reopenAccountCustomerName');
+    const reopenBalance = document.getElementById('reopenAccountBalance');
+    const reopenBalanceAction = document.getElementById('reopenAccountBalanceAction');
+    const reopenBalanceHint = document.getElementById('reopenAccountBalanceHint');
+    const reopenReason = document.getElementById('reopenAccountReason');
+    const reopenConfirmed = document.getElementById('reopenAccountConfirmed');
+    const reopenConfirmationLabel = document.getElementById('reopenAccountConfirmationLabel');
+    const reopenError = document.getElementById('reopenAccountError');
+    const reopenSubmit = document.getElementById('reopenAccountSubmit');
+    if (!tableBody || !pageSizeSelect) return;
+
+    const state = {
+        items: [],
+        total: 0,
+        limit: Number(pageSizeSelect.value || 10) || 10,
+        offset: 0,
+        search: '',
+        loading: false,
+        errorMessage: '',
+        retryingClosureId: '',
+        reopeningClosureId: '',
+        reopenRecord: null
+    };
+
+    const notify = (message, type = 'info') => {
+        if (typeof window.appToast === 'function') {
+            window.appToast(message, { type });
+            return;
+        }
+        console.log(message);
+    };
+
+    const escapeHtml = (value) => String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const parseDate = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        const parsed = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T'));
+        return Number.isFinite(parsed.getTime()) ? parsed : null;
+    };
+
+    const formatDate = (value) => {
+        const parsed = parseDate(value);
+        if (!parsed) return String(value || '-').trim() || '-';
+        return new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric'
+        }).format(parsed);
+    };
+
+    const formatMoney = (value) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return 'Unavailable';
+        return `₱${Math.abs(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const getInitials = (value) => {
+        const words = String(value || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+        return words.length ? words.map((word) => word.charAt(0).toUpperCase()).join('') : 'CA';
+    };
+
+    const activateTab = (tabName, { updateHash = true } = {}) => {
+        const selected = tabName === 'closed' ? 'closed' : 'deleted';
+        tabButtons.forEach((button) => {
+            const active = button.dataset.archiveTab === selected;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        tabPanels.forEach((panel) => {
+            panel.hidden = panel.dataset.archivePanel !== selected;
+        });
+        if (updateHash) {
+            const nextHash = selected === 'closed' ? '#closed-accounts' : '#deleted-records';
+            if (window.location.hash !== nextHash) window.history.replaceState(null, '', nextHash);
+        }
+        if (selected === 'closed') void loadClosedAccounts();
+    };
+
+    const apiFetch = async (url, options = {}) => {
+        const response = await fetch(url, {
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+            ...options
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || payload?.message || `Request failed (${response.status})`);
+        return payload;
+    };
+
+    const renderPagination = () => {
+        const total = state.total;
+        const start = total ? state.offset + 1 : 0;
+        const end = total ? Math.min(state.offset + state.items.length, total) : 0;
+        const currentPage = total ? Math.floor(state.offset / state.limit) + 1 : 1;
+        const pageCount = total ? Math.max(1, Math.ceil(total / state.limit)) : 1;
+        if (summary) summary.textContent = total
+            ? `Showing ${start}-${end} of ${total} closed accounts`
+            : 'Showing 0 of 0 closed accounts';
+        if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${pageCount}`;
+        if (prevBtn) prevBtn.disabled = state.loading || state.offset <= 0;
+        if (nextBtn) nextBtn.disabled = state.loading || state.offset + state.limit >= total;
+        if (countBadge) countBadge.textContent = String(total);
+    };
+
+    const renderTable = () => {
+        if (state.loading) {
+            tableBody.innerHTML = '<tr><td colspan="6" class="archive-empty">Loading closed accounts...</td></tr>';
+            renderPagination();
+            return;
+        }
+        if (state.errorMessage) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="archive-empty text-danger">${escapeHtml(state.errorMessage)}</td></tr>`;
+            renderPagination();
+            return;
+        }
+        if (!state.items.length) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="archive-empty">${state.search ? 'No closed accounts matched your search.' : 'No closed accounts found.'}</td></tr>`;
+            renderPagination();
+            return;
+        }
+
+        tableBody.innerHTML = state.items.map((item) => {
+            const accountNumber = String(item?.accountNumber || '-').trim() || '-';
+            const customerName = String(item?.customerName || `Account ${accountNumber}`).trim();
+            const contact = String(item?.contactNumber || 'No contact saved').trim();
+            const planName = String(item?.planName || 'No plan').trim();
+            const areaName = String(item?.areaName || 'No area').trim();
+            const stateLabel = item?.state === 'failed'
+                ? 'Needs review'
+                : (item?.state === 'closing' ? 'Closing' : 'Closed');
+            const stateClass = item?.state === 'failed'
+                ? 'archive-status-pill archive-status-pill--danger'
+                : 'archive-status-pill archive-status-pill--closed';
+            const balanceBefore = Number(item?.balanceBefore) || 0;
+            const writeOffAmount = Number(item?.writeOffAmount) || 0;
+            const finalBalance = Number(item?.finalBalance) || 0;
+            const balanceTreatment = String(item?.balanceTreatment || '').trim().toLowerCase();
+            const balanceMeta = writeOffAmount > 0
+                ? `${formatMoney(writeOffAmount)} audited write-off`
+                : (balanceTreatment === 'keep' && finalBalance > 0.005
+                    ? 'Outstanding balance retained'
+                    : (Math.abs(balanceBefore) < 0.005 ? 'Closed at zero balance' : 'No write-off'));
+            const retryAction = item?.state === 'failed'
+                ? `
+                    <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-balance-treatment="${escapeHtml(balanceTreatment || (balanceBefore > 0.005 ? 'write-off' : 'zero'))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                        <i class="ti ti-refresh" aria-hidden="true"></i>
+                    </button>
+                `
+                : '';
+            return `
+                <tr data-closure-id="${escapeHtml(item?.id)}">
+                    <td class="account-col"><span class="account-tag">${escapeHtml(accountNumber)}</span></td>
+                    <td>
+                        <div class="archive-subscriber">
+                            <span class="avatar">${escapeHtml(getInitials(customerName))}</span>
+                            <div class="archive-subscriber__body">
+                                <p class="subscriber-name">${escapeHtml(customerName)}</p>
+                                <p class="subscriber-meta"><span>${escapeHtml(contact)}</span><span class="${stateClass}">${escapeHtml(stateLabel)}</span></p>
+                            </div>
+                        </div>
+                    </td>
+                    <td><p class="archive-plan-name">${escapeHtml(planName)}</p><p class="archive-plan-meta">${escapeHtml(areaName)}</p></td>
+                    <td>
+                        <p class="archive-date">${escapeHtml(formatDate(item?.closureDate || item?.closedAt))}</p>
+                        <p class="archive-time">${escapeHtml(item?.reason || 'No closure reason saved')}</p>
+                        ${item?.warning ? `<p class="archive-warning-text">${escapeHtml(item.warning)}</p>` : ''}
+                    </td>
+                    <td>
+                        <p class="archive-date">${escapeHtml(formatMoney(finalBalance))}</p>
+                        <p class="archive-time">${escapeHtml(balanceMeta)}</p>
+                    </td>
+                    <td class="actions-col">
+                        <div class="archive-actions">
+                            <a class="archive-icon-btn" href="payment-breakdown.html?account=${encodeURIComponent(accountNumber)}" title="View preserved billing history" aria-label="View preserved billing history for ${escapeHtml(customerName)}">
+                                <i class="ti ti-receipt-2" aria-hidden="true"></i>
+                            </a>
+                            ${retryAction}
+                            <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="reopen-closed" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-final-balance="${escapeHtml(finalBalance)}" title="Reopen account" aria-label="Reopen ${escapeHtml(customerName)}" ${state.reopeningClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                                <i class="ti ti-user-check" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        renderPagination();
+    };
+
+    async function loadClosedAccounts() {
+        if (state.loading) return;
+        state.loading = true;
+        state.errorMessage = '';
+        renderTable();
+        try {
+            while (true) {
+                const params = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) });
+                if (state.search) params.set('search', state.search);
+                const payload = await apiFetch(`/api/customers/closed-accounts?${params.toString()}`);
+                const total = Number(payload?.total || 0);
+                if (state.offset > 0 && total > 0 && state.offset >= total) {
+                    state.offset = Math.max(0, Math.floor((total - 1) / state.limit) * state.limit);
+                    continue;
+                }
+                state.items = Array.isArray(payload?.items) ? payload.items : [];
+                state.total = total;
+                break;
+            }
+        } catch (error) {
+            state.items = [];
+            state.total = 0;
+            state.errorMessage = error?.message || 'Failed to load closed accounts.';
+        } finally {
+            state.loading = false;
+            renderTable();
+        }
+    }
+
+    const setReopenError = (message = '') => {
+        if (!reopenError) return;
+        const text = String(message || '').trim();
+        reopenError.textContent = text;
+        reopenError.hidden = !text;
+    };
+
+    const getReopenModalController = () => window.bootstrap?.Modal?.getOrCreateInstance?.(reopenModal, {
+        backdrop: 'static',
+        keyboard: false
+    }) || null;
+
+    const hideReopenModal = () => {
+        getReopenModalController()?.hide();
+        if (!window.bootstrap?.Modal) {
+            reopenModal?.classList.remove('show');
+            reopenModal?.setAttribute('aria-hidden', 'true');
+            if (reopenModal) reopenModal.style.display = 'none';
+        }
+    };
+
+    const renderReopenForm = () => {
+        const record = state.reopenRecord || {};
+        const finalBalance = Number(record.finalBalance) || 0;
+        const action = String(reopenBalanceAction?.value || 'collect-first').trim();
+        const hasBalance = finalBalance > 0.005;
+        const writeOffOption = reopenBalanceAction?.querySelector('option[value="write-off"]');
+        if (writeOffOption) writeOffOption.disabled = !hasBalance;
+        if (!hasBalance && action === 'write-off' && reopenBalanceAction) reopenBalanceAction.value = 'keep';
+        const selectedAction = String(reopenBalanceAction?.value || 'collect-first').trim();
+        if (reopenBalanceHint) {
+            reopenBalanceHint.textContent = selectedAction === 'collect-first'
+                ? 'The customer returns as Disabled. Record payment first, then reconnect from Billing.'
+                : (selectedAction === 'write-off'
+                    ? 'The account returns as Disabled, then Billing opens with Write off selected. Service does not resume until that settlement is confirmed.'
+                    : 'The account returns as Disabled, then Billing opens with Keep for collection selected. Service does not resume until that settlement is confirmed.');
+        }
+        if (reopenConfirmationLabel) {
+            reopenConfirmationLabel.textContent = selectedAction === 'collect-first'
+                ? 'I confirm the account will reopen as Disabled and the retained balance will remain for collection.'
+                : 'I confirm the account will reopen as Disabled and I must review the Billing settlement before service resumes.';
+        }
+        const validReason = String(reopenReason?.value || '').trim().length >= 3;
+        if (reopenSubmit) {
+            reopenSubmit.disabled = Boolean(state.reopeningClosureId) || !validReason || reopenConfirmed?.checked !== true;
+            reopenSubmit.innerHTML = state.reopeningClosureId
+                ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Reopening...'
+                : (selectedAction === 'collect-first'
+                    ? '<i class="ti ti-user-check" aria-hidden="true"></i> Reopen Account'
+                    : '<i class="ti ti-arrow-right" aria-hidden="true"></i> Reopen & Continue');
+        }
+        if (reopenClose) reopenClose.disabled = Boolean(state.reopeningClosureId);
+        if (reopenCancel) reopenCancel.disabled = Boolean(state.reopeningClosureId);
+    };
+
+    const openReopenModal = ({ closureId, accountNumber, customerName, finalBalance }) => {
+        if (!closureId || !reopenModal) return;
+        state.reopenRecord = { closureId, accountNumber, customerName, finalBalance: Number(finalBalance) || 0 };
+        reopenForm?.reset();
+        if (reopenBalanceAction) reopenBalanceAction.value = 'collect-first';
+        if (reopenCustomerName) reopenCustomerName.textContent = `${customerName} · Account # ${accountNumber}`;
+        if (reopenBalance) reopenBalance.textContent = formatMoney(finalBalance);
+        setReopenError('');
+        renderReopenForm();
+        const controller = getReopenModalController();
+        if (controller) {
+            controller.show();
+        } else {
+            reopenModal.style.display = 'block';
+            reopenModal.classList.add('show');
+            reopenModal.setAttribute('aria-hidden', 'false');
+        }
+        window.setTimeout(() => reopenBalanceAction?.focus(), 0);
+    };
+
+    const submitReopenAccount = async () => {
+        const record = state.reopenRecord || {};
+        const closureId = String(record.closureId || '').trim();
+        const reason = String(reopenReason?.value || '').trim();
+        const balanceAction = String(reopenBalanceAction?.value || 'collect-first').trim();
+        if (!closureId || state.reopeningClosureId) return;
+        if (reason.length < 3) {
+            setReopenError('Enter a reason for reopening this account.');
+            reopenReason?.focus();
+            return;
+        }
+        if (reopenConfirmed?.checked !== true) {
+            setReopenError('Confirm the selected balance and service action.');
+            reopenConfirmed?.focus();
+            return;
+        }
+        state.reopeningClosureId = closureId;
+        setReopenError('');
+        renderReopenForm();
+        try {
+            const payload = await apiFetch(`/api/customers/closed-accounts/${encodeURIComponent(closureId)}/reopen`, {
+                method: 'POST',
+                body: JSON.stringify({ reason, balanceAction })
+            });
+            notify(payload?.message || `${record.customerName} returned to Customers as Disabled.`, 'success');
+            if (payload?.warning) notify(payload.warning, 'warning');
+            hideReopenModal();
+            state.reopenRecord = null;
+            if (payload?.nextUrl) {
+                window.location.assign(String(payload.nextUrl));
+                return;
+            }
+            await loadClosedAccounts();
+        } catch (error) {
+            setReopenError(error?.message || 'Failed to reopen account.');
+        } finally {
+            state.reopeningClosureId = '';
+            renderReopenForm();
+            renderTable();
+        }
+    };
+
+    const confirmRetryClose = async (customerName) => {
+        const message = `Retry closing ${customerName}? This continues the same closure audit. Any completed write-off is locked and cannot be duplicated.`;
+        if (!window.appConfirm) return window.confirm(message);
+        const result = await window.appConfirm(message, { title: 'Retry Account Closure', okText: 'Retry Close' });
+        return result && typeof result === 'object'
+            ? result.ok === true || result.confirmed === true || result.value === true
+            : result === true;
+    };
+
+    const retryCloseAccount = async ({ closureId, accountNumber, customerName, closureDate, reason, balanceTreatment }) => {
+        if (!closureId || !accountNumber || state.retryingClosureId) return;
+        if (!await confirmRetryClose(customerName)) return;
+        state.retryingClosureId = closureId;
+        renderTable();
+        try {
+            const payload = await apiFetch(`/api/customers/${encodeURIComponent(accountNumber)}/close-account`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    closureDate,
+                    reason,
+                    balanceTreatment,
+                    writeOffConfirmed: balanceTreatment === 'write-off'
+                })
+            });
+            notify(`${customerName} is closed. Billing stopped and all history was preserved.`, 'success');
+            if (payload?.warning) notify(payload.warning, 'warning');
+        } catch (error) {
+            notify(error?.message || 'Failed to retry account closure.', 'error');
+        } finally {
+            state.retryingClosureId = '';
+            await loadClosedAccounts();
+        }
+    };
+
+    tabButtons.forEach((button) => button.addEventListener('click', () => activateTab(button.dataset.archiveTab)));
+    let searchTimer = null;
+    searchInput?.addEventListener('input', () => {
+        window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(() => {
+            state.search = String(searchInput.value || '').trim();
+            state.offset = 0;
+            void loadClosedAccounts();
+        }, 220);
+    });
+    pageSizeSelect.addEventListener('change', () => {
+        state.limit = Number(pageSizeSelect.value || 10) || 10;
+        state.offset = 0;
+        void loadClosedAccounts();
+    });
+    prevBtn?.addEventListener('click', () => {
+        if (state.loading || state.offset <= 0) return;
+        state.offset = Math.max(0, state.offset - state.limit);
+        void loadClosedAccounts();
+    });
+    nextBtn?.addEventListener('click', () => {
+        if (state.loading || state.offset + state.limit >= state.total) return;
+        state.offset += state.limit;
+        void loadClosedAccounts();
+    });
+    tableBody.addEventListener('click', (event) => {
+        const retryButton = event.target.closest('[data-action="retry-close"]');
+        if (retryButton) {
+            void retryCloseAccount({
+                closureId: String(retryButton.dataset.closureId || '').trim(),
+                accountNumber: String(retryButton.dataset.accountNumber || '').trim(),
+                customerName: String(retryButton.dataset.customerName || 'this account').trim(),
+                closureDate: String(retryButton.dataset.closureDate || '').trim(),
+                reason: String(retryButton.dataset.reason || '').trim(),
+                balanceTreatment: String(retryButton.dataset.balanceTreatment || '').trim()
+            });
+            return;
+        }
+        const button = event.target.closest('[data-action="reopen-closed"]');
+        if (!button) return;
+        openReopenModal({
+            closureId: String(button.dataset.closureId || '').trim(),
+            accountNumber: String(button.dataset.accountNumber || '').trim(),
+            customerName: String(button.dataset.customerName || 'this account').trim(),
+            finalBalance: Number(button.dataset.finalBalance) || 0
+        });
+    });
+
+    reopenForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void submitReopenAccount();
+    });
+    reopenBalanceAction?.addEventListener('change', () => {
+        if (reopenConfirmed) reopenConfirmed.checked = false;
+        setReopenError('');
+        renderReopenForm();
+    });
+    reopenReason?.addEventListener('input', renderReopenForm);
+    reopenConfirmed?.addEventListener('change', renderReopenForm);
+    const clearReopenState = () => {
+        if (state.reopeningClosureId) return;
+        state.reopenRecord = null;
+        setReopenError('');
+    };
+    const closeReopenModal = () => {
+        if (state.reopeningClosureId) return;
+        hideReopenModal();
+        clearReopenState();
+    };
+    reopenClose?.addEventListener('click', closeReopenModal);
+    reopenCancel?.addEventListener('click', closeReopenModal);
+    reopenModal?.addEventListener('hidden.bs.modal', clearReopenState);
+
+    const initialTab = window.location.hash === '#closed-accounts' ? 'closed' : 'deleted';
+    activateTab(initialTab, { updateHash: false });
+    void loadClosedAccounts();
+})();

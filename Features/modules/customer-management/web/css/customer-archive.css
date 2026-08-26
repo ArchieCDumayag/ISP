@@ -4,6 +4,22 @@
     gap: 20px;
 }
 
+.archive-tabs {
+    gap: 4px;
+    padding: 0 4px;
+}
+
+.archive-tabs .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+}
+
+.archive-panel[hidden] {
+    display: none !important;
+}
+
 .archive-panel {
     display: flex;
     flex-direction: column;
@@ -73,6 +89,24 @@
 .archive-notice__content p {
     margin: 0;
     color: #9a3412;
+}
+
+.archive-notice--closed {
+    border-color: rgba(14, 165, 233, 0.3);
+    background: linear-gradient(135deg, rgba(240, 249, 255, 0.97), rgba(239, 246, 255, 0.94));
+}
+
+.archive-notice--closed .archive-notice__icon {
+    background: rgba(14, 165, 233, 0.14);
+    color: #0369a1;
+}
+
+.archive-notice--closed .archive-notice__content strong {
+    color: #075985;
+}
+
+.archive-notice--closed .archive-notice__content p {
+    color: #0c4a6e;
 }
 
 .archive-toolbar {
@@ -349,6 +383,16 @@
     background: currentColor;
 }
 
+.archive-status-pill--closed {
+    background: rgba(100, 116, 139, 0.14);
+    color: #475569;
+}
+
+.archive-status-pill--danger {
+    background: rgba(239, 68, 68, 0.14);
+    color: #b91c1c;
+}
+
 .archive-plan-name,
 .archive-date {
     margin: 0;
@@ -365,6 +409,25 @@
     color: #64748b;
     overflow-wrap: anywhere;
 }
+
+.archive-warning-text {
+    margin: 6px 0 0;
+    color: #b91c1c;
+    font-size: 0.8rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.closed-accounts-table {
+    min-width: 1080px;
+}
+
+.closed-accounts-table th:nth-child(1) { width: 140px; }
+.closed-accounts-table th:nth-child(2) { width: 250px; }
+.closed-accounts-table th:nth-child(3) { width: 190px; }
+.closed-accounts-table th:nth-child(4) { width: 250px; }
+.closed-accounts-table th:nth-child(5) { width: 190px; }
+.closed-accounts-table th:nth-child(6) { width: 120px; }
 
 .archive-pill {
     display: inline-flex;
@@ -468,6 +531,24 @@ body.theme-dark .archive-notice__content p {
     color: #fed7aa;
 }
 
+body.theme-dark .archive-notice--closed {
+    border-color: rgba(14, 165, 233, 0.34);
+    background: linear-gradient(135deg, rgba(8, 47, 73, 0.92), rgba(15, 23, 42, 0.94));
+}
+
+body.theme-dark .archive-notice--closed .archive-notice__icon {
+    background: rgba(14, 165, 233, 0.2);
+    color: #67e8f9;
+}
+
+body.theme-dark .archive-notice--closed .archive-notice__content strong {
+    color: #bae6fd;
+}
+
+body.theme-dark .archive-notice--closed .archive-notice__content p {
+    color: #7dd3fc;
+}
+
 body.theme-dark .archive-search-field {
     background: rgba(15, 23, 42, 0.92);
     border-color: rgba(71, 85, 105, 0.72);
@@ -526,6 +607,16 @@ body.theme-dark .archive-date {
 body.theme-dark .archive-status-pill {
     background: rgba(249, 115, 22, 0.2);
     color: #fdba74;
+}
+
+body.theme-dark .archive-status-pill--closed {
+    background: rgba(100, 116, 139, 0.24);
+    color: #cbd5e1;
+}
+
+body.theme-dark .archive-status-pill--danger,
+body.theme-dark .archive-warning-text {
+    color: #fca5a5;
 }
 
 body.theme-dark .archive-pill--warn {

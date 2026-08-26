@@ -210,6 +210,76 @@
 </div>
 
     <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+    <div id="closeAccountModal" class="modal modal-blur account-closure-modal" role="dialog" aria-modal="true" aria-labelledby="closeAccountModalTitle" aria-hidden="true" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <form id="closeAccountForm" novalidate>
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title" id="closeAccountModalTitle">Close customer account</h2>
+                            <p class="text-secondary small mb-0 mt-1">Stop future billing without deleting payment, GCash, receipt, or disconnection history.</p>
+                        </div>
+                        <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="closeAccountModalClose" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info mb-3" role="status">
+                            <div class="d-flex gap-2 align-items-start">
+                                <i class="ti ti-shield-lock mt-1" aria-hidden="true"></i>
+                                <div><strong>No customer records will be deleted.</strong><div class="small mt-1">The account will move to Customer Archive → Closed / Disconnected Accounts and will be excluded from Collector queues.</div></div>
+                            </div>
+                        </div>
+                        <div class="card mb-3">
+                            <div class="card-body py-3">
+                                <div class="row g-3 align-items-center">
+                                    <div class="col">
+                                        <div class="text-secondary small">Customer</div>
+                                        <div class="fw-semibold" id="closeAccountCustomerName">—</div>
+                                        <div class="text-secondary small" id="closeAccountNumber">—</div>
+                                    </div>
+                                    <div class="col-auto text-end">
+                                        <div class="text-secondary small">Canonical balance</div>
+                                        <div class="h3 mb-0" id="closeAccountBalance">—</div>
+                                        <div class="text-secondary small" id="closeAccountBalanceState">Loading billing data</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="form-label required" for="closeAccountDate">Closure date</label>
+                                <input type="date" class="form-control" id="closeAccountDate" required>
+                                <div class="form-hint">Today or an earlier date. Existing ledger entries remain unchanged.</div>
+                            </div>
+                            <div class="col-md-7">
+                                <label class="form-label required" for="closeAccountReason">Reason</label>
+                                <textarea class="form-control" id="closeAccountReason" rows="3" maxlength="500" placeholder="Example: Customer requested permanent disconnection" required></textarea>
+                            </div>
+                        </div>
+                        <div class="mt-3 d-none" id="closeAccountBalanceTreatmentField" hidden>
+                            <label class="form-label required" for="closeAccountBalanceTreatment">Remaining balance</label>
+                            <select class="form-select" id="closeAccountBalanceTreatment">
+                                <option value="keep" selected>Keep outstanding for collection — no write-off</option>
+                                <option value="write-off">Write off with an audited adjustment</option>
+                            </select>
+                            <div class="form-hint" id="closeAccountBalanceTreatmentHint">The balance stays on the account while future bills stop.</div>
+                        </div>
+                        <label class="form-check mt-3 d-none" id="closeAccountWriteOffField" hidden>
+                            <input class="form-check-input" type="checkbox" id="closeAccountWriteOffConfirmed">
+                            <span class="form-check-label">
+                                <strong id="closeAccountWriteOffLabel">Confirm the remaining-balance write-off</strong>
+                                <span class="form-check-description">This creates one non-cash audited discount entry so the final balance becomes zero.</span>
+                            </span>
+                        </label>
+                        <div class="alert alert-danger mt-3 mb-0" id="closeAccountError" role="alert" hidden></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="closeAccountCancel">Cancel</button>
+                        <button type="submit" class="btn btn-danger btn-sm" id="closeAccountSubmit" disabled><i class="ti ti-user-off" aria-hidden="true"></i> Close Account</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
     <div id="customerModal" class="modal modal-blur customer-modal" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle" aria-hidden="true" tabindex="-1">
         <div class="modal-content">
             <div class="modal-header">
@@ -1391,7 +1461,7 @@
             
 
             function refreshModalBackdrop() {
-                const hasCustomerModal = document.querySelectorAll('.modal.customer-modal.show, #customerModal.show, #customerViewModal.show').length > 0;
+                const hasCustomerModal = document.querySelectorAll('.modal.customer-modal.show, #customerModal.show, #customerViewModal.show, #closeAccountModal.show').length > 0;
                 const hasOpenModal = Boolean(document.querySelector('.modal.show'));
                 bodyElement.classList.toggle('modal-active', hasOpenModal);
                 rootElement.classList.toggle('modal-active', hasOpenModal);
@@ -1425,6 +1495,24 @@
             const customerStatsActive = document.getElementById('customerStatsActive');
             const customerStatsBalance = document.getElementById('customerStatsBalance');
             const customerStatsAreas = document.getElementById('customerStatsAreas');
+            const closeAccountModal = document.getElementById('closeAccountModal');
+            const closeAccountForm = document.getElementById('closeAccountForm');
+            const closeAccountModalClose = document.getElementById('closeAccountModalClose');
+            const closeAccountCancel = document.getElementById('closeAccountCancel');
+            const closeAccountSubmit = document.getElementById('closeAccountSubmit');
+            const closeAccountCustomerName = document.getElementById('closeAccountCustomerName');
+            const closeAccountNumber = document.getElementById('closeAccountNumber');
+            const closeAccountBalance = document.getElementById('closeAccountBalance');
+            const closeAccountBalanceState = document.getElementById('closeAccountBalanceState');
+            const closeAccountDate = document.getElementById('closeAccountDate');
+            const closeAccountReason = document.getElementById('closeAccountReason');
+            const closeAccountBalanceTreatmentField = document.getElementById('closeAccountBalanceTreatmentField');
+            const closeAccountBalanceTreatment = document.getElementById('closeAccountBalanceTreatment');
+            const closeAccountBalanceTreatmentHint = document.getElementById('closeAccountBalanceTreatmentHint');
+            const closeAccountWriteOffField = document.getElementById('closeAccountWriteOffField');
+            const closeAccountWriteOffConfirmed = document.getElementById('closeAccountWriteOffConfirmed');
+            const closeAccountWriteOffLabel = document.getElementById('closeAccountWriteOffLabel');
+            const closeAccountError = document.getElementById('closeAccountError');
             const pppoeRouterSelect = document.getElementById('pppoeRouter');
             const contactNumberInput = document.getElementById('contactNumber');
             const pppoeRouterField = document.getElementById('pppoeRouterField');
@@ -1487,6 +1575,12 @@
             let napCatalogLoadingPromise = null;
             let paymentRecordsById = new Map();
             let paymentRecordsLoaded = false;
+            let closeAccountState = {
+                customer: null,
+                balance: null,
+                submitting: false,
+                lastTrigger: null
+            };
             let pendingCreditOverrideResolver = null;
             let customerModalHiddenByCreditPrompt = false;
             let customerAddressSessionId = 0;
@@ -5994,6 +6088,215 @@
                 }, 3000);
             }
 
+            const setCloseAccountError = (message = '') => {
+                if (!closeAccountError) return;
+                const text = String(message || '').trim();
+                closeAccountError.textContent = text;
+                closeAccountError.hidden = !text;
+            };
+
+            const syncCloseAccountSubmitState = () => {
+                if (!closeAccountSubmit) return;
+                const balance = Number(closeAccountState.balance);
+                const balanceReady = Number.isFinite(balance);
+                const hasReason = String(closeAccountReason?.value || '').trim().length >= 3;
+                const hasDate = Boolean(String(closeAccountDate?.value || '').trim());
+                const hasAdvance = balanceReady && balance < -0.005;
+                const balanceTreatment = String(closeAccountBalanceTreatment?.value || '').trim();
+                const hasBalanceTreatment = balance <= 0.005 || ['keep', 'write-off'].includes(balanceTreatment);
+                const requiresWriteOff = balanceReady && balance > 0.005 && balanceTreatment === 'write-off';
+                const writeOffConfirmed = closeAccountWriteOffConfirmed?.checked === true;
+                closeAccountSubmit.disabled = closeAccountState.submitting
+                    || !balanceReady
+                    || !hasReason
+                    || !hasDate
+                    || hasAdvance
+                    || !hasBalanceTreatment
+                    || (requiresWriteOff && !writeOffConfirmed);
+                closeAccountSubmit.innerHTML = closeAccountState.submitting
+                    ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Closing...'
+                    : '<i class="ti ti-user-off" aria-hidden="true"></i> Close Account';
+            };
+
+            const renderCloseAccountBalance = () => {
+                const balance = Number(closeAccountState.balance);
+                const ready = Number.isFinite(balance);
+                const hasPositiveBalance = ready && balance > 0.005;
+                const balanceTreatment = String(closeAccountBalanceTreatment?.value || 'keep').trim();
+                if (closeAccountBalance) closeAccountBalance.textContent = ready ? formatPeso(Math.abs(balance)) : '—';
+                if (closeAccountBalanceTreatmentField) {
+                    const hideTreatment = !hasPositiveBalance;
+                    closeAccountBalanceTreatmentField.hidden = hideTreatment;
+                    closeAccountBalanceTreatmentField.classList.toggle('d-none', hideTreatment);
+                }
+                if (closeAccountWriteOffField) {
+                    const hideWriteOff = !hasPositiveBalance || balanceTreatment !== 'write-off';
+                    closeAccountWriteOffField.hidden = hideWriteOff;
+                    closeAccountWriteOffField.classList.toggle('d-none', hideWriteOff);
+                    if (hideWriteOff) {
+                        closeAccountWriteOffField.style.setProperty('display', 'none', 'important');
+                    } else {
+                        closeAccountWriteOffField.style.removeProperty('display');
+                    }
+                }
+                if (closeAccountWriteOffConfirmed && (!hasPositiveBalance || balanceTreatment !== 'write-off')) {
+                    closeAccountWriteOffConfirmed.checked = false;
+                }
+                if (closeAccountWriteOffLabel && hasPositiveBalance) {
+                    closeAccountWriteOffLabel.textContent = `Confirm the audited ${formatPeso(balance)} write-off`;
+                }
+                if (closeAccountBalanceTreatmentHint && hasPositiveBalance) {
+                    closeAccountBalanceTreatmentHint.textContent = balanceTreatment === 'write-off'
+                        ? 'One audited non-cash adjustment will reduce the balance to zero.'
+                        : 'The balance stays outstanding for collection while future bills stop.';
+                }
+                if (!closeAccountBalanceState) {
+                    syncCloseAccountSubmitState();
+                    return;
+                }
+                closeAccountBalanceState.classList.remove('text-danger', 'text-warning', 'text-success');
+                if (!ready) {
+                    closeAccountBalanceState.textContent = 'Loading canonical billing data';
+                } else if (balance < -0.005) {
+                    closeAccountBalanceState.textContent = 'Advance balance must be refunded or resolved first';
+                    closeAccountBalanceState.classList.add('text-danger');
+                } else if (balance > 0.005) {
+                    closeAccountBalanceState.textContent = balanceTreatment === 'write-off'
+                        ? 'Audited write-off selected'
+                        : 'Outstanding balance will be retained';
+                    closeAccountBalanceState.classList.add('text-warning');
+                } else {
+                    closeAccountBalanceState.textContent = 'Zero balance — ready to close';
+                    closeAccountBalanceState.classList.add('text-success');
+                }
+                syncCloseAccountSubmitState();
+            };
+
+            const closeCloseAccountModal = ({ restoreFocus = true } = {}) => {
+                if (!closeAccountModal || closeAccountState.submitting) return;
+                closeAccountModal.classList.remove('show');
+                closeAccountModal.setAttribute('aria-hidden', 'true');
+                refreshModalBackdrop();
+                const trigger = closeAccountState.lastTrigger;
+                closeAccountState = { customer: null, balance: null, submitting: false, lastTrigger: null };
+                closeAccountForm?.reset();
+                setCloseAccountError('');
+                if (restoreFocus && trigger instanceof HTMLElement) trigger.focus();
+            };
+
+            const openCloseAccountModal = async (customer, trigger = null) => {
+                if (!closeAccountModal || !customer) return;
+                const accountNumber = String(customer?.accountNumber || customer?.id || '').trim();
+                if (!accountNumber) {
+                    showToast('Customer account number is unavailable.');
+                    return;
+                }
+                closeAccountForm?.reset();
+                setCloseAccountError('');
+                closeAccountState = { customer, balance: null, submitting: false, lastTrigger: trigger };
+                if (closeAccountCustomerName) closeAccountCustomerName.textContent = getCustomerNameParts(customer).fullName || customer.name || `Account ${accountNumber}`;
+                if (closeAccountNumber) closeAccountNumber.textContent = `Account # ${accountNumber}`;
+                const today = getTodayDateInputValue();
+                if (closeAccountDate) {
+                    closeAccountDate.value = today;
+                    closeAccountDate.max = today;
+                }
+                closeAccountModal.classList.add('show');
+                closeAccountModal.setAttribute('aria-hidden', 'false');
+                refreshModalBackdrop();
+                renderCloseAccountBalance();
+                closeAccountReason?.focus();
+
+                try {
+                    const response = await fetch(`/api/payment-records/${encodeURIComponent(accountNumber)}`, {
+                        credentials: 'include'
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(payload?.error || payload?.message || 'Canonical balance is unavailable.');
+                    const record = payload?.record || null;
+                    if (record) paymentRecordsById.set(accountNumber, record);
+                    const balance = Number(record?.billingSummary?.endingBalance);
+                    if (!Number.isFinite(balance)) throw new Error('Canonical balance is unavailable.');
+                    closeAccountState.balance = balance;
+                    renderCloseAccountBalance();
+                } catch (error) {
+                    closeAccountState.balance = null;
+                    renderCloseAccountBalance();
+                    setCloseAccountError(error?.message || 'Failed to load canonical billing data.');
+                }
+            };
+
+            const submitCloseAccount = async () => {
+                if (closeAccountState.submitting || !closeAccountState.customer) return;
+                const accountNumber = String(closeAccountState.customer?.accountNumber || '').trim();
+                const balance = Number(closeAccountState.balance);
+                const reason = String(closeAccountReason?.value || '').trim();
+                const closureDate = String(closeAccountDate?.value || '').trim();
+                setCloseAccountError('');
+                if (!Number.isFinite(balance)) {
+                    setCloseAccountError('Canonical balance is unavailable. Reload the account before closing it.');
+                    return;
+                }
+                if (reason.length < 3) {
+                    setCloseAccountError('Enter a reason for closing this account.');
+                    closeAccountReason?.focus();
+                    return;
+                }
+                if (!closureDate) {
+                    setCloseAccountError('Choose a closure date.');
+                    closeAccountDate?.focus();
+                    return;
+                }
+
+                closeAccountState.submitting = true;
+                syncCloseAccountSubmitState();
+                try {
+                    const response = await fetch(`/api/customers/${encodeURIComponent(accountNumber)}/close-account`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            closureDate,
+                            reason,
+                            balanceTreatment: balance > 0.005
+                                ? String(closeAccountBalanceTreatment?.value || 'keep')
+                                : 'zero',
+                            writeOffConfirmed: closeAccountWriteOffConfirmed?.checked === true
+                        })
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        if (Number.isFinite(Number(payload?.balance))) {
+                            closeAccountState.balance = Number(payload.balance);
+                            renderCloseAccountBalance();
+                        }
+                        throw new Error(payload?.error || payload?.message || 'Failed to close customer account.');
+                    }
+                    closeAccountState.submitting = false;
+                    closeCloseAccountModal({ restoreFocus: false });
+                    showToast(payload?.balanceTreatment === 'keep'
+                        ? `Customer account closed with ${formatPeso(payload?.remainingBalance || balance)} retained for collection.`
+                        : 'Customer account closed. Billing stopped and all history was preserved.');
+                    if (payload?.warning) showToast(payload.warning);
+                    await loadCustomers();
+                } catch (error) {
+                    closeAccountState.submitting = false;
+                    syncCloseAccountSubmitState();
+                    setCloseAccountError(error?.message || 'Failed to close customer account.');
+                }
+            };
+
+            closeAccountForm?.addEventListener('submit', (event) => {
+                event.preventDefault();
+                void submitCloseAccount();
+            });
+            closeAccountModalClose?.addEventListener('click', () => closeCloseAccountModal());
+            closeAccountCancel?.addEventListener('click', () => closeCloseAccountModal());
+            closeAccountReason?.addEventListener('input', syncCloseAccountSubmitState);
+            closeAccountDate?.addEventListener('change', syncCloseAccountSubmitState);
+            closeAccountBalanceTreatment?.addEventListener('change', renderCloseAccountBalance);
+            closeAccountWriteOffConfirmed?.addEventListener('change', syncCloseAccountSubmitState);
+
             function getImportWarningCatalogPlans() {
                 return ['prepaid', 'postpaid'].flatMap((category) => (
                     (Array.isArray(plansCatalog?.[category]) ? plansCatalog[category] : []).map((plan, index) => ({
@@ -7135,6 +7438,9 @@
                 if (event.target === importWarningModal) {
                     closeImportWarningModal();
                 }
+                if (event.target === closeAccountModal) {
+                    closeCloseAccountModal();
+                }
             });
 
             // Close modal with Escape key
@@ -7153,6 +7459,10 @@
                 }
                 if (event.key === 'Escape' && creditOverrideModal?.classList.contains('show')) {
                     closeCreditOverridePrompt({ confirmed: false, addAmount: 0, newCreditLimit: 0 });
+                    return;
+                }
+                if (event.key === 'Escape' && closeAccountModal?.classList.contains('show')) {
+                    closeCloseAccountModal();
                     return;
                 }
                 if (event.key === 'Escape' && modal.classList.contains('show')) {
@@ -7452,6 +7762,7 @@
 
                     const editBtn = event.target.closest('.edit-customer');
                     const deleteBtn = event.target.closest('.delete-customer');
+                    const closeAccountBtn = event.target.closest('.close-customer-account');
                     const wifiBtn = event.target.closest('.wifi-customer');
                     const viewBtn = event.target.closest('.view-customer');
 
@@ -7496,6 +7807,18 @@
                             wifiBtn.disabled = false;
                             wifiBtn.removeAttribute('aria-busy');
                         }
+                        return;
+                    }
+
+                    if (closeAccountBtn) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const customer = getCustomerFromTableRow(closeAccountBtn.closest('tr'));
+                        if (!customer) {
+                            showToast('Unable to load customer details for account closure.');
+                            return;
+                        }
+                        await openCloseAccountModal(customer, closeAccountBtn);
                         return;
                     }
 
@@ -8272,6 +8595,7 @@
                                     <button class="btn btn-icon btn-outline-primary btn-sm view-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="View ${escapeHtml(canonicalFullName)}" title="View customer details"><i class="ti ti-eye" aria-hidden="true"></i></button>
                                     <button class="btn btn-icon btn-outline-success btn-sm wifi-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Change WiFi for ${escapeHtml(canonicalFullName)}" title="Change WiFi name and password"><i class="ti ti-wifi" aria-hidden="true"></i></button>
                                     <button class="btn btn-icon btn-outline-secondary btn-sm edit-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Edit ${escapeHtml(canonicalFullName)}"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+                                    <button class="btn btn-icon btn-outline-warning btn-sm close-customer-account" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Close account for ${escapeHtml(canonicalFullName)}" title="Close account and stop billing"><i class="ti ti-user-off" aria-hidden="true"></i></button>
                                     <button class="btn btn-icon btn-outline-danger btn-sm delete-customer" data-customer-id="${accountNumber}" data-customer-name="${escapeHtml(canonicalFullName)}" aria-label="Archive ${escapeHtml(canonicalFullName)}" title="Archive customer"><i class="ti ti-archive" aria-hidden="true"></i></button>
                                 </div>
                             </td>

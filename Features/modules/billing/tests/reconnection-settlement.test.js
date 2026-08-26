@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const {
   activatePendingReconnectionSettlement,
   buildInstallmentSchedule,
@@ -282,5 +284,11 @@ const paidWriteOffBreakdown = calculateActivatedPayments(activateTreatmentForPay
 assert.strictEqual(paidWriteOffBreakdown.endingBalance, -300, 'New activation payments must remain as credit after the captured balance is written off.');
 const paidInstallmentBreakdown = calculateActivatedPayments(activateTreatmentForPayments('installment', 2));
 assert.strictEqual(paidInstallmentBreakdown.endingBalance, 700, 'Activation payments must reduce the exact deferred balance without being discarded.');
+
+const breakdownScript = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'payment-breakdown.js'), 'utf8');
+assert.match(breakdownScript, /reconnectBalanceIntent/);
+assert.match(breakdownScript, /reconnectFromBreakdown\(preferredBalanceTreatment = 'keep'\)/);
+assert.match(breakdownScript, /reconnectForm\.balanceTreatment\.value = balanceTreatment/);
+assert.match(breakdownScript, /cleanParams\.delete\('reconnect'\)/);
 
 console.log('PASS reconnection cycle suppression, balance treatments, proration, installments, and activation summary');

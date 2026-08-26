@@ -260,6 +260,8 @@ const monthlyCharge = (accountNumber, month, amount, recordedAt) => ({
 {
   const paymentsSource = fs.readFileSync(path.join(__dirname, '..', 'backend', 'payments.js'), 'utf8');
   assert.equal(paymentsSource.includes("description: 'Prepaid renewal charge'"), false);
+  assert.equal(paymentsSource.includes('const queuePppoeEnableForCustomer ='), true);
+  assert.equal(paymentsSource.includes('await enablePppoeForCustomer('), false);
 }
 
 {
@@ -268,6 +270,12 @@ const monthlyCharge = (accountNumber, month, amount, recordedAt) => ({
   assert.equal(paymentsPageSource.includes('billingCycleDisplay = `Current:'), true);
   assert.equal(paymentsPageSource.includes('billingCycleMeta = customer.billingSummary.nextCycleDate'), true);
   assert.equal(paymentsPageSource.includes('billingCycleMeta = `Paid through:'), false);
+  assert.equal(paymentsPageSource.includes('function resetPaymentFormState()'), true);
+  assert.equal(
+    paymentsPageSource.includes('closeModal({ force: true, refreshPaymentBreakdown: true, resetForm: true });'),
+    true
+  );
+  assert.equal(paymentsPageSource.includes('void loadPaymentRecords();'), true);
   assert.equal(breakdownPageSource.includes("setSubscriberText(subscriberInfo.billingCycleLabel, 'Current Cycle')"), true);
   assert.equal(breakdownPageSource.includes("setSubscriberText(subscriberInfo.dueDateLabel, 'Next Cycle')"), true);
 }

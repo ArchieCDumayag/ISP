@@ -387,6 +387,10 @@
     display: block;
 }
 
+.modal.account-closure-modal {
+    z-index: 1050;
+}
+
 body.modal-active {
     overflow: hidden;
 }

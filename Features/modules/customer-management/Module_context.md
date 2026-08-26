@@ -1,11 +1,12 @@
 # Customer Management Module Context
 
-Last reviewed: 2026-08-25
+Last reviewed: 2026-08-26
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
 
 - Create, view, update, search, import, archive, restore, and delete customer records.
+- Close paid or owing disconnected accounts without deleting them, either retain a positive balance for collection or explicitly write it off, keep the account in a durable audited Closed / Disconnected archive, and reopen it to Customer Management as Disabled for deliberate Billing reconnection.
 - Review CLIENTS LIST import warnings in an editable modal and retry only corrected skipped rows without re-importing successful records.
 - Manage account numbers, identity/contact details, service addresses, coordinates, plan/service metadata, PPPoE linkage, status, and billing dates.
 - Guide Admin customer onboarding through Customer, Billing, and Network/Review steps with server-confirmed sequential account allocation, duplicate-safe identity checks, optional NAP assignment, migrated opening amounts, and one-time portal setup credentials.
@@ -27,6 +28,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - JSON approval, rejection, deletion, and technician draft creation share the whole draft-store mutation lock plus branch sequencing, including coordination with Technician completion writes. MySQL decisions claim the pending row transactionally before status changes. Rejection removes only its linked PON assignment after winning the state transition; deletion performs its existing PON/customer/local-PPPoE cleanup after winning deletion, so a stale Admin action cannot remove resources from an approved client.
 - Admin approval preserves the authenticated technician's structured `installationCompletion` evidence and ignores form attempts to replace it; the approved draft retains ONU/MAC/signal/material and PON-assignment audit data.
 - `backend/customer-archive-store.js`: archive retention, restore, and permanent deletion persistence.
+- `backend/closed-customer-account-store.js`: permanent branch/account closure overlay, closure/reopen audit, failure recovery state, search, and pagination. Unlike deleted archives, these records do not expire and never contain or remove the customer's canonical history.
 - `backend/customer-full-json-import.js`: storage-aware merge/persistence for full customer exports when JSON storage is selected.
 - `backend/api_coverage.js`: authenticated `/api/coverage` CRUD and reusable coverage reads.
 - `backend/referrals.js`, `backend/referral-engine.js`, and `backend/referral-store.js`: branch-scoped `/api/referrals` creation/edit/approval, optional `PATCH /api/referrals/:referralId/schedule` earliest-month changes, eligibility and ledger calculations, audited applications, and JSON/MySQL `app_store` persistence.
@@ -60,6 +62,8 @@ Referrals uses a centered compact Tabler workspace with a single four-item KPI s
 
 Customers and Customer Draft Queue modal close controls use the shared Tabler outline-secondary icon-button contract with real `ti-x` icons; the formerly empty Customer view close button now uses the same markup.
 
+Customers includes a Tabler **Close Account** action. It loads Billing's canonical balance, accepts today or an earlier closure date, blocks unresolved advance balances, and requires Admin to choose **Keep outstanding for collection** or an explicitly confirmed exact non-cash write-off for a positive balance. Successful closure disables the subscriber and PPPoE, stops future billing, excludes the account from Customer/Collector active queues and customer-portal sessions, and preserves every canonical record. Customer Archive separates 30-day Deleted Records from permanent Closed / Disconnected Accounts, labels retained balances distinctly, and provides a reasoned Reopen modal. **Collect first** returns the customer as Disabled with service/billing stopped; **Keep outstanding** and **Write off** return it as Disabled then open Billing's existing audited reconnection settlement with the chosen previous-balance treatment preselected. Service never resumes until Billing confirmation completes.
+
 ## Data and dependencies
 
 - Canonical storage, database, password, session, role, and path imports come from `core/`.
@@ -69,6 +73,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Cloudflared hostname discovery explicitly resolves from repository `.cloudflared` using `PROJECT_ROOT`.
 - Philippine address data resolves from repository `node_modules/@jobuntux/psgc` using `PROJECT_ROOT`.
 - Billing owns plans, payments, confirmations, balances, and referral discount inputs.
+- Closing an account calls Billing's canonical balance helper, optional deterministic write-off helper, and stopped-billing disconnection policy, plus Collector's reversible exclusion overlay. `closed_customer_accounts` stores the explicit `zero`, `keep`, or `write-off` balance treatment and the later reopen action; retained debt stays canonical and receives no synthetic credit. The overlay controls Customers-page and customer-session visibility without replacing or deleting canonical customer, payment, GCash, receipt, ticket, job, or disconnection records.
 - Admin customer creation strictly validates required identity/address/plan/date fields, normalizes contact and opening amounts, rejects normalized duplicate usernames/mobile/email/name-address records, and claims the next server-wide sequential account under a shared JSON/MySQL-safe allocator. The allocator advances the contiguous sequence frontier for the configured three-digit prefix; old random customer, archive, technician-draft, and numeric-login values remain exact reservations but cannot jump the counter forward. `GET /api/customers/next-account` only previews the value, while save claims the final number. Sequence high-water and exact legacy reservations persist in version 2 of `customer_account_number_sequence`, including automatic safe migration from the short-lived version 1 format, so issued values are not reused after archive or deletion. Technician draft reservations use the same allocator. MySQL commits the customer, optional NAP connection, opening debit/credit, and activity audit in one transaction; JSON mode serializes creates and compensates related writes on failure. New portal secrets are hashed at persistence, ordinary Admin/customer responses remove credential fields, and successful legacy plaintext login upgrades the stored hash.
 - Migrated customers persist the compatibility value `customer_start_type = existing`; zero is a valid opening amount, while a positive Previous Balance or Advance becomes one deterministic Billing payment-entry debit or credit as part of onboarding. New customers store `new` and do not receive opening entries.
 - Customer-derived payment summaries consume Billing's shared effective-entry normalizer, so `pending_gcash_verification` records remain available in raw history but cannot reduce a customer balance, increase collected totals, or become the latest effective payment before imported proof is bound.
@@ -89,6 +94,7 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - `npm run refactor:customer-management` verifies the manifest loader, retirement of eight root entries, the referral store/registry workflow, eighteen web files, server wiring, complete JSON full-import merge behavior (including Technician, SMS, and PON records), repository-root paths, Philippine dataset, and web-app stylesheet reference.
 - The compatibility run also confirms customer-derived balances, collected totals, and last-payment fields consume Billing's effective-entry contract, which excludes `pending_gcash_verification` until imported proof is bound.
 - Customer-page validation covers inline-script syntax, static ID uniqueness, balanced CSS, compact summary/filter/table hooks, and the responsive card breakpoint without changing customer or Billing APIs.
+- `node Features/modules/customer-management/tests/closed-customer-accounts.test.js` covers permanent closure persistence, branch isolation, duplicate-close protection, audited reopen, active-account filtering, and the close/archive UI/API contract.
 - `tests/admin-add-customer-hardening.test.js` covers strict create validation and duplicates, contiguous sequential prefix/high-water allocation, legacy random reservation isolation, sequence exhaustion, durable reservation wiring, secure credential handling, collision retries, transaction/executor ordering, rollback hooks, migrated zero/debit/credit behavior, schema migration hooks, and the native Tabler one-request Add Customer wizard including Router/PPPoE review fields.
 - Coverage-page validation covers inline-script syntax, HTML parsing, static ID uniqueness, balanced page-scoped CSS, native Tabler header/table/footer/form hooks, `btn-sm` on every static/generated action, absence of duplicated map and legacy footer rules, responsive coverage cards, the explicit-close Add/Edit modal with inline errors and submit locking, and the unchanged `/api/coverage` and `/api/customers` reads.
 - The focused check verifies valid decimal/Google Maps coordinate normalization, invalid Map Pin rejection, and the Customers form validation contract.
@@ -119,6 +125,14 @@ Customers and Customer Draft Queue modal close controls use the shared Tabler ou
 - Vision AI is disabled unless the operator configures Billing's environment opt-in. Provider failures degrade to local OCR/manual review and never prevent a customer from submitting evidence or turn the screenshot into confirmed payment.
 
 ## Latest meaningful changes
+
+- 2026-08-26: Added explicit retained-balance account closure and guarded reopen handling. Admin may close a positive-balance account with **Keep outstanding for collection** without creating a payment/write-off, or choose the existing audited write-off path. The stopped-billing balance is revalidated without forcing zero, Archive labels the retained debt, and Reopen requires Collect first, Keep outstanding, or Write off. The latter two hand off to Billing's existing settlement modal with the choice preselected; reopening alone never activates service or restarts billing.
+
+- 2026-08-26: Hardened failed Close Account recovery. The API now records and returns the safe failing stage plus the current canonical balance, explains that a completed deterministic write-off cannot duplicate on retry, preserves the first attempt's balance snapshot, and rechecks zero after stopped-billing state is durable. The closure decision derives a normalized last-billed-cycle date and freezes Billing through that cycle while retaining the actual closure date. Customer Archive shows **Retry account closure** only for Needs review records and reuses that same retained date, reason, confirmation, and closure ID instead of starting a new audit.
+
+- 2026-08-26: Corrected the Close Account modal stacking level so it remains above the Customers shared backdrop; the write-off checkbox, explicit X/Cancel controls, reason/date fields, and enabled Close Account submission now receive pointer input normally.
+
+- 2026-08-26: Added non-destructive Closed / Disconnected Accounts. Admin may close a zero-balance account or explicitly approve an exact audited Billing write-off, after which service is disabled, future billing stops, Collector/customer active visibility is removed, and all history remains canonical. Customer Archive now has separate Deleted Records and permanent Closed / Disconnected tabs; reopening restores the account as Disabled and requires the existing audited Billing reconnection before service/billing resumes.
 
 - 2026-08-25: Reversed the Add Customer Activation Date constraint so Admin may select today or an earlier date while future dates are blocked in both the form and Admin-create validation. Historical selections recalculate and may save only their exact first-day prepaid or month-end postpaid billing cycle, preserving automatic first-bill proration without permitting arbitrary past billing dates.
 

@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const params = new URLSearchParams(window.location.search || '');
     const accountNumber = String(params.get('account') || params.get('accountNumber') || '').trim();
+    const reconnectBalanceIntent = ['keep', 'write-off'].includes(String(params.get('reconnect') || '').trim().toLowerCase())
+        ? String(params.get('reconnect')).trim().toLowerCase()
+        : '';
 
     const titleEl = document.getElementById('breakdownTitle');
     const subtitleEl = document.getElementById('breakdownSubtitle');
@@ -137,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         disconnecting: false,
         reconnecting: false,
         reconnectModalOpen: false,
+        reconnectIntentHandled: false,
         adjustmentToolbarOpen: false,
         referralToolbarOpen: false,
         planToolbarOpen: false,
@@ -3260,7 +3264,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function reconnectFromBreakdown() {
+    async function reconnectFromBreakdown(preferredBalanceTreatment = 'keep') {
         if (state.reconnecting) return;
         const account = String(state.record?.accountNumber || accountNumber || '').trim();
         const disconnection = getDisconnectionState(state.record);
@@ -3272,7 +3276,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const customerName = getCustomerName(state.record, account);
         if (disconnection.billingPolicy === 'stop') {
             state.reconnectModalOpen = true;
-            if (reconnectForm.balanceTreatment) reconnectForm.balanceTreatment.value = 'keep';
+            const balanceTreatment = ['keep', 'write-off'].includes(String(preferredBalanceTreatment || '').trim().toLowerCase())
+                ? String(preferredBalanceTreatment).trim().toLowerCase()
+                : 'keep';
+            if (reconnectForm.balanceTreatment) reconnectForm.balanceTreatment.value = balanceTreatment;
             if (reconnectForm.installmentMonths) reconnectForm.installmentMonths.value = '3';
             if (reconnectForm.chargePolicy) reconnectForm.chargePolicy.value = hasGeneratedReconnectionMonth() ? 'next-cycle' : 'prorated';
             if (reconnectForm.activationPolicy) reconnectForm.activationPolicy.value = 'immediate';
@@ -3427,6 +3434,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const customers = Array.isArray(customersPayload?.customers) ? customersPayload.customers : [];
             const plans = flattenPlansPayload(plansPayload);
             applyLoadedBreakdown(record, customers, plans);
+            if (reconnectBalanceIntent && !state.reconnectIntentHandled) {
+                state.reconnectIntentHandled = true;
+                const cleanParams = new URLSearchParams(window.location.search || '');
+                cleanParams.delete('reconnect');
+                window.history.replaceState(null, '', `${window.location.pathname}?${cleanParams.toString()}`);
+                window.setTimeout(() => void reconnectFromBreakdown(reconnectBalanceIntent), 0);
+            }
         } catch (error) {
             console.error('Failed to load payment breakdown:', error);
             renderEmpty(error?.message || 'Could not load payment breakdown.');

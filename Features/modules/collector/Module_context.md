@@ -122,6 +122,8 @@ All API prefixes, collector/admin authentication requirements, feature gates, an
 
 ## Latest meaningful changes
 
+- 2026-08-26: Customer Management account closure now activates the existing audited Collector exclusion for the retained subscriber, removing closed accounts from Collector queues without deleting customer, payment, priority, schedule, or audit data. Reopening restores Collector visibility while returning the customer as Disabled; Billing/service still require the separate audited reconnection workflow.
+
 - 2026-08-25: Made official GCash ownership authoritative at Collector Admin approval. Pending submissions do not reserve credits; approval exact-matches and claims shared imported history before status becomes effective, binds the existing entry ID, blocks Temp/Main owners, supports deterministic finalization retry through explicit batch IDs, serializes concurrent approvals, gates mislabeled official references, canonically releases leading-zero claims after rejection, and surfaces the first conflict reason in Collector Operations.
 
 - 2026-08-16: Collector Operations and Collector History now exclude Billing's `pending_gcash_verification` records from browser-side payment totals/details until imported proof is bound and the canonical entry becomes effective.

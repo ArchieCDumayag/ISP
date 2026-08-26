@@ -2926,15 +2926,19 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isLocked) closePaymentCustomerSuggestions();
     }
 
-    function openModal(options = {}) {
+    function resetPaymentFormState() {
         paymentForm.reset();
         clearPaymentReferenceValidation();
-        document.getElementById('paymentDate').valueAsDate = new Date();
         selectedCustomer = null;
         closePaymentCustomerSuggestions();
         setPaymentCustomerLock(null);
         ensureTransactionAmountFieldVisible();
         syncPaymentMethodVisibility();
+    }
+
+    function openModal(options = {}) {
+        resetPaymentFormState();
+        document.getElementById('paymentDate').valueAsDate = new Date();
         // no payer input anymore; server will set payer from req.user
         lastFocusedElement = document.activeElement;
         paymentModalIgnoreCloseUntil = Date.now() + 500;
@@ -3196,6 +3200,7 @@ document.addEventListener('DOMContentLoaded', function () {
         paymentModal.setAttribute('aria-hidden', 'true');
         setPaymentBreakdownPaymentLayer(false);
         syncModalScrollLock();
+        if (options.resetForm) resetPaymentFormState();
         if (shouldReturnToBreakdown) {
             if (options.refreshPaymentBreakdown) {
                 refreshPaymentBreakdownModal(breakdownAccount);
@@ -4310,9 +4315,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 showToast(savedPendingGcash
                     ? 'GCash payment saved as Pending. Bind imported proof before it affects billing.'
                     : 'Transaction added successfully!');
-                closeModal({ force: true, refreshPaymentBreakdown: true });
-                // Reload all data to reflect changes
-                init();
+                closeModal({ force: true, refreshPaymentBreakdown: true, resetForm: true });
+                // Refresh only the canonical payment data after the confirmed save.
+                void loadPaymentRecords();
         } catch (error) {
                 showToast(`Error: ${error.message}`);
         } finally {

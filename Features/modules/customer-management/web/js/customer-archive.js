@@ -829,16 +829,34 @@
                 : 'archive-status-pill archive-status-pill--closed';
             const balanceBefore = Number(item?.balanceBefore) || 0;
             const writeOffAmount = Number(item?.writeOffAmount) || 0;
+            const balanceAdjustmentAmount = Number(item?.balanceAdjustmentAmount) || 0;
+            const balanceAdjustmentDirection = String(item?.balanceAdjustmentDirection || '').trim().toLowerCase();
             const finalBalance = Number(item?.finalBalance) || 0;
+            const remainingBalance = item?.balanceAvailable === true
+                && Number.isFinite(Number(item?.remainingBalance))
+                ? Number(item.remainingBalance)
+                : finalBalance;
             const balanceTreatment = String(item?.balanceTreatment || '').trim().toLowerCase();
-            const balanceMeta = writeOffAmount > 0
+            const hasRequestedFinalBalance = item?.requestedFinalBalance !== null
+                && item?.requestedFinalBalance !== undefined
+                && item?.requestedFinalBalance !== '';
+            const requestedFinalBalance = hasRequestedFinalBalance && Number.isFinite(Number(item.requestedFinalBalance))
+                ? Number(item.requestedFinalBalance)
+                : (balanceTreatment === 'write-off' ? 0 : balanceBefore);
+            const balanceMeta = item?.balanceAvailable === false
+                ? String(item?.balanceWarning || 'Live balance unavailable; showing closure snapshot')
+                : (balanceAdjustmentAmount > 0 && ['credit', 'debit'].includes(balanceAdjustmentDirection)
+                ? `${formatMoney(balanceAdjustmentAmount)} audited ${balanceAdjustmentDirection} adjustment`
+                : (writeOffAmount > 0
                 ? `${formatMoney(writeOffAmount)} audited write-off`
-                : (balanceTreatment === 'keep' && finalBalance > 0.005
+                : (balanceTreatment === 'keep' && remainingBalance > 0.005
                     ? 'Outstanding balance retained'
-                    : (Math.abs(balanceBefore) < 0.005 ? 'Closed at zero balance' : 'No write-off'));
+                    : (balanceTreatment === 'keep'
+                        ? 'Retained balance paid in full'
+                        : (Math.abs(balanceBefore) < 0.005 ? 'Closed at zero balance' : 'No write-off')))));
             const retryAction = item?.state === 'failed'
                 ? `
-                    <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-balance-treatment="${escapeHtml(balanceTreatment || (balanceBefore > 0.005 ? 'write-off' : 'zero'))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                    <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-final-balance="${escapeHtml(requestedFinalBalance.toFixed(2))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
                         <i class="ti ti-refresh" aria-hidden="true"></i>
                     </button>
                 `
@@ -862,7 +880,7 @@
                         ${item?.warning ? `<p class="archive-warning-text">${escapeHtml(item.warning)}</p>` : ''}
                     </td>
                     <td>
-                        <p class="archive-date">${escapeHtml(formatMoney(finalBalance))}</p>
+                        <p class="archive-date">${escapeHtml(formatMoney(remainingBalance))}</p>
                         <p class="archive-time">${escapeHtml(balanceMeta)}</p>
                     </td>
                     <td class="actions-col">
@@ -871,7 +889,7 @@
                                 <i class="ti ti-receipt-2" aria-hidden="true"></i>
                             </a>
                             ${retryAction}
-                            <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="reopen-closed" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-final-balance="${escapeHtml(finalBalance)}" title="Reopen account" aria-label="Reopen ${escapeHtml(customerName)}" ${state.reopeningClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                            <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="reopen-closed" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-final-balance="${escapeHtml(remainingBalance)}" title="Reopen account" aria-label="Reopen ${escapeHtml(customerName)}" ${state.reopeningClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
                                 <i class="ti ti-user-check" aria-hidden="true"></i>
                             </button>
                         </div>
@@ -1029,7 +1047,7 @@
     };
 
     const confirmRetryClose = async (customerName) => {
-        const message = `Retry closing ${customerName}? This continues the same closure audit. Any completed write-off is locked and cannot be duplicated.`;
+        const message = `Retry closing ${customerName}? This continues the same closure audit. Any completed balance adjustment is locked and cannot be duplicated.`;
         if (!window.appConfirm) return window.confirm(message);
         const result = await window.appConfirm(message, { title: 'Retry Account Closure', okText: 'Retry Close' });
         return result && typeof result === 'object'
@@ -1037,7 +1055,7 @@
             : result === true;
     };
 
-    const retryCloseAccount = async ({ closureId, accountNumber, customerName, closureDate, reason, balanceTreatment }) => {
+    const retryCloseAccount = async ({ closureId, accountNumber, customerName, closureDate, reason, finalBalance }) => {
         if (!closureId || !accountNumber || state.retryingClosureId) return;
         if (!await confirmRetryClose(customerName)) return;
         state.retryingClosureId = closureId;
@@ -1048,8 +1066,8 @@
                 body: JSON.stringify({
                     closureDate,
                     reason,
-                    balanceTreatment,
-                    writeOffConfirmed: balanceTreatment === 'write-off'
+                    finalBalance,
+                    balanceAdjustmentConfirmed: true
                 })
             });
             notify(`${customerName} is closed. Billing stopped and all history was preserved.`, 'success');
@@ -1096,7 +1114,7 @@
                 customerName: String(retryButton.dataset.customerName || 'this account').trim(),
                 closureDate: String(retryButton.dataset.closureDate || '').trim(),
                 reason: String(retryButton.dataset.reason || '').trim(),
-                balanceTreatment: String(retryButton.dataset.balanceTreatment || '').trim()
+                finalBalance: Number(retryButton.dataset.finalBalance)
             });
             return;
         }

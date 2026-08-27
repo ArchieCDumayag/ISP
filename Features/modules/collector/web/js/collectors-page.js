@@ -52,12 +52,15 @@
   const collectorRemittanceReviewAction = document.getElementById('collectorRemittanceReviewAction');
   const collectorRemittanceReviewSummary = document.getElementById('collectorRemittanceReviewSummary');
   const collectorRemittanceReviewPayments = document.getElementById('collectorRemittanceReviewPayments');
+  const collectorRemittanceReviewAudit = document.getElementById('collectorRemittanceReviewAudit');
+  const collectorRemittanceReviewNoteField = document.getElementById('collectorRemittanceReviewNoteField');
   const collectorRemittanceReviewNoteLabel = document.getElementById('collectorRemittanceReviewNoteLabel');
   const collectorRemittanceReviewNote = document.getElementById('collectorRemittanceReviewNote');
   const collectorRemittanceReviewMessage = document.getElementById('collectorRemittanceReviewMessage');
   const collectorRemittanceReviewSubmit = document.getElementById('collectorRemittanceReviewSubmit');
   const closeCollectorRemittanceReviewModal = document.getElementById('closeCollectorRemittanceReviewModal');
   const cancelCollectorRemittanceReviewModal = document.getElementById('cancelCollectorRemittanceReviewModal');
+  const collectorRemittanceReviewCancelLabel = document.getElementById('collectorRemittanceReviewCancelLabel');
   const collectorPriorityList = document.getElementById('collectorPriorityList');
   const collectorPriorityCount = document.getElementById('collectorPriorityCount');
   const collectorPriorityEmptyState = document.getElementById('collectorPriorityEmptyState');
@@ -896,7 +899,14 @@
   function formatCollectorApprovalBatchLine(record = {}) {
     const clientName = record?.customerName || record?.accountNumber || 'Client';
     const reference = String(record?.reference || '').trim() || 'No reference';
-    return `${clientName} - PHP ${fmtMoney(record?.amount)} - ${reference}`;
+    const context = record?.closedAccountCollection ? ' [CLOSED ACCOUNT]' : '';
+    return `${clientName}${context} - PHP ${fmtMoney(record?.amount)} - ${reference}`;
+  }
+
+  function closedAccountCollectionBadge(payment = {}) {
+    return payment?.closedAccountCollection
+      ? '<span class="badge bg-danger-lt text-danger">Closed Account</span>'
+      : '';
   }
 
   function buildCollectorApprovalBatchMessage(records = []) {
@@ -957,6 +967,7 @@
           record?.reference,
           record?.area,
           record?.paymentMethod,
+          record?.closedAccountCollection ? 'closed account retained balance billing stopped' : '',
           getCollectorApprovalGroupName(record),
         ].some((value) => String(value || '').toLowerCase().includes(searchQuery));
       })
@@ -1034,6 +1045,7 @@
         const ageBadge = age.isOld
           ? `<span class="badge bg-warning-lt text-warning">${escapeHtml(age.label)} pending</span>`
           : '';
+        const closedBadge = closedAccountCollectionBadge(record);
 
         paymentItem.innerHTML = `
           <label class="collector-approval-payment-select" title="Select ${escapeHtml(clientName)}">
@@ -1042,6 +1054,7 @@
           <div class="collector-approval-payment-field collector-approval-payment-client">
             <span>Client</span>
             <strong>${escapeHtml(clientName)}</strong>
+            ${closedBadge}
             <small>${escapeHtml([accountNumber ? `#${accountNumber}` : '', area].filter(Boolean).join(' - ') || 'Client account')}</small>
           </div>
           <div class="collector-approval-payment-field collector-approval-payment-date">
@@ -1188,6 +1201,67 @@
     return record?.collectionDate || record?.submittedAt || record?.updatedAt || '';
   }
 
+  function collectorRemittanceInitials(name = '') {
+    const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return 'C';
+    return words.slice(0, 2).map((word) => word.charAt(0).toUpperCase()).join('');
+  }
+
+  function collectorRemittanceDisplayDate(record = {}, viewStatus = 'pending') {
+    if (viewStatus === 'archived') {
+      return { label: 'Archived', value: record?.archivedAt || record?.updatedAt || collectorRemittanceDate(record) };
+    }
+    if (viewStatus === 'remitted') {
+      return { label: 'Remitted', value: record?.reviewedAt || record?.updatedAt || collectorRemittanceDate(record) };
+    }
+    if (viewStatus === 'rejected') {
+      return { label: 'Rejected', value: record?.reviewedAt || record?.updatedAt || collectorRemittanceDate(record) };
+    }
+    return { label: 'Submitted', value: record?.submittedAt || collectorRemittanceDate(record) };
+  }
+
+  function collectorRemittanceActionButtons(record = {}, viewStatus = 'pending', confirmationState = {}) {
+    const recordId = escapeHtml(String(record?.id || '').trim());
+    const containsClosedAccountCollection = (Array.isArray(record?.payments) ? record.payments : [])
+      .some((payment) => payment?.closedAccountCollection === true);
+    const viewButton = `
+      <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-collector-remittance-action="view" data-remittance-id="${recordId}" title="View details" aria-label="View remittance details">
+        <i class="ti ti-eye" aria-hidden="true"></i>
+      </button>
+    `;
+    if (viewStatus === 'pending') {
+      return `
+        ${viewButton}
+        <button class="btn btn-outline-danger btn-sm btn-icon" type="button" data-collector-remittance-action="reject" data-remittance-id="${recordId}" title="Reject remittance" aria-label="Reject remittance">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+        <button class="btn btn-success btn-sm btn-icon" type="button" data-collector-remittance-action="confirm" data-remittance-id="${recordId}" title="${escapeHtml(confirmationState.allowed ? 'Confirm remitted' : confirmationState.reason)}" aria-label="Confirm remitted"${confirmationState.allowed ? '' : ' disabled aria-disabled="true"'}>
+          <i class="ti ti-check" aria-hidden="true"></i>
+        </button>
+      `;
+    }
+    if (viewStatus === 'archived') {
+      const deleteTitle = containsClosedAccountCollection
+        ? 'Closed-account remittances are permanent collection history'
+        : 'Delete archived remittance';
+      return `
+        ${viewButton}
+        <button class="btn btn-outline-primary btn-sm btn-icon" type="button" data-collector-remittance-action="restore" data-remittance-id="${recordId}" title="Restore remittance" aria-label="Restore remittance">
+          <i class="ti ti-restore" aria-hidden="true"></i>
+        </button>
+        <button class="btn btn-outline-danger btn-sm btn-icon" type="button" data-collector-remittance-action="delete" data-remittance-id="${recordId}" title="${escapeHtml(deleteTitle)}" aria-label="Delete archived remittance"${containsClosedAccountCollection ? ' disabled aria-disabled="true"' : ''}>
+          <i class="ti ti-trash" aria-hidden="true"></i>
+        </button>
+      `;
+    }
+    return `
+      ${viewButton}
+      <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-collector-remittance-action="archive" data-remittance-id="${recordId}" title="Archive remittance" aria-label="Archive remittance">
+        <i class="ti ti-archive" aria-hidden="true"></i>
+      </button>
+    `;
+  }
+
   function renderCollectorRemittances() {
     if (!collectorRemittanceList) return;
     const counts = { pending: 0, remitted: 0, rejected: 0, archived: 0 };
@@ -1203,9 +1277,9 @@
     }
     collectorRemittanceFilterButtons.forEach((button) => {
       const active = button.getAttribute('data-collector-remittance-filter') === collectorRemittanceFilter;
-      button.classList.toggle('btn-primary', active);
-      button.classList.toggle('btn-outline-secondary', !active);
-      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
     });
 
     const filtered = collectorRemittanceRecords
@@ -1232,97 +1306,58 @@
         : collectorRemittanceStatusMeta(record?.status);
       const summary = collectorRemittanceSummary(record);
       const collectorName = String(record?.collectorName || record?.submittedBy?.name || record?.submittedBy?.username || 'Collector').trim();
-      const submittedAt = formatCollectorPaymentDate(record?.submittedAt || collectorRemittanceDate(record));
-      const reviewedAt = record?.reviewedAt ? formatCollectorPaymentDate(record.reviewedAt) : '';
-      const reviewer = String(record?.reviewedBy?.name || record?.reviewedBy?.username || '').trim();
-      const archivedAt = record?.archivedAt ? formatCollectorPaymentDate(record.archivedAt) : '';
-      const archivedBy = String(record?.archivedBy?.name || record?.archivedBy?.username || '').trim();
       const verifiedAmount = collectorRemittanceVerifiedAmount(record);
       const confirmationState = collectorRemittanceConfirmationState(record);
-      const paymentRows = (Array.isArray(record?.payments) ? record.payments : []).map((payment) => {
-        const paymentStatus = collectorRemittancePaymentStatusMeta(payment?.status);
-        const identity = String(payment?.customerName || payment?.accountNumber || 'Payment').trim();
-        const reference = String(payment?.reference || payment?.paymentEntryId || 'No reference').trim();
-        return `
-          <div class="collector-remittance-payment-row">
-            <div>
-              <strong>${escapeHtml(identity)}</strong>
-              <small>${escapeHtml(reference)}</small>
+      const displayDate = collectorRemittanceDisplayDate(record, viewStatus);
+      const paymentDecisions = [
+        summary.approved ? `${summary.approved} approved` : '',
+        summary.pending ? `${summary.pending} pending` : '',
+        summary.rejected ? `${summary.rejected} rejected` : ''
+      ].filter(Boolean).join(' &middot; ') || 'No decisions';
+      const displayAmount = viewStatus === 'pending' ? verifiedAmount : summary.totalAmount;
+      const batchReference = recordId || 'Unavailable';
+      const row = document.createElement('tr');
+      row.setAttribute('data-remittance-status', viewStatus);
+      row.innerHTML = `
+        <td data-label="Collector">
+          <div class="d-flex align-items-center gap-2">
+            <span class="avatar avatar-sm bg-primary-lt text-primary">${escapeHtml(collectorRemittanceInitials(collectorName))}</span>
+            <div class="min-w-0">
+              <div class="fw-semibold text-truncate">${escapeHtml(collectorName)}</div>
+              <div class="text-secondary small">${summary.count} payment${summary.count === 1 ? '' : 's'}</div>
             </div>
-            <span class="badge ${paymentStatus.badge}">${paymentStatus.label}</span>
-            <strong>PHP ${fmtMoney(payment?.amount)}</strong>
           </div>
-        `;
-      }).join('');
-      const card = document.createElement('article');
-      card.className = 'collector-remittance-record';
-      card.setAttribute('role', 'listitem');
-      card.innerHTML = `
-        <div class="collector-remittance-record__header">
-          <div>
-            <strong>${escapeHtml(collectorName)}</strong>
-            <small>${escapeHtml(submittedAt || 'Date unavailable')} &middot; ${summary.count} payment${summary.count === 1 ? '' : 's'}</small>
-          </div>
+        </td>
+        <td data-label="Amount">
+          <div class="fw-semibold">PHP ${fmtMoney(displayAmount)}</div>
+          <div class="text-secondary small">${viewStatus === 'pending' ? 'Approved cash' : 'Batch total'}</div>
+        </td>
+        <td data-label="Payments">
+          <div>${summary.count}</div>
+          <div class="text-secondary small">${paymentDecisions}</div>
+        </td>
+        <td data-label="Date">
+          <div>${escapeHtml(formatCollectorPaymentDate(displayDate.value) || 'Date unavailable')}</div>
+          <div class="text-secondary small">${escapeHtml(displayDate.label)}</div>
+        </td>
+        <td data-label="Status / Batch">
           <span class="badge ${statusMeta.badge}">${statusMeta.label}</span>
-        </div>
-        <div class="collector-remittance-record__totals">
-          <div><span>${viewStatus === 'pending' ? 'Approved cash' : (viewStatus === 'remitted' ? 'Confirmed' : 'Record total')}</span><strong>PHP ${fmtMoney(viewStatus === 'pending' ? verifiedAmount : record?.totalAmount)}</strong></div>
-          <div><span>Pending approval</span><strong>${summary.pending}</strong></div>
-          <div><span>Approved</span><strong>${summary.approved}</strong></div>
-          <div><span>Rejected</span><strong>${summary.rejected}</strong></div>
-        </div>
-        <details class="collector-remittance-payment-details">
-          <summary>View payment breakdown</summary>
-          <div>${paymentRows || '<p class="text-secondary mb-0">No payment details are available.</p>'}</div>
-        </details>
-        ${(reviewedAt || record?.adminNote) ? `
-          <div class="collector-remittance-review-audit">
-            ${reviewedAt ? `<span>Reviewed ${escapeHtml(reviewedAt)}${reviewer ? ` by ${escapeHtml(reviewer)}` : ''}</span>` : ''}
-            ${record?.adminNote ? `<span>Note: ${escapeHtml(record.adminNote)}</span>` : ''}
+          <div class="text-secondary small text-truncate" title="${escapeHtml(batchReference)}">Batch ${escapeHtml(batchReference)}</div>
+        </td>
+        <td class="text-end" data-label="Actions">
+          <div class="btn-list flex-nowrap justify-content-end">
+            ${collectorRemittanceActionButtons(record, viewStatus, confirmationState)}
           </div>
-        ` : ''}
-        ${viewStatus === 'archived' ? `
-          <div class="collector-remittance-review-audit">
-            <span>Archived ${escapeHtml(archivedAt || 'date unavailable')}${archivedBy ? ` by ${escapeHtml(archivedBy)}` : ''}</span>
-          </div>
-        ` : ''}
-        ${viewStatus === 'pending' && !confirmationState.allowed ? `
-          <div class="collector-remittance-gate text-warning" role="status">
-            <i class="ti ti-lock" aria-hidden="true"></i>
-            <span>${escapeHtml(confirmationState.reason)}</span>
-          </div>
-        ` : ''}
-        ${viewStatus === 'pending' ? `
-          <div class="collector-remittance-record__actions">
-            <button class="btn btn-outline-danger btn-sm" type="button" data-collector-remittance-action="reject" data-remittance-id="${escapeHtml(recordId)}">
-              <i class="ti ti-x" aria-hidden="true"></i><span>Reject</span>
-            </button>
-            <button class="btn btn-success btn-sm" type="button" data-collector-remittance-action="confirm" data-remittance-id="${escapeHtml(recordId)}"${confirmationState.allowed ? '' : ` disabled aria-disabled="true" title="${escapeHtml(confirmationState.reason)}"`}>
-              <i class="ti ti-check" aria-hidden="true"></i><span>Confirm Remitted</span>
-            </button>
-          </div>
-        ` : viewStatus === 'archived' ? `
-          <div class="collector-remittance-record__actions collector-remittance-record__actions--single">
-            <button class="btn btn-outline-primary btn-sm" type="button" data-collector-remittance-action="restore" data-remittance-id="${escapeHtml(recordId)}">
-              <i class="ti ti-restore" aria-hidden="true"></i><span>Restore</span>
-            </button>
-          </div>
-        ` : `
-          <div class="collector-remittance-record__actions collector-remittance-record__actions--single">
-            <button class="btn btn-outline-secondary btn-sm" type="button" data-collector-remittance-action="archive" data-remittance-id="${escapeHtml(recordId)}">
-              <i class="ti ti-archive" aria-hidden="true"></i><span>Archive</span>
-            </button>
-          </div>
-        `}
+        </td>
       `;
-      collectorRemittanceList.appendChild(card);
+      collectorRemittanceList.appendChild(row);
     });
   }
 
   function renderCollectorRemittanceNotice(message, tone = 'danger') {
     collectorRemittanceRecords = [];
     if (!collectorRemittanceList) return;
-    collectorRemittanceList.innerHTML = `<div class="text-center text-${tone} py-3">${escapeHtml(message)}</div>`;
+    collectorRemittanceList.innerHTML = `<tr><td colspan="6" class="text-center text-${tone} py-3">${escapeHtml(message)}</td></tr>`;
     if (collectorRemittanceCount) collectorRemittanceCount.textContent = 'Unavailable';
     if (collectorRemittanceTotal) collectorRemittanceTotal.textContent = 'PHP 0.00';
     if (collectorRemittanceEmptyState) collectorRemittanceEmptyState.style.display = 'none';
@@ -1410,60 +1445,124 @@
   function openCollectorRemittanceReview(record, action, triggerButton = null) {
     if (!record?.id || !collectorRemittanceReviewModal || !collectorRemittanceReviewForm) return;
     const rejecting = action === 'reject';
+    const viewing = action === 'view';
+    const deleting = action === 'delete';
+    const viewStatus = collectorRemittanceViewStatus(record);
+    const statusMeta = viewStatus === 'archived'
+      ? { label: 'Archived', badge: 'bg-secondary-lt text-secondary' }
+      : collectorRemittanceStatusMeta(record?.status);
     const summary = collectorRemittanceSummary(record);
     const confirmationState = collectorRemittanceConfirmationState(record);
-    if (!rejecting && !confirmationState.allowed) {
+    if (deleting && viewStatus !== 'archived') {
+      toast('Only an archived remittance can be deleted.', 'danger');
+      return;
+    }
+    if (action === 'confirm' && !confirmationState.allowed) {
       toast(confirmationState.reason, 'danger');
       return;
     }
     collectorRemittanceReviewForm.reset();
     if (collectorRemittanceReviewId) collectorRemittanceReviewId.value = String(record.id);
-    if (collectorRemittanceReviewAction) collectorRemittanceReviewAction.value = rejecting ? 'reject' : 'confirm';
-    if (collectorRemittanceReviewTitle) collectorRemittanceReviewTitle.textContent = rejecting ? 'Reject Remittance' : 'Confirm Remitted';
+    if (collectorRemittanceReviewAction) {
+      collectorRemittanceReviewAction.value = viewing
+        ? 'view'
+        : (deleting ? 'delete' : (rejecting ? 'reject' : 'confirm'));
+    }
+    if (collectorRemittanceReviewTitle) {
+      collectorRemittanceReviewTitle.textContent = viewing
+        ? 'Remittance Details'
+        : (deleting ? 'Delete Archived Remittance' : (rejecting ? 'Reject Remittance' : 'Confirm Remitted'));
+    }
     if (collectorRemittanceReviewSubtitle) {
-      collectorRemittanceReviewSubtitle.textContent = rejecting
-        ? 'Return this batch to the collector with a required reason.'
-        : 'All customer payments are decided. Confirm that the received funds match the approved amount.';
+      collectorRemittanceReviewSubtitle.textContent = viewing
+        ? 'Review the batch payments and retained audit details.'
+        : (deleting
+          ? 'Remove only this archived batch from the list. Customer payments, receipts, and billing history remain unchanged.'
+          : (rejecting
+            ? 'Return this batch to the collector with a required reason.'
+            : 'All customer payments are decided. Confirm that the received funds match the approved amount.'));
     }
     if (collectorRemittanceReviewSummary) {
       const collectorName = String(record?.collectorName || record?.submittedBy?.name || 'Collector').trim();
-      collectorRemittanceReviewSummary.className = `alert ${rejecting ? 'alert-danger' : 'alert-success'} collector-remittance-review-summary`;
-      collectorRemittanceReviewSummary.textContent = `${collectorName} - ${summary.approved} approved payment${summary.approved === 1 ? '' : 's'} - PHP ${fmtMoney(collectorRemittanceVerifiedAmount(record))} verified cash`;
+      const displayAmount = viewStatus === 'pending' ? collectorRemittanceVerifiedAmount(record) : summary.totalAmount;
+      collectorRemittanceReviewSummary.className = `alert ${viewing ? 'alert-info' : ((rejecting || deleting) ? 'alert-danger' : 'alert-success')} collector-remittance-review-summary`;
+      collectorRemittanceReviewSummary.textContent = (viewing || deleting)
+        ? `${collectorName} - ${statusMeta.label} - ${summary.count} payment${summary.count === 1 ? '' : 's'} - PHP ${fmtMoney(displayAmount)}`
+        : `${collectorName} - ${summary.approved} approved payment${summary.approved === 1 ? '' : 's'} - PHP ${fmtMoney(collectorRemittanceVerifiedAmount(record))} verified cash`;
     }
     if (collectorRemittanceReviewPayments) {
       collectorRemittanceReviewPayments.innerHTML = (Array.isArray(record?.payments) ? record.payments : []).map((payment) => {
         const statusMeta = collectorRemittancePaymentStatusMeta(payment?.status);
+        const closedBadge = closedAccountCollectionBadge(payment);
         return `
           <div class="collector-remittance-review-payment">
-            <div><strong>${escapeHtml(payment?.customerName || payment?.accountNumber || 'Payment')}</strong><small>${escapeHtml(payment?.reference || payment?.paymentEntryId || 'No reference')}</small></div>
+            <div><strong>${escapeHtml(payment?.customerName || payment?.accountNumber || 'Payment')}</strong>${closedBadge}<small>${escapeHtml(payment?.reference || payment?.paymentEntryId || 'No reference')}</small></div>
             <span class="badge ${statusMeta.badge}">${statusMeta.label}</span>
             <strong>PHP ${fmtMoney(payment?.amount)}</strong>
           </div>
         `;
       }).join('');
     }
+    if (collectorRemittanceReviewAudit) {
+      const reviewer = String(record?.reviewedBy?.name || record?.reviewedBy?.username || '').trim();
+      const archivedBy = String(record?.archivedBy?.name || record?.archivedBy?.username || '').trim();
+      const auditItems = [
+        ['Status', statusMeta.label],
+        ['Batch', String(record?.id || '')],
+        ['Submitted', formatCollectorPaymentDate(record?.submittedAt || collectorRemittanceDate(record)) || 'Date unavailable'],
+        record?.reviewedAt
+          ? ['Reviewed', `${formatCollectorPaymentDate(record.reviewedAt)}${reviewer ? ` by ${reviewer}` : ''}`]
+          : null,
+        record?.archivedAt
+          ? ['Archived', `${formatCollectorPaymentDate(record.archivedAt)}${archivedBy ? ` by ${archivedBy}` : ''}`]
+          : null,
+        ['Admin note', String(record?.adminNote || record?.rejectionReason || 'None')]
+      ].filter(Boolean);
+      collectorRemittanceReviewAudit.innerHTML = (viewing || deleting)
+        ? auditItems.map(([label, value]) => `
+            <div class="list-group-item py-2">
+              <div class="d-flex justify-content-between gap-3">
+                <span class="text-secondary">${escapeHtml(label)}</span>
+                <strong class="text-end text-break">${escapeHtml(value)}</strong>
+              </div>
+            </div>
+          `).join('')
+        : '';
+      collectorRemittanceReviewAudit.hidden = !viewing && !deleting;
+    }
+    if (collectorRemittanceReviewNoteField) collectorRemittanceReviewNoteField.hidden = viewing;
     if (collectorRemittanceReviewNoteLabel) {
-      collectorRemittanceReviewNoteLabel.innerHTML = rejecting
-        ? 'Rejection reason'
-        : 'Admin note <span class="text-secondary">(optional)</span>';
+      collectorRemittanceReviewNoteLabel.innerHTML = deleting
+        ? 'Deletion reason'
+        : (rejecting ? 'Rejection reason' : 'Admin note <span class="text-secondary">(optional)</span>');
     }
     if (collectorRemittanceReviewNote) {
-      collectorRemittanceReviewNote.required = rejecting;
-      collectorRemittanceReviewNote.placeholder = rejecting
-        ? 'Explain the amount or payment that needs correction.'
-        : 'Example: Cash and electronic totals verified.';
+      collectorRemittanceReviewNote.required = (rejecting || deleting) && !viewing;
+      collectorRemittanceReviewNote.placeholder = deleting
+        ? 'Explain why this archived batch should be removed.'
+        : (rejecting
+          ? 'Explain the amount or payment that needs correction.'
+          : 'Example: Cash and electronic totals verified.');
     }
     if (collectorRemittanceReviewSubmit) {
-      collectorRemittanceReviewSubmit.className = `btn ${rejecting ? 'btn-danger' : 'btn-success'} btn-sm`;
-      collectorRemittanceReviewSubmit.innerHTML = rejecting
-        ? '<i class="ti ti-x" aria-hidden="true"></i><span>Reject Remittance</span>'
-        : '<i class="ti ti-check" aria-hidden="true"></i><span>Confirm Remitted</span>';
+      collectorRemittanceReviewSubmit.hidden = viewing;
+      collectorRemittanceReviewSubmit.className = `btn ${(rejecting || deleting) ? 'btn-danger' : 'btn-success'} btn-sm`;
+      collectorRemittanceReviewSubmit.innerHTML = deleting
+        ? '<i class="ti ti-trash" aria-hidden="true"></i><span>Delete Archived Batch</span>'
+        : (rejecting
+          ? '<i class="ti ti-x" aria-hidden="true"></i><span>Reject Remittance</span>'
+          : '<i class="ti ti-check" aria-hidden="true"></i><span>Confirm Remitted</span>');
     }
+    if (collectorRemittanceReviewCancelLabel) collectorRemittanceReviewCancelLabel.textContent = viewing ? 'Close' : 'Cancel';
     collectorRemittanceReviewTrigger = triggerButton;
     setCollectorRemittanceReviewMessage('');
     collectorRemittanceReviewModal.classList.add('show');
     collectorRemittanceReviewModal.setAttribute('aria-hidden', 'false');
-    setTimeout(() => (rejecting ? collectorRemittanceReviewNote : collectorRemittanceReviewSubmit)?.focus(), 50);
+    setTimeout(() => (
+      viewing
+        ? cancelCollectorRemittanceReviewModal
+        : ((rejecting || deleting) ? collectorRemittanceReviewNote : collectorRemittanceReviewSubmit)
+    )?.focus(), 50);
   }
 
   function closeCollectorRemittanceReviewDialog() {
@@ -1473,7 +1572,17 @@
     collectorRemittanceReviewForm?.reset();
     if (collectorRemittanceReviewId) collectorRemittanceReviewId.value = '';
     if (collectorRemittanceReviewAction) collectorRemittanceReviewAction.value = '';
-    if (collectorRemittanceReviewSubmit) collectorRemittanceReviewSubmit.disabled = false;
+    if (collectorRemittanceReviewSubmit) {
+      collectorRemittanceReviewSubmit.disabled = false;
+      collectorRemittanceReviewSubmit.hidden = false;
+    }
+    if (collectorRemittanceReviewAudit) {
+      collectorRemittanceReviewAudit.hidden = true;
+      collectorRemittanceReviewAudit.innerHTML = '';
+    }
+    if (collectorRemittanceReviewNoteField) collectorRemittanceReviewNoteField.hidden = false;
+    if (collectorRemittanceReviewNote) collectorRemittanceReviewNote.required = false;
+    if (collectorRemittanceReviewCancelLabel) collectorRemittanceReviewCancelLabel.textContent = 'Cancel';
     setCollectorRemittanceReviewMessage('');
     collectorRemittanceReviewTrigger?.focus?.();
     collectorRemittanceReviewTrigger = null;
@@ -1483,21 +1592,28 @@
     const remittanceId = String(collectorRemittanceReviewId?.value || '').trim();
     const action = String(collectorRemittanceReviewAction?.value || '').trim();
     const note = String(collectorRemittanceReviewNote?.value || '').trim();
-    if (!remittanceId || !['confirm', 'reject'].includes(action)) return false;
-    if (action === 'reject' && !note) {
-      setCollectorRemittanceReviewMessage('Rejection reason is required.', 'danger');
+    if (!remittanceId || !['confirm', 'reject', 'delete'].includes(action)) return false;
+    if (['reject', 'delete'].includes(action) && !note) {
+      setCollectorRemittanceReviewMessage(
+        action === 'delete' ? 'Deletion reason is required.' : 'Rejection reason is required.',
+        'danger'
+      );
       collectorRemittanceReviewNote?.focus();
       return false;
     }
     if (collectorRemittanceReviewSubmit) collectorRemittanceReviewSubmit.disabled = true;
-    setCollectorRemittanceReviewMessage(action === 'confirm' ? 'Confirming remittance...' : 'Rejecting remittance...');
+    setCollectorRemittanceReviewMessage(
+      action === 'confirm'
+        ? 'Confirming remittance...'
+        : (action === 'delete' ? 'Deleting archived batch...' : 'Rejecting remittance...')
+    );
     try {
       const response = await fetch(`/api/collector/payments/remittances/${encodeURIComponent(remittanceId)}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         cache: 'no-store',
-        body: JSON.stringify({ note })
+        body: JSON.stringify(action === 'delete' ? { reason: note } : { note })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) {
@@ -1507,7 +1623,9 @@
       await Promise.all([loadCollectorRemittances(), loadReport()]);
       toast(action === 'confirm'
         ? 'Cash remittance confirmed.'
-        : 'Remittance rejected and returned to the collector.', 'ok');
+        : (action === 'delete'
+          ? 'Archived remittance batch deleted. Customer payments were preserved.'
+          : 'Remittance rejected and returned to the collector.'), 'ok');
       return true;
     } catch (error) {
       setCollectorRemittanceReviewMessage(error?.message || `Failed to ${action} remittance.`, 'danger');
@@ -4222,7 +4340,7 @@
       const remittanceId = remittanceActionButton.getAttribute('data-remittance-id') || '';
       const action = remittanceActionButton.getAttribute('data-collector-remittance-action') || '';
       const record = collectorRemittanceRecords.find((item) => String(item?.id || '') === remittanceId);
-      if (record && ['confirm', 'reject'].includes(action)) {
+      if (record && ['view', 'confirm', 'reject', 'delete'].includes(action)) {
         openCollectorRemittanceReview(record, action, remittanceActionButton);
       } else if (record && ['archive', 'restore'].includes(action)) {
         updateCollectorRemittanceArchive(record, action, remittanceActionButton).catch(() => {});

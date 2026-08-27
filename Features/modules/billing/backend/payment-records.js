@@ -990,9 +990,10 @@ const buildAutomaticReferralTarget = (record = {}) => {
     };
 };
 
-async function buildPaymentRecordForAccount(accountNumber, branchId = null) {
+async function buildPaymentRecordForAccount(accountNumber, branchId = null, options = {}) {
     const safeAccountNumber = String(accountNumber || '').trim();
     if (!safeAccountNumber) return null;
+    const applyQueuedReferrals = options?.applyQueuedReferrals !== false;
 
     let [referralData, plans, adjustments, disconnections] = await Promise.all([
         referralsModule.loadReferralLedgerForBranch(branchId),
@@ -1018,7 +1019,7 @@ async function buildPaymentRecordForAccount(accountNumber, branchId = null) {
         referralDiscountsByAccount,
         referralOptionsByAccount
     );
-    const billingTarget = buildAutomaticReferralTarget(record);
+    const billingTarget = applyQueuedReferrals ? buildAutomaticReferralTarget(record) : null;
     if (billingTarget) {
         const allocation = await referralsModule.allocateQueuedReferralDiscounts({
             branchId,

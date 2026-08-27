@@ -4,7 +4,12 @@ const createError = require('http-errors');
 const { query, getPool } = require('../../../../core/data/db');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
 const customersModule = require('../../customer-management/backend/customers');
-const { assignEntryNumbers, assertEntryNumbersAvailable } = require('./payment-numbering');
+const {
+    assignEntryNumbers,
+    assertEntryNumbersAvailable,
+    ensurePaymentNumberingStore,
+    serializePaymentMutationRequest
+} = require('./payment-numbering');
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
 const paymentsRouter = require('./payments');
 const paymentRecordsRouter = require('./payment-records');
@@ -374,6 +379,7 @@ const requireAdminWithBranch = (req, _res, next) => {
 };
 
 router.use(requireAdminWithBranch);
+router.use(serializePaymentMutationRequest);
 
 router.get('/gcash-history', async (req, res, next) => {
     try {
@@ -1361,6 +1367,7 @@ router.post('/:id/approve', async (req, res, next) => {
             throw createError(500, 'MySQL connection is not available.');
         }
         connection = await pool.getConnection();
+        await ensurePaymentNumberingStore(connection);
         await connection.beginTransaction();
 
         const [rows] = await connection.query(

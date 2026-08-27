@@ -1,15 +1,21 @@
 const assert = require('assert/strict');
+const fs = require('fs');
+const path = require('path');
 
 const stores = { payments: {} };
 const canonicalBase = new Map([
   ['100000356', 1250],
   ['100000357', -300],
   ['100000358', 0],
-  ['100000359', 800]
+  ['100000359', 800],
+  ['100000360', 1250],
+  ['100000361', 500],
+  ['100000362', 700]
 ]);
 const refreshEvents = [];
 const relationalEntries = new Map();
 let relationalMode = false;
+const canonicalReadOptions = [];
 
 function replaceModule(modulePath, exports) {
   const resolved = require.resolve(modulePath);
@@ -60,18 +66,22 @@ replaceModule('../backend/payment-service-refresh', {
   triggerBranchServiceRefresh: (branchId, source) => refreshEvents.push({ branchId, source })
 });
 replaceModule('../backend/payment-records', {
-  buildPaymentRecordForAccount: async (accountNumber) => {
+  buildPaymentRecordForAccount: async (accountNumber, branchId, options) => {
+    canonicalReadOptions.push({ accountNumber, branchId, options });
     const base = Number(canonicalBase.get(accountNumber));
     if (!Number.isFinite(base)) return null;
     const credits = (stores.payments?.[accountNumber]?.history || [])
       .filter((entry) => entry?.direction === 'credit')
+      .reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+    const debits = (stores.payments?.[accountNumber]?.history || [])
+      .filter((entry) => entry?.direction === 'debit')
       .reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
     return {
       accountNumber,
       billingSummary: {
         version: 2,
         available: true,
-        endingBalance: Number((base - credits).toFixed(2))
+        endingBalance: Number((base + debits - credits).toFixed(2))
       }
     };
   }
@@ -97,9 +107,10 @@ const request = (overrides = {}) => closureService.recordAccountClosureWriteOff(
 async function run() {
   await assert.rejects(
     () => request({ closureId: 'closed-customer-unconfirmed', confirmed: false }),
-    /Confirm the audited write-off of ₱1250\.00/i
+    /Confirm the audited write-off of PHP 1250\.00/i
   );
   assert.equal(stores.payments['100000356'], undefined);
+  assert.equal(canonicalReadOptions[0].options?.applyQueuedReferrals, false);
 
   const created = await request();
   assert.equal(created.inserted, true);
@@ -118,12 +129,71 @@ async function run() {
 
   await assert.rejects(
     () => request({ accountNumber: '100000357', closureId: 'closed-customer-advance' }),
-    /advance balance of ₱300\.00/i
+    /advance balance of PHP 300\.00/i
   );
   const zero = await request({ accountNumber: '100000358', closureId: 'closed-customer-zero', confirmed: false });
   assert.equal(zero.amount, 0);
   assert.equal(zero.inserted, false);
   assert.equal(stores.payments['100000358'], undefined);
+
+  const partialRequest = (overrides = {}) => closureService.recordAccountClosureBalanceAdjustment({
+    branchId: 1,
+    accountNumber: '100000360',
+    closureId: 'closed-customer-partial-credit',
+    closureDate: '2026-08-26',
+    reason: '',
+    actor: { id: 'admin-1', username: 'archiecd', name: 'Archie Admin', role: 'Admin' },
+    targetFinalBalance: 500,
+    confirmed: true,
+    ...overrides
+  });
+  await assert.rejects(
+    () => partialRequest({ closureId: 'closed-customer-partial-unconfirmed', confirmed: false }),
+    /Confirm the audited balance adjustment of PHP 750\.00/i
+  );
+  const partial = await partialRequest();
+  assert.equal(partial.amount, 750);
+  assert.equal(partial.direction, 'credit');
+  assert.equal(partial.targetFinalBalance, 500);
+  assert.equal(partial.entry.closureFinalBalance, 500);
+  assert.equal(partial.entry.kind, 'discount');
+  assert.match(partial.entry.description, /Account closure final-balance credit/);
+  assert.match(partial.entry.description, /Account closed by Admin\./);
+  assert.equal((await closureService.getCanonicalAccountClosureBalance('100000360', 1)).balance, 500);
+  const partialReplay = await partialRequest();
+  assert.equal(partialReplay.idempotent, true);
+  assert.equal(stores.payments['100000360'].history.length, 1);
+  await assert.rejects(
+    () => partialRequest({ targetFinalBalance: 600 }),
+    /different finalized-balance adjustment/i
+  );
+
+  const debit = await closureService.recordAccountClosureBalanceAdjustment({
+    branchId: 1,
+    accountNumber: '100000361',
+    closureId: 'closed-customer-final-debit',
+    closureDate: '2026-08-26',
+    reason: 'Final balance reviewed by Admin',
+    targetFinalBalance: 900,
+    confirmed: true
+  });
+  assert.equal(debit.amount, 400);
+  assert.equal(debit.direction, 'debit');
+  assert.equal(debit.entry.kind, 'charge');
+  assert.equal(stores.payments['100000361'].history.length, 1);
+  assert.equal((await closureService.getCanonicalAccountClosureBalance('100000361', 1)).balance, 900);
+
+  const unchanged = await closureService.recordAccountClosureBalanceAdjustment({
+    branchId: 1,
+    accountNumber: '100000362',
+    closureId: 'closed-customer-final-unchanged',
+    closureDate: '2026-08-26',
+    targetFinalBalance: 700,
+    confirmed: false
+  });
+  assert.equal(unchanged.amount, 0);
+  assert.equal(unchanged.inserted, false);
+  assert.equal(stores.payments['100000362'], undefined);
 
   relationalMode = true;
   const relational = await request({
@@ -186,8 +256,29 @@ async function run() {
     reconnectedAt: '2026-08-27T00:00:00+08:00'
   });
   assert.equal(ordinaryLifecycleUpdate.billingThroughDate, null);
+  assert.equal(
+    canonicalReadOptions.every((call) => call.options?.applyQueuedReferrals === false),
+    true,
+    'closure balance reads must never allocate queued referral discounts'
+  );
 
-  console.log('PASS idempotent audited account-closure write-offs, MySQL-safe timestamps, canonical discount balance, closure-only billing cutoff lifecycle, confirmation guard, advance guard, and zero-balance close');
+  const paymentHistorySource = fs.readFileSync(
+    path.join(__dirname, '..', 'web', 'js', 'payment-history.js'),
+    'utf8'
+  );
+  const paymentHistoryHtml = fs.readFileSync(
+    path.join(__dirname, '..', 'web', 'payment-history.html'),
+    'utf8'
+  );
+  assert.match(paymentHistorySource, /isAccountClosureAdjustmentEntry/);
+  assert.match(paymentHistorySource, /!isCollectedPayment && !isClosureAdjustment/);
+  assert.match(paymentHistorySource, /row\.isCollectedPayment && !row\.isPendingGcash/);
+  assert.match(paymentHistorySource, /Balance:.*balanceBefore.*finalBalance/);
+  assert.match(paymentHistorySource, /Permanent account-closure audit entry/);
+  assert.match(paymentHistoryHtml, /value="account closure adjustment">Closure Adjustment/);
+  assert.match(paymentHistoryHtml, /Payments and audited adjustments/);
+
+  console.log('PASS idempotent audited account-closure final-balance credit/debit adjustments, Payment History audit display, MySQL-safe timestamps, canonical balance effects, confirmation and advance guards, and unchanged-balance close');
 }
 
 run().catch((error) => {

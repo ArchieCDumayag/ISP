@@ -16,6 +16,47 @@ const normalizeKind = (value) => normalizeText(value).toLowerCase();
 const pad = (value, width) => String(value).padStart(width, '0');
 
 let appStoreEnsured = false;
+let paymentMutationQueue = Promise.resolve();
+
+const enqueuePaymentMutation = (work) => {
+  if (typeof work !== 'function') {
+    return Promise.reject(new TypeError('Payment mutation work must be a function.'));
+  }
+  const operation = paymentMutationQueue.catch(() => {}).then(work);
+  paymentMutationQueue = operation.catch(() => {});
+  return operation;
+};
+
+const serializePaymentMutationRequest = (req, res, next) => {
+  const method = String(req?.method || '').trim().toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return next();
+  return enqueuePaymentMutation(() => new Promise((resolve) => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      resolve();
+    };
+    const originalEnd = res.end;
+    res.end = function serializedPaymentMutationEnd(...args) {
+      try {
+        return originalEnd.apply(this, args);
+      } finally {
+        release();
+      }
+    };
+    res.once('finish', release);
+    res.once('close', () => {
+      if (res.writableFinished) release();
+    });
+    try {
+      next();
+    } catch (error) {
+      release();
+      throw error;
+    }
+  })).catch(next);
+};
 
 const resolveYear = (dateValue) => {
   const parsed = dateValue ? new Date(dateValue) : new Date();
@@ -46,6 +87,13 @@ const ensureAppStore = async (connection) => {
   appStoreEnsured = true;
 };
 
+const ensurePaymentNumberingStore = async (connection) => {
+  if (!connection || typeof connection.query !== 'function') {
+    throw createError(500, 'A MySQL connection is required to prepare payment numbering.');
+  }
+  await ensureAppStore(connection);
+};
+
 const lockStoreKey = async (connection, key) => {
   await ensureAppStore(connection);
   await connection.query(
@@ -61,6 +109,18 @@ const lockStoreKey = async (connection, key) => {
 const makeCollisionLockKey = (prefix, branchId, value) => {
   const digest = crypto.createHash('sha1').update(String(value || '').toLowerCase()).digest('hex');
   return `${prefix}:${String(branchId || '').trim()}:${digest}`;
+};
+
+const lockPaymentAccount = async (connection, branchId, accountNumber) => {
+  const normalizedBranchId = normalizeText(branchId);
+  const normalizedAccountNumber = normalizeText(accountNumber);
+  if (!connection || !normalizedBranchId || !normalizedAccountNumber) {
+    throw createError(400, 'Branch and account number are required for a payment mutation lock.');
+  }
+  await lockStoreKey(
+    connection,
+    makeCollisionLockKey('lock:payment-account', normalizedBranchId, normalizedAccountNumber)
+  );
 };
 
 const nextSequenceValue = async (connection, key) => {
@@ -159,6 +219,7 @@ const withTransaction = async (work) => {
   }
   const connection = await pool.getConnection();
   try {
+    await ensurePaymentNumberingStore(connection);
     await connection.beginTransaction();
     const result = await work(connection);
     await connection.commit();
@@ -178,5 +239,9 @@ const withTransaction = async (work) => {
 module.exports = {
   assignEntryNumbers,
   assertEntryNumbersAvailable,
+  enqueuePaymentMutation,
+  ensurePaymentNumberingStore,
+  lockPaymentAccount,
+  serializePaymentMutationRequest,
   withTransaction
 };

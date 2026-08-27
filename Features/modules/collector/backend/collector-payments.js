@@ -5,8 +5,23 @@ const { loadAccounts } = require('../../admin/backend/accounts-store');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
-const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = require('../../billing/backend/payment-numbering');
+const {
+  assignEntryNumbers,
+  assertEntryNumbersAvailable,
+  enqueuePaymentMutation,
+  lockPaymentAccount,
+  withTransaction
+} = require('../../billing/backend/payment-numbering');
 const { triggerBranchServiceRefresh } = require('../../billing/backend/payment-service-refresh');
+const {
+  BALANCE_EPSILON,
+  getCanonicalAccountClosureBalance
+} = require('../../billing/backend/account-closure-service');
+const {
+  STATE_CLOSED,
+  listClosedCustomerAccounts,
+  getActiveClosedCustomerAccount
+} = require('../../customer-management/backend/closed-customer-account-store');
 const {
   listGcashTransactionHistory,
   claimGcashTransaction,
@@ -44,8 +59,12 @@ const COLLECTOR_PAYMENT_PENDING_STATUS = 'pending_approval';
 const COLLECTOR_PAYMENT_APPROVED_STATUS = 'approved';
 const COLLECTOR_PAYMENT_REJECTED_STATUS = 'rejected';
 const COLLECTOR_PAYMENT_DECISION_REASON_MAX_LENGTH = 500;
+const COLLECTOR_REMITTANCE_DELETION_REASON_MAX_LENGTH = 500;
 const COLLECTOR_CLIENT_PAYMENT_ID_MAX_LENGTH = 96;
 const COLLECTOR_PAYMENT_REVIEW_TABLE = 'collector_payment_reviews';
+const CLOSED_ACCOUNT_COLLECTION_DESCRIPTION_PREFIX = 'Closed Account Collection';
+const CLOSED_ACCOUNT_SEARCH_MIN_LENGTH = 2;
+const COLLECTOR_PAYMENT_ACCOUNT_CLOSED_CODE = 'COLLECTOR_PAYMENT_ACCOUNT_CLOSED';
 
 const COLLECTOR_PAYMENT_REVIEW_DDL = `
 CREATE TABLE IF NOT EXISTS collector_payment_reviews (
@@ -67,6 +86,43 @@ CREATE TABLE IF NOT EXISTS collector_payment_reviews (
 `;
 
 let collectorPaymentReviewTableReady = false;
+let collectorRemittanceMutationQueue = Promise.resolve();
+
+function enqueueCollectorRemittanceMutation(work) {
+  const operation = collectorRemittanceMutationQueue.then(work);
+  collectorRemittanceMutationQueue = operation.catch(() => {});
+  return operation;
+}
+
+function serializeCollectorRemittanceMutationRequest(req, res, next) {
+  if (String(req?.method || '').toUpperCase() !== 'POST') return next();
+  return enqueueCollectorRemittanceMutation(() => new Promise((resolve) => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      resolve();
+    };
+    const originalEnd = res.end;
+    res.end = function serializedCollectorRemittanceEnd(...args) {
+      try {
+        return originalEnd.apply(this, args);
+      } finally {
+        release();
+      }
+    };
+    res.once('finish', release);
+    res.once('close', () => {
+      if (res.writableFinished) release();
+    });
+    try {
+      next();
+    } catch (error) {
+      release();
+      throw error;
+    }
+  })).catch(next);
+}
 
 const STORE_KEYS = {
   payments: 'payments',
@@ -84,6 +140,14 @@ function sanitizeCollectorClientPaymentId(value) {
   return trimmed;
 }
 
+function collectorPaymentAccountClosedError() {
+  return createError(
+    409,
+    'This account is closed. Review the same saved payment through Closed Account Collection.',
+    { code: COLLECTOR_PAYMENT_ACCOUNT_CLOSED_CODE }
+  );
+}
+
 function sanitizeCollectorPaymentDecisionReason(value, required = false) {
   const trimmed = String(value || '').trim();
   if (trimmed.length > COLLECTOR_PAYMENT_DECISION_REASON_MAX_LENGTH) {
@@ -91,6 +155,20 @@ function sanitizeCollectorPaymentDecisionReason(value, required = false) {
   }
   if (required && !trimmed) {
     throw createError(400, 'Rejection reason is required.');
+  }
+  return trimmed;
+}
+
+function sanitizeCollectorRemittanceDeletionReason(value) {
+  const trimmed = String(value || '').trim();
+  if (trimmed.length > COLLECTOR_REMITTANCE_DELETION_REASON_MAX_LENGTH) {
+    throw createError(
+      400,
+      `Deletion reason must be at most ${COLLECTOR_REMITTANCE_DELETION_REASON_MAX_LENGTH} characters.`
+    );
+  }
+  if (!trimmed) {
+    throw createError(400, 'Deletion reason is required.');
   }
   return trimmed;
 }
@@ -127,12 +205,15 @@ function normalizeRemittancePayment(row = {}) {
     paymentEntryId,
     accountNumber,
     reference,
+    clientPaymentId: remittanceText(row.clientPaymentId || row.localId || row.idempotencyKey),
     amount: Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0,
     customerName: remittanceText(row.customerName || row.customer || row.payer),
     paymentMethod: remittanceText(row.paymentMethod || row.method),
     collectionDate: toPaymentDateOnly(row.collectionDate || row.date || row.recordedAt || row.submittedAt),
     recordedAt: row.recordedAt || row.submittedAt || null,
-    status: normalizeCollectorPaymentStatus(row.status || row.approvalStatus)
+    status: normalizeCollectorPaymentStatus(row.status || row.approvalStatus),
+    closedAccountCollection: isClosedAccountCollectionEntry(row),
+    closedAccountClosureId: resolveClosedAccountCollectionClosureId(row) || null
   };
 }
 
@@ -258,7 +339,12 @@ async function loadCanonicalRemittancePayments(record = {}) {
       recordedAt: payment.recordedAt || canonical?.recordedAt || null,
       status: normalizeCollectorPaymentStatus(
         canonical ? canonical.status : (payment.status || COLLECTOR_PAYMENT_PENDING_STATUS)
-      )
+      ),
+      closedAccountCollection: isClosedAccountCollectionEntry(canonical)
+        || isClosedAccountCollectionEntry(payment),
+      closedAccountClosureId: resolveClosedAccountCollectionClosureId(canonical)
+        || resolveClosedAccountCollectionClosureId(payment)
+        || null
     };
   });
 }
@@ -276,7 +362,7 @@ async function hydrateRemittanceRecords(records = []) {
   return Promise.all((Array.isArray(records) ? records : []).map(hydrateRemittanceRecord));
 }
 
-async function upsertAutomaticRemittanceBatch(paymentEntry = {}, options = {}) {
+async function upsertAutomaticRemittanceBatchUnlocked(paymentEntry = {}, options = {}) {
   if (normalizeKind(paymentEntry?.kind || paymentEntry?.type) !== 'payment'
       || String(paymentEntry?.direction || 'credit').trim().toLowerCase() !== 'credit') {
     return null;
@@ -294,6 +380,18 @@ async function upsertAutomaticRemittanceBatch(paymentEntry = {}, options = {}) {
   const branchId = options.branchId || null;
   const payload = await readJson(STORE_KEYS.remittances, { records: [] });
   const records = Array.isArray(payload?.records) ? payload.records : [];
+  const deletedRecords = Array.isArray(payload?.deletedRecords) ? payload.deletedRecords : [];
+  const paymentKey = remittancePaymentKey(payment);
+  const deletedRecord = deletedRecords.find((item) => (
+    (Array.isArray(item?.paymentKeys) ? item.paymentKeys : [])
+      .some((itemPaymentKey) => remittanceText(itemPaymentKey) === paymentKey)
+  ));
+  if (deletedRecord) return null;
+  const existingRecord = records.find((item) => (
+    (Array.isArray(item?.payments) ? item.payments : [])
+      .some((itemPayment) => remittancePaymentKey(itemPayment) === paymentKey)
+  ));
+  if (existingRecord) return existingRecord;
   let record = records.find((item) => (
     item?.autoBatch === true
     && remittanceStatus(item?.status) === 'pending'
@@ -332,15 +430,21 @@ async function upsertAutomaticRemittanceBatch(paymentEntry = {}, options = {}) {
     records.unshift(record);
   }
   const existingKeys = new Set((Array.isArray(record.payments) ? record.payments : []).map(remittancePaymentKey));
-  if (!existingKeys.has(remittancePaymentKey(payment))) {
+  if (!existingKeys.has(paymentKey)) {
     record.payments = [...(Array.isArray(record.payments) ? record.payments : []), payment];
   }
   record.totalAmount = Number(record.payments
     .reduce((sum, item) => sum + Math.max(Number(item?.amount || 0), 0), 0)
     .toFixed(2));
   record.updatedAt = now;
-  await writeJson(STORE_KEYS.remittances, { records, updatedAt: now });
+  await writeJson(STORE_KEYS.remittances, { ...payload, records, updatedAt: now });
   return record;
+}
+
+async function upsertAutomaticRemittanceBatch(paymentEntry = {}, options = {}) {
+  return enqueueCollectorRemittanceMutation(() => (
+    upsertAutomaticRemittanceBatchUnlocked(paymentEntry, options)
+  ));
 }
 
 function normalizeCollectorPaymentStatus(value) {
@@ -349,6 +453,228 @@ function normalizeCollectorPaymentStatus(value) {
 
 function isPendingCollectorPaymentStatus(value) {
   return normalizeCollectorPaymentStatus(value) === COLLECTOR_PAYMENT_PENDING_STATUS;
+}
+
+function normalizeCurrency(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0;
+}
+
+function isClosedAccountCollectionEntry(entry = {}) {
+  if (entry?.closedAccountCollection === true) return true;
+  return String(entry?.description || '')
+    .trim()
+    .toLowerCase()
+    .startsWith(CLOSED_ACCOUNT_COLLECTION_DESCRIPTION_PREFIX.toLowerCase());
+}
+
+function buildClosedAccountCollectionDescription(value, closureId = '') {
+  const detail = String(value || '').trim();
+  const normalizedClosureId = String(closureId || '').trim().slice(0, 96);
+  const marker = normalizedClosureId
+    ? `${CLOSED_ACCOUNT_COLLECTION_DESCRIPTION_PREFIX} | Closure ID: ${normalizedClosureId}`
+    : CLOSED_ACCOUNT_COLLECTION_DESCRIPTION_PREFIX;
+  if (!detail) return marker;
+  if (detail.toLowerCase().startsWith(CLOSED_ACCOUNT_COLLECTION_DESCRIPTION_PREFIX.toLowerCase())) {
+    return marker;
+  }
+  return `${marker} | ${detail}`;
+}
+
+function resolveClosedAccountCollectionClosureId(entry = {}) {
+  const direct = String(entry?.closedAccountClosureId || entry?.closureId || '').trim();
+  if (direct) return direct;
+  const match = String(entry?.description || '').match(/\bClosure ID:\s*([^|]+)/i);
+  return String(match?.[1] || '').trim();
+}
+
+function pendingClosedAccountCollectionAmount(history = [], excludeEntryId = '') {
+  const excludedId = String(excludeEntryId || '').trim();
+  return normalizeCurrency((Array.isArray(history) ? history : []).reduce((total, entry) => {
+    if (excludedId && String(entry?.id || '').trim() === excludedId) return total;
+    if (!isPendingCollectorPaymentStatus(entry?.status)) return total;
+    if (resolveEntryDirection(entry) !== 'credit') return total;
+    return total + Math.abs(Number(entry?.amount) || 0);
+  }, 0));
+}
+
+async function readPendingClosedAccountCollectionAmount({
+  branchId,
+  accountNumber,
+  history = null,
+  executor = null,
+  excludeEntryId = ''
+} = {}) {
+  if (Array.isArray(history)) {
+    return pendingClosedAccountCollectionAmount(history, excludeEntryId);
+  }
+  const runQuery = executor && typeof executor.query === 'function'
+    ? executor.query.bind(executor)
+    : query;
+  const params = [
+    branchId,
+    String(accountNumber || '').trim(),
+    COLLECTOR_PAYMENT_PENDING_STATUS
+  ];
+  let excludedClause = '';
+  if (String(excludeEntryId || '').trim()) {
+    excludedClause = ' AND id <> ?';
+    params.push(String(excludeEntryId).trim());
+  }
+  const [rows] = await runQuery(
+    `SELECT COALESCE(SUM(ABS(amount)), 0) AS pendingAmount
+     FROM payment_entries
+     WHERE branch_id = ?
+       AND account_number = ?
+       AND LOWER(COALESCE(status, '')) = ?
+       AND LOWER(COALESCE(direction, 'credit')) = 'credit'${excludedClause}`,
+    params
+  );
+  return normalizeCurrency(rows?.[0]?.pendingAmount);
+}
+
+async function readClosedAccountCollectionState({
+  branchId,
+  accountNumber,
+  history = null,
+  executor = null,
+  excludeEntryId = ''
+} = {}) {
+  const closure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+  if (!closure || closure.state !== STATE_CLOSED) {
+    throw createError(409, 'This account is not an active closed account. Reload the closed-account search.');
+  }
+  const [{ balance }, pendingAmount] = await Promise.all([
+    getCanonicalAccountClosureBalance(accountNumber, branchId),
+    readPendingClosedAccountCollectionAmount({
+      branchId,
+      accountNumber,
+      history,
+      executor,
+      excludeEntryId
+    })
+  ]);
+  const currentBalance = normalizeCurrency(Math.max(Number(balance) || 0, 0));
+  const normalizedPendingAmount = normalizeCurrency(Math.max(Number(pendingAmount) || 0, 0));
+  const paymentAllowed = currentBalance > BALANCE_EPSILON
+    && normalizedPendingAmount <= BALANCE_EPSILON;
+  return {
+    closure,
+    currentBalance,
+    pendingCollectionAmount: normalizedPendingAmount,
+    collectibleBalance: paymentAllowed ? currentBalance : 0,
+    paymentAllowed,
+    collectionBlockedReason: currentBalance <= BALANCE_EPSILON
+      ? 'No retained balance remains.'
+      : (normalizedPendingAmount > BALANCE_EPSILON
+        ? 'A collector payment is already awaiting Admin approval for this account.'
+        : '')
+  };
+}
+
+async function assertClosedAccountCollectionPaymentAllowed({
+  branchId,
+  accountNumber,
+  amount,
+  history = null,
+  executor = null
+} = {}) {
+  const state = await readClosedAccountCollectionState({
+    branchId,
+    accountNumber,
+    history,
+    executor
+  });
+  if (!state.paymentAllowed) {
+    throw createError(409, state.collectionBlockedReason || 'Closed-account collection is unavailable.');
+  }
+  if (Number(amount) - state.currentBalance > BALANCE_EPSILON) {
+    throw createError(
+      409,
+      `Payment exceeds the closed account's current balance of ₱${state.currentBalance.toFixed(2)}.`
+    );
+  }
+  return state;
+}
+
+async function assertCollectorPaymentApprovalAllowedForAccountState({
+  branchId,
+  accountNumber,
+  entry
+} = {}) {
+  const closure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+  if (!isClosedAccountCollectionEntry(entry)) {
+    if (closure && closure.state === STATE_CLOSED) {
+      throw createError(
+        409,
+        'This payment was captured before the account was closed. Reject it and record any retained-balance cash through Closed Account Collection.'
+      );
+    }
+    return null;
+  }
+  if (!closure || closure.state !== STATE_CLOSED) {
+    throw createError(409, 'The customer account is no longer closed. Reject this payment and review it in Billing.');
+  }
+  const paymentClosureId = resolveClosedAccountCollectionClosureId(entry);
+  if (!paymentClosureId || paymentClosureId !== String(closure.id || '').trim()) {
+    throw createError(
+      409,
+      'The closed-account lifecycle changed after this payment was captured. Reject it and review the account before collecting again.'
+    );
+  }
+  const { balance } = await getCanonicalAccountClosureBalance(accountNumber, branchId);
+  const currentBalance = normalizeCurrency(Math.max(Number(balance) || 0, 0));
+  const paymentAmount = normalizeCurrency(Math.abs(Number(entry?.amount) || 0));
+  if (currentBalance <= BALANCE_EPSILON) {
+    throw createError(409, 'This closed account no longer has a balance. Reject the duplicate payment.');
+  }
+  if (paymentAmount - currentBalance > BALANCE_EPSILON) {
+    throw createError(
+      409,
+      `Payment exceeds the closed account's current balance of ₱${currentBalance.toFixed(2)}. Reject or correct it before approval.`
+    );
+  }
+  return { closure, currentBalance, paymentAmount };
+}
+
+function buildClosedAccountCollectionPayload(record, state) {
+  return {
+    closedAccountCollection: true,
+    closureId: String(record?.id || '').trim(),
+    accountNumber: String(record?.accountNumber || '').trim(),
+    customerName: String(record?.customerName || `Account ${record?.accountNumber || ''}`).trim(),
+    contactNumber: String(record?.contactNumber || '').trim(),
+    area: String(record?.areaName || '').trim(),
+    areaName: String(record?.areaName || '').trim(),
+    planName: String(record?.planName || '').trim(),
+    closureDate: record?.closureDate || record?.closedAt || null,
+    accountState: 'closed',
+    accountRemainsClosed: true,
+    serviceStatus: 'closed',
+    serviceAction: 'none',
+    billingStatus: 'stopped',
+    billingAction: 'none',
+    currentBalance: state.currentBalance,
+    pendingCollectionAmount: state.pendingCollectionAmount,
+    collectibleBalance: state.collectibleBalance,
+    paymentAllowed: state.paymentAllowed,
+    collectionBlockedReason: state.collectionBlockedReason
+  };
+}
+
+function collectorCanAccessClosedAccountArea(assignments, areaName, collectorId) {
+  const area = String(areaName || '').trim();
+  const collector = String(collectorId || '').trim();
+  if (!area || !collector) return false;
+  const assignedRaw = assignments instanceof Map
+    ? assignments.get(area.toLowerCase())
+    : Object.entries(assignments || {}).find(([key]) => (
+      String(key || '').trim().toLowerCase() === area.toLowerCase()
+    ))?.[1];
+  const assignedCollectors = (Array.isArray(assignedRaw) ? assignedRaw : [assignedRaw])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return assignedCollectors.includes(collector);
 }
 
 function isCollectorCreditApprovalEntry(entry = {}) {
@@ -440,6 +766,12 @@ async function prepareCollectorGcashApproval({ actor, branchId, accountNumber, e
       );
     }
     return null;
+  }
+  if (!explicitlyGcash && isClosedAccountCollectionEntry(entry)) {
+    throw createCollectorGcashError(
+      'This Cash entry matches an imported official GCash credit. Reject it and post the payment through the official Billing/GCash workflow.',
+      'CLOSED_ACCOUNT_OFFICIAL_GCASH_REQUIRES_BILLING'
+    );
   }
   const officialAmount = Number(Number(transaction?.credit || 0).toFixed(2));
   const officialDate = toPaymentDateOnly(transaction?.transactionDate || transaction?.transactionAt);
@@ -577,6 +909,9 @@ function mapCollectorPaymentApprovalItem(entry = {}, customer = {}, accountNumbe
     reference: entry.reference || entry.orNumber || null,
     paymentMethod: entry.paymentMethod || entry.payment_method || null,
     kind: normalizeKind(entry.kind || entry.type),
+    description: entry.description || '',
+    closedAccountCollection: isClosedAccountCollectionEntry(entry),
+    closedAccountClosureId: resolveClosedAccountCollectionClosureId(entry) || null,
     collectorId: String(recordedBy.id || entry.recordedByUserId || '').trim(),
     collectorName: String(recordedBy.name || entry.recordedByName || recordedBy.username || entry.recordedByUsername || 'Collector').trim(),
     collectorUsername: String(recordedBy.username || entry.recordedByUsername || '').trim(),
@@ -654,6 +989,10 @@ function collectorPaymentEntriesMatch(existing = {}, requested = {}, accountNumb
   const requestedMethod = String(requested.paymentMethod || requested.payment_method || '').trim().toLowerCase();
   const existingDate = toPaymentDateOnly(existing.date || existing.recordedAt);
   const requestedDate = toPaymentDateOnly(requested.date || requested.recordedAt);
+  const existingClosedContext = isClosedAccountCollectionEntry(existing);
+  const requestedClosedContext = isClosedAccountCollectionEntry(requested);
+  const existingClosureId = resolveClosedAccountCollectionClosureId(existing);
+  const requestedClosureId = resolveClosedAccountCollectionClosureId(requested);
   return existingAccount === requestedAccount
     && String(existing.reference || existing.orNumber || '').trim().toLowerCase()
       === String(requested.reference || requested.orNumber || '').trim().toLowerCase()
@@ -661,7 +1000,12 @@ function collectorPaymentEntriesMatch(existing = {}, requested = {}, accountNumb
     && Math.abs(Math.abs(Number(existing.amount) || 0) - Math.abs(Number(requested.amount) || 0)) < 0.0001
     && (!existingCollector || !requestedCollector || existingCollector === requestedCollector)
     && existingMethod === requestedMethod
-    && existingDate === requestedDate;
+    && existingDate === requestedDate
+    && existingClosedContext === requestedClosedContext
+    && (!existingClosedContext
+      || !existingClosureId
+      || !requestedClosureId
+      || existingClosureId === requestedClosureId);
 }
 
 async function findRelationalCollectorPaymentSubmission(executor, branchId, accountNumber, requestedEntry) {
@@ -692,11 +1036,10 @@ async function findRelationalCollectorPaymentSubmission(executor, branchId, acco
        xendit_id AS xenditId
      FROM payment_entries
      WHERE branch_id = ?
-       AND account_number = ?
        AND (id = ? OR LOWER(COALESCE(reference, '')) = LOWER(?))
      ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, recorded_at DESC, id DESC
-     LIMIT 2`,
-    [branchId, String(accountNumber), requestedEntry.id, requestedEntry.reference, requestedEntry.id]
+     LIMIT 10`,
+    [branchId, requestedEntry.id, requestedEntry.reference, requestedEntry.id]
   );
   const matches = (rows || []).map(mapReceiptPaymentRow);
   const exact = matches.find((entry) => collectorPaymentEntriesMatch(entry, requestedEntry, accountNumber));
@@ -1075,6 +1418,7 @@ function resolvePaymentFallbackMonth(entry) {
 function mapReceiptPaymentRow(row) {
   return {
     id: row?.id,
+    accountNumber: row?.accountNumber || row?.account_number || undefined,
     amount: row?.amount != null ? Number(row.amount) : 0,
     date: row?.date || row?.recordedAt || null,
     kind: row?.kind || undefined,
@@ -1450,9 +1794,18 @@ function buildCollectorReceiptPayload(customer, history, targetPayment) {
   };
 }
 
-async function resolveAdminCurrentBillBalance(accountNumber, branchId, fallbackBalance = 0) {
+async function resolveAdminCurrentBillBalance(
+  accountNumber,
+  branchId,
+  fallbackBalance = 0,
+  { applyQueuedReferrals = true } = {}
+) {
   try {
-    const record = await paymentRecordsRouter.buildPaymentRecordForAccount(accountNumber, branchId);
+    const record = await paymentRecordsRouter.buildPaymentRecordForAccount(
+      accountNumber,
+      branchId,
+      { applyQueuedReferrals }
+    );
     const endingBalance = Number(record?.paymentBreakdownEndingBalance ?? record?.endingBalance);
     if (Number.isFinite(endingBalance)) return Number(endingBalance.toFixed(2));
   } catch (error) {
@@ -1465,12 +1818,19 @@ async function resolveAdminCurrentBillBalance(accountNumber, branchId, fallbackB
   return Number.isFinite(fallback) ? Number(fallback.toFixed(2)) : 0;
 }
 
-async function buildCollectorReceiptPayloadWithAdminBalance(customer, history, targetPayment, branchId = null) {
+async function buildCollectorReceiptPayloadWithAdminBalance(
+  customer,
+  history,
+  targetPayment,
+  branchId = null,
+  { applyQueuedReferrals = true } = {}
+) {
   const payload = buildCollectorReceiptPayload(customer, history, targetPayment);
   const currentBillAmount = await resolveAdminCurrentBillBalance(
     payload.accountNumber || customer?.accountNumber,
     branchId,
-    payload.currentBalance
+    payload.currentBalance,
+    { applyQueuedReferrals }
   );
   return {
     ...payload,
@@ -1507,11 +1867,7 @@ function isJsonCollectorAssignedToCustomer(collectorId, assignments, customer) {
   if (!collectorId) return true;
   const area = String(customer?.area || '').trim();
   if (!area) return false;
-  const assignedRaw = assignments?.[area];
-  const assignedCollectors = (Array.isArray(assignedRaw) ? assignedRaw : [assignedRaw])
-    .map((id) => String(id || '').trim())
-    .filter(Boolean);
-  return assignedCollectors.includes(String(collectorId));
+  return collectorCanAccessClosedAccountArea(assignments, area, collectorId);
 }
 
 async function insertPaymentEntry(entry, branchId, accountNumber, executor = null) {
@@ -1699,7 +2055,9 @@ function isPairedPrepaidChargeEntry(entry = {}, target = {}, pairedFingerprint =
     && (!entryRecorder || !targetRecorder || entryRecorder === targetRecorder);
 }
 
-let collectorPaymentApprovalMutationQueue = Promise.resolve();
+function enqueueCollectorPaymentMutation(work) {
+  return enqueuePaymentMutation(work);
+}
 
 async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextStatus) {
   const actor = getApprovalActor(req);
@@ -1721,7 +2079,19 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
     await ensureCollectorPaymentReviewTable();
     let targetEntry = null;
     let targetAccountNumber = '';
+    let targetIsClosedAccountCollection = false;
     await withTransaction(async (connection) => {
+      const [identityRows] = await connection.query(
+        `SELECT account_number AS accountNumber
+         FROM payment_entries
+         WHERE branch_id = ?
+           AND id = ?
+         LIMIT 1`,
+        [branchId, entryId]
+      );
+      targetAccountNumber = String((identityRows || [])[0]?.accountNumber || '').trim();
+      if (!targetAccountNumber) throw createError(404, 'Pending collector payment was not found.');
+      await lockPaymentAccount(connection, branchId, targetAccountNumber);
       const [rows] = await connection.query(
         `SELECT
            id,
@@ -1755,6 +2125,7 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
       if (!row) throw createError(404, 'Pending collector payment was not found.');
       targetEntry = mapReceiptPaymentRow(row);
       targetAccountNumber = String(row.accountNumber || '').trim();
+      targetIsClosedAccountCollection = isClosedAccountCollectionEntry(targetEntry);
       if (!isCollectorCreditApprovalEntry(targetEntry)) {
         if (
           nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS
@@ -1768,6 +2139,11 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
       }
 
       if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+        await assertCollectorPaymentApprovalAllowedForAccountState({
+          branchId,
+          accountNumber: targetAccountNumber,
+          entry: targetEntry
+        });
         gcashBinding = await prepareCollectorGcashApproval({
           actor,
           branchId,
@@ -1817,7 +2193,9 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
       });
       if (!gcashBinding) throw createError(409, 'Collector payment is not pending approval.');
     }
-    triggerBranchServiceRefresh(branchId, `collector-payment-${nextStatus}`);
+    if (!targetIsClosedAccountCollection) {
+      triggerBranchServiceRefresh(branchId, `collector-payment-${nextStatus}`);
+    }
     if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
       await finalizeCollectorGcashApproval(gcashBinding);
     } else if (nextStatus === COLLECTOR_PAYMENT_REJECTED_STATUS) {
@@ -1888,6 +2266,11 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
   }
 
   if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
+    await assertCollectorPaymentApprovalAllowedForAccountState({
+      branchId: branchId || targetCustomer?.branchId,
+      accountNumber: targetAccount,
+      entry: targetEntry
+    });
     gcashBinding = await prepareCollectorGcashApproval({
       actor,
       branchId: branchId || targetCustomer?.branchId,
@@ -1905,7 +2288,9 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
     }
   });
   await writeJson(STORE_KEYS.payments, payments);
-  triggerBranchServiceRefresh(branchId || targetCustomer?.branchId || null, `collector-payment-${nextStatus}`);
+  if (!isClosedAccountCollectionEntry(targetEntry)) {
+    triggerBranchServiceRefresh(branchId || targetCustomer?.branchId || null, `collector-payment-${nextStatus}`);
+  }
   if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
     await finalizeCollectorGcashApproval(gcashBinding);
   } else if (nextStatus === COLLECTOR_PAYMENT_REJECTED_STATUS) {
@@ -1922,11 +2307,9 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
 }
 
 async function updateCollectorPaymentApprovalById(req, rawEntryId, nextStatus) {
-  const operation = collectorPaymentApprovalMutationQueue.then(() => (
+  return enqueueCollectorPaymentMutation(() => (
     updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextStatus)
   ));
-  collectorPaymentApprovalMutationQueue = operation.catch(() => {});
-  return operation;
 }
 
 async function updateCollectorPaymentApproval(req, nextStatus) {
@@ -2086,14 +2469,33 @@ router.get('/reprint', async (req, res, next) => {
         const targetPayment = mapReceiptPaymentRow(row);
         if (!isReceiptPaymentEntry(targetPayment)) continue;
         const customer = buildReceiptCustomerFromRow(row);
-        if (req.collector && excludedAccounts.has(String(customer.accountNumber || '').trim())) continue;
+        if (
+          req.collector
+          && excludedAccounts.has(String(customer.accountNumber || '').trim())
+          && !isClosedAccountCollectionEntry(targetPayment)
+        ) continue;
         if (req.collector && !await isCollectorAssignedToCustomer(branchId, req.collector.id, customer)) {
           continue;
         }
 
         const history = await readPaymentHistoryForReceipt(branchId, customer.accountNumber);
         const resolvedTarget = history.find((entry) => isSamePaymentEntry(entry, targetPayment)) || targetPayment;
-        return res.json(await buildCollectorReceiptPayloadWithAdminBalance(customer, history, resolvedTarget, branchId));
+        const closedReceipt = isClosedAccountCollectionEntry(resolvedTarget);
+        const receipt = await buildCollectorReceiptPayloadWithAdminBalance(
+          customer,
+          history,
+          resolvedTarget,
+          branchId,
+          { applyQueuedReferrals: !closedReceipt }
+        );
+        return res.json(closedReceipt ? {
+          ...receipt,
+          closedAccountCollection: true,
+          closedAccountClosureId: resolveClosedAccountCollectionClosureId(resolvedTarget) || null,
+          accountRemainsClosed: true,
+          serviceAction: 'none',
+          billingAction: 'none'
+        } : receipt);
       }
 
       return next(createError(404, 'Receipt payment was not found for this collector.'));
@@ -2110,13 +2512,30 @@ router.get('/reprint', async (req, res, next) => {
       const accountNumber = String(customer?.accountNumber || '').trim();
       if (!accountNumber) continue;
       if (lookup.accountNumber && accountNumber !== lookup.accountNumber) continue;
-      if (req.collector && excludedAccounts.has(accountNumber)) continue;
       if (req.collector && !isJsonCollectorAssignedToCustomer(collectorId, assignments, customer)) continue;
       const rawHistory = Array.isArray(payments?.[accountNumber]?.history) ? payments[accountNumber].history : [];
       const history = rawHistory.map(mapReceiptPaymentRow);
       const targetPayment = history.find((entry) => isReceiptPaymentEntry(entry) && matchesReceiptLookup(entry, lookup));
       if (!targetPayment) continue;
-      return res.json(await buildCollectorReceiptPayloadWithAdminBalance(customer, history, targetPayment, branchId));
+      if (req.collector && excludedAccounts.has(accountNumber) && !isClosedAccountCollectionEntry(targetPayment)) {
+        continue;
+      }
+      const closedReceipt = isClosedAccountCollectionEntry(targetPayment);
+      const receipt = await buildCollectorReceiptPayloadWithAdminBalance(
+        customer,
+        history,
+        targetPayment,
+        branchId,
+        { applyQueuedReferrals: !closedReceipt }
+      );
+      return res.json(closedReceipt ? {
+        ...receipt,
+        closedAccountCollection: true,
+        closedAccountClosureId: resolveClosedAccountCollectionClosureId(targetPayment) || null,
+        accountRemainsClosed: true,
+        serviceAction: 'none',
+        billingAction: 'none'
+      } : receipt);
     }
 
     return next(createError(404, 'Receipt payment was not found for this collector.'));
@@ -2125,17 +2544,27 @@ router.get('/reprint', async (req, res, next) => {
   }
 });
 
+// Serialize every remittance-store mutation, including Admin decisions and
+// automatic batches created by collector payment capture.
+router.use('/remittances', serializeCollectorRemittanceMutationRequest);
+
 // GET /api/collector/payments/remittances
 // Collector sees own remittances; admin sees all JSON remittance submissions.
 router.get('/remittances', async (req, res, next) => {
   try {
     const actor = getRemittanceActor(req);
     if (!req.collector) getApprovalActor(req);
+    const includeArchivedClosed = Boolean(req.collector)
+      && String(req.query?.includeArchivedClosed || '').trim().toLowerCase() === 'true';
     const payload = await readJson(STORE_KEYS.remittances, { records: [] });
     const records = Array.isArray(payload?.records) ? payload.records : [];
     const scoped = records.filter((record) => {
       if (req.collector && remittanceText(record.collectorId) !== actor.id) return false;
-      if (req.collector && record?.archivedAt) return false;
+      if (req.collector && record?.archivedAt) {
+        const containsClosedCollection = Array.isArray(record?.payments)
+          && record.payments.some((payment) => isClosedAccountCollectionEntry(payment));
+        if (!includeArchivedClosed || !containsClosedCollection) return false;
+      }
       return !actor.branchId || !record?.branchId || remittanceText(record.branchId) === remittanceText(actor.branchId);
     });
     res.json({ ok: true, records: await hydrateRemittanceRecords(scoped) });
@@ -2180,9 +2609,20 @@ router.post('/remittances', async (req, res, next) => {
     const totalAmount = Number((Number.isFinite(requestedTotal) && requestedTotal > 0 ? requestedTotal : computedTotal).toFixed(2));
     const payload = await readJson(STORE_KEYS.remittances, { records: [] });
     const records = Array.isArray(payload?.records) ? payload.records : [];
+    const deletedRecords = Array.isArray(payload?.deletedRecords) ? payload.deletedRecords : [];
     const paymentKeys = new Set(
       approvedPayments.map((item) => remittanceText(item.paymentEntryId || item.reference)).filter(Boolean)
     );
+    const deletedDuplicate = deletedRecords.some((record) => (
+      (Array.isArray(record?.paymentKeys) ? record.paymentKeys : [])
+        .some((key) => paymentKeys.has(remittanceText(key)))
+    ));
+    if (deletedDuplicate) {
+      return next(createError(
+        409,
+        'One or more payments belong to a deleted archived remittance. The customer payments remain recorded and cannot be submitted again.'
+      ));
+    }
     const duplicatePending = records.some((record) => {
       const status = remittanceText(record.status || 'pending').toLowerCase();
       if (status === 'rejected') return false;
@@ -2211,7 +2651,7 @@ router.post('/remittances', async (req, res, next) => {
       adminNote: ''
     };
     records.unshift(record);
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: submittedAt });
+    await writeJson(STORE_KEYS.remittances, { ...payload, records, updatedAt: submittedAt });
     res.status(201).json({ ok: true, record });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to submit remittance.'));
@@ -2290,7 +2730,7 @@ router.post('/remittances/:id/confirm', async (req, res, next) => {
     record.reviewedBy = reviewer;
     record.adminNote = remittanceText(req.body?.adminNote || req.body?.note);
     record.updatedAt = reviewedAt;
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: reviewedAt });
+    await writeJson(STORE_KEYS.remittances, { ...payload, records, updatedAt: reviewedAt });
     res.json({
       ok: true,
       replayed: false,
@@ -2330,7 +2770,7 @@ router.post('/remittances/:id/reject', async (req, res, next) => {
     record.reviewedBy = reviewer;
     record.adminNote = reason;
     record.updatedAt = reviewedAt;
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: reviewedAt });
+    await writeJson(STORE_KEYS.remittances, { ...payload, records, updatedAt: reviewedAt });
     res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to reject remittance.'));
@@ -2363,7 +2803,7 @@ router.post('/remittances/:id/archive', async (req, res, next) => {
     record.archivedBy = actor;
     record.archiveHistory = [...(Array.isArray(record.archiveHistory) ? record.archiveHistory : []), auditEntry];
     record.updatedAt = archivedAt;
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: archivedAt });
+    await writeJson(STORE_KEYS.remittances, { ...payload, records, updatedAt: archivedAt });
     res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to archive remittance.'));
@@ -2395,10 +2835,95 @@ router.post('/remittances/:id/restore', async (req, res, next) => {
     record.restoredBy = actor;
     record.archiveHistory = [...(Array.isArray(record.archiveHistory) ? record.archiveHistory : []), auditEntry];
     record.updatedAt = restoredAt;
-    await writeJson(STORE_KEYS.remittances, { records, updatedAt: restoredAt });
+    await writeJson(STORE_KEYS.remittances, { ...payload, records, updatedAt: restoredAt });
     res.json({ ok: true, replayed: false, record: await hydrateRemittanceRecord(record) });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to restore remittance.'));
+  }
+});
+
+// POST /api/collector/payments/remittances/:id/delete
+// Admin-only removal of an archived batch shell. Canonical payments remain untouched,
+// while a durable audit tombstone prevents the batch payments from being grouped again.
+router.post('/remittances/:id/delete', async (req, res, next) => {
+  try {
+    const admin = getApprovalActor(req);
+    const reason = sanitizeCollectorRemittanceDeletionReason(
+      req.body?.reason || req.body?.adminNote || req.body?.note
+    );
+    const payload = await readJson(STORE_KEYS.remittances, { records: [] });
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const deletedRecords = Array.isArray(payload?.deletedRecords) ? payload.deletedRecords : [];
+    const remittanceId = remittanceText(req.params.id);
+    const recordIndex = records.findIndex((item) => remittanceText(item.id) === remittanceId);
+    const existingDeletion = deletedRecords.find((item) => remittanceText(item.remittanceId) === remittanceId);
+
+    if (recordIndex < 0) {
+      if (!existingDeletion
+          || (admin?.branchId
+            && existingDeletion?.branchId
+            && remittanceText(admin.branchId) !== remittanceText(existingDeletion.branchId))) {
+        return next(createError(404, 'Remittance not found.'));
+      }
+      return res.json({ ok: true, replayed: true, deletion: existingDeletion });
+    }
+
+    const record = records[recordIndex];
+    if (admin?.branchId && record?.branchId && remittanceText(admin.branchId) !== remittanceText(record.branchId)) {
+      return next(createError(404, 'Remittance not found.'));
+    }
+    if (!record.archivedAt) {
+      return next(createError(409, 'Only an archived remittance can be deleted.'));
+    }
+
+    const hydratedRecord = await hydrateRemittanceRecord(record);
+    if ((Array.isArray(hydratedRecord?.payments) ? hydratedRecord.payments : [])
+      .some((payment) => isClosedAccountCollectionEntry(payment))) {
+      return next(createError(
+        409,
+        'Closed-account remittances are permanent collection history and cannot be deleted.'
+      ));
+    }
+
+    const actor = getRemittanceActor(req);
+    const deletedAt = new Date().toISOString();
+    const paymentKeys = [...new Set(
+      (Array.isArray(hydratedRecord?.payments) ? hydratedRecord.payments : [])
+        .map(remittancePaymentKey)
+        .filter(Boolean)
+    )];
+    const rawTotalAmount = Number(record.totalAmount ?? hydratedRecord?.paymentSummary?.totalAmount ?? 0);
+    const deletion = {
+      remittanceId,
+      branchId: record.branchId || admin.branchId || null,
+      collectorId: remittanceText(record.collectorId),
+      collectorName: remittanceText(record.collectorName || record?.submittedBy?.name),
+      status: remittanceStatus(record.status),
+      totalAmount: Number.isFinite(rawTotalAmount) ? Number(rawTotalAmount.toFixed(2)) : 0,
+      paymentCount: Array.isArray(hydratedRecord?.payments) ? hydratedRecord.payments.length : paymentKeys.length,
+      paymentKeys,
+      submittedAt: record.submittedAt || null,
+      reviewedAt: record.reviewedAt || null,
+      archivedAt: record.archivedAt || null,
+      deletedAt,
+      deletedBy: actor,
+      reason
+    };
+
+    records.splice(recordIndex, 1);
+    const nextDeletedRecords = [
+      deletion,
+      ...deletedRecords.filter((item) => remittanceText(item.remittanceId) !== remittanceId)
+    ];
+    await writeJson(STORE_KEYS.remittances, {
+      ...payload,
+      records,
+      deletedRecords: nextDeletedRecords,
+      updatedAt: deletedAt
+    });
+    res.json({ ok: true, replayed: false, deletion });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to delete remittance.'));
   }
 });
 
@@ -2444,10 +2969,137 @@ router.post('/approvals/:entryId/reject', async (req, res, next) => {
   }
 });
 
-// POST /api/collector/payments/:accountNumber
-// body for admin auth: { collectorId, amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod?, clientPaymentId? }
-// body for collector token auth: { amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod?, clientPaymentId? }
-router.post('/:accountNumber', async (req, res, next) => {
+// GET /api/collector/payments/closed-accounts?search=...
+// Search-only access for authenticated Collector devices. Closed accounts are
+// deliberately never merged into the normal assigned-customer download.
+router.get('/closed-accounts', async (req, res, next) => {
+  try {
+    if (!req.collector) {
+      return next(createError(403, 'Collector login is required for closed-account search.'));
+    }
+    const branchId = req.collector?.branchId || null;
+    if (!branchId) {
+      return next(createError(400, 'Branch assignment missing for this collector account.'));
+    }
+    const accounts = await loadAccounts();
+    const collectorAccount = (accounts || []).find((account) => (
+      String(account?.id || '') === String(req.collector.id || '')
+      && accountHasRole(account, 'Collector')
+      && account?.isActive !== false
+      && String(account?.branchId || '') === String(branchId)
+    ));
+    if (!collectorAccount) {
+      return next(createError(403, 'This Collector account is inactive or no longer available.'));
+    }
+    const search = String(req.query?.search || req.query?.q || '').trim();
+    if (search.length < CLOSED_ACCOUNT_SEARCH_MIN_LENGTH) {
+      return next(createError(
+        400,
+        `Enter at least ${CLOSED_ACCOUNT_SEARCH_MIN_LENGTH} characters to search closed accounts.`
+      ));
+    }
+    const requestedLimit = Number(req.query?.limit);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 20, 1), 25);
+    const relational = await isRelationalReady();
+    const payments = relational ? null : await readJson(STORE_KEYS.payments, {});
+    let assignments;
+    if (relational) {
+      const [rows] = await query(
+        `SELECT
+           ca.area_name AS legacyAreaName,
+           cov.name AS coverageAreaName,
+           ca.collector_user_id AS collectorId
+         FROM collector_assignments ca
+         LEFT JOIN coverage_areas cov
+           ON cov.id = ca.coverage_id
+          AND cov.branch_id = ca.branch_id
+         WHERE ca.branch_id = ?`,
+        [branchId]
+      );
+      assignments = new Map();
+      (rows || []).forEach((row) => {
+        const collectorKey = String(row?.collectorId || '').trim();
+        if (!collectorKey) return;
+        [row?.legacyAreaName, row?.coverageAreaName].forEach((areaName) => {
+          const areaKey = String(areaName || '').trim().toLowerCase();
+          if (!areaKey) return;
+          const current = assignments.get(areaKey) || [];
+          if (!current.includes(collectorKey)) current.push(collectorKey);
+          assignments.set(areaKey, current);
+        });
+      });
+    } else {
+      const collectorsData = await readJson(STORE_KEYS.collectors, { assignments: {} });
+      assignments = collectorsData?.assignments || {};
+    }
+
+    const closedRecords = [];
+    let offset = 0;
+    while (true) {
+      const page = await listClosedCustomerAccounts({ branchId, search: '', limit: 100, offset });
+      closedRecords.push(...(page.items || []));
+      offset += (page.items || []).length;
+      if (!page.items?.length || offset >= Number(page.total || 0)) break;
+    }
+    const normalizedSearch = search.toLowerCase();
+    const visibleRecords = closedRecords
+      .filter((record) => record?.state === STATE_CLOSED)
+      .filter((record) => [record?.accountNumber, record?.customerName]
+        .some((value) => String(value || '').trim().toLowerCase().includes(normalizedSearch)))
+      .filter((record) => collectorCanAccessClosedAccountArea(
+        assignments,
+        record?.areaName,
+        collectorAccount.id
+      ))
+      .slice(0, limit);
+    const records = await Promise.all(visibleRecords
+      .map(async (record) => {
+        try {
+          const history = relational
+            ? null
+            : (Array.isArray(payments?.[record.accountNumber]?.history)
+              ? payments[record.accountNumber].history
+              : []);
+          const state = await readClosedAccountCollectionState({
+            branchId,
+            accountNumber: record.accountNumber,
+            history
+          });
+          return buildClosedAccountCollectionPayload(record, state);
+        } catch (error) {
+          return {
+            closedAccountCollection: true,
+            accountNumber: String(record?.accountNumber || '').trim(),
+            customerName: String(record?.customerName || `Account ${record?.accountNumber || ''}`).trim(),
+            contactNumber: String(record?.contactNumber || '').trim(),
+            area: String(record?.areaName || '').trim(),
+            areaName: String(record?.areaName || '').trim(),
+            planName: String(record?.planName || '').trim(),
+            closureDate: record?.closureDate || record?.closedAt || null,
+            accountState: 'closed',
+            serviceStatus: 'closed',
+            billingStatus: 'stopped',
+            currentBalance: null,
+            pendingCollectionAmount: 0,
+            collectibleBalance: 0,
+            paymentAllowed: false,
+            collectionBlockedReason: error?.message || 'Current balance is unavailable.'
+          };
+        }
+      }));
+    return res.json({
+      ok: true,
+      searchOnly: true,
+      records,
+      total: records.length,
+      minimumSearchLength: CLOSED_ACCOUNT_SEARCH_MIN_LENGTH
+    });
+  } catch (error) {
+    next(error?.status ? error : createError(500, error.message || 'Failed to search closed accounts.'));
+  }
+});
+
+async function submitCollectorPayment(req, res, next, { closedAccountCollection = false } = {}) {
   try {
     const { accountNumber } = req.params;
     const {
@@ -2466,6 +3118,8 @@ router.post('/:accountNumber', async (req, res, next) => {
       clientPaymentId = null,
       localId = null,
       idempotencyKey = null,
+      closureId: rawClosureId = null,
+      closedAccountClosureId: rawClosedAccountClosureId = null,
     } = req.body || {};
 
     const authCollectorId = req.collector?.id ? String(req.collector.id) : '';
@@ -2497,6 +3151,12 @@ router.post('/:accountNumber', async (req, res, next) => {
     }
     const requestedKind = rawKind || typeOfPayment || paymentType || type;
     const requestedKindNormalized = normalizeKind(requestedKind);
+    if (closedAccountCollection && requestedKindNormalized !== 'payment') {
+      return next(createError(400, 'Closed accounts accept payment credits only.'));
+    }
+    if (!closedAccountCollection && isClosedAccountCollectionEntry({ description })) {
+      return next(createError(400, 'Closed Account Collection is a reserved server description.'));
+    }
     let normalizedPaymentMethod;
     try {
       normalizedPaymentMethod = requestedKindNormalized === 'payment'
@@ -2505,6 +3165,12 @@ router.post('/:accountNumber', async (req, res, next) => {
     } catch (paymentMethodError) {
       return next(paymentMethodError);
     }
+    if (closedAccountCollection && normalizedPaymentMethod !== 'Cash') {
+      return next(createError(
+        400,
+        'Closed Account Collection accepts Cash only so electronic payments are not counted as collector cash remittance.'
+      ));
+    }
     let normalizedClientPaymentId;
     try {
       normalizedClientPaymentId = sanitizeCollectorClientPaymentId(
@@ -2512,6 +3178,15 @@ router.post('/:accountNumber', async (req, res, next) => {
       );
     } catch (clientPaymentIdError) {
       return next(clientPaymentIdError);
+    }
+    const submittedClosureId = closedAccountCollection
+      ? String(rawClosureId || rawClosedAccountClosureId || '').trim()
+      : '';
+    if (closedAccountCollection && !submittedClosureId) {
+      return next(createError(400, 'closureId is required for Closed Account Collection. Search the account again.'));
+    }
+    if (submittedClosureId.length > 96) {
+      return next(createError(400, 'closureId must be at most 96 characters.'));
     }
 
     if (await isRelationalReady()) {
@@ -2526,15 +3201,20 @@ router.post('/:accountNumber', async (req, res, next) => {
         (a) =>
           String(a.id) === String(effectiveCollectorId) &&
           accountHasRole(a, 'Collector') &&
+          a?.isActive !== false &&
           String(a.branchId || '') === String(branchId)
       );
       if (!collectorAccount) {
         return next(createError(403, 'Invalid collector account'));
       }
+      const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
 
       const [customerRows] = await query(
         `SELECT
            c.account_number AS accountNumber,
+           c.name AS customerName,
+           c.first_name AS firstName,
+           c.last_name AS lastName,
            c.area,
            c.map_pin AS mapPin,
            c.plan_name AS planName,
@@ -2555,11 +3235,28 @@ router.post('/:accountNumber', async (req, res, next) => {
         return next(createError(404, 'Customer not found'));
       }
       const [assignRows] = await query(
-        'SELECT collector_user_id AS collectorId FROM collector_assignments WHERE branch_id = ? AND area_name = ?',
-        [branchId, customer.area]
+        `SELECT ca.collector_user_id AS collectorId
+         FROM collector_assignments ca
+         LEFT JOIN coverage_areas cov
+           ON cov.id = ca.coverage_id
+          AND cov.branch_id = ca.branch_id
+         WHERE ca.branch_id = ?
+           AND (
+             LOWER(TRIM(COALESCE(ca.area_name, ''))) = LOWER(TRIM(?))
+             OR LOWER(TRIM(COALESCE(cov.name, ''))) = LOWER(TRIM(?))
+           )`,
+        [branchId, customer.area, customer.area]
       );
       const assignedCollectors = (assignRows || []).map((row) => String(row.collectorId || '').trim()).filter(Boolean);
-      if (assignedCollectors.length && !assignedCollectors.includes(String(effectiveCollectorId))) {
+      if (closedAccountCollection && !assignedCollectors.includes(String(effectiveCollectorId))) {
+        return next(createError(
+          409,
+          'Closed-account assignment changed. Search the account again before collecting.'
+        ));
+      }
+      if (!closedAccountCollection
+          && assignedCollectors.length
+          && !assignedCollectors.includes(String(effectiveCollectorId))) {
         return next(createError(403, 'Collector not assigned to this customer area'));
       }
 
@@ -2582,7 +3279,9 @@ router.post('/:accountNumber', async (req, res, next) => {
         kind,
         type: normalizedTypeOfPayment,
         reference: normalizedReference,
-        description,
+        description: closedAccountCollection
+          ? buildClosedAccountCollectionDescription(description, submittedClosureId)
+          : description,
         direction,
         recordedAt: resolveRecordedAtValue(req.body?.recordedAt, date),
         recordedBy: recorder,
@@ -2592,9 +3291,11 @@ router.post('/:accountNumber', async (req, res, next) => {
         typeOfPayment: normalizedTypeOfPayment,
         clientPaymentId: normalizedClientPaymentId || undefined,
         fingerprint: buildCollectorPaymentFingerprint(accountNumber, normalizedReference, kind, numericAmount),
+        closedAccountCollection,
+        closedAccountClosureId: closedAccountCollection ? submittedClosureId : undefined,
       };
 
-      const shouldAutoCharge = isPrepaid && kind === 'payment';
+      const shouldAutoCharge = !closedAccountCollection && isPrepaid && kind === 'payment';
       const chargeEntry = shouldAutoCharge ? {
         id: buildCollectorPaymentEntryId('charge', branchId, effectiveCollectorId, accountNumber, normalizedClientPaymentId),
         amount: numericAmount,
@@ -2615,8 +3316,21 @@ router.post('/:accountNumber', async (req, res, next) => {
 
       let storedPayment = null;
       let replayed = false;
+      let closedCollectionState = null;
       try {
         await withTransaction(async (connection) => {
+          await lockPaymentAccount(connection, branchId, accountNumber);
+          if (closedAccountCollection) {
+            await connection.query(
+              `SELECT account_number
+               FROM customers
+               WHERE branch_id = ?
+                 AND account_number = ?
+               LIMIT 1
+               FOR UPDATE`,
+              [branchId, accountNumber]
+            );
+          }
           storedPayment = await findRelationalCollectorPaymentSubmission(
             connection,
             branchId,
@@ -2626,6 +3340,25 @@ router.post('/:accountNumber', async (req, res, next) => {
           if (storedPayment) {
             replayed = true;
             return;
+          }
+          if (!closedAccountCollection && activeClosure) {
+            throw collectorPaymentAccountClosedError();
+          }
+          if (closedAccountCollection) {
+            if (!activeClosure || String(activeClosure.id || '').trim() !== submittedClosureId) {
+              throw createError(
+                409,
+                'The closed-account lifecycle changed. Search the account again and review the same payment.'
+              );
+            }
+            newEntry.closedAccountClosureId = String(activeClosure.id).trim();
+            newEntry.description = buildClosedAccountCollectionDescription(description, activeClosure.id);
+            closedCollectionState = await assertClosedAccountCollectionPaymentAllowed({
+              branchId,
+              accountNumber,
+              amount: numericAmount,
+              executor: connection
+            });
           }
           await assignEntryNumbers(connection, newEntry);
           await assertEntryNumbersAvailable(connection, branchId, newEntry);
@@ -2650,7 +3383,9 @@ router.post('/:accountNumber', async (req, res, next) => {
         storedPayment = duplicate;
         replayed = true;
       }
-      if (!replayed) triggerBranchServiceRefresh(branchId, 'collector-payments');
+      if (!replayed && !closedAccountCollection) {
+        triggerBranchServiceRefresh(branchId, 'collector-payments');
+      }
       await upsertAutomaticRemittanceBatch(storedPayment, {
         accountNumber,
         customerName: resolveCustomerDisplayName(customer, accountNumber),
@@ -2665,11 +3400,37 @@ router.post('/:accountNumber', async (req, res, next) => {
         customer,
         receiptHistory,
         storedPayment,
-        branchId
+        branchId,
+        { applyQueuedReferrals: !closedAccountCollection }
       );
+      let closedCollectionPayload = {};
+      if (closedAccountCollection) {
+        if (!closedCollectionState) {
+          closedCollectionState = await readClosedAccountCollectionState({
+            branchId,
+            accountNumber,
+            history: receiptHistory
+          });
+        } else {
+          closedCollectionState = {
+            ...closedCollectionState,
+            pendingCollectionAmount: normalizeCurrency(
+              closedCollectionState.pendingCollectionAmount + Math.abs(Number(storedPayment?.amount) || 0)
+            ),
+            collectibleBalance: 0,
+            paymentAllowed: false,
+            collectionBlockedReason: 'A closed-account payment is already awaiting Admin approval.'
+          };
+        }
+        closedCollectionPayload = buildClosedAccountCollectionPayload(
+          closedCollectionState.closure,
+          closedCollectionState
+        );
+      }
       return res.status(replayed ? 200 : 201).json({
         ...storedPayment,
         ...receiptPayload,
+        ...closedCollectionPayload,
         id: storedPayment.id,
         created: !replayed,
         replayed,
@@ -2680,7 +3441,9 @@ router.post('/:accountNumber', async (req, res, next) => {
     // Validate collector account
     const accounts = await loadAccounts();
     const collectorAccount = (accounts || []).find(
-      (a) => String(a.id) === String(effectiveCollectorId) && accountHasRole(a, 'Collector')
+      (a) => String(a.id) === String(effectiveCollectorId)
+        && accountHasRole(a, 'Collector')
+        && a?.isActive !== false
     );
     if (!collectorAccount) {
       return next(createError(403, 'Invalid collector account'));
@@ -2692,14 +3455,26 @@ router.post('/:accountNumber', async (req, res, next) => {
     if (!customer) {
       return next(createError(404, 'Customer not found'));
     }
+    const branchId = collectorAccount.branchId || customer?.branchId || null;
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
     const collectorsData = await readJson(STORE_KEYS.collectors, { assignments: {} });
     const assignments = collectorsData.assignments || {};
-    const assignedRaw = assignments[customer.area];
+    const assignedRaw = Object.entries(assignments).find(([areaName]) => (
+      String(areaName || '').trim().toLowerCase() === String(customer.area || '').trim().toLowerCase()
+    ))?.[1];
     const assignedCollectors = (Array.isArray(assignedRaw) ? assignedRaw : [assignedRaw])
       .map((id) => String(id || '').trim())
       .filter(Boolean);
 
-    if (assignedCollectors.length && !assignedCollectors.includes(String(effectiveCollectorId))) {
+    if (closedAccountCollection && !assignedCollectors.includes(String(effectiveCollectorId))) {
+      return next(createError(
+        409,
+        'Closed-account assignment changed. Search the account again before collecting.'
+      ));
+    }
+    if (!closedAccountCollection
+        && assignedCollectors.length
+        && !assignedCollectors.includes(String(effectiveCollectorId))) {
       return next(createError(403, 'Collector not assigned to this customer area'));
     }
 
@@ -2744,7 +3519,12 @@ router.post('/:accountNumber', async (req, res, next) => {
       typeOfPayment: normalizedTypeOfPayment,
       clientPaymentId: normalizedClientPaymentId || undefined,
       fingerprint: buildCollectorPaymentFingerprint(accountNumber, normalizedReference, kind, numericAmount),
+      closedAccountCollection,
+      closedAccountClosureId: closedAccountCollection ? submittedClosureId : undefined,
     };
+    newEntry.description = closedAccountCollection
+      ? buildClosedAccountCollectionDescription(description, submittedClosureId)
+      : description;
     const normalizedReferenceKey = String(normalizedReference || '').trim().toLowerCase();
     let duplicateEntry = null;
     let duplicateAccountNumber = '';
@@ -2783,18 +3563,62 @@ router.post('/:accountNumber', async (req, res, next) => {
         customer,
         duplicateHistory,
         duplicateEntry,
-        collectorAccount.branchId || customer?.branchId || null
+        branchId,
+        { applyQueuedReferrals: !closedAccountCollection }
       );
+      let closedCollectionPayload = {};
+      if (closedAccountCollection) {
+        try {
+          const replayState = await readClosedAccountCollectionState({
+            branchId,
+            accountNumber,
+            history: duplicateHistory
+          });
+          closedCollectionPayload = buildClosedAccountCollectionPayload(
+            replayState.closure,
+            replayState
+          );
+        } catch {
+          closedCollectionPayload = {
+            closedAccountCollection: true,
+            accountRemainsClosed: Boolean(activeClosure),
+            serviceAction: 'none',
+            billingAction: 'none'
+          };
+        }
+      }
       return res.status(200).json({
         ...duplicateEntry,
         ...receiptPayload,
+        ...closedCollectionPayload,
         id: duplicateEntry.id,
         created: false,
         replayed: true,
       });
     }
 
-    const shouldAutoCharge = isPrepaid && kind === 'payment';
+    if (!closedAccountCollection && activeClosure) {
+      return next(collectorPaymentAccountClosedError());
+    }
+    let closedCollectionState = null;
+    if (closedAccountCollection) {
+      if (!activeClosure || String(activeClosure.id || '').trim() !== submittedClosureId) {
+        return next(createError(
+          409,
+          'The closed-account lifecycle changed. Search the account again and review the same payment.'
+        ));
+      }
+      newEntry.closedAccountClosureId = String(activeClosure.id).trim();
+      newEntry.description = buildClosedAccountCollectionDescription(description, activeClosure.id);
+      closedCollectionState = await assertClosedAccountCollectionPaymentAllowed({
+        branchId,
+        accountNumber,
+        amount: numericAmount,
+        history: payments[accountNumber].history
+      });
+    }
+
+    const shouldAutoCharge = !closedAccountCollection && isPrepaid && kind === 'payment';
     const chargeEntry = shouldAutoCharge ? {
       id: buildCollectorPaymentEntryId(
         'charge',
@@ -2833,18 +3657,38 @@ router.post('/:accountNumber', async (req, res, next) => {
       collectorId: collectorAccount.id,
       collectorUsername: collectorAccount.username,
       collectorName: collectorAccount.name || collectorAccount.username,
-      branchId: collectorAccount.branchId || customer?.branchId || null
+      branchId
     });
-    triggerBranchServiceRefresh(collectorAccount.branchId || customer?.branchId || null, 'collector-payments');
+    if (!closedAccountCollection) {
+      triggerBranchServiceRefresh(branchId, 'collector-payments');
+    }
     const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
       customer,
       payments[accountNumber].history,
       newEntry,
-      collectorAccount.branchId || null
+      branchId,
+      { applyQueuedReferrals: !closedAccountCollection }
     );
+    let closedCollectionPayload = {};
+    if (closedAccountCollection) {
+      closedCollectionState = {
+        ...closedCollectionState,
+        pendingCollectionAmount: normalizeCurrency(
+          closedCollectionState.pendingCollectionAmount + numericAmount
+        ),
+        collectibleBalance: 0,
+        paymentAllowed: false,
+        collectionBlockedReason: 'A closed-account payment is already awaiting Admin approval.'
+      };
+      closedCollectionPayload = buildClosedAccountCollectionPayload(
+        closedCollectionState.closure,
+        closedCollectionState
+      );
+    }
     res.status(201).json({
       ...newEntry,
       ...receiptPayload,
+      ...closedCollectionPayload,
       id: newEntry.id,
       created: true,
       replayed: false,
@@ -2852,6 +3696,35 @@ router.post('/:accountNumber', async (req, res, next) => {
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to record payment'));
   }
+}
+
+// POST /api/collector/payments/closed-accounts/:accountNumber
+// Collector-only retained-balance capture. It never starts a prepaid renewal,
+// resumes billing, re-enables service, or restores normal queue visibility.
+router.post('/closed-accounts/:accountNumber', (req, res, next) => {
+  if (!req.collector) {
+    return next(createError(403, 'Collector login is required for closed-account collection.'));
+  }
+  return enqueueCollectorPaymentMutation(() => (
+    submitCollectorPayment(req, res, next, { closedAccountCollection: true })
+  ));
+});
+
+// POST /api/collector/payments/:accountNumber
+// body for admin auth: { collectorId, amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod?, clientPaymentId? }
+// body for collector token auth: { amount, date, reference, kind?/typeOfPayment?, description?, payer?, paymentMethod?, clientPaymentId? }
+router.post('/:accountNumber', (req, res, next) => (
+  enqueueCollectorPaymentMutation(() => submitCollectorPayment(req, res, next))
+));
+
+router.use((error, req, res, next) => {
+  if (error?.code !== COLLECTOR_PAYMENT_ACCOUNT_CLOSED_CODE || res.headersSent) return next(error);
+  return res.status(error.status || error.statusCode || 409).json({
+    ok: false,
+    error: error.message,
+    code: COLLECTOR_PAYMENT_ACCOUNT_CLOSED_CODE
+  });
 });
 
 module.exports = router;
+module.exports.serializeCollectorRemittanceMutationRequest = serializeCollectorRemittanceMutationRequest;

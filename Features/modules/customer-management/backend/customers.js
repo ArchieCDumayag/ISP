@@ -81,6 +81,14 @@ const {
     restoreCollectorClient
 } = require('../../collector/backend/collector-client-exclusions');
 const { getEffectivePaymentEntries } = require('../../billing/backend/payment-entry-normalizer');
+const {
+    enqueuePaymentMutation,
+    ensurePaymentNumberingStore,
+    lockPaymentAccount
+} = require('../../billing/backend/payment-numbering');
+const {
+    isProtectedClosedAccountPaymentEvidence
+} = require('../../billing/backend/closed-account-payment-evidence');
 const { PROJECT_ROOT, PUBLIC_ROOT } = require('../../../../core/runtime/paths');
 
 const router = express.Router();
@@ -3585,7 +3593,7 @@ const normalizeImportedClientCorrectionRecord = (raw = {}) => {
         facebookUsername: normalizeImportText(raw.facebookUsername)
     };
 };
-const importClientListRecords = async ({ records = [], branchId, importedBy = null } = {}) => {
+const importClientListRecordsUnlocked = async ({ records = [], branchId, importedBy = null } = {}) => {
     const scopedBranchId = Number(branchId);
     if (!Number.isInteger(scopedBranchId) || scopedBranchId <= 0) {
         throw createError(400, 'Branch assignment missing for this admin account.');
@@ -3631,12 +3639,24 @@ const importClientListRecords = async ({ records = [], branchId, importedBy = nu
         }
     };
     let skipped = 0;
+    const activeClosedAccounts = await getActiveClosedAccountNumberSet(scopedBranchId);
     const validRecords = sourceRecords.filter((record) => {
         if (!record?.accountNumber) {
             const message = `Row ${record?.rowNumber || '?'} skipped: account number is missing.`;
             pushWarning(message);
             addWarningDetail(record, {
                 code: 'missing_account_number',
+                message,
+                fields: ['accountNumber']
+            });
+            skipped += 1;
+            return false;
+        }
+        if (activeClosedAccounts.has(String(record.accountNumber || '').trim())) {
+            const message = `Row ${record.rowNumber}: skipped ${record.accountNumber} because the customer account is closed.`;
+            pushWarning(message);
+            addWarningDetail(record, {
+                code: 'closed_account_protected',
                 message,
                 fields: ['accountNumber']
             });
@@ -3794,6 +3814,9 @@ const importClientListRecords = async ({ records = [], branchId, importedBy = nu
         warningRecords: Array.from(warningDetailsByRow.values())
     };
 };
+const importClientListRecords = (options = {}) => (
+    enqueuePaymentMutation(() => importClientListRecordsUnlocked(options))
+);
 const parseImportBase64Payload = (payload = {}) => {
     const base64 = String(payload?.fileBase64 || payload?.fileDataBase64 || payload?.data || '').trim();
     if (!base64) return null;
@@ -6016,14 +6039,15 @@ const createCustomerRecordUnlocked = async (
 const createCustomerRecord = (payload = {}, options = {}) =>
     withCustomerCreateMutationLock(() => createCustomerRecordUnlocked(payload, options));
 
-const updateCustomerRecord = async (
+const updateCustomerRecordUnlocked = async (
     accountNumber,
     payload = {},
     {
         branchId,
         refreshSource = 'customers-update',
         allowPastBillingDates = false,
-        planChangeEffectiveAt = null
+        planChangeEffectiveAt = null,
+        allowClosedAccountLifecycleMutation = false
     } = {}
 ) => {
     const scopedBranchId = Number(branchId);
@@ -6034,6 +6058,18 @@ const updateCustomerRecord = async (
     const targetAccountNumber = String(accountNumber || '').trim();
     if (!targetAccountNumber) {
         throw createError(400, 'Customer account number is required.');
+    }
+
+    if (!allowClosedAccountLifecycleMutation) {
+        const activeClosure = await getActiveClosedCustomerAccount(scopedBranchId, targetAccountNumber);
+        if (activeClosure) {
+            const error = createError(
+                409,
+                'This customer account is closed and cannot be edited. Use Reopen in Customer Archive before changing the customer record.'
+            );
+            error.code = 'CUSTOMER_UPDATE_ACCOUNT_CLOSED';
+            throw error;
+        }
     }
 
     const customers = await readCustomers(scopedBranchId);
@@ -6366,7 +6402,44 @@ const updateCustomerRecord = async (
     return customers[index];
 };
 
-const deleteCustomerRecord = async (
+const updateCustomerRecord = (accountNumber, payload = {}, options = {}) => {
+    if (
+        options?.allowClosedAccountLifecycleMutation === true
+        || options?.paymentMutationAlreadySerialized === true
+    ) {
+        return updateCustomerRecordUnlocked(accountNumber, payload, options);
+    }
+    return enqueuePaymentMutation(() => updateCustomerRecordUnlocked(accountNumber, payload, options));
+};
+
+const assertCustomerDeletionHasNoClosedAccountHistory = async (branchId, accountNumber) => {
+    const targetAccountNumber = String(accountNumber || '').trim();
+    const [closureHistory, payments] = await Promise.all([
+        listClosedCustomerAccounts({
+            branchId,
+            search: targetAccountNumber,
+            limit: 100,
+            offset: 0,
+            includeReopened: true
+        }),
+        readPayments(branchId)
+    ]);
+    const hasClosureHistory = (closureHistory?.items || []).some((record) => (
+        String(record?.accountNumber || '').trim() === targetAccountNumber
+    ));
+    const paymentEntries = payments?.[targetAccountNumber]?.history || [];
+    const hasProtectedPayment = paymentEntries.some(isProtectedClosedAccountPaymentEvidence);
+    if (!hasClosureHistory && !hasProtectedPayment) return;
+
+    const error = createError(
+        409,
+        'This customer has protected closed-account history and cannot be deleted. Keep the record in Closed/Disconnected Accounts; use Reopen only when service must be restored.'
+    );
+    error.code = 'CUSTOMER_DELETE_PROTECTED_CLOSED_ACCOUNT_HISTORY';
+    throw error;
+};
+
+const deleteCustomerRecordUnlocked = async (
     accountNumber,
     {
         branchId,
@@ -6384,6 +6457,8 @@ const deleteCustomerRecord = async (
     if (!targetAccountNumber) {
         throw createError(400, 'Customer account number is required.');
     }
+
+    await assertCustomerDeletionHasNoClosedAccountHistory(scopedBranchId, targetAccountNumber);
 
     let deleted = false;
     let cleanupWarning = '';
@@ -6426,7 +6501,32 @@ const deleteCustomerRecord = async (
         const pool = await getPool();
         const connection = await pool.getConnection();
         try {
+            await ensurePaymentNumberingStore(connection);
             await connection.beginTransaction();
+            await lockPaymentAccount(connection, scopedBranchId, targetAccountNumber);
+            const [protectedPaymentRows] = await connection.query(
+                `SELECT id
+                 FROM payment_entries
+                 WHERE branch_id = ?
+                   AND account_number = ?
+                   AND (
+                     LOWER(TRIM(COALESCE(description, ''))) LIKE 'closed account collection | closure id:%'
+                     OR LOWER(TRIM(COALESCE(id, ''))) LIKE 'closure-writeoff-%'
+                     OR LOWER(TRIM(COALESCE(payment_method, ''))) = 'account closure adjustment'
+                     OR LOWER(TRIM(COALESCE(fingerprint, ''))) LIKE '%|account-closure|%'
+                   )
+                 LIMIT 1
+                 FOR UPDATE`,
+                [scopedBranchId, targetAccountNumber]
+            );
+            if (Array.isArray(protectedPaymentRows) && protectedPaymentRows.length) {
+                const protectedError = createError(
+                    409,
+                    'This customer has protected closed-account payment history and cannot be deleted.'
+                );
+                protectedError.code = 'CUSTOMER_DELETE_PROTECTED_CLOSED_ACCOUNT_HISTORY';
+                throw protectedError;
+            }
 
             const archiveSnapshot = await collectCustomerArchiveSnapshot(connection, {
                 branchId: scopedBranchId,
@@ -6635,6 +6735,10 @@ const deleteCustomerRecord = async (
 
     return { ok: true, accountNumber: targetAccountNumber, warning: cleanupWarning || undefined };
 };
+
+const deleteCustomerRecord = (accountNumber, options = {}) => (
+    enqueuePaymentMutation(() => deleteCustomerRecordUnlocked(accountNumber, options))
+);
 
 const loadPendingDraftLinkedCustomerAccounts = async (branchId = null) => {
     if (!(await isRelationalReady())) {
@@ -6868,7 +6972,28 @@ router.get('/closed-accounts', async (req, res, next) => {
             limit: req.query?.limit,
             offset: req.query?.offset
         });
-        return res.json({ ok: true, ...result });
+        const closureBilling = require('../../billing/backend/account-closure-service');
+        const items = await Promise.all((result.items || []).map(async (record) => {
+            try {
+                const { balance } = await closureBilling.getCanonicalAccountClosureBalance(
+                    record.accountNumber,
+                    branchId
+                );
+                return {
+                    ...record,
+                    remainingBalance: Number(Number(balance || 0).toFixed(2)),
+                    balanceAvailable: true
+                };
+            } catch (error) {
+                return {
+                    ...record,
+                    remainingBalance: null,
+                    balanceAvailable: false,
+                    balanceWarning: error?.message || 'Current balance is unavailable.'
+                };
+            }
+        }));
+        return res.json({ ok: true, ...result, items });
     } catch (error) {
         next(error);
     }
@@ -6877,8 +7002,9 @@ router.get('/closed-accounts', async (req, res, next) => {
 // POST /api/customers/closed-accounts/:closureId/reopen - Return a closed account
 // to Customer Management as disabled. Billing remains stopped until the Admin
 // deliberately completes the existing audited reconnection workflow.
-router.post('/closed-accounts/:closureId/reopen', async (req, res, next) => {
-    try {
+router.post('/closed-accounts/:closureId/reopen', (req, res, next) => (
+    enqueuePaymentMutation(async () => {
+      try {
         if (!accountHasRole(req.user, 'Admin')) {
             return res.status(403).json({ ok: false, error: 'Admin access required.' });
         }
@@ -6888,13 +7014,19 @@ router.post('/closed-accounts/:closureId/reopen', async (req, res, next) => {
         }
         const closure = await getClosedCustomerAccountById(req.params.closureId, { branchId });
         if (!closure) throw createError(404, 'Closed-account record not found.');
-        const reason = sanitizeString(req.body?.reason).slice(0, 500);
+        const closureBilling = require('../../billing/backend/account-closure-service');
+        const { balance: canonicalBalance } = await closureBilling.getCanonicalAccountClosureBalance(
+            closure.accountNumber,
+            branchId
+        );
+        const remainingBalance = Number(Number(canonicalBalance || 0).toFixed(2));
+        const reason = sanitizeString(req.body?.reason).slice(0, 500) || 'Account closed by Admin.';
         if (reason.length < 3) throw createError(400, 'Enter a reason for reopening this account.');
         const balanceAction = sanitizeString(req.body?.balanceAction).toLowerCase();
         if (!['collect-first', 'keep', 'write-off'].includes(balanceAction)) {
             throw createError(400, 'Choose how the retained balance should be handled before reconnection.');
         }
-        if (balanceAction === 'write-off' && Number(closure.finalBalance) <= 0.005) {
+        if (balanceAction === 'write-off' && remainingBalance <= 0.005) {
             throw createError(409, 'There is no remaining balance to write off. Choose Reopen only or Keep outstanding.');
         }
 
@@ -6909,7 +7041,8 @@ router.post('/closed-accounts/:closureId/reopen', async (req, res, next) => {
         await updateCustomerRecord(closure.accountNumber, { status: STATUS_DISABLED }, {
             branchId,
             refreshSource: 'closed-account-reopen-disabled',
-            allowPastBillingDates: true
+            allowPastBillingDates: true,
+            allowClosedAccountLifecycleMutation: true
         });
         const reopened = await reopenClosedCustomerAccount(closure.id, {
             branchId,
@@ -6937,6 +7070,7 @@ router.post('/closed-accounts/:closureId/reopen', async (req, res, next) => {
             customerStatus: STATUS_DISABLED,
             billingStatus: 'stopped',
             balanceAction,
+            remainingBalance,
             reconnectBalanceTreatment: continueToReconnection ? balanceAction : null,
             nextUrl: continueToReconnection
                 ? `/payment-breakdown.html?account=${encodeURIComponent(closure.accountNumber)}&reconnect=${encodeURIComponent(balanceAction)}`
@@ -6946,21 +7080,23 @@ router.post('/closed-accounts/:closureId/reopen', async (req, res, next) => {
                 ? 'Account returned to Customers as Disabled. Review and confirm the audited Billing reconnection settlement before service resumes.'
                 : 'Account returned to Customers as Disabled with its balance retained. Collect payment first, then use Billing reconnection to resume service.'
         });
-    } catch (error) {
-        next(error?.status ? error : createError(500, 'Failed to reopen customer account.'));
-    }
-});
+      } catch (error) {
+          next(error?.status ? error : createError(500, 'Failed to reopen customer account.'));
+      }
+    }).catch(next)
+));
 
 // POST /api/customers/:accountNumber/close-account - Preserve all records while
 // stopping future billing and excluding the subscriber from active work queues.
-router.post('/:accountNumber/close-account', async (req, res, next) => {
-    let closure = null;
-    let closureBilling = null;
-    let closureStage = 'validation';
-    let accountNumber = '';
-    const user = req.user || {};
-    const branchId = user.branchId || null;
-    try {
+router.post('/:accountNumber/close-account', (req, res, next) => (
+    enqueuePaymentMutation(async () => {
+      let closure = null;
+      let closureBilling = null;
+      let closureStage = 'validation';
+      let accountNumber = '';
+      const user = req.user || {};
+      const branchId = user.branchId || null;
+      try {
         if (!accountHasRole(user, 'Admin')) {
             return res.status(403).json({ ok: false, error: 'Admin access required.' });
         }
@@ -6973,7 +7109,6 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         const today = formatDateOnly(new Date());
         const parsedClosureDate = parseDateOnly(closureDate);
         if (!accountNumber) throw createError(400, 'Customer account number is required.');
-        if (reason.length < 3) throw createError(400, 'Enter a reason for closing this account.');
         if (!parsedClosureDate || formatDateOnly(parsedClosureDate) !== closureDate) {
             throw createError(400, 'Choose a valid closure date.');
         }
@@ -6993,19 +7128,61 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         closureBilling = require('../../billing/backend/account-closure-service');
         const canonicalBefore = await closureBilling.getCanonicalAccountClosureBalance(accountNumber, branchId);
         const balanceBefore = Number(canonicalBefore.balance) || 0;
-        const requestedBalanceTreatment = sanitizeString(req.body?.balanceTreatment).toLowerCase();
-        const savedBalanceTreatment = ['keep', 'write-off'].includes(existingClosure?.balanceTreatment)
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const hasRequestedFinalBalance = Object.prototype.hasOwnProperty.call(body, 'finalBalance');
+        const rawRequestedFinalBalance = body.finalBalance;
+        const parsedRequestedFinalBalance = Number(rawRequestedFinalBalance);
+        if (hasRequestedFinalBalance && (
+            rawRequestedFinalBalance === ''
+            || rawRequestedFinalBalance === null
+            || !Number.isFinite(parsedRequestedFinalBalance)
+        )) {
+            throw createError(400, 'Enter a valid final balance.');
+        }
+        const normalizedRequestedFinalBalance = hasRequestedFinalBalance
+            ? Number(parsedRequestedFinalBalance.toFixed(2))
+            : null;
+        if (
+            normalizedRequestedFinalBalance !== null
+            && (normalizedRequestedFinalBalance < 0 || normalizedRequestedFinalBalance > closureBilling.MAX_FINAL_BALANCE)
+        ) {
+            throw createError(400, 'Final balance must be between PHP 0.00 and PHP 999,999,999.99.');
+        }
+
+        const hasSavedRequestedFinalBalance = existingClosure?.requestedFinalBalance !== null
+            && existingClosure?.requestedFinalBalance !== undefined
+            && existingClosure?.requestedFinalBalance !== '';
+        const savedRequestedFinalBalance = hasSavedRequestedFinalBalance
+            && Number.isFinite(Number(existingClosure.requestedFinalBalance))
+            ? Number(Number(existingClosure.requestedFinalBalance).toFixed(2))
+            : null;
+        if (
+            savedRequestedFinalBalance !== null
+            && normalizedRequestedFinalBalance !== null
+            && Math.abs(savedRequestedFinalBalance - normalizedRequestedFinalBalance) > closureBilling.BALANCE_EPSILON
+        ) {
+            throw createError(409, 'Retry this closure with its original final balance.');
+        }
+
+        // Keep compatibility with failed closures and older clients that sent
+        // the former keep/write-off choice instead of an explicit final value.
+        const requestedBalanceTreatment = sanitizeString(body.balanceTreatment).toLowerCase();
+        const legacyTargetFinalBalance = requestedBalanceTreatment === 'write-off' || body.writeOffConfirmed === true
+            ? 0
+            : balanceBefore;
+        const targetFinalBalance = savedRequestedFinalBalance
+            ?? normalizedRequestedFinalBalance
+            ?? legacyTargetFinalBalance;
+        const adjustmentRequired = Math.abs(targetFinalBalance - balanceBefore) > closureBilling.BALANCE_EPSILON;
+        const adjustmentConfirmed = body.balanceAdjustmentConfirmed === true
+            || (targetFinalBalance <= closureBilling.BALANCE_EPSILON && body.writeOffConfirmed === true);
+        const derivedBalanceTreatment = targetFinalBalance <= closureBilling.BALANCE_EPSILON
+            ? (balanceBefore > closureBilling.BALANCE_EPSILON ? 'write-off' : 'zero')
+            : 'keep';
+        const savedBalanceTreatment = ['zero', 'keep', 'write-off'].includes(existingClosure?.balanceTreatment)
             ? existingClosure.balanceTreatment
             : '';
-        const balanceTreatment = savedBalanceTreatment
-            || (Math.abs(balanceBefore) <= closureBilling.BALANCE_EPSILON
-                ? 'zero'
-                : (['keep', 'write-off'].includes(requestedBalanceTreatment)
-                ? requestedBalanceTreatment
-                : (req.body?.writeOffConfirmed === true ? 'write-off' : '')));
-        if (savedBalanceTreatment && requestedBalanceTreatment && requestedBalanceTreatment !== savedBalanceTreatment) {
-            throw createError(409, 'Retry this closure with its original balance treatment.');
-        }
+        const balanceTreatment = savedBalanceTreatment || derivedBalanceTreatment;
         const billingThroughDate = (Array.isArray(canonicalBefore?.record?.billingSummary?.rows)
             ? canonicalBefore.record.billingSummary.rows
             : [])
@@ -7027,20 +7204,13 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
                 error: `This account has an advance balance of ₱${Math.abs(balanceBefore).toFixed(2)}. Resolve or refund it before closing the account.`
             });
         }
-        if (balanceBefore > closureBilling.BALANCE_EPSILON && !balanceTreatment) {
+        if (adjustmentRequired && !adjustmentConfirmed) {
             return res.status(409).json({
                 ok: false,
-                code: 'ACCOUNT_CLOSURE_BALANCE_TREATMENT_REQUIRED',
+                code: 'ACCOUNT_CLOSURE_BALANCE_ADJUSTMENT_CONFIRMATION_REQUIRED',
                 balance: balanceBefore,
-                error: 'Choose whether to keep the remaining balance for collection or write it off.'
-            });
-        }
-        if (balanceTreatment === 'write-off' && req.body?.writeOffConfirmed !== true) {
-            return res.status(409).json({
-                ok: false,
-                code: 'ACCOUNT_CLOSURE_WRITE_OFF_CONFIRMATION_REQUIRED',
-                balance: balanceBefore,
-                error: `Confirm the audited write-off of ₱${balanceBefore.toFixed(2)} before closing this account.`
+                finalBalance: targetFinalBalance,
+                error: `Confirm the audited PHP ${Math.abs(targetFinalBalance - balanceBefore).toFixed(2)} balance adjustment before closing this account.`
             });
         }
 
@@ -7052,20 +7222,22 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
             reason,
             balanceBefore,
             balanceTreatment,
+            requestedFinalBalance: targetFinalBalance,
             closedBy: user
         });
 
         let adjustment = { amount: 0, inserted: false, idempotent: false };
-        if (balanceTreatment === 'write-off') {
-            closureStage = 'billing-write-off';
-            adjustment = await closureBilling.recordAccountClosureWriteOff({
+        if (adjustmentRequired || existingClosure?.state === 'failed') {
+            closureStage = 'billing-balance-adjustment';
+            adjustment = await closureBilling.recordAccountClosureBalanceAdjustment({
                 branchId,
                 accountNumber,
                 closureId: closure.id,
                 closureDate,
                 reason,
                 actor: user,
-                confirmed: req.body?.writeOffConfirmed === true
+                targetFinalBalance,
+                confirmed: adjustmentConfirmed
             });
         } else {
             closureStage = 'billing-balance-retained';
@@ -7076,8 +7248,8 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         if (finalBalance < -closureBilling.BALANCE_EPSILON) {
             throw createError(409, `The account now has an advance balance of PHP ${Math.abs(finalBalance).toFixed(2)}. Resolve or refund it before closing this account.`);
         }
-        if (balanceTreatment === 'write-off' && Math.abs(finalBalance) > closureBilling.BALANCE_EPSILON) {
-            throw createError(409, `The final balance is ₱${finalBalance.toFixed(2)}. Reload billing data and resolve it before closing this account.`);
+        if (Math.abs(finalBalance - targetFinalBalance) > closureBilling.BALANCE_EPSILON) {
+            throw createError(409, `The final balance is PHP ${finalBalance.toFixed(2)}, not the finalized PHP ${targetFinalBalance.toFixed(2)}. Reload billing data and retry.`);
         }
 
         closureStage = 'network-disable';
@@ -7087,7 +7259,8 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         await updateCustomerRecord(accountNumber, { status: STATUS_DISABLED }, {
             branchId,
             refreshSource: 'customer-account-closed',
-            allowPastBillingDates: true
+            allowPastBillingDates: true,
+            allowClosedAccountLifecycleMutation: true
         });
         const now = new Date().toISOString();
         closureStage = 'billing-stop';
@@ -7113,9 +7286,7 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         closureStage = 'post-stop-balance-check';
         const canonicalStopped = await closureBilling.getCanonicalAccountClosureBalance(accountNumber, branchId);
         const stoppedBalance = Number(canonicalStopped.balance) || 0;
-        const stoppedBalanceChanged = balanceTreatment === 'write-off'
-            ? Math.abs(stoppedBalance) > closureBilling.BALANCE_EPSILON
-            : Math.abs(stoppedBalance - finalBalance) > closureBilling.BALANCE_EPSILON;
+        const stoppedBalanceChanged = Math.abs(stoppedBalance - targetFinalBalance) > closureBilling.BALANCE_EPSILON;
         if (stoppedBalanceChanged) {
             throw createError(409, `Stopping future billing left a final balance of ₱${stoppedBalance.toFixed(2)}. Retry after the billing data is refreshed.`);
         }
@@ -7133,7 +7304,12 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         const completed = await completeCustomerAccountClosure(closure.id, {
             branchId,
             balanceTreatment,
-            writeOffAmount: adjustment.amount,
+            writeOffAmount: balanceTreatment === 'write-off' && adjustment.direction === 'credit'
+                ? adjustment.amount
+                : 0,
+            requestedFinalBalance: targetFinalBalance,
+            balanceAdjustmentAmount: adjustment.amount,
+            balanceAdjustmentDirection: adjustment.direction,
             finalBalance: stoppedBalance,
             warning: warnings.join(' '),
             actor: user
@@ -7145,6 +7321,9 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
             billingStatus: BILLING_POLICY_STOP,
             collectorExcluded: true,
             balanceTreatment,
+            requestedFinalBalance: targetFinalBalance,
+            balanceAdjustmentAmount: adjustment.amount,
+            balanceAdjustmentDirection: adjustment.direction,
             remainingBalance: stoppedBalance,
             warning: warnings.join(' ') || undefined
         });
@@ -7152,7 +7331,7 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
         if (closure?.id && branchId) {
             const stageLabels = {
                 'closure-audit': 'closure audit',
-                'billing-write-off': 'Billing write-off',
+                'billing-balance-adjustment': 'Billing final-balance adjustment',
                 'billing-balance-retained': 'remaining-balance preservation',
                 'final-balance-check': 'final balance verification',
                 'network-disable': 'network service disable',
@@ -7183,7 +7362,7 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
             const responseStatus = sourceStatus >= 400 && sourceStatus < 500 ? sourceStatus : 500;
             const responseMessage = responseStatus < 500 && failureMessage
                 ? failureMessage
-                : `Account closure paused during ${stageLabel}. Any completed write-off is locked to this closure and will not be duplicated. Retry Close Account.`;
+                : `Account closure paused during ${stageLabel}. Any completed balance adjustment is locked to this closure and will not be duplicated. Retry Close Account.`;
             return res.status(responseStatus).json({
                 ok: false,
                 code: 'ACCOUNT_CLOSURE_RETRYABLE_FAILURE',
@@ -7194,9 +7373,10 @@ router.post('/:accountNumber/close-account', async (req, res, next) => {
                 error: responseMessage
             });
         }
-        next(error?.status ? error : createError(500, 'Failed to close customer account.'));
-    }
-});
+          next(error?.status ? error : createError(500, 'Failed to close customer account.'));
+      }
+    }).catch(next)
+));
 
 // GET /api/customers/archive - List archived customer records for the current branch
 router.get('/archive', async (req, res, next) => {

@@ -12,6 +12,10 @@ const {
 const { query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { resolvePlanProfileForRouter } = require('../../billing/backend/plan-profile-utils');
+const { serializePaymentMutationRequest } = require('../../billing/backend/payment-numbering');
+const {
+    getActiveClosedCustomerAccount
+} = require('../../customer-management/backend/closed-customer-account-store');
 const { auditMikrotikPppoeCommand } = require('./mikrotik-audit-log');
 const {
     dedupeActivePppoeSessions,
@@ -77,6 +81,28 @@ const resolveRouterContext = (stored, req, overrides = {}) => {
 const resolveBranchId = (req) => {
     const branchId = Number(req.user?.branchId);
     return Number.isInteger(branchId) && branchId > 0 ? branchId : null;
+};
+
+const serializePppoeActivationRequest = (req, res, next) => {
+    const payload = req.body || {};
+    const isDelete = payload.delete === true || payload.action === 'delete';
+    const requestedStatus = String(payload.status || 'active').trim().toLowerCase();
+    const isDisabled = requestedStatus === 'inactive' || requestedStatus === 'disabled';
+    if (isDelete || isDisabled) return next();
+    return serializePaymentMutationRequest(req, res, next);
+};
+
+const assertPppoeActivationAccountOpen = async (branchId, accountNumber) => {
+    const normalizedAccountNumber = String(accountNumber || '').trim();
+    if (!normalizedAccountNumber) return;
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, normalizedAccountNumber);
+    if (!activeClosure) return;
+    const error = new Error(
+        'This customer account is closed. Reopen it from Customer Archive before enabling or creating PPPoE service.'
+    );
+    error.status = 409;
+    error.code = 'PPPOE_ACCOUNT_CLOSED';
+    throw error;
 };
 
 const findConfiguredRouterById = (settings = {}, routerId = '') => {
@@ -1303,7 +1329,12 @@ const resolveAutoProfileFromCustomerPlan = async ({ branchId = null, customerAcc
     return resolvePlanProfileForRouter(matchedPlan, requestedRouterId);
 };
 
-const clearCustomerPppoeLink = async ({ branchId = null, customerAccount = '', username = '' } = {}) => {
+const clearCustomerPppoeLink = async ({
+    branchId = null,
+    customerAccount = '',
+    username = '',
+    paymentMutationAlreadySerialized = false
+} = {}) => {
     const accountNumber = String(customerAccount || '').trim();
     const usernameKey = normalizePppoeUsernameKey(username);
     if (!accountNumber && !usernameKey) return [];
@@ -1330,7 +1361,8 @@ const clearCustomerPppoeLink = async ({ branchId = null, customerAccount = '', u
             },
             {
                 branchId,
-                refreshSource: 'mikrotik-pppoe-delete'
+                refreshSource: 'mikrotik-pppoe-delete',
+                paymentMutationAlreadySerialized
             }
         );
         clearedAccounts.push(currentAccount);
@@ -1652,7 +1684,7 @@ router.post('/pppoe/sync', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/pppoe', requireAuth, async (req, res) => {
+router.post('/pppoe', requireAuth, serializePppoeActivationRequest, async (req, res) => {
     const branchId = resolveBranchId(req);
     const stored = await loadIntegrationSettings(branchId);
     const requestedRouterId = getRouterIdFromRequest(req);
@@ -1671,12 +1703,27 @@ router.post('/pppoe', requireAuth, async (req, res) => {
     const pairedPppoe = String(payload.pairedPppoe || '').trim();
     const requestedStatus = String(payload.status || 'active').toLowerCase();
     const isDisabled = requestedStatus === 'inactive' || requestedStatus === 'disabled';
+    const activationMutationSerialized = !isDelete && !isDisabled;
     const status = isDisabled ? 'disabled' : 'offline';
 
     if (!username) return res.status(400).json({ ok: false, error: 'Username is required' });
     if (!isDelete && !password) return res.status(400).json({ ok: false, error: 'Password is required' });
 
     try {
+        const preflightStoredAccount = Array.isArray(stored?.pppoe?.accounts)
+            ? findStoredAccount(stored.pppoe.accounts, {
+                routerId,
+                defaultId: stored?.mikrotikDefaultId || '',
+                secretId,
+                username
+            })
+            : null;
+        if (activationMutationSerialized) {
+            await assertPppoeActivationAccountOpen(
+                branchId,
+                customerAccount || preflightStoredAccount?.customerAccount
+            );
+        }
         validateCredentials(creds);
         const { api } = await getPooledApi(routerId, creds);
 
@@ -1970,7 +2017,8 @@ router.post('/pppoe', requireAuth, async (req, res) => {
                     await clearCustomerPppoeLink({
                         branchId,
                         customerAccount: previousCustomerAccount,
-                        username: existingAccount?.username || username
+                        username: existingAccount?.username || username,
+                        paymentMutationAlreadySerialized: activationMutationSerialized
                     }).catch(() => []);
                 }
                 if (resolvedCustomerAccount) {
@@ -1985,7 +2033,8 @@ router.post('/pppoe', requireAuth, async (req, res) => {
                         },
                         {
                             branchId,
-                            refreshSource: 'mikrotik-pppoe-save'
+                            refreshSource: 'mikrotik-pppoe-save',
+                            paymentMutationAlreadySerialized: activationMutationSerialized
                         }
                     ).catch((error) => {
                         console.warn(
@@ -2003,9 +2052,13 @@ router.post('/pppoe', requireAuth, async (req, res) => {
         }
     } catch (err) {
         await dropPooledApi(routerId, creds).catch(() => {});
-        return res.status(502).json({
+        const statusCode = Number(err?.status || err?.statusCode) || 502;
+        return res.status(statusCode).json({
             ok: false,
-            error: formatMikrotikError(err, creds) || 'Failed to save PPPoE account to MikroTik'
+            error: statusCode < 500
+                ? (err?.message || 'Unable to save PPPoE account.')
+                : (formatMikrotikError(err, creds) || 'Failed to save PPPoE account to MikroTik'),
+            ...(err?.code ? { code: err.code } : {})
         });
     }
 });

@@ -147,6 +147,7 @@ async function run() {
   });
   assert.equal(retainedClosed.balanceTreatment, 'keep');
   assert.equal(retainedClosed.writeOffAmount, 0);
+  assert.equal(retainedClosed.requestedFinalBalance, 1600);
   assert.equal(retainedClosed.finalBalance, 1600);
   const retainedReopened = await closedAccounts.reopenClosedCustomerAccount(retainedStart.id, {
     branchId: 1,
@@ -155,6 +156,43 @@ async function run() {
     reopenedBy: ADMIN
   });
   assert.equal(retainedReopened.reopenBalanceAction, 'keep');
+
+  const finalizedStart = await closedAccounts.beginCustomerAccountClosure({
+    branchId: 1,
+    customer: { accountNumber: '100000018', name: 'Finalized Balance Subscriber' },
+    closureDate: '2026-08-26',
+    reason: '',
+    balanceBefore: 1200,
+    balanceTreatment: 'keep',
+    requestedFinalBalance: 500,
+    closedBy: ADMIN
+  });
+  assert.equal(finalizedStart.reason, 'Account closed by Admin.');
+  assert.equal(finalizedStart.requestedFinalBalance, 500);
+  await assert.rejects(
+    () => closedAccounts.beginCustomerAccountClosure({
+      branchId: 1,
+      customer: { accountNumber: '100000018', name: 'Finalized Balance Subscriber' },
+      closureDate: '2026-08-26',
+      balanceBefore: 500,
+      balanceTreatment: 'keep',
+      requestedFinalBalance: 600,
+      closedBy: ADMIN
+    }),
+    /original final balance/i
+  );
+  const finalizedClosed = await closedAccounts.completeCustomerAccountClosure(finalizedStart.id, {
+    branchId: 1,
+    balanceTreatment: 'keep',
+    requestedFinalBalance: 500,
+    balanceAdjustmentAmount: 700,
+    balanceAdjustmentDirection: 'credit',
+    finalBalance: 500,
+    actor: ADMIN
+  });
+  assert.equal(finalizedClosed.balanceAdjustmentAmount, 700);
+  assert.equal(finalizedClosed.balanceAdjustmentDirection, 'credit');
+  assert.equal(finalizedClosed.finalBalance, 500);
 
   const customerBackendSource = fs.readFileSync(
     path.join(__dirname, '..', 'backend', 'customers.js'),
@@ -178,36 +216,53 @@ async function run() {
   );
 
   assert.match(customerBackendSource, /router\.post\('\/:accountNumber\/close-account'/);
+  assert.ok(
+    (customerBackendSource.match(/enqueuePaymentMutation/g) || []).length >= 5,
+    'close, reopen, edit, import, and delete must share the Billing/Collector payment mutation queue'
+  );
   assert.match(customerBackendSource, /accountHasRole\(user, 'Admin'\)/);
   assert.match(customerBackendSource, /BILLING_POLICY_STOP/);
   assert.match(customerBackendSource, /excludeCollectorClient/);
   assert.match(customerBackendSource, /getActiveClosedAccountNumberSet/);
   assert.match(customerBackendSource, /ACCOUNT_CLOSURE_RETRYABLE_FAILURE/);
-  assert.match(customerBackendSource, /Any completed write-off is locked to this closure and will not be duplicated/);
-  assert.match(customerBackendSource, /closureStage = 'billing-write-off'/);
-  assert.match(customerBackendSource, /ACCOUNT_CLOSURE_BALANCE_TREATMENT_REQUIRED/);
-  assert.match(customerBackendSource, /balanceTreatment === 'write-off'/);
-  assert.match(customerBackendSource, /stoppedBalance - finalBalance/);
+  assert.match(customerBackendSource, /Any completed balance adjustment is locked to this closure and will not be duplicated/);
+  assert.match(customerBackendSource, /closureStage = 'billing-balance-adjustment'/);
+  assert.match(customerBackendSource, /ACCOUNT_CLOSURE_BALANCE_ADJUSTMENT_CONFIRMATION_REQUIRED/);
+  assert.match(customerBackendSource, /recordAccountClosureBalanceAdjustment/);
+  assert.match(customerBackendSource, /stoppedBalance - targetFinalBalance/);
   assert.match(customerBackendSource, /balanceAction/);
   assert.match(customerBackendSource, /nextUrl/);
   assert.match(customerBackendSource, /billingThroughDate/);
   assert.match(customerBackendSource, /closureStage = 'post-stop-balance-check'/);
   assert.match(customerBackendSource, /router\.post\('\/closed-accounts\/:closureId\/reopen'/);
+  assert.match(customerBackendSource, /remainingBalance: Number\(Number\(balance \|\| 0\)\.toFixed\(2\)\)/);
+  assert.match(customerBackendSource, /getCanonicalAccountClosureBalance/);
+  assert.match(customerBackendSource, /balance: canonicalBalance/);
+  assert.match(customerBackendSource, /CUSTOMER_UPDATE_ACCOUNT_CLOSED/);
+  assert.match(customerBackendSource, /allowClosedAccountLifecycleMutation: true/);
+  assert.match(customerBackendSource, /closed_account_protected/);
+  assert.match(customerBackendSource, /CUSTOMER_DELETE_PROTECTED_CLOSED_ACCOUNT_HISTORY/);
+  assert.match(customerBackendSource, /lockPaymentAccount\(connection, scopedBranchId, targetAccountNumber\)/);
   assert.match(archivePage, /Closed \/ Disconnected Accounts/);
   assert.match(archivePage, /Records are preserved permanently/);
   assert.match(archivePage, /id="reopenAccountModal"/);
+  assert.match(archivePage, /customer-archive\.js\?v=2\.1/);
   assert.match(archivePage, /Collect first — keep service stopped/);
-  assert.match(customersPage, /id="closeAccountBalanceTreatment"/);
-  assert.match(customersPage, /Keep outstanding for collection — no write-off/);
-  assert.match(customersPage, /balanceTreatment: balance > 0\.005/);
+  assert.match(customersPage, /id="closeAccountFinalBalance"/);
+  assert.match(customersPage, /Reason <span class="text-secondary">\(optional\)<\/span>/);
+  assert.doesNotMatch(customersPage, /id="closeAccountReason"[^>]*required/);
+  assert.match(customersPage, /balanceAdjustmentConfirmed:/);
   assert.match(archiveScript, /\/api\/customers\/closed-accounts/);
   assert.match(archiveScript, /data-action="retry-close"/);
   assert.match(archiveScript, /\/api\/customers\/\$\{encodeURIComponent\(accountNumber\)\}\/close-account/);
-  assert.match(archiveScript, /Any completed write-off is locked and cannot be duplicated/);
+  assert.match(archiveScript, /Any completed balance adjustment is locked and cannot be duplicated/);
   assert.match(archiveScript, /payment-breakdown\.html\?account=/);
   assert.match(archiveScript, /balanceAction/);
   assert.match(archiveScript, /payload\?\.nextUrl/);
   assert.match(archiveScript, /returns as Disabled/i);
+  assert.match(archiveScript, /item\?\.balanceAvailable === true/);
+  assert.match(archiveScript, /item\.remainingBalance/);
+  assert.match(archiveScript, /Retained balance paid in full/);
   new vm.Script(archiveScript, { filename: 'customer-archive.js' });
   const staticMarkup = archivePage.replace(/<script[\s\S]*?<\/script>/gi, '');
   const ids = [...staticMarkup.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);

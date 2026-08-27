@@ -27,6 +27,12 @@ const {
 } = require('../../network/backend/pppoe-account-utils');
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
 const {
+  serializePaymentMutationRequest
+} = require('./payment-numbering');
+const {
+  getActiveClosedCustomerAccount
+} = require('../../customer-management/backend/closed-customer-account-store');
+const {
   STATUS_PENDING,
   STATUS_KEPT_ACTIVE,
   STATUS_DISCONNECTED,
@@ -40,6 +46,7 @@ const {
 const { accountHasRole } = require('../../../../core/security/role-utils');
 
 const router = express.Router();
+router.use(serializePaymentMutationRequest);
 const STATUS_DISABLED = 'disabled';
 const STATUS_ACTIVE = 'active';
 const STATUS_MODE_AUTO = 'auto';
@@ -67,6 +74,16 @@ const readPaymentBreakdownAdjustments = async () => {
 
 const sanitizeText = (value) => String(value || '').trim();
 const normalizeAccountNumber = (value) => sanitizeText(value);
+const assertClosedAccountLifecycleInactive = async (branchId, accountNumber) => {
+  const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+  if (!activeClosure) return;
+  const error = createError(
+    409,
+    'This customer account is closed. Reopen it from Customer Archive before changing billing or service status.'
+  );
+  error.code = 'DISCONNECTION_ACCOUNT_CLOSED';
+  throw error;
+};
 const branchAdjustmentKey = (branchId = null) => String(branchId || 'global');
 const MONTH_KEY_RE = /^(\d{4})-(\d{2})$/;
 const DATE_PREFIX_RE = /^(\d{4})-(\d{2})-\d{2}/;
@@ -789,6 +806,7 @@ router.post('/:accountNumber/keep-active', async (req, res, next) => {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
+    await assertClosedAccountLifecycleInactive(branchId, accountNumber);
     const [customers, payments, adjustments, referralRegistry] = await Promise.all([
       readCustomers(branchId),
       readPayments(branchId),
@@ -830,6 +848,7 @@ router.post('/:accountNumber/disconnect', async (req, res, next) => {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
+    await assertClosedAccountLifecycleInactive(branchId, accountNumber);
     const billingPolicy = normalizeBillingPolicy(req.body?.billingPolicy, BILLING_POLICY_STOP);
     const [customers, payments, adjustments, referralRegistry] = await Promise.all([
       readCustomers(branchId),
@@ -878,6 +897,7 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
+    await assertClosedAccountLifecycleInactive(branchId, accountNumber);
     const [customers, payments, plans, decisions, adjustments, referralRegistry] = await Promise.all([
       readCustomers(branchId),
       readPayments(branchId),
@@ -1050,6 +1070,7 @@ router.patch('/:accountNumber/billing-policy', async (req, res, next) => {
     const user = assertAdminUser(req);
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
+    await assertClosedAccountLifecycleInactive(branchId, accountNumber);
     const billingPolicy = normalizeBillingPolicy(req.body?.billingPolicy, '');
     if (![BILLING_POLICY_STOP, BILLING_POLICY_CONTINUE].includes(billingPolicy)) {
       throw createError(400, 'Choose a valid billing policy.');

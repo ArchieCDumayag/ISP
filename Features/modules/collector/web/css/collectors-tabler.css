@@ -9,140 +9,41 @@ body.layout-fluid-vertical .collectors-page {
 
 .collector-remittance-panel {
     display: grid;
-    gap: .75rem;
+    gap: .5rem;
 }
 
 .collector-remittance-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0 .75rem;
 }
 
-.collector-remittance-tabs .btn {
-    min-width: 0;
-    gap: .25rem;
-}
-
-.collector-remittance-list {
-    display: grid;
-    gap: .625rem;
-    max-height: 31rem;
-    overflow-y: auto;
-    padding-right: .125rem;
-}
-
-.collector-remittance-record {
-    display: grid;
-    gap: .625rem;
-    padding: .75rem;
-    border: 1px solid var(--app-border, #e6e7e9);
-    border-radius: var(--tblr-border-radius, .375rem);
-    background: var(--app-surface, #fff);
-}
-
-.collector-remittance-record__header,
-.collector-remittance-record__actions,
-.collector-remittance-review-payment,
-.collector-remittance-payment-row {
-    display: flex;
+.collector-remittance-tabs .nav-link {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: .625rem;
-}
-
-.collector-remittance-record__header > div,
-.collector-remittance-review-payment > div,
-.collector-remittance-payment-row > div {
-    display: grid;
-    min-width: 0;
-}
-
-.collector-remittance-record__header small,
-.collector-remittance-review-payment small,
-.collector-remittance-payment-row small {
-    overflow: hidden;
-    color: var(--app-muted, #64748b);
-    font-size: .6875rem;
-    text-overflow: ellipsis;
+    gap: .375rem;
     white-space: nowrap;
 }
 
-.collector-remittance-record__totals {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    border: 1px solid var(--app-border, #e6e7e9);
-    border-radius: var(--tblr-border-radius, .375rem);
-    overflow: hidden;
+.collector-remittance-tabs .badge {
+    min-width: 1.35rem;
 }
 
-.collector-remittance-record__totals > div {
-    display: grid;
-    gap: .125rem;
-    padding: .5rem;
-    border-right: 1px solid var(--app-border, #e6e7e9);
-    border-bottom: 1px solid var(--app-border, #e6e7e9);
+.collector-remittance-table-wrap {
+    width: 100%;
 }
 
-.collector-remittance-record__totals > div:nth-child(2n) {
-    border-right: 0;
+.collector-remittance-table {
+    min-width: 52rem;
 }
 
-.collector-remittance-record__totals > div:nth-last-child(-n + 2) {
-    border-bottom: 0;
+.collector-remittance-table th,
+.collector-remittance-table td {
+    vertical-align: middle;
 }
 
-.collector-remittance-record__totals span,
-.collector-remittance-review-audit {
-    color: var(--app-muted, #64748b);
-    font-size: .6875rem;
-}
-
-.collector-remittance-payment-details summary {
-    color: var(--tblr-primary, #206bc4);
-    font-size: .75rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.collector-remittance-payment-details > div {
-    display: grid;
-    gap: .375rem;
-    padding-top: .5rem;
-}
-
-.collector-remittance-payment-row,
-.collector-remittance-review-payment {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    padding: .5rem;
-    border: 1px solid var(--app-border, #e6e7e9);
-    border-radius: var(--tblr-border-radius-sm, .25rem);
-}
-
-.collector-remittance-review-audit {
-    display: grid;
-    gap: .125rem;
-}
-
-.collector-remittance-record__actions {
-    justify-content: flex-end;
-}
-
-.collector-remittance-record__actions--single .btn {
-    min-width: 6.25rem;
-}
-
-.collector-remittance-gate {
-    display: flex;
-    align-items: flex-start;
-    gap: .375rem;
-    font-size: .6875rem;
-    line-height: 1.35;
-}
-
-.collector-remittance-gate .ti {
-    flex: 0 0 auto;
-    margin-top: .0625rem;
+.collector-remittance-table td:first-child {
+    min-width: 10rem;
 }
 
 .collector-remittance-review-payments {
@@ -152,27 +53,34 @@ body.layout-fluid-vertical .collectors-page {
     overflow-y: auto;
 }
 
-body.theme-dark .collector-remittance-record,
-[data-bs-theme=dark] .collector-remittance-record {
-    background: var(--tblr-bg-surface, #182433);
+.collector-remittance-review-payment {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: .625rem;
+    padding: .5rem;
+    border: 1px solid var(--app-border, #e6e7e9);
+    border-radius: var(--tblr-border-radius-sm, .25rem);
+}
+
+.collector-remittance-review-payment > div {
+    display: grid;
+    min-width: 0;
+}
+
+.collector-remittance-review-payment small {
+    overflow: hidden;
+    color: var(--app-muted, #64748b);
+    font-size: .6875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 @media (max-width: 767.98px) {
-    .collector-remittance-list {
-        max-height: none;
-    }
-
-    .collector-remittance-record__actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .collector-remittance-payment-row,
     .collector-remittance-review-payment {
         grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .collector-remittance-payment-row > strong,
     .collector-remittance-review-payment > strong {
         grid-column: 1 / -1;
         text-align: right;
@@ -2810,10 +2718,6 @@ body.layout-fluid-vertical .collectors-page .collector-excluded-card {
     margin-right: 0;
 }
 
-.collector-payments-remittance-grid .collector-remittance-list {
-    max-height: 34rem;
-}
-
 .collector-excluded-card .card-header {
     align-items: center;
     justify-content: space-between;
@@ -3106,18 +3010,8 @@ body.layout-fluid-vertical .collectors-page--compact .collectors-payments-card .
     padding: .375rem;
 }
 
-body.layout-fluid-vertical .collectors-page--compact .collector-remittance-panel,
-body.layout-fluid-vertical .collectors-page--compact .collector-remittance-list {
+body.layout-fluid-vertical .collectors-page--compact .collector-remittance-panel {
     gap: .375rem;
-}
-
-body.layout-fluid-vertical .collectors-page--compact .collector-remittance-list {
-    max-height: 22rem;
-}
-
-body.layout-fluid-vertical .collectors-page--compact .collector-remittance-record {
-    gap: .375rem;
-    padding: .5rem;
 }
 
 body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-toolbar {
@@ -3301,7 +3195,6 @@ body.layout-fluid-vertical .collectors-page--compact .empty-state {
 
     body.layout-fluid-vertical .collectors-page--compact .collector-priority-table-wrapper,
     body.layout-fluid-vertical .collectors-page--compact .collector-reschedule-table-wrapper,
-    body.layout-fluid-vertical .collectors-page--compact .collector-remittance-list,
     body.layout-fluid-vertical .collectors-page--compact .collectors-board .collector-assignment-list-wrapper {
         max-height: none;
     }

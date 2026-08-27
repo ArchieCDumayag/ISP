@@ -2029,6 +2029,10 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
             assertEntryNumbersAvailable: async (_connection, _branchId, entry) => {
                 relationalReferenceChecks.push(entry.reference || null);
             },
+            enqueuePaymentMutation: async (work) => work(),
+            ensurePaymentNumberingStore: async () => {},
+            lockPaymentAccount: async () => {},
+            serializePaymentMutationRequest: (_req, _res, next) => next(),
             withTransaction: async (work) => {
                 const staged = [];
                 const connection = {

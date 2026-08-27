@@ -256,7 +256,8 @@ assert(collectorPaymentsSource.includes("router.post('/remittances/:id/archive'"
 assert(collectorPaymentsSource.includes("router.post('/remittances/:id/restore'"));
 assert(collectorPaymentsSource.includes("action: 'archived'"));
 assert(collectorPaymentsSource.includes("action: 'restored'"));
-assert(collectorPaymentsSource.includes('if (req.collector && record?.archivedAt) return false;'));
+assert(collectorPaymentsSource.includes('includeArchivedClosed'));
+assert(collectorPaymentsSource.includes('if (!includeArchivedClosed || !containsClosedCollection) return false;'));
 
 const collectorsSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/collector/backend/collectors.js'),

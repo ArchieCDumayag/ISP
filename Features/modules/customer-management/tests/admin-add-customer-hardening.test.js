@@ -248,7 +248,7 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
     'utf8'
   );
   const createStart = backendSource.indexOf('const createCustomerRecordUnlocked = async');
-  const createEnd = backendSource.indexOf('const updateCustomerRecord = async', createStart);
+  const createEnd = backendSource.indexOf('const updateCustomerRecordUnlocked = async', createStart);
   const createSource = backendSource.slice(createStart, createEnd);
   const routeStart = backendSource.indexOf('// POST /api/customers - Add a new customer');
   const routeEnd = backendSource.indexOf('// PUT /api/customers/:id', routeStart);

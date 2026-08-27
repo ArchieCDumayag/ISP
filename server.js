@@ -48,10 +48,20 @@ const customersPublicRouter = customersModule.publicRouter || require('express')
 const getCustomerFromSession = customersModule.getCustomerFromSession;
 const {
     deduplicateCustomerFullTables,
+    filterCustomerFullImportProtectedRows,
     filterCustomerFullImportRows,
+    findCustomerFullImportClosedAccountConflicts,
+    getCustomerFullImportAccountNumbers,
+    getCustomerFullImportPaymentIds,
     getCustomerFullPaymentSecondaryAliases,
+    isCustomerFullImportBlockingConflict,
     importCustomerFullJsonData
 } = customerManagementBackend.load('customerFullJsonImport');
+const {
+    ensurePaymentNumberingStore,
+    lockPaymentAccount,
+    serializePaymentMutationRequest
+} = billingBackend.load('paymentNumbering');
 const paymentRecordsRouter = billingBackend.load('paymentRecords');
 const {
     buildFirstBillAdjustmentExportRows,
@@ -6861,6 +6871,7 @@ app.post(
     '/api/import/customers-full',
     requireAuth,
     express.raw({ type: 'application/octet-stream', limit: '80mb' }),
+    serializePaymentMutationRequest,
     async (req, res) => {
         if (!isAdminUser(req.user)) {
             return res.status(403).json({ ok: false, error: 'Admin access required' });
@@ -6904,17 +6915,17 @@ app.post(
                 conflictCount: importIntegrity.conflictCount
             });
         }
-        const tables = importIntegrity.tables;
-        const importPlans = ensureArrayOfObjects(tables.plans);
-        const importCustomers = ensureArrayOfObjects(tables.customers);
-        const importPayments = ensureArrayOfObjects(tables.payment_entries);
-        const importTickets = ensureArrayOfObjects(tables.tickets);
-        const importJobs = ensureArrayOfObjects(tables.jobs);
-        const importSmsMessages = ensureArrayOfObjects(tables.sms_messages);
-        const importSmsAutomationRuns = ensureArrayOfObjects(tables.sms_automation_runs);
-        const importPonConnections = ensureArrayOfObjects(tables.pon_nap_connections);
-        const importPonState = ensureArrayOfObjects(tables.pon_state);
-        const importFirstBillAdjustments = ensureArrayOfObjects(tables.payment_breakdown_adjustments);
+        let tables = importIntegrity.tables;
+        let importPlans = ensureArrayOfObjects(tables.plans);
+        let importCustomers = ensureArrayOfObjects(tables.customers);
+        let importPayments = ensureArrayOfObjects(tables.payment_entries);
+        let importTickets = ensureArrayOfObjects(tables.tickets);
+        let importJobs = ensureArrayOfObjects(tables.jobs);
+        let importSmsMessages = ensureArrayOfObjects(tables.sms_messages);
+        let importSmsAutomationRuns = ensureArrayOfObjects(tables.sms_automation_runs);
+        let importPonConnections = ensureArrayOfObjects(tables.pon_nap_connections);
+        let importPonState = ensureArrayOfObjects(tables.pon_state);
+        let importFirstBillAdjustments = ensureArrayOfObjects(tables.payment_breakdown_adjustments);
 
         if (
             !importCustomers.length &&
@@ -6933,6 +6944,72 @@ app.post(
             });
         }
 
+        const importedAccountNumbers = getCustomerFullImportAccountNumbers(tables);
+        const importedPaymentIds = getCustomerFullImportPaymentIds(tables);
+        let closedAccountConflicts = [];
+        try {
+            const closedAccountStore = await readJson('closed_customer_accounts', {
+                version: 1,
+                branches: {}
+            });
+            if (!closedAccountStore || typeof closedAccountStore !== 'object' || Array.isArray(closedAccountStore)) {
+                throw new Error('Closed-account audit store is invalid.');
+            }
+            if (!closedAccountStore.branches || typeof closedAccountStore.branches !== 'object' || Array.isArray(closedAccountStore.branches)) {
+                throw new Error('Closed-account audit branches are invalid.');
+            }
+            const closedAccountRecords = Object.entries(closedAccountStore.branches).flatMap(([storeBranchId, entry]) => (
+                Array.isArray(entry?.records)
+                    ? entry.records.map((record) => ({ ...record, _storeBranchId: storeBranchId }))
+                    : []
+            ));
+            const [currentCustomers, currentPayments] = await Promise.all([
+                customersModule.readCustomers(null),
+                customersModule.readPayments(null)
+            ]);
+            closedAccountConflicts = findCustomerFullImportClosedAccountConflicts({
+                branchId,
+                tables,
+                closedAccountRecords,
+                currentCustomers,
+                currentPayments
+            });
+        } catch (error) {
+            console.error('Failed to verify protected closed-account history before full customer import:', error);
+            return res.status(500).json({
+                ok: false,
+                code: 'CUSTOMER_FULL_IMPORT_PROTECTION_CHECK_FAILED',
+                error: 'Import stopped because protected closed-account history could not be verified. No records were changed.'
+            });
+        }
+        const blockingClosedAccountConflicts = closedAccountConflicts.filter(
+            isCustomerFullImportBlockingConflict
+        );
+        if (blockingClosedAccountConflicts.length) {
+            return res.status(409).json({
+                ok: false,
+                code: 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT',
+                error: 'Import stopped because it would modify records with protected closed-account history. No records were changed.',
+                conflicts: blockingClosedAccountConflicts,
+                conflictCount: blockingClosedAccountConflicts.length
+            });
+        }
+        const protectedHistoryFilter = filterCustomerFullImportProtectedRows({
+            tables,
+            conflicts: closedAccountConflicts
+        });
+        tables = protectedHistoryFilter.tables;
+        importPlans = ensureArrayOfObjects(tables.plans);
+        importCustomers = ensureArrayOfObjects(tables.customers);
+        importPayments = ensureArrayOfObjects(tables.payment_entries);
+        importTickets = ensureArrayOfObjects(tables.tickets);
+        importJobs = ensureArrayOfObjects(tables.jobs);
+        importSmsMessages = ensureArrayOfObjects(tables.sms_messages);
+        importSmsAutomationRuns = ensureArrayOfObjects(tables.sms_automation_runs);
+        importPonConnections = ensureArrayOfObjects(tables.pon_nap_connections);
+        importPonState = ensureArrayOfObjects(tables.pon_state);
+        importFirstBillAdjustments = ensureArrayOfObjects(tables.payment_breakdown_adjustments);
+
         const imported = {
             plans: 0,
             customers: 0,
@@ -6945,7 +7022,7 @@ app.post(
             payment_breakdown_adjustments: 0
         };
         const duplicatesSkipped = { ...importIntegrity.duplicatesSkipped };
-        const warnings = [];
+        const warnings = [...protectedHistoryFilter.warnings];
         const pushWarning = (message) => {
             if (!message) return;
             if (warnings.length >= 200) return;
@@ -6958,6 +7035,7 @@ app.post(
                 Object.entries(jsonResult.duplicatesSkipped || {}).forEach(([tableName, count]) => {
                     duplicatesSkipped[tableName] = Number(duplicatesSkipped[tableName] || 0) + Number(count || 0);
                 });
+                const combinedWarnings = [...warnings, ...(jsonResult.warnings || [])].slice(0, 200);
                 return res.json({
                     ok: true,
                     message: 'Import completed successfully.',
@@ -6965,14 +7043,23 @@ app.post(
                     imported: jsonResult.imported,
                     duplicatesSkipped,
                     duplicateCount: Object.values(duplicatesSkipped).reduce((total, count) => total + Number(count || 0), 0),
-                    warnings: jsonResult.warnings,
-                    warningCount: jsonResult.warningCount
+                    warnings: combinedWarnings,
+                    warningCount: combinedWarnings.length
                 });
             } catch (error) {
                 console.error('Failed to import full customer data into JSON storage:', error);
                 if (error?.code === 'CUSTOMER_FULL_IMPORT_CONFLICT') {
                     return res.status(409).json({
                         ok: false,
+                        error: `${error.message} No records were changed.`,
+                        conflicts: error.conflicts || [],
+                        conflictCount: Array.isArray(error.conflicts) ? error.conflicts.length : 0
+                    });
+                }
+                if (error?.code === 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT') {
+                    return res.status(409).json({
+                        ok: false,
+                        code: error.code,
                         error: `${error.message} No records were changed.`,
                         conflicts: error.conflicts || [],
                         conflictCount: Array.isArray(error.conflicts) ? error.conflicts.length : 0
@@ -6999,7 +7086,207 @@ app.post(
                 });
             }
             connection = await pool.getConnection();
+            await ensurePaymentNumberingStore(connection);
             await connection.beginTransaction();
+
+            for (const accountNumber of importedAccountNumbers) {
+                await lockPaymentAccount(connection, branchId, accountNumber);
+            }
+
+            const lockedCustomerRows = [];
+            for (const chunk of chunkArray(importedAccountNumbers, 200)) {
+                if (!chunk.length) continue;
+                const placeholders = chunk.map(() => '?').join(', ');
+                const [rows] = await connection.query(
+                    `SELECT account_number AS accountNumber, branch_id AS branchId
+                     FROM customers
+                     WHERE account_number IN (${placeholders})
+                     FOR UPDATE`,
+                    chunk
+                );
+                lockedCustomerRows.push(...(rows || []));
+            }
+
+            const lockedPaymentRowsById = new Map();
+            const paymentSnapshotColumns = `
+                id,
+                branch_id AS branchId,
+                account_number AS accountNumber,
+                kind,
+                direction,
+                reference,
+                description,
+                type,
+                payment_method AS paymentMethod,
+                fingerprint`;
+            for (const chunk of chunkArray(importedAccountNumbers, 200)) {
+                if (!chunk.length) continue;
+                const placeholders = chunk.map(() => '?').join(', ');
+                const [rows] = await connection.query(
+                    `SELECT ${paymentSnapshotColumns}
+                     FROM payment_entries
+                     WHERE account_number IN (${placeholders})
+                     FOR UPDATE`,
+                    chunk
+                );
+                (rows || []).forEach((row) => lockedPaymentRowsById.set(String(row.id || '').trim(), row));
+            }
+            for (const chunk of chunkArray(importedPaymentIds, 200)) {
+                if (!chunk.length) continue;
+                const placeholders = chunk.map(() => '?').join(', ');
+                const [rows] = await connection.query(
+                    `SELECT ${paymentSnapshotColumns}
+                     FROM payment_entries
+                     WHERE id IN (${placeholders})
+                     FOR UPDATE`,
+                    chunk
+                );
+                (rows || []).forEach((row) => lockedPaymentRowsById.set(String(row.id || '').trim(), row));
+            }
+
+            const lockedRelatedRecords = {
+                tickets: [],
+                jobs: [],
+                sms_messages: [],
+                sms_automation_runs: [],
+                pon_nap_connections: []
+            };
+            const importedStableIds = (rows = []) => [...new Set(rows
+                .map((row) => toNullableNumber(pickRowValue(row, ['id'])))
+                .filter(Number.isFinite)
+                .map((value) => Math.trunc(value))
+                .filter((value) => value > 0))].sort((left, right) => left - right);
+            const loadLockedRowsById = async (rows, queryPrefix, destination) => {
+                for (const chunk of chunkArray(importedStableIds(rows), 200)) {
+                    if (!chunk.length) continue;
+                    const placeholders = chunk.map(() => '?').join(', ');
+                    const [loadedRows] = await connection.query(
+                        `${queryPrefix} (${placeholders}) FOR UPDATE`,
+                        chunk
+                    );
+                    destination.push(...(loadedRows || []));
+                }
+            };
+            await loadLockedRowsById(
+                importTickets,
+                `SELECT id, branch_id AS branchId, account_number AS accountNumber
+                 FROM tickets WHERE id IN`,
+                lockedRelatedRecords.tickets
+            );
+            await loadLockedRowsById(
+                importJobs,
+                `SELECT j.id, j.branch_id AS branchId,
+                        COALESCE(j.customer_account_number, t.account_number) AS accountNumber,
+                        j.ticket_id AS ticketId
+                 FROM jobs j
+                 LEFT JOIN tickets t ON t.id = j.ticket_id AND t.branch_id = j.branch_id
+                 WHERE j.id IN`,
+                lockedRelatedRecords.jobs
+            );
+            await loadLockedRowsById(
+                importSmsMessages,
+                `SELECT id, branch_id AS branchId, customer_account_number AS accountNumber
+                 FROM sms_messages WHERE id IN`,
+                lockedRelatedRecords.sms_messages
+            );
+            await loadLockedRowsById(
+                importSmsAutomationRuns,
+                `SELECT id, branch_id AS branchId, customer_account_number AS accountNumber
+                 FROM sms_automation_runs WHERE id IN`,
+                lockedRelatedRecords.sms_automation_runs
+            );
+
+            const lockedPonConnectionsById = new Map();
+            for (const chunk of chunkArray(importedStableIds(importPonConnections), 200)) {
+                if (!chunk.length) continue;
+                const placeholders = chunk.map(() => '?').join(', ');
+                const [rows] = await connection.query(
+                    `SELECT c.id, c.nap_id AS napId, c.port,
+                            c.customer_account_number AS accountNumber,
+                            n.branch_id AS branchId
+                     FROM pon_nap_connections c
+                     INNER JOIN pon_naps n ON n.id = c.nap_id
+                     WHERE c.id IN (${placeholders})
+                     FOR UPDATE`,
+                    chunk
+                );
+                (rows || []).forEach((row) => lockedPonConnectionsById.set(String(row.id || '').trim(), row));
+            }
+            const importedPonNapIds = [...new Set(importPonConnections
+                .map((row) => toNullableNumber(pickRowValue(row, ['nap_id', 'napId'])))
+                .filter(Number.isFinite)
+                .map((value) => Math.trunc(value))
+                .filter((value) => value > 0))].sort((left, right) => left - right);
+            for (const chunk of chunkArray(importedPonNapIds, 200)) {
+                if (!chunk.length) continue;
+                const placeholders = chunk.map(() => '?').join(', ');
+                const [rows] = await connection.query(
+                    `SELECT c.id, c.nap_id AS napId, c.port,
+                            c.customer_account_number AS accountNumber,
+                            n.branch_id AS branchId
+                     FROM pon_nap_connections c
+                     INNER JOIN pon_naps n ON n.id = c.nap_id
+                     WHERE n.branch_id = ? AND c.nap_id IN (${placeholders})
+                     FOR UPDATE`,
+                    [branchId, ...chunk]
+                );
+                (rows || []).forEach((row) => lockedPonConnectionsById.set(String(row.id || '').trim(), row));
+            }
+            lockedRelatedRecords.pon_nap_connections.push(...lockedPonConnectionsById.values());
+
+            const storeTableName = resolveMysqlStoreTableName();
+            await connection.query(
+                `INSERT IGNORE INTO \`${storeTableName}\` (store_key, payload) VALUES (?, ?)`,
+                ['closed_customer_accounts', JSON.stringify({ version: 1, branches: {} })]
+            );
+            const [closedAccountStoreRows] = await connection.query(
+                `SELECT payload FROM \`${storeTableName}\` WHERE store_key = ? LIMIT 1 FOR UPDATE`,
+                ['closed_customer_accounts']
+            );
+            let lockedClosedAccountStore;
+            try {
+                lockedClosedAccountStore = closedAccountStoreRows?.[0]?.payload
+                    ? JSON.parse(closedAccountStoreRows[0].payload)
+                    : { version: 1, branches: {} };
+            } catch {
+                throw new Error('The protected closed-account audit store is invalid; import stopped without changing records.');
+            }
+            if (
+                !lockedClosedAccountStore
+                || typeof lockedClosedAccountStore !== 'object'
+                || Array.isArray(lockedClosedAccountStore)
+                || !lockedClosedAccountStore.branches
+                || typeof lockedClosedAccountStore.branches !== 'object'
+                || Array.isArray(lockedClosedAccountStore.branches)
+            ) {
+                throw new Error('The protected closed-account audit store is invalid; import stopped without changing records.');
+            }
+            const lockedClosedAccountRecords = Object.entries(lockedClosedAccountStore.branches).flatMap(([storeBranchId, entry]) => (
+                Array.isArray(entry?.records)
+                    ? entry.records.map((record) => ({ ...record, _storeBranchId: storeBranchId }))
+                    : []
+            ));
+            const lockedClosedAccountConflicts = findCustomerFullImportClosedAccountConflicts({
+                branchId,
+                tables,
+                closedAccountRecords: lockedClosedAccountRecords,
+                currentCustomers: lockedCustomerRows,
+                currentPayments: [...lockedPaymentRowsById.values()],
+                currentRelatedRecords: lockedRelatedRecords
+            });
+            // The outer preflight already stripped every known non-blocking
+            // protected row. Any conflict still visible under these database
+            // locks is either blocking or protection created by another app
+            // instance after preflight, so fail closed before the first write.
+            if (lockedClosedAccountConflicts.length) {
+                const conflictError = new Error(
+                    'Import stopped because it would modify records with protected closed-account history.'
+                );
+                conflictError.code = 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT';
+                conflictError.status = 409;
+                conflictError.conflicts = lockedClosedAccountConflicts;
+                throw conflictError;
+            }
 
             for (const row of importPlans) {
                 const planId = toNonEmptyString(pickRowValue(row, ['plan_id', 'planId', 'id']));
@@ -7692,6 +7979,15 @@ app.post(
                 }
             }
             console.error('Failed to import full customer data:', error);
+            if (error?.code === 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT') {
+                return res.status(409).json({
+                    ok: false,
+                    code: error.code,
+                    error: `${error.message} No records were changed.`,
+                    conflicts: error.conflicts || [],
+                    conflictCount: Array.isArray(error.conflicts) ? error.conflicts.length : 0
+                });
+            }
             return res.status(500).json({ ok: false, error: 'Failed to import full customer data.' });
         } finally {
             if (connection) connection.release();

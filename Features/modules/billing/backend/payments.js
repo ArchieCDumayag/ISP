@@ -9,7 +9,14 @@ const { connectMikrotikClient } = require('../../network/backend/mikrotik-client
 const { loadIntegrationSettings, saveIntegrationSettings, resolveMikrotikRouter } = require('../../admin/backend/integration-settings');
 const { getUserFromSession } = require('../../admin/backend/auth');
 const { query } = require('../../../../core/data/db');
-const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = require('./payment-numbering');
+const {
+    assignEntryNumbers,
+    assertEntryNumbersAvailable,
+    enqueuePaymentMutation,
+    lockPaymentAccount,
+    serializePaymentMutationRequest,
+    withTransaction
+} = require('./payment-numbering');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const customersModule = require('../../customer-management/backend/customers');
 const { triggerBranchServiceRefresh } = require('./payment-service-refresh');
@@ -40,8 +47,15 @@ const {
     releaseGcashTransactionClaim,
     normalizeReference: normalizeGcashReference
 } = require('./gcash-transaction-history-store');
+const {
+    getActiveClosedCustomerAccount
+} = require('../../customer-management/backend/closed-customer-account-store');
+const {
+    isProtectedClosedAccountPaymentEvidence
+} = require('./closed-account-payment-evidence');
 
 const router = express.Router();
+router.use(serializePaymentMutationRequest);
 const STORE_KEYS = {
     payments: 'payments',
     customers: 'customers',
@@ -4161,6 +4175,9 @@ const maybeExtendPrepaidExpiryOnPayment = async (accountNumber, paymentEntry, br
     if (!Number.isFinite(amount) || amount <= 0) return;
     if (kind !== 'payment' || direction !== 'credit') return;
 
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+    if (activeClosure) return;
+
     const customers = await readCustomers(branchId);
     const idx = customers.findIndex((customer) => String(customer?.accountNumber || '') === String(accountNumber));
     if (idx < 0) return;
@@ -4231,6 +4248,14 @@ const normalizeEntryIds = (values = []) => Array.from(new Set(
         .map((value) => String(value || '').trim())
         .filter(Boolean)
 ));
+
+const assertClosedAccountPaymentEvidenceNotDeleted = (entries = []) => {
+    if (!(Array.isArray(entries) ? entries : []).some(isProtectedClosedAccountPaymentEvidence)) return;
+    throw createError(
+        409,
+        'Closed-account collection and write-off records cannot be deleted because they are protected audit evidence.'
+    );
+};
 
 const reconcileCustomerCycleAfterDeletedCharges = async (accountNumber, branchId, deletedEntries = []) => {
     const autoCharges = (Array.isArray(deletedEntries) ? deletedEntries : [])
@@ -4310,6 +4335,7 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
         }
 
         await withTransaction(async (connection) => {
+            await lockPaymentAccount(connection, branchId, normalizedAccountNumber);
             const placeholders = normalizedEntryIds.map(() => '?').join(', ');
             const selectParams = [normalizedAccountNumber, branchId, ...normalizedEntryIds];
             const [rows] = await connection.query(
@@ -4346,6 +4372,7 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
             if (!deletedEntries.length) {
                 throw createError(404, normalizedEntryIds.length === 1 ? 'Payment entry not found' : 'Payment entries not found');
             }
+            assertClosedAccountPaymentEvidenceNotDeleted(deletedEntries);
 
             const deleteParams = [normalizedAccountNumber, branchId, ...normalizedEntryIds];
             const [result] = await connection.query(
@@ -4374,6 +4401,7 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
         if (!deletedEntries.length) {
             throw createError(404, normalizedEntryIds.length === 1 ? 'Payment entry not found' : 'Payment entries not found');
         }
+        assertClosedAccountPaymentEvidenceNotDeleted(deletedEntries);
 
         payments[normalizedAccountNumber].history = history.filter((entry) => !selectedIds.has(String(entry?.id || '').trim()));
         await writePayments(payments);
@@ -4443,6 +4471,8 @@ const enablePppoeForCustomer = async (customer, branchId = null) => {
     const username = String(customer?.pppoeUsername || '').trim();
     if (!username) return;
     try {
+        const activeClosure = await getActiveClosedCustomerAccount(branchId, customer?.accountNumber);
+        if (activeClosure) return;
         const settings = await loadIntegrationSettings(branchId);
         const routerId = resolveCustomerRouterId(customer, settings);
         const router = resolveMikrotikRouter(settings, routerId);
@@ -4506,7 +4536,7 @@ const queuePppoeEnableForCustomer = (customer, branchId = null) => {
         ? { ...customer }
         : customer;
     setImmediate(() => {
-        enablePppoeForCustomer(customerSnapshot, branchId).catch((error) => {
+        enqueuePaymentMutation(() => enablePppoeForCustomer(customerSnapshot, branchId)).catch((error) => {
             console.warn(
                 'Queued PPPoE payment re-enable failed for customer',
                 customerSnapshot?.accountNumber,
@@ -4523,6 +4553,8 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
     const idx = customers.findIndex((c) => c.accountNumber === accountNumber);
     if (idx < 0) return;
     const current = customers[idx];
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+    if (activeClosure) return;
     const currentStatus = resolveCustomerStatusState(current);
     const disconnections = await readBranchDisconnections(branchId);
     const currentDecision = getAccountDisconnection(disconnections, accountNumber);
@@ -5053,6 +5085,10 @@ router.delete('/clear', async (req, res, next) => {
         const user = await assertAdminUser(req);
         const branchId = user.branchId || null;
         const payments = await readPayments(branchId);
+        const entries = Object.values(payments || {}).flatMap((bucket) => (
+            Array.isArray(bucket?.history) ? bucket.history : []
+        ));
+        assertClosedAccountPaymentEvidenceNotDeleted(entries);
         const backup = await createPaymentRecordsBackup(payments, {
             branchId,
             user,
@@ -5483,6 +5519,7 @@ router.post('/:accountNumber', async (req, res, next) => {
 
         if (relational) {
             await withTransaction(async (connection) => {
+                await lockPaymentAccount(connection, branchId, accountNumber);
                 if (providedReference) {
                     await assertManualPaymentReferenceAvailable({
                         branchId,
@@ -6531,7 +6568,9 @@ const recordApprovedProofPayments = (payload = {}) => {
 };
 
 module.exports = router;
-module.exports.handleXenditWebhook = handleXenditWebhook;
+module.exports.handleXenditWebhook = (req, res, next) => (
+    enqueuePaymentMutation(() => handleXenditWebhook(req, res, next)).catch(next)
+);
 module.exports.recordApprovedProofPayment = recordApprovedProofPayment;
 module.exports.recordApprovedProofPayments = recordApprovedProofPayments;
 module.exports.buildPaymentImportGcashReconciliationPlan = buildPaymentImportGcashReconciliationPlan;

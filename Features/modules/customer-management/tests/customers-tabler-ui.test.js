@@ -44,7 +44,9 @@ assert.match(customersTablerCss, /\.map-pin-picker-modal\s*>\s*\.modal-content\s
 assert.match(customersPage, /id="closeAccountModal" class="[^"]*\baccount-closure-modal\b/);
 assert.match(customersPage, /class="[^"]*\bclose-customer-account\b[^"]*"/);
 assert.match(customersPage, /\/api\/customers\/\$\{encodeURIComponent\(accountNumber\)\}\/close-account/);
-assert.match(customersPage, /writeOffConfirmed:\s*closeAccountWriteOffConfirmed/);
+assert.match(customersPage, /id="closeAccountFinalBalance"/);
+assert.match(customersPage, /balanceAdjustmentConfirmed:\s*closeAccountAdjustmentConfirmed/);
+assert.doesNotMatch(customersPage, /id="closeAccountReason"[^>]*required/);
 assert.match(customersPage, /No customer records will be deleted\./);
 const backdropZIndex = customersTablerCss.match(/\.modal-backdrop\s*\{[^}]*z-index:\s*(\d+)/s);
 const closeAccountModalZIndex = customersTablerCss.match(/\.modal\.account-closure-modal\s*\{[^}]*z-index:\s*(\d+)/s);

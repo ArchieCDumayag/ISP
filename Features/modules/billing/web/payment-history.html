@@ -67,7 +67,7 @@
                                     <div class="payment-history-metric__body">
                                         <p class="payment-history-metric__label text-secondary">Entries</p>
                                         <strong class="payment-history-metric__value" id="historyMetricEntries">0</strong>
-                                        <p class="payment-history-metric__meta text-secondary">Posted payment logs in result</p>
+                                        <p class="payment-history-metric__meta text-secondary">Payments and audited adjustments</p>
                                     </div>
                                 </div>
                             </article>
@@ -95,7 +95,7 @@
                                     <div class="payment-history-metric__body">
                                         <p class="payment-history-metric__label text-secondary">With Reference</p>
                                         <strong class="payment-history-metric__value" id="historyMetricReferences">0</strong>
-                                        <p class="payment-history-metric__meta text-secondary">Payments with reference or OR no.</p>
+                                        <p class="payment-history-metric__meta text-secondary">Entries with reference or OR no.</p>
                                     </div>
                                 </div>
                             </article>
@@ -128,7 +128,7 @@
                                         class="form-control"
                                         type="search"
                                         id="paymentHistorySearch"
-                                        placeholder="Search payments"
+                                        placeholder="Search payments or adjustments"
                                         aria-label="Search payment history"
                                     >
                                 </div>
@@ -150,17 +150,18 @@
                                     </select>
                                 </div>
                                 <div class="page-size-control toolbar-filter-control toolbar-filter-control--method">
-                                    <label class="form-label" for="paymentHistoryMethod">Payment</label>
+                                    <label class="form-label" for="paymentHistoryMethod">Entry type</label>
                                     <select class="form-select" id="paymentHistoryMethod">
-                                        <option value="">All methods</option>
+                                        <option value="">All entries</option>
                                         <option value="cash">Cash</option>
                                         <option value="gcash">GCash</option>
+                                        <option value="account closure adjustment">Closure Adjustment</option>
                                     </select>
                                 </div>
                                 <div class="page-size-control toolbar-filter-control toolbar-filter-control--recipient">
-                                    <label class="form-label" for="paymentHistoryRecordedBy">Paid to</label>
+                                    <label class="form-label" for="paymentHistoryRecordedBy">Recorded by</label>
                                     <select class="form-select" id="paymentHistoryRecordedBy">
-                                        <option value="">All recipients</option>
+                                        <option value="">All recorders</option>
                                     </select>
                                 </div>
                                 <div class="page-size-control toolbar-filter-control toolbar-filter-control--status">
@@ -362,7 +363,7 @@
 
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="layout.js?v=3.9"></script>
-    <script src="js/payment-history.js?v=4.4"></script>
+    <script src="js/payment-history.js?v=4.5"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>
 </html>

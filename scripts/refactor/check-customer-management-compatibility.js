@@ -175,7 +175,12 @@ console.log('PASS Customer Management server loader and web routing');
 const {
   buildCustomerFullJsonImport,
   deduplicateCustomerFullTables,
-  filterCustomerFullImportRows
+  filterCustomerFullImportProtectedRows,
+  filterCustomerFullImportRows,
+  findCustomerFullImportClosedAccountConflicts,
+  getCustomerFullImportAccountNumbers,
+  getCustomerFullImportPaymentIds,
+  isCustomerFullImportBlockingConflict
 } = backend.load('customerFullJsonImport');
 assert.deepStrictEqual(
   filterCustomerFullImportRows([
@@ -228,6 +233,341 @@ assert.deepStrictEqual(conflictingImport.conflicts[0], {
   conflictingRow: 3
 });
 console.log('PASS full customer import duplicate and conflict detection');
+assert.deepStrictEqual(
+  getCustomerFullImportAccountNumbers({
+    customers: [{ account_number: '100000001' }],
+    payment_entries: [{ accountNumber: '100000002' }],
+    payment_breakdown_adjustments: [{ account_number: '100000003' }],
+    pon_nap_connections: [{ customer_account_number: '100000004' }]
+  }),
+  ['100000001', '100000002', '100000003', '100000004']
+);
+assert.deepStrictEqual(
+  findCustomerFullImportClosedAccountConflicts({
+    branchId: 1,
+    tables: {
+      customers: [{ account_number: '100000001' }, { account_number: '100000002' }]
+    },
+    closedAccountRecords: [{ accountNumber: '100000001', active: false }],
+    currentPayments: {
+      100000002: {
+        history: [{
+          kind: 'payment',
+          direction: 'credit',
+          description: 'Closed Account Collection | Closure ID: closure-2'
+        }]
+      }
+    }
+  }),
+  [
+    { accountNumber: '100000001', reasons: ['closed_account_history'] },
+    { accountNumber: '100000002', reasons: ['protected_closed_collection_payment'] }
+  ]
+);
+assert.deepStrictEqual(
+  getCustomerFullImportPaymentIds({
+    payment_entries: [{ id: 'payment-z' }, { payment_id: 'payment-a' }]
+  }),
+  ['payment-a', 'payment-z']
+);
+assert.deepStrictEqual(
+  findCustomerFullImportClosedAccountConflicts({
+    tables: {
+      payment_entries: [{ id: 'protected-payment', account_number: '100000099' }]
+    },
+    currentPayments: {
+      100000001: {
+        history: [{
+          id: 'protected-payment',
+          kind: 'payment',
+          direction: 'credit',
+          description: 'Closed Account Collection | Closure ID: closure-1'
+        }]
+      }
+    }
+  }),
+  [{
+    accountNumber: '100000001',
+    reasons: ['protected_closed_collection_payment_id_moved'],
+    paymentIds: ['protected-payment']
+  }]
+);
+assert.deepStrictEqual(
+  findCustomerFullImportClosedAccountConflicts({
+    branchId: 1,
+    tables: {
+      payment_entries: [{ id: 'ordinary-payment', account_number: 'OPEN' }]
+    },
+    closedAccountRecords: [{ accountNumber: 'CLOSED', branchId: 1 }],
+    currentPayments: {
+      CLOSED: {
+        history: [{ id: 'ordinary-payment', kind: 'payment', direction: 'credit' }]
+      }
+    }
+  }),
+  [{
+    accountNumber: 'CLOSED',
+    reasons: ['protected_payment_id_moved'],
+    paymentIds: ['ordinary-payment']
+  }]
+);
+assert.deepStrictEqual(
+  findCustomerFullImportClosedAccountConflicts({
+    branchId: 1,
+    tables: {
+      payment_entries: [{ id: 'other-branch-payment', account_number: '100000099' }]
+    },
+    currentPayments: [{
+      id: 'other-branch-payment',
+      branchId: 2,
+      accountNumber: '200000001',
+      kind: 'payment',
+      direction: 'credit'
+    }]
+  }),
+  [{
+    accountNumber: '200000001',
+    reasons: ['cross_branch_payment_id'],
+    paymentIds: ['other-branch-payment']
+  }]
+);
+assert.deepStrictEqual(
+  findCustomerFullImportClosedAccountConflicts({
+    branchId: 1,
+    tables: {
+      customers: [{ account_number: '200000001' }]
+    },
+    currentCustomers: [{ accountNumber: '200000001', branchId: 2 }]
+  }),
+  [{
+    accountNumber: '200000001',
+    reasons: ['cross_branch_customer_account']
+  }]
+);
+const protectedRoundTripResult = buildCustomerFullJsonImport({
+    branchId: 1,
+    stores: {
+      customers: [{ accountNumber: '100000001', branchId: 1 }],
+      payments: {},
+      closed_customer_accounts: {
+        version: 1,
+        branches: {
+          1: { records: [{ accountNumber: '100000001', active: false }] }
+        }
+      }
+    },
+    tables: {
+      customers: [{ account_number: '100000001', name: 'Unsafe overwrite' }]
+    }
+  });
+assert.equal(protectedRoundTripResult.imported.customers, 0);
+assert.equal(protectedRoundTripResult.stores.customers[0].name, undefined);
+assert.ok(protectedRoundTripResult.warnings.some((warning) => warning.includes('Preserved protected closed-account records')));
+const preservedRows = filterCustomerFullImportProtectedRows({
+  tables: {
+    customers: [{ account_number: '100000001' }, { account_number: '100000002' }],
+    payment_entries: [{ id: 'protected', account_number: '100000001' }],
+    pon_state: [{ chunk_index: 1, state_json_chunk: '{"naps":[]}' }]
+  },
+  conflicts: [{ accountNumber: '100000001', reasons: ['closed_account_history'] }]
+});
+assert.deepStrictEqual(preservedRows.tables.customers, [{ account_number: '100000002' }]);
+assert.deepStrictEqual(preservedRows.tables.payment_entries, []);
+assert.deepStrictEqual(preservedRows.tables.pon_state, []);
+assert.equal(isCustomerFullImportBlockingConflict({
+  reasons: ['protected_closed_collection_payment_id_moved']
+}), true);
+assert.equal(isCustomerFullImportBlockingConflict({ reasons: ['closed_account_history'] }), false);
+assert.deepStrictEqual(
+  getCustomerFullImportAccountNumbers({
+    pon_state: [{
+      state_json: JSON.stringify({
+        naps: [{ id: 'nap-nested', connections: [{ customerId: '100000777', port: 1 }] }]
+      })
+    }]
+  }),
+  ['100000777']
+);
+const protectedPonStateResult = buildCustomerFullJsonImport({
+  branchId: 1,
+  stores: {
+    customers: [{ accountNumber: 'CLOSED', branchId: 1 }],
+    payments: {},
+    tickets: [],
+    jobs: [],
+    sms_messages: [],
+    sms_automation_runs: [],
+    'pon-state': {
+      branches: {
+        1: {
+          naps: [{
+            id: 'nap-protected',
+            connections: [{ id: 'connection-protected', customerId: 'CLOSED', port: 1 }]
+          }]
+        }
+      }
+    },
+    closed_customer_accounts: {
+      version: 1,
+      branches: { 1: { records: [{ accountNumber: 'CLOSED', branchId: 1 }] } }
+    }
+  },
+  tables: {
+    pon_state: [{ state_json: JSON.stringify({ naps: [] }) }]
+  }
+});
+assert.equal(
+  protectedPonStateResult.stores['pon-state'].branches['1'].naps[0].connections[0].customerId,
+  'CLOSED'
+);
+assert.ok(protectedPonStateResult.warnings.some((warning) => warning.includes('Preserved protected closed-account records')));
+
+['tickets', 'jobs', 'sms_messages', 'sms_automation_runs'].forEach((tableName) => {
+  const collision = findCustomerFullImportClosedAccountConflicts({
+    branchId: 1,
+    tables: { [tableName]: [{ id: 7, customer_account_number: 'OPEN' }] },
+    closedAccountRecords: [{ accountNumber: 'CLOSED', branchId: 1 }],
+    currentRelatedRecords: {
+      [tableName]: [{ id: 7, branchId: 1, customerAccountNumber: 'CLOSED' }]
+    }
+  });
+  assert.ok(collision.some((entry) => (
+    entry.accountNumber === 'CLOSED'
+    && entry.reasons.includes(`protected_${tableName}_id_moved`)
+    && isCustomerFullImportBlockingConflict(entry)
+  )), `${tableName} stable ID must not move away from a protected closed account`);
+});
+assert.throws(
+  () => buildCustomerFullJsonImport({
+    branchId: 1,
+    stores: {
+      customers: [
+        { accountNumber: 'CLOSED', branchId: 1 },
+        { accountNumber: 'OPEN', branchId: 1 }
+      ],
+      payments: {},
+      tickets: [{ id: 7, branchId: 1, accountNumber: 'CLOSED' }],
+      jobs: [],
+      sms_messages: [],
+      sms_automation_runs: [],
+      'pon-state': {},
+      closed_customer_accounts: {
+        version: 1,
+        branches: { 1: { records: [{ accountNumber: 'CLOSED', branchId: 1 }] } }
+      }
+    },
+    tables: { tickets: [{ id: 7, account_number: 'OPEN' }] }
+  }),
+  (error) => (
+    error?.code === 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT'
+    && error.conflicts?.some((entry) => entry.reasons.includes('protected_tickets_id_moved'))
+  )
+);
+const protectedLinkedJobResult = buildCustomerFullJsonImport({
+  branchId: 1,
+  stores: {
+    customers: [{ accountNumber: 'CLOSED', branchId: 1 }],
+    payments: {},
+    tickets: [{ id: 7, branchId: 1, accountNumber: 'CLOSED' }],
+    jobs: [],
+    sms_messages: [],
+    sms_automation_runs: [],
+    'pon-state': {},
+    closed_customer_accounts: {
+      version: 1,
+      branches: { 1: { records: [{ accountNumber: 'CLOSED', branchId: 1 }] } }
+    }
+  },
+  tables: { jobs: [{ id: 8, ticket_id: 7, type: 'repair' }] }
+});
+assert.equal(protectedLinkedJobResult.imported.jobs, 0);
+assert.equal(protectedLinkedJobResult.stores.jobs.length, 0);
+assert.ok(protectedLinkedJobResult.warnings.some((warning) => warning.includes('Preserved protected closed-account records')));
+const caseInsensitivePaymentIdResult = buildCustomerFullJsonImport({
+  branchId: 1,
+  stores: {
+    customers: [{ accountNumber: 'OPEN', branchId: 1 }],
+    payments: { OPEN: { history: [{ id: 'PAY-1', amount: 100 }] } },
+    tickets: [],
+    jobs: [],
+    sms_messages: [],
+    sms_automation_runs: [],
+    'pon-state': {},
+    closed_customer_accounts: { version: 1, branches: {} }
+  },
+  tables: {
+    payment_entries: [{ id: 'pay-1', account_number: 'OPEN', amount: 200 }]
+  }
+});
+assert.equal(caseInsensitivePaymentIdResult.stores.payments.OPEN.history.length, 1);
+assert.equal(caseInsensitivePaymentIdResult.stores.payments.OPEN.history[0].id, 'pay-1');
+assert.equal(caseInsensitivePaymentIdResult.stores.payments.OPEN.history[0].amount, 200);
+
+const protectedPonPortCollision = findCustomerFullImportClosedAccountConflicts({
+  branchId: 1,
+  tables: {
+    pon_nap_connections: [{ id: 'connection-open', nap_id: 'nap-protected', port: 1, customer_account_number: 'OPEN' }]
+  },
+  closedAccountRecords: [{ accountNumber: 'CLOSED', branchId: 1 }],
+  currentPonState: {
+    branches: {
+      1: {
+        naps: [{
+          id: 'nap-protected',
+          connections: [{ id: 'connection-closed', customerId: 'CLOSED', port: 1 }]
+        }]
+      }
+    }
+  }
+});
+assert.ok(protectedPonPortCollision.some((entry) => (
+  entry.accountNumber === 'CLOSED'
+  && entry.reasons.includes('protected_pon_nap_connections_port_moved')
+  && isCustomerFullImportBlockingConflict(entry)
+)));
+const protectedPonCodeAliasCollision = findCustomerFullImportClosedAccountConflicts({
+  branchId: 1,
+  tables: {
+    pon_nap_connections: [{
+      id: 'connection-open',
+      nap_code: 'NAP-01',
+      port: 1,
+      customer_account_number: 'OPEN'
+    }]
+  },
+  closedAccountRecords: [{ accountNumber: 'CLOSED', branchId: 1 }],
+  currentPonState: {
+    branches: {
+      1: {
+        naps: [{
+          id: 'nap-uuid',
+          code: 'NAP-01',
+          connections: [{ id: 'connection-closed', customerId: 'CLOSED', port: 1 }]
+        }]
+      }
+    }
+  }
+});
+assert.ok(protectedPonCodeAliasCollision.some((entry) => (
+  entry.reasons.includes('protected_pon_nap_connections_port_moved')
+  && isCustomerFullImportBlockingConflict(entry)
+)));
+const crossBranchTicketCollision = findCustomerFullImportClosedAccountConflicts({
+  branchId: 1,
+  tables: { tickets: [{ id: 8, account_number: 'OPEN' }] },
+  currentRelatedRecords: { tickets: [{ id: 8, branchId: 2, accountNumber: 'OTHER' }] }
+});
+assert.ok(crossBranchTicketCollision.some((entry) => (
+  entry.reasons.includes('cross_branch_tickets_id')
+  && isCustomerFullImportBlockingConflict(entry)
+)));
+assert(serverSource.includes('serializePaymentMutationRequest,'));
+assert(serverSource.includes("code: 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT'"));
+assert(serverSource.includes('await lockPaymentAccount(connection, branchId, accountNumber);'));
+assert(serverSource.includes('const lockedRelatedRecords = {'));
+assert(serverSource.includes('currentRelatedRecords: lockedRelatedRecords'));
+assert(serverSource.includes('if (lockedClosedAccountConflicts.length)'));
+console.log('PASS full customer import closed-account preservation contract');
 const ponStateFixtureJson = JSON.stringify({
   olts: [{ id: 'olt-1', name: 'OLT 1', ponPorts: 1 }],
   naps: [{ id: 'nap-1', code: 'NAP-1', connections: [] }]

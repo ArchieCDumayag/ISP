@@ -120,6 +120,59 @@ document.addEventListener('DOMContentLoaded', () => {
         const method = normalizeText(entry?.paymentMethod || entry?.payment_method);
         return status === 'pending_gcash_verification' && kind === 'payment' && method === 'gcash';
     };
+    const isAccountClosureAdjustmentEntry = (entry = {}) => {
+        const entryId = normalizeText(entry?.id);
+        const fingerprint = normalizeText(entry?.fingerprint);
+        const method = normalizeText(entry?.paymentMethod || entry?.payment_method)
+            .replace(/[\s-]+/g, '_');
+        const description = normalizeText(entry?.description || entry?.notes);
+        return method === 'account_closure_adjustment'
+            || entryId.startsWith('closure-writeoff-')
+            || fingerprint.includes('|account-closure|')
+            || description.startsWith('account closure final-balance')
+            || description.startsWith('account closure write-off');
+    };
+    const readFiniteMoney = (value) => {
+        if (value === null || value === undefined || value === '') return null;
+        const amount = Number(value);
+        return Number.isFinite(amount) ? amount : null;
+    };
+    const readClosureDescriptionMoney = (description, label) => {
+        const match = String(description || '').match(new RegExp(`\\b${label}\\s+PHP\\s+(-?\\d+(?:\\.\\d{1,2})?)\\b`, 'i'));
+        return readFiniteMoney(match?.[1]);
+    };
+    const getClosureAdjustmentAudit = (entry = {}, direction = 'credit', amount = 0) => {
+        const description = hideAllocationMetadata(entry?.description || entry?.notes || '');
+        let balanceBefore = readFiniteMoney(entry?.closureBalanceBefore ?? entry?.closure_balance_before);
+        let finalBalance = readFiniteMoney(entry?.closureFinalBalance ?? entry?.closure_final_balance);
+
+        if (balanceBefore === null) balanceBefore = readClosureDescriptionMoney(description, 'Before');
+        if (finalBalance === null) finalBalance = readClosureDescriptionMoney(description, 'Final');
+        if (
+            balanceBefore === null
+            && finalBalance === null
+            && direction === 'credit'
+            && /^Account closure write-off\b/i.test(description)
+        ) {
+            balanceBefore = Math.abs(Number(amount) || 0);
+            finalBalance = 0;
+        }
+
+        let reason = '';
+        const structuredReason = description.match(/\|\s*Final\s+PHP\s+-?\d+(?:\.\d{1,2})?\s*\|\s*([\s\S]+)$/i);
+        if (structuredReason?.[1]) {
+            reason = structuredReason[1].trim();
+        } else {
+            const legacyReason = description.match(/^Account closure write-off\s*-\s*([\s\S]+)$/i);
+            if (legacyReason?.[1]) reason = legacyReason[1].trim();
+        }
+
+        return {
+            balanceBefore,
+            finalBalance,
+            reason: reason || 'Account closed by Admin.'
+        };
+    };
     const hideAllocationMetadata = (value) => String(value ?? '')
         .replace(/\s*\[ALLOC:\s*[\s\S]*?\]\s*/gi, ' ')
         .replace(/\s*\[EDIT_BIND:[^\]]*\]\s*/gi, ' ')
@@ -1053,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .filter(Boolean)
         )).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true }));
 
-        recordedByFilter.innerHTML = '<option value="">All recipients</option>';
+        recordedByFilter.innerHTML = '<option value="">All recorders</option>';
         uniqueRecorders.forEach((recorderLabel) => {
             recordedByFilter.add(new Option(recorderLabel, recorderLabel));
         });
@@ -1089,11 +1142,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const dateKey = dateObj ? toDateKey(dateObj) : String(rawDate || '').slice(0, 10);
                 const direction = resolveDirection(entry);
                 const kind = resolveKind(entry);
-                if (!(kind === 'payment' && direction === 'credit')) return;
+                const isCollectedPayment = kind === 'payment' && direction === 'credit';
+                const isClosureAdjustment = isAccountClosureAdjustmentEntry(entry);
+                if (!isCollectedPayment && !isClosureAdjustment) return;
                 const amount = Math.abs(Number(entry?.amount) || 0);
                 const reference = String(entry?.reference || entry?.ref || '').trim();
                 const orNumber = String(entry?.orNumber || entry?.or_number || '').trim();
-                const notes = hideAllocationMetadata(entry?.description || entry?.notes || '');
+                const closureAudit = isClosureAdjustment
+                    ? getClosureAdjustmentAudit(entry, direction, amount)
+                    : null;
+                const notes = closureAudit?.reason || hideAllocationMetadata(entry?.description || entry?.notes || '');
                 const recordedByLabel = formatRecorderLabel(entry);
                 const paymentMethodLabel = resolvePaymentMethodLabel(entry);
                 const paymentMethodKey = resolvePaymentMethodKey(paymentMethodLabel);
@@ -1120,6 +1178,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     displayDate,
                     dateKey,
                     isImportedPayment,
+                    isCollectedPayment,
+                    isClosureAdjustment,
+                    adjustmentDirection: isClosureAdjustment ? direction : '',
+                    balanceBefore: closureAudit?.balanceBefore ?? null,
+                    finalBalance: closureAudit?.finalBalance ?? null,
                     isPendingGcash,
                     isGcashBound: boundGcashEntryIds.has(entryId),
                     timestamp: dateObj ? dateObj.getTime() : 0
@@ -1143,7 +1206,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.orNumber,
                 row.paymentMethodLabel,
                 row.recordedByLabel,
-                row.notes
+                row.notes,
+                row.isClosureAdjustment ? 'account closure adjustment' : '',
+                row.adjustmentDirection,
+                row.balanceBefore,
+                row.finalBalance
             ].join(' '));
         });
 
@@ -1153,7 +1220,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateMetrics(rows) {
         const entries = Array.isArray(rows) ? rows.length : 0;
         const paymentsCollected = (Array.isArray(rows) ? rows : []).reduce((sum, row) => (
-            row.isPendingGcash ? sum : sum + row.amount
+            row.isCollectedPayment && !row.isPendingGcash ? sum + row.amount : sum
         ), 0);
         const referencedEntries = (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
             return row.reference || row.orNumber ? sum + 1 : sum;
@@ -1217,6 +1284,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             tableBody.innerHTML = pageRows.map((row) => {
                 const signedAmount = formatCurrency(row.amount);
+                const amountClass = row.isPendingGcash
+                    ? 'text-warning'
+                    : (row.isClosureAdjustment && row.adjustmentDirection === 'debit' ? 'text-danger' : 'text-success');
+                const adjustmentBadge = row.isClosureAdjustment
+                    ? `<span class="badge ${row.adjustmentDirection === 'debit' ? 'bg-danger-lt text-danger' : 'bg-success-lt text-success'} d-block mt-1">${row.adjustmentDirection === 'debit' ? 'Debit adjustment' : 'Credit adjustment'}</span>`
+                    : '';
                 const subscriberInitials = escapeHtml(getInitials(row.subscriber));
                 const referenceLine = row.reference
                     ? `<span class="fw-semibold">${escapeHtml(row.reference)}</span>`
@@ -1230,7 +1303,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const noteLine = row.notes
                     ? `<span class="payment-history-note text-secondary">${escapeHtml(row.notes)}</span>`
                     : '';
-                const printButton = row.accountNumber && !row.isPendingGcash
+                const closureBalanceLine = row.isClosureAdjustment
+                    && Number.isFinite(row.balanceBefore)
+                    && Number.isFinite(row.finalBalance)
+                    ? `<span class="payment-history-note text-secondary">Balance: ${escapeHtml(formatCurrency(row.balanceBefore))} &rarr; ${escapeHtml(formatCurrency(row.finalBalance))}</span>`
+                    : '';
+                const printButton = row.accountNumber && !row.isPendingGcash && !row.isClosureAdjustment
                     ? `<button type="button" class="payment-history-print btn btn-icon btn-ghost-secondary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" data-reference="${escapeHtml(row.reference || row.orNumber || '')}" aria-label="Reprint thermal receipt" title="Reprint thermal receipt"><i class="ti ti-receipt"></i></button>`
                     : (row.isPendingGcash
                         ? '<button type="button" class="btn btn-icon btn-ghost-secondary btn-sm" aria-label="Pending imported GCash proof" title="Pending imported GCash proof" disabled><i class="ti ti-clock-dollar"></i></button>'
@@ -1242,9 +1320,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             ? `<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-primary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Edit client and bind official GCash transaction" title="Edit & Bind"><i class="ti ti-edit"></i></button>`
                             : '<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-secondary btn-sm" aria-label="GCash binding status is unavailable" title="GCash binding status is unavailable. Refresh to try again." disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'))
                     : '';
-                const deleteButton = row.entryId
-                    ? `<button type="button" class="payment-history-delete btn btn-icon btn-ghost-danger btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="ti ti-trash"></i></button>`
-                    : '<span class="text-secondary">-</span>';
+                const deleteButton = row.isClosureAdjustment
+                    ? '<button type="button" class="btn btn-icon btn-ghost-secondary btn-sm" aria-label="Permanent account-closure audit entry" title="Permanent account-closure audit entry" disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'
+                    : (row.entryId
+                        ? `<button type="button" class="payment-history-delete btn btn-icon btn-ghost-danger btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="ti ti-trash"></i></button>`
+                        : '<span class="text-secondary">-</span>');
 
                 return `
                     <tr>
@@ -1264,7 +1344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         </td>
                         <td>${escapeHtml(row.area)}</td>
-                        <td class="is-num"><span class="payment-history-amount ${row.isPendingGcash ? 'text-warning' : 'text-success'} fw-semibold">${escapeHtml(signedAmount)}</span>${row.isPendingGcash ? '<span class="badge bg-warning-lt text-warning d-block mt-1">Pending</span>' : ''}</td>
+                        <td class="is-num"><span class="payment-history-amount ${amountClass} fw-semibold">${escapeHtml(signedAmount)}</span>${row.isPendingGcash ? '<span class="badge bg-warning-lt text-warning d-block mt-1">Pending</span>' : adjustmentBadge}</td>
                         <td>
                             <div class="payment-history-stack">
                                 ${referenceLine}
@@ -1275,6 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>
                             <div class="payment-history-stack">
                                 <span class="fw-semibold">${escapeHtml(row.recordedByLabel)}</span>
+                                ${closureBalanceLine}
                                 ${noteLine}
                             </div>
                         </td>

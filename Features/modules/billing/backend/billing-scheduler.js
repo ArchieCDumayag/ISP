@@ -7,7 +7,12 @@ const {
 } = require('../../admin/backend/integration-settings');
 const { query } = require('../../../../core/data/db');
 const { assertRelationalReady } = require('../../../../core/data/db-relational');
-const { assignEntryNumbers, assertEntryNumbersAvailable, withTransaction } = require('./payment-numbering');
+const {
+  assignEntryNumbers,
+  assertEntryNumbersAvailable,
+  enqueuePaymentMutation,
+  withTransaction
+} = require('./payment-numbering');
 const { connectMikrotikClient } = require('../../network/backend/mikrotik-client');
 const { auditMikrotikPppoeCommand } = require('../../network/backend/mikrotik-audit-log');
 const customersModule = require('../../customer-management/backend/customers');
@@ -1312,7 +1317,7 @@ function shouldBlockBulkCustomerInactive({ downgradeCount = 0, activeCount = 0, 
   return true;
 }
 
-async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
+async function enforcePppoeGracePeriodForBranchUnlocked(branchId, now = new Date()) {
   await applyDueScheduledPrepaidPlanChangesForBranch(branchId, now);
   const customers = await readCustomers(branchId);
   const payments = await readPayments(branchId);
@@ -1536,6 +1541,10 @@ async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
     await writeCustomers(customers, branchId);
   }
   return { disabled: totalDisabled, enabled: totalEnabled, disconnected: totalDisconnected };
+}
+
+async function enforcePppoeGracePeriodForBranch(branchId, now = new Date()) {
+  return enqueuePaymentMutation(() => enforcePppoeGracePeriodForBranchUnlocked(branchId, now));
 }
 
 async function enforcePppoeGracePeriod(now = new Date()) {
@@ -1866,11 +1875,15 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
 }
 
 async function runMonthlyBillingOnceForBranch(branchId, now = new Date()) {
-  return runMonthlyBillingForBranch(branchId, now, { syncCustomerStatus: true });
+  return enqueuePaymentMutation(() => (
+    runMonthlyBillingForBranch(branchId, now, { syncCustomerStatus: true })
+  ));
 }
 
 async function runMonthlyBillingCatchUpForBranch(branchId, now = new Date()) {
-  return runMonthlyBillingForBranch(branchId, now, { syncCustomerStatus: false });
+  return enqueuePaymentMutation(() => (
+    runMonthlyBillingForBranch(branchId, now, { syncCustomerStatus: false })
+  ));
 }
 
 async function runMonthlyBillingOnce(now = new Date()) {

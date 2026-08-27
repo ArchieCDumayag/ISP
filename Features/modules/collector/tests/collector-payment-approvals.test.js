@@ -1,6 +1,7 @@
 const assert = require('assert/strict');
 const crypto = require('crypto');
 const express = require('express');
+const { EventEmitter } = require('events');
 const { isEffectivePaymentEntryStatus } = require('../../billing/backend/payment-entry-normalizer');
 
 const ADMIN = {
@@ -65,6 +66,14 @@ const relationalPaymentRows = [];
 const relationalReviewRows = [];
 
 async function relationalConnectionQuery(sql, params = []) {
+  if (/SELECT account_number AS accountNumber[\s\S]+FROM payment_entries/i.test(sql)
+      && !/FOR UPDATE/i.test(sql)) {
+    const [branchId, entryId] = params;
+    const row = relationalPaymentRows.find((item) => (
+      String(item.branchId) === String(branchId) && String(item.id) === String(entryId)
+    ));
+    return [row ? [{ accountNumber: row.accountNumber }] : []];
+  }
   if (/SELECT[\s\S]+FROM payment_entries[\s\S]+FOR UPDATE/i.test(sql)) {
     const [branchId, entryId] = params;
     const row = relationalPaymentRows.find((item) => (
@@ -146,6 +155,8 @@ replaceModule('../../admin/backend/accounts-store', {
 replaceModule('../../billing/backend/payment-numbering', {
   assignEntryNumbers: async () => {},
   assertEntryNumbersAvailable: async () => {},
+  enqueuePaymentMutation: async (work) => work(),
+  lockPaymentAccount: async () => {},
   withTransaction: async (work) => work({ query: relationalConnectionQuery })
 });
 replaceModule('../../billing/backend/payment-service-refresh', {
@@ -180,6 +191,51 @@ delete require.cache[routerPath];
 const collectorPaymentsRouter = require(routerPath);
 
 async function run() {
+  const firstRemittanceResponse = new EventEmitter();
+  firstRemittanceResponse.writableFinished = false;
+  firstRemittanceResponse.end = function endResponse() {
+    this.writableFinished = true;
+    this.emit('finish');
+  };
+  const secondRemittanceResponse = new EventEmitter();
+  secondRemittanceResponse.writableFinished = false;
+  secondRemittanceResponse.end = function endResponse() {
+    this.writableFinished = true;
+    this.emit('finish');
+  };
+  let firstRemittanceStarted = false;
+  let secondRemittanceStarted = false;
+  const firstRemittanceMutation = collectorPaymentsRouter.serializeCollectorRemittanceMutationRequest(
+    { method: 'POST' },
+    firstRemittanceResponse,
+    (error) => {
+      if (error) throw error;
+      firstRemittanceStarted = true;
+    }
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(firstRemittanceStarted, true);
+  firstRemittanceResponse.emit('close');
+  const secondRemittanceMutation = collectorPaymentsRouter.serializeCollectorRemittanceMutationRequest(
+    { method: 'POST' },
+    secondRemittanceResponse,
+    (error) => {
+      if (error) throw error;
+      secondRemittanceStarted = true;
+    }
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    secondRemittanceStarted,
+    false,
+    'an early socket close must not release an active remittance mutation'
+  );
+  firstRemittanceResponse.end();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(secondRemittanceStarted, true);
+  secondRemittanceResponse.end();
+  await Promise.all([firstRemittanceMutation, secondRemittanceMutation]);
+
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => {
@@ -469,6 +525,95 @@ async function run() {
     const collectorRestoredList = await request('/remittances');
     assert.equal(collectorRestoredList.status, 200);
     assert.equal(collectorRestoredList.body.records.length, 1);
+
+    const paymentsBeforeBatchDeletion = structuredClone(stores.payments);
+    const activeCannotBeDeleted = await request(`/remittances/${encodeURIComponent(remittanceId)}/delete`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ reason: 'Old remittance batch cleanup.' })
+    });
+    assert.equal(activeCannotBeDeleted.status, 409);
+    assert.match(activeCannotBeDeleted.body.error, /only an archived remittance/i);
+
+    const archivedForDeletion = await request(`/remittances/${encodeURIComponent(remittanceId)}/archive`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(archivedForDeletion.status, 200);
+
+    const collectorCannotDelete = await request(`/remittances/${encodeURIComponent(remittanceId)}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Collector cannot delete this batch.' })
+    });
+    assert.equal(collectorCannotDelete.status, 403);
+
+    const deletionReasonRequired = await request(`/remittances/${encodeURIComponent(remittanceId)}/delete`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(deletionReasonRequired.status, 400);
+    assert.match(deletionReasonRequired.body.error, /deletion reason is required/i);
+
+    const deletedRemittance = await request(`/remittances/${encodeURIComponent(remittanceId)}/delete`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ reason: 'Duplicate archived office copy.' })
+    });
+    assert.equal(deletedRemittance.status, 200);
+    assert.equal(deletedRemittance.body.replayed, false);
+    assert.equal(deletedRemittance.body.deletion.remittanceId, remittanceId);
+    assert.equal(deletedRemittance.body.deletion.reason, 'Duplicate archived office copy.');
+    assert.equal(deletedRemittance.body.deletion.deletedBy.id, 'admin-1');
+    assert.equal(deletedRemittance.body.deletion.totalAmount, 2000);
+    assert.equal(deletedRemittance.body.deletion.paymentCount, 3);
+    assert.equal(stores.collector_remittances.records.length, 0);
+    assert.equal(stores.collector_remittances.deletedRecords.length, 1);
+    assert.deepEqual(stores.payments, paymentsBeforeBatchDeletion, 'deleting a batch must not modify customer payment history');
+
+    const deletedList = await request('/remittances', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(deletedList.status, 200);
+    assert.equal(deletedList.body.records.length, 0);
+
+    const deletedReplay = await request(`/remittances/${encodeURIComponent(remittanceId)}/delete`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ reason: 'Duplicate archived office copy.' })
+    });
+    assert.equal(deletedReplay.status, 200);
+    assert.equal(deletedReplay.body.replayed, true);
+    assert.equal(stores.collector_remittances.deletedRecords.length, 1);
+
+    const paymentRetryAfterBatchDeletion = await request('/ACC-100', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payment,
+        reference: 'COL-REF-003',
+        clientPaymentId: 'local-payment-003'
+      })
+    });
+    assert.equal(paymentRetryAfterBatchDeletion.status, 200);
+    assert.equal(paymentRetryAfterBatchDeletion.body.replayed, true);
+    assert.equal(stores.collector_remittances.records.length, 0, 'an exact payment retry must not recreate a deleted batch');
+
+    const deletedPaymentCannotBeRemittedAgain = await request('/remittances', {
+      method: 'POST',
+      body: JSON.stringify({
+        paymentEntryIds: [{
+          paymentEntryId: combinedCandidate.body.id,
+          accountNumber: 'ACC-100',
+          reference: 'COL-REF-003',
+          amount: 1000
+        }]
+      })
+    });
+    assert.equal(deletedPaymentCannotBeRemittedAgain.status, 409);
+    assert.match(deletedPaymentCannotBeRemittedAgain.body.error, /deleted archived remittance/i);
+    assert.equal(stores.collector_remittances.records.length, 0);
+    assert.deepEqual(stores.payments, paymentsBeforeBatchDeletion);
 
     relationalPaymentRows.push({
       id: 'rel-pay-001',

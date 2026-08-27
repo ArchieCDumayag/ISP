@@ -51,9 +51,24 @@ const {
 } = require('../../network/backend/mikrotik');
 const { readCoverage } = require('../../customer-management/backend/api_coverage');
 const { resolvePlanProfileForRouter } = require('../../billing/backend/plan-profile-utils');
+const { serializePaymentMutationRequest } = require('../../billing/backend/payment-numbering');
+const {
+    getActiveClosedCustomerAccount
+} = require('../../customer-management/backend/closed-customer-account-store');
 
 const router = express.Router();
 const TECHNICIAN_COVERAGE_RADIUS_METERS = 600;
+
+const assertTechnicianPppoeAccountOpen = async (branchId, accountNumber) => {
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+    if (!activeClosure) return;
+    const error = createError(
+        409,
+        'This customer account is closed. Reopen it from Customer Archive before generating PPPoE service.'
+    );
+    error.code = 'TECHNICIAN_PPPOE_ACCOUNT_CLOSED';
+    throw error;
+};
 
 const toSafeText = (value, maxLen = 0) => {
     const text = String(value == null ? '' : value).trim();
@@ -1480,7 +1495,7 @@ router.post('/pon/reservations/:reservationId/finalize', finalizePonAssignmentHa
 router.post('/pon/assignments', finalizePonAssignmentHandler);
 router.post('/pon/assign', finalizePonAssignmentHandler);
 
-router.post('/pppoe/generate', async (req, res, next) => {
+router.post('/pppoe/generate', serializePaymentMutationRequest, async (req, res, next) => {
     let client = null;
     try {
         const branchId = req.technician.branchId;
@@ -1502,6 +1517,7 @@ router.post('/pppoe/generate', async (req, res, next) => {
             limit: 500
         }).catch(() => []);
         const customer = access.customer;
+        await assertTechnicianPppoeAccountOpen(branchId, customerAccountNumber);
 
         let napAssignment = null;
         const ponContext = await loadPonContext(branchId, { allowMissingSchema: true }).catch(() => null);
@@ -1722,7 +1738,8 @@ router.post('/pppoe/generate', async (req, res, next) => {
                 customerPppoePatch,
                 {
                     branchId,
-                    refreshSource: 'technician-pppoe-generate'
+                    refreshSource: 'technician-pppoe-generate',
+                    paymentMutationAlreadySerialized: true
                 }
             );
 
@@ -1787,7 +1804,8 @@ router.post('/pppoe/generate', async (req, res, next) => {
                 fallbackCredentialPatch,
                 {
                     branchId,
-                    refreshSource: 'technician-pppoe-generate-manual'
+                    refreshSource: 'technician-pppoe-generate-manual',
+                    paymentMutationAlreadySerialized: true
                 }
             );
 

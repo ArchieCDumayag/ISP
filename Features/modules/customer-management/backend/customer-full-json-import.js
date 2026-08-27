@@ -2,6 +2,10 @@ const { readJson, writeJson } = require('../../../../core/data/data-store');
 const {
     mergeFirstBillAdjustmentRows
 } = require('../../billing/backend/first-bill-adjustment-transfer');
+const {
+    getClosedAccountPaymentEvidenceType,
+    isProtectedClosedAccountPaymentEvidence
+} = require('../../billing/backend/closed-account-payment-evidence');
 
 const STORE_KEYS = Object.freeze({
     customers: 'customers',
@@ -12,7 +16,8 @@ const STORE_KEYS = Object.freeze({
     smsMessages: 'sms_messages',
     smsAutomationRuns: 'sms_automation_runs',
     ponState: 'pon-state',
-    paymentBreakdownAdjustments: 'payment_breakdown_adjustments'
+    paymentBreakdownAdjustments: 'payment_breakdown_adjustments',
+    closedCustomerAccounts: 'closed_customer_accounts'
 });
 
 const IMPORTED_TEMPLATE = Object.freeze({
@@ -116,16 +121,20 @@ const secondaryIdentitiesForImportRow = (tableName, row = {}) => {
         return getCustomerFullPaymentSecondaryAliases(row);
     }
     if (tableName === 'pon_nap_connections') {
-        const nap = identityKey(
-            row?.nap_id
-            ?? row?.napId
-            ?? row?.nap_client_uid
-            ?? row?.napClientUid
-            ?? row?.nap_code
-            ?? row?.napCode
-        );
         const port = identityNumber(row?.port);
-        return nap && port ? [{ alias: `nap_port:${nap}:${port}`, type: 'nap_port' }] : [];
+        if (!port) return [];
+        const napAliases = [...new Set([
+            row?.nap_id,
+            row?.napId,
+            row?.nap_client_uid,
+            row?.napClientUid,
+            row?.nap_code,
+            row?.napCode
+        ].map(identityKey).filter(Boolean))];
+        return napAliases.map((napAlias) => ({
+            alias: `nap_port:${napAlias}:${port}`,
+            type: 'nap_port'
+        }));
     }
     return [];
 };
@@ -224,6 +233,16 @@ const createCustomerFullImportConflictError = (conflicts = []) => {
     return error;
 };
 
+const createCustomerFullImportProtectedHistoryError = (conflicts = []) => {
+    const error = new Error(
+        'Import stopped because it would modify records with protected closed-account history.'
+    );
+    error.code = 'CUSTOMER_FULL_IMPORT_PROTECTED_CLOSED_ACCOUNT';
+    error.status = 409;
+    error.conflicts = conflicts.slice(0, 200);
+    return error;
+};
+
 const isNoRecordsPlaceholder = (entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
     const populatedFields = Object.entries(entry).filter(([, value]) => String(value == null ? '' : value).trim());
@@ -243,6 +262,396 @@ const filterCustomerFullImportRows = (value) => (Array.isArray(value)
     : []);
 
 const asRows = filterCustomerFullImportRows;
+
+const CUSTOMER_FULL_ACCOUNT_KEYS_BY_TABLE = Object.freeze({
+    customers: ['account_number', 'accountNumber'],
+    payment_entries: ['account_number', 'accountNumber'],
+    tickets: ['customer_account_number', 'customerAccountNumber', 'account_number', 'accountNumber'],
+    jobs: ['customer_account_number', 'customerAccountNumber', 'account_number', 'accountNumber'],
+    sms_messages: ['customer_account_number', 'customerAccountNumber', 'account_number', 'accountNumber'],
+    sms_automation_runs: ['customer_account_number', 'customerAccountNumber', 'account_number', 'accountNumber'],
+    pon_nap_connections: [
+        'customer_account_number',
+        'customerAccountNumber',
+        'account_number',
+        'accountNumber',
+        'customer_id',
+        'customerId',
+        'customer_ref',
+        'customerRef'
+    ],
+    payment_breakdown_adjustments: [
+        'account_number',
+        'accountNumber',
+        'customer_account_number',
+        'customerAccountNumber'
+    ]
+});
+
+const CUSTOMER_FULL_STABLE_RECORD_TABLES = Object.freeze([
+    'tickets',
+    'jobs',
+    'sms_messages',
+    'sms_automation_runs',
+    'pon_nap_connections'
+]);
+
+const accountNumberFromImportRow = (tableName, row = {}) => {
+    const keys = CUSTOMER_FULL_ACCOUNT_KEYS_BY_TABLE[tableName] || [];
+    return identityText(keys.map((key) => row?.[key]).find((candidate) => identityText(candidate)));
+};
+
+const getCustomerFullImportAccountNumbers = (tables = {}) => {
+    const accountNumbers = new Map();
+    const addAccount = (value) => {
+        const accountNumber = identityText(value);
+        if (!accountNumber) return;
+        const key = identityKey(accountNumber);
+        if (!accountNumbers.has(key)) accountNumbers.set(key, accountNumber);
+    };
+    Object.entries(CUSTOMER_FULL_ACCOUNT_KEYS_BY_TABLE).forEach(([tableName]) => {
+        const rows = tableName === 'payment_entries'
+            ? (tables.payment_entries || tables.payments)
+            : tables[tableName];
+        filterCustomerFullImportRows(rows).forEach((row) => addAccount(accountNumberFromImportRow(tableName, row)));
+    });
+    const importedPonState = parsePonStateRow(tables);
+    (Array.isArray(importedPonState?.naps) ? importedPonState.naps : []).forEach((nap) => {
+        filterCustomerFullImportRows(nap?.connections).forEach((connection) => {
+            addAccount(accountNumberFromImportRow('pon_nap_connections', connection));
+        });
+    });
+
+    return [...accountNumbers.values()].sort((left, right) => left.localeCompare(right));
+};
+
+const getCustomerFullImportPaymentIds = (tables = {}) => {
+    const paymentIds = new Map();
+    filterCustomerFullImportRows(tables.payment_entries || tables.payments).forEach((row) => {
+        const id = identityText(row?.id || row?.payment_id || row?.paymentId);
+        if (!id) return;
+        const key = identityKey(id);
+        if (!paymentIds.has(key)) paymentIds.set(key, id);
+    });
+    return [...paymentIds.values()].sort((left, right) => left.localeCompare(right));
+};
+
+const enrichCustomerFullImportJobAccounts = (tables = {}, currentTickets = []) => {
+    const ticketAccounts = new Map();
+    filterCustomerFullImportRows(currentTickets).forEach((ticket) => {
+        const ticketId = identityKey(ticket?.id);
+        const accountNumber = accountNumberFromImportRow('tickets', ticket);
+        if (ticketId && accountNumber && !ticketAccounts.has(ticketId)) {
+            ticketAccounts.set(ticketId, accountNumber);
+        }
+    });
+    filterCustomerFullImportRows(tables.tickets).forEach((ticket) => {
+        const ticketId = identityKey(ticket?.id);
+        const accountNumber = accountNumberFromImportRow('tickets', ticket);
+        if (ticketId && accountNumber && !ticketAccounts.has(ticketId)) {
+            ticketAccounts.set(ticketId, accountNumber);
+        }
+    });
+    return {
+        ...tables,
+        jobs: filterCustomerFullImportRows(tables.jobs).map((job) => {
+            if (accountNumberFromImportRow('jobs', job)) return job;
+            const linkedAccount = ticketAccounts.get(identityKey(job?.ticketId || job?.ticket_id));
+            return linkedAccount ? { ...job, customer_account_number: linkedAccount } : job;
+        })
+    };
+};
+
+const findCustomerFullImportClosedAccountConflicts = ({
+    branchId = null,
+    tables = {},
+    closedAccountRecords = [],
+    currentCustomers = [],
+    currentPayments = {},
+    currentRelatedRecords = {},
+    currentPonState = {}
+} = {}) => {
+    const importedAccounts = getCustomerFullImportAccountNumbers(tables);
+    const importedByKey = new Map(importedAccounts.map((accountNumber) => [
+        identityKey(accountNumber),
+        accountNumber
+    ]));
+    const importedPaymentsById = new Map(
+        filterCustomerFullImportRows(tables.payment_entries || tables.payments)
+            .map((row) => {
+                const id = identityText(row?.id || row?.payment_id || row?.paymentId);
+                if (!id) return null;
+                return [identityKey(id), {
+                    id,
+                    accountNumber: identityText(row?.accountNumber || row?.account_number)
+                }];
+            })
+            .filter(Boolean)
+    );
+    const conflictsByKey = new Map();
+    const protectedAccountKeys = new Set();
+    const protectedAccountsInRequestedBranch = new Map();
+    const addReason = (accountNumber, reason, { paymentId = '', importedAccountOnly = true } = {}) => {
+        const key = identityKey(accountNumber);
+        if (!key || (importedAccountOnly && !importedByKey.has(key))) return;
+        if (!conflictsByKey.has(key)) {
+            conflictsByKey.set(key, {
+                accountNumber: identityText(accountNumber),
+                reasons: new Set(),
+                paymentIds: new Set()
+            });
+        }
+        const conflict = conflictsByKey.get(key);
+        conflict.reasons.add(reason);
+        if (identityText(paymentId)) conflict.paymentIds.add(identityText(paymentId));
+    };
+
+    const requestedBranchId = Number(branchId);
+    filterCustomerFullImportRows(closedAccountRecords).forEach((record) => {
+        const accountNumber = identityText(record?.accountNumber || record?.account_number);
+        const accountKey = identityKey(accountNumber);
+        if (accountKey) protectedAccountKeys.add(accountKey);
+        const recordBranchId = Number(record?.branchId || record?.branch_id || record?._storeBranchId);
+        if (
+            accountKey
+            && Number.isInteger(requestedBranchId)
+            && requestedBranchId > 0
+            && (!Number.isInteger(recordBranchId) || recordBranchId <= 0 || recordBranchId === requestedBranchId)
+        ) {
+            protectedAccountsInRequestedBranch.set(accountKey, accountNumber);
+        }
+        addReason(accountNumber, 'closed_account_history');
+    });
+
+    filterCustomerFullImportRows(currentCustomers).forEach((customer) => {
+        const accountNumber = identityText(customer?.accountNumber || customer?.account_number);
+        const existingBranchId = Number(customer?.branchId || customer?.branch_id);
+        if (
+            Number.isInteger(requestedBranchId)
+            && requestedBranchId > 0
+            && Number.isInteger(existingBranchId)
+            && existingBranchId > 0
+            && existingBranchId !== requestedBranchId
+        ) {
+            addReason(accountNumber, 'cross_branch_customer_account');
+        }
+    });
+
+    const inspectPayment = (entry, storedAccountNumber = '') => {
+        const existingAccountNumber = identityText(
+            entry?.accountNumber || entry?.account_number || storedAccountNumber
+        );
+        const existingId = identityText(entry?.id || entry?.payment_id || entry?.paymentId);
+        const importedPayment = importedPaymentsById.get(identityKey(existingId));
+        const existingBranchId = Number(entry?.branchId || entry?.branch_id);
+        const crossBranchPaymentId = (
+            existingId
+            && importedPayment
+            && Number.isInteger(requestedBranchId)
+            && requestedBranchId > 0
+            && Number.isInteger(existingBranchId)
+            && existingBranchId > 0
+            && existingBranchId !== requestedBranchId
+        );
+        if (crossBranchPaymentId) {
+            addReason(
+                existingAccountNumber || importedPayment.accountNumber,
+                'cross_branch_payment_id',
+                { paymentId: existingId, importedAccountOnly: false }
+            );
+            return;
+        }
+
+        const evidenceType = getClosedAccountPaymentEvidenceType(entry);
+        const movedAcrossAccounts = existingId
+            && importedPayment
+            && existingAccountNumber
+            && importedPayment.accountNumber
+            && identityKey(existingAccountNumber) !== identityKey(importedPayment.accountNumber);
+        if (movedAcrossAccounts && !evidenceType) {
+            addReason(
+                existingAccountNumber,
+                `${protectedAccountKeys.has(identityKey(existingAccountNumber)) ? 'protected' : 'existing'}_payment_id_moved`,
+                { paymentId: existingId, importedAccountOnly: false }
+            );
+        }
+        if (!evidenceType) return;
+        const existingAccountKey = identityKey(existingAccountNumber);
+        if (existingAccountKey) protectedAccountKeys.add(existingAccountKey);
+        if (
+            existingAccountKey
+            && Number.isInteger(requestedBranchId)
+            && requestedBranchId > 0
+            && (!Number.isInteger(existingBranchId) || existingBranchId <= 0 || existingBranchId === requestedBranchId)
+        ) {
+            protectedAccountsInRequestedBranch.set(existingAccountKey, existingAccountNumber);
+        }
+        const reasonPrefix = evidenceType === 'closure_write_off'
+            ? 'protected_closure_write_off'
+            : 'protected_closed_collection';
+        addReason(existingAccountNumber, `${reasonPrefix}_payment`);
+
+        if (!existingId || !importedPayment) return;
+        addReason(
+            existingAccountNumber || importedPayment.accountNumber,
+            `${reasonPrefix}_payment_id${movedAcrossAccounts ? '_moved' : ''}`,
+            { paymentId: existingId, importedAccountOnly: false }
+        );
+    };
+
+    if (Array.isArray(currentPayments)) {
+        currentPayments.forEach((entry) => inspectPayment(entry));
+    } else if (currentPayments && typeof currentPayments === 'object') {
+        Object.entries(currentPayments).forEach(([storedAccountNumber, record]) => {
+            const history = Array.isArray(record?.history) ? record.history : [];
+            history.forEach((entry) => inspectPayment(entry, storedAccountNumber));
+        });
+    }
+
+    if (filterCustomerFullImportRows(tables.pon_state).length) {
+        protectedAccountsInRequestedBranch.forEach((accountNumber) => {
+            addReason(accountNumber, 'protected_branch_pon_state', { importedAccountOnly: false });
+        });
+    }
+
+    const currentTicketRows = filterCustomerFullImportRows(currentRelatedRecords?.tickets);
+    const currentTicketAccounts = new Map(currentTicketRows.map((ticket) => [
+        identityKey(ticket?.id),
+        accountNumberFromImportRow('tickets', ticket)
+    ]));
+    const currentRowsByTable = {
+        tickets: currentTicketRows,
+        jobs: filterCustomerFullImportRows(currentRelatedRecords?.jobs).map((job) => {
+            if (accountNumberFromImportRow('jobs', job)) return job;
+            const linkedAccount = currentTicketAccounts.get(identityKey(job?.ticketId || job?.ticket_id));
+            return linkedAccount ? { ...job, customerAccountNumber: linkedAccount } : job;
+        }),
+        sms_messages: filterCustomerFullImportRows(currentRelatedRecords?.sms_messages),
+        sms_automation_runs: filterCustomerFullImportRows(currentRelatedRecords?.sms_automation_runs),
+        pon_nap_connections: [
+            ...filterCustomerFullImportRows(currentRelatedRecords?.pon_nap_connections),
+            ...flattenPonStateConnections(currentPonState, requestedBranchId)
+        ]
+    };
+    CUSTOMER_FULL_STABLE_RECORD_TABLES.forEach((tableName) => {
+        const currentRows = currentRowsByTable[tableName] || [];
+        const currentById = new Map();
+        const currentPonPorts = new Map();
+        currentRows.forEach((row) => {
+            const rowId = identityKey(row?.id);
+            if (rowId && !currentById.has(rowId)) currentById.set(rowId, row);
+            if (tableName !== 'pon_nap_connections') return;
+            secondaryIdentitiesForImportRow(tableName, row).forEach(({ alias }) => {
+                if (!currentPonPorts.has(alias)) currentPonPorts.set(alias, row);
+            });
+        });
+
+        const inspectCollision = (importedRow, existingRow, identitySuffix) => {
+            if (!existingRow) return;
+            const importedAccountNumber = accountNumberFromImportRow(tableName, importedRow);
+            const existingAccountNumber = accountNumberFromImportRow(tableName, existingRow);
+            const existingBranchId = Number(existingRow?.branchId || existingRow?.branch_id);
+            if (
+                Number.isInteger(requestedBranchId)
+                && requestedBranchId > 0
+                && Number.isInteger(existingBranchId)
+                && existingBranchId > 0
+                && existingBranchId !== requestedBranchId
+            ) {
+                addReason(
+                    existingAccountNumber || importedAccountNumber || `record-${identityText(importedRow?.id)}`,
+                    `cross_branch_${tableName}_${identitySuffix}`,
+                    { importedAccountOnly: false }
+                );
+                return;
+            }
+            if (identityKey(existingAccountNumber) === identityKey(importedAccountNumber)) return;
+            const protectedOwner = protectedAccountKeys.has(identityKey(existingAccountNumber));
+            addReason(
+                existingAccountNumber || importedAccountNumber || `record-${identityText(importedRow?.id)}`,
+                `${protectedOwner ? 'protected' : 'existing'}_${tableName}_${identitySuffix}_moved`,
+                { importedAccountOnly: false }
+            );
+        };
+
+        filterCustomerFullImportRows(tables[tableName]).forEach((row) => {
+            const rowId = identityKey(row?.id);
+            if (rowId) inspectCollision(row, currentById.get(rowId), 'id');
+            if (tableName !== 'pon_nap_connections') return;
+            secondaryIdentitiesForImportRow(tableName, row).forEach(({ alias }) => {
+                inspectCollision(row, currentPonPorts.get(alias), 'port');
+            });
+        });
+    });
+
+    return [...conflictsByKey.values()]
+        .map((conflict) => ({
+            accountNumber: conflict.accountNumber,
+            reasons: [...conflict.reasons].sort(),
+            ...(conflict.paymentIds.size ? { paymentIds: [...conflict.paymentIds].sort() } : {})
+        }))
+        .sort((left, right) => left.accountNumber.localeCompare(right.accountNumber));
+};
+
+const isCustomerFullImportBlockingConflict = (conflict = {}) => (
+    (Array.isArray(conflict?.reasons) ? conflict.reasons : []).some((reason) => (
+        String(reason || '').startsWith('cross_branch_')
+        || String(reason || '').endsWith('_id_moved')
+        || String(reason || '').endsWith('_port_moved')
+    ))
+);
+
+const filterCustomerFullImportProtectedRows = ({ tables = {}, conflicts = [] } = {}) => {
+    const protectedAccounts = new Set(
+        (Array.isArray(conflicts) ? conflicts : [])
+            .filter((conflict) => !isCustomerFullImportBlockingConflict(conflict))
+            .map((conflict) => identityKey(conflict?.accountNumber))
+            .filter(Boolean)
+    );
+    const filteredTables = {};
+    const skippedByTable = { ...DUPLICATES_TEMPLATE };
+
+    CUSTOMER_FULL_TABLE_NAMES.forEach((tableName) => {
+        const sourceRows = filterCustomerFullImportRows(
+            tableName === 'payment_entries'
+                ? (tables.payment_entries || tables.payments)
+                : tables[tableName]
+        );
+        if (tableName === 'pon_state' && protectedAccounts.size && sourceRows.length) {
+            filteredTables[tableName] = [];
+            skippedByTable[tableName] += sourceRows.length;
+            return;
+        }
+        if (!CUSTOMER_FULL_ACCOUNT_KEYS_BY_TABLE[tableName] || !protectedAccounts.size) {
+            filteredTables[tableName] = sourceRows;
+            return;
+        }
+        filteredTables[tableName] = sourceRows.filter((row) => {
+            const accountKey = identityKey(accountNumberFromImportRow(tableName, row));
+            if (!accountKey || !protectedAccounts.has(accountKey)) return true;
+            skippedByTable[tableName] += 1;
+            return false;
+        });
+    });
+
+    const warnings = [...protectedAccounts]
+        .map((accountKey) => {
+            const conflict = conflicts.find((entry) => identityKey(entry?.accountNumber) === accountKey);
+            const skippedCount = Object.values(skippedByTable).reduce((total, count) => total + Number(count || 0), 0);
+            if (!conflict || !skippedCount) return null;
+            return `Preserved protected closed-account records for account ${conflict.accountNumber}; imported rows for that account were skipped.`;
+        })
+        .filter(Boolean)
+        .slice(0, 200);
+
+    return {
+        tables: filteredTables,
+        protectedAccounts: [...protectedAccounts],
+        skippedByTable,
+        skippedCount: Object.values(skippedByTable).reduce((total, count) => total + Number(count || 0), 0),
+        warnings
+    };
+};
 
 const pickValue = (row, keys = []) => {
     for (const key of keys) {
@@ -605,10 +1014,26 @@ const parsePonStateRow = (tables = {}) => {
     };
 };
 
+const flattenPonStateConnections = (ponState = {}, branchId = null) => {
+    const branchKey = identityText(branchId);
+    const scoped = isPlainObject(ponState?.branches?.[branchKey])
+        ? ponState.branches[branchKey]
+        : (isPlainObject(ponState?.default) ? ponState.default : (isPlainObject(ponState) ? ponState : {}));
+    return (Array.isArray(scoped?.naps) ? scoped.naps : []).flatMap((nap) => (
+        filterCustomerFullImportRows(nap?.connections).map((connection) => ({
+            ...connection,
+            branchId: Number(branchId) || connection?.branchId || connection?.branch_id,
+            napId: connection?.napId || connection?.nap_id || nap?.id || nap?.napId || nap?.nap_id,
+            napClientUid: connection?.napClientUid || connection?.nap_client_uid || nap?.clientUid || nap?.client_uid || nap?.uid,
+            napCode: connection?.napCode || connection?.nap_code || nap?.code
+        }))
+    ));
+};
+
 const buildPonNapLookup = (naps = []) => {
     const lookup = new Map();
     naps.forEach((nap) => {
-        [nap?.id, nap?.napId, nap?.nap_id, nap?.code].forEach((value) => {
+        [nap?.id, nap?.napId, nap?.nap_id, nap?.clientUid, nap?.client_uid, nap?.uid, nap?.code].forEach((value) => {
             const key = String(value == null ? '' : value).trim().toLowerCase();
             if (key && !lookup.has(key)) lookup.set(key, nap);
         });
@@ -649,11 +1074,55 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     if (importIntegrity.conflictCount) {
         throw createCustomerFullImportConflictError(importIntegrity.conflicts);
     }
-    const importTables = importIntegrity.tables;
+    let importTables = enrichCustomerFullImportJobAccounts(importIntegrity.tables, stores.tickets);
+    const closedAccountStore = stores.closed_customer_accounts || stores.closedCustomerAccounts || {
+        version: 1,
+        branches: {}
+    };
+    if (
+        !closedAccountStore
+        || typeof closedAccountStore !== 'object'
+        || Array.isArray(closedAccountStore)
+        || !closedAccountStore.branches
+        || typeof closedAccountStore.branches !== 'object'
+        || Array.isArray(closedAccountStore.branches)
+    ) {
+        throw new Error('The protected closed-account audit store is invalid; import stopped without changing records.');
+    }
+    const closedAccountRecords = Object.entries(closedAccountStore.branches).flatMap(([storeBranchId, entry]) => (
+        Array.isArray(entry?.records)
+            ? entry.records.map((record) => ({ ...record, _storeBranchId: storeBranchId }))
+            : []
+    ));
+    const protectedHistoryConflicts = findCustomerFullImportClosedAccountConflicts({
+        branchId: scopedBranchId,
+        tables: importTables,
+        closedAccountRecords,
+        currentCustomers: stores.customers,
+        currentPayments: stores.payments,
+        currentRelatedRecords: {
+            tickets: stores.tickets,
+            jobs: stores.jobs,
+            sms_messages: stores.sms_messages,
+            sms_automation_runs: stores.sms_automation_runs
+        },
+        currentPonState: stores['pon-state']
+    });
+    const blockingProtectedHistoryConflicts = protectedHistoryConflicts.filter(
+        isCustomerFullImportBlockingConflict
+    );
+    if (blockingProtectedHistoryConflicts.length) {
+        throw createCustomerFullImportProtectedHistoryError(blockingProtectedHistoryConflicts);
+    }
+    const protectedHistoryFilter = filterCustomerFullImportProtectedRows({
+        tables: importTables,
+        conflicts: protectedHistoryConflicts
+    });
+    importTables = protectedHistoryFilter.tables;
     const nowIso = normalizeNow(now);
     const imported = { ...IMPORTED_TEMPLATE };
     const duplicatesSkipped = { ...importIntegrity.duplicatesSkipped };
-    const warnings = [];
+    const warnings = [...protectedHistoryFilter.warnings];
     const pushWarning = (message) => {
         if (message && warnings.length < 200) warnings.push(String(message));
     };
@@ -754,7 +1223,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
         }
         const duplicateIdentity = getCustomerFullPaymentSecondaryAliases(normalized.entry)
             .map(({ alias, type }) => ({ existing: existingPaymentAliases.get(alias), type }))
-            .find(({ existing }) => existing && existing.id !== normalized.entry.id);
+            .find(({ existing }) => existing && identityKey(existing.id) !== identityKey(normalized.entry.id));
         if (duplicateIdentity) {
             duplicatesSkipped.payment_entries += 1;
             pushWarning(
@@ -762,7 +1231,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             );
             return;
         }
-        importedPaymentById.set(normalized.entry.id, normalized);
+        importedPaymentById.set(identityKey(normalized.entry.id), normalized);
         getCustomerFullPaymentSecondaryAliases(normalized.entry).forEach(({ alias, type }) => {
             existingPaymentAliases.set(alias, { id: normalized.entry.id, type });
         });
@@ -772,7 +1241,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
     if (importedPaymentById.size) {
         const replacedIds = new Set(importedPaymentById.keys());
         Object.values(payments).forEach((accountData) => {
-            accountData.history = accountData.history.filter((entry) => !replacedIds.has(String(entry?.id || '').trim()));
+            accountData.history = accountData.history.filter((entry) => !replacedIds.has(identityKey(entry?.id)));
         });
         importedPaymentById.forEach(({ accountNumber, entry }) => {
             const customer = branchAccounts.get(accountNumber) || {};
@@ -940,7 +1409,7 @@ const importCustomerFullJsonData = async ({
     readStore = readJson,
     writeStore = writeJson
 } = {}) => {
-    const [customers, plans, payments, tickets, jobs, smsMessages, smsAutomationRuns, ponState, paymentBreakdownAdjustments] = await Promise.all([
+    const [customers, plans, payments, tickets, jobs, smsMessages, smsAutomationRuns, ponState, paymentBreakdownAdjustments, closedCustomerAccounts] = await Promise.all([
         readStore(STORE_KEYS.customers, []),
         readStore(STORE_KEYS.plans, []),
         readStore(STORE_KEYS.payments, {}),
@@ -949,7 +1418,8 @@ const importCustomerFullJsonData = async ({
         readStore(STORE_KEYS.smsMessages, []),
         readStore(STORE_KEYS.smsAutomationRuns, []),
         readStore(STORE_KEYS.ponState, {}),
-        readStore(STORE_KEYS.paymentBreakdownAdjustments, {})
+        readStore(STORE_KEYS.paymentBreakdownAdjustments, {}),
+        readStore(STORE_KEYS.closedCustomerAccounts, { version: 1, branches: {} })
     ]);
     const result = buildCustomerFullJsonImport({
         branchId,
@@ -963,7 +1433,8 @@ const importCustomerFullJsonData = async ({
             sms_messages: smsMessages,
             sms_automation_runs: smsAutomationRuns,
             'pon-state': ponState,
-            payment_breakdown_adjustments: paymentBreakdownAdjustments
+            payment_breakdown_adjustments: paymentBreakdownAdjustments,
+            closed_customer_accounts: closedCustomerAccounts
         },
         now
     });
@@ -1002,8 +1473,14 @@ const importCustomerFullJsonData = async ({
 module.exports = {
     buildCustomerFullJsonImport,
     createCustomerFullImportConflictError,
+    createCustomerFullImportProtectedHistoryError,
     deduplicateCustomerFullTables,
     filterCustomerFullImportRows,
+    filterCustomerFullImportProtectedRows,
+    findCustomerFullImportClosedAccountConflicts,
+    getCustomerFullImportAccountNumbers,
+    getCustomerFullImportPaymentIds,
     getCustomerFullPaymentSecondaryAliases,
+    isCustomerFullImportBlockingConflict,
     importCustomerFullJsonData
 };

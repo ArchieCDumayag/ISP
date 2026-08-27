@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.17">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.18">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -363,13 +363,44 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="btn-group collector-remittance-tabs" role="group" aria-label="Cash remittance status filter">
-                                    <button class="btn btn-sm btn-primary" type="button" data-collector-remittance-filter="pending" aria-pressed="true">Pending <span id="collectorRemittancePendingCount">0</span></button>
-                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="remitted" aria-pressed="false">Remitted <span id="collectorRemittanceCompletedCount">0</span></button>
-                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="rejected" aria-pressed="false">Rejected <span id="collectorRemittanceRejectedCount">0</span></button>
-                                    <button class="btn btn-sm btn-outline-secondary" type="button" data-collector-remittance-filter="archived" aria-pressed="false">Archived <span id="collectorRemittanceArchivedCount">0</span></button>
+                                <ul class="nav nav-tabs collector-remittance-tabs" role="tablist" aria-label="Cash remittance status filter">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" type="button" role="tab" data-collector-remittance-filter="pending" aria-selected="true">
+                                            Pending <span class="badge bg-warning-lt text-warning" id="collectorRemittancePendingCount">0</span>
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" type="button" role="tab" data-collector-remittance-filter="remitted" aria-selected="false" tabindex="-1">
+                                            Remitted <span class="badge bg-green-lt text-green" id="collectorRemittanceCompletedCount">0</span>
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" type="button" role="tab" data-collector-remittance-filter="rejected" aria-selected="false" tabindex="-1">
+                                            Rejected <span class="badge bg-danger-lt text-danger" id="collectorRemittanceRejectedCount">0</span>
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" type="button" role="tab" data-collector-remittance-filter="archived" aria-selected="false" tabindex="-1">
+                                            Archived <span class="badge bg-secondary-lt text-secondary" id="collectorRemittanceArchivedCount">0</span>
+                                        </button>
+                                    </li>
+                                </ul>
+                                <div class="table-responsive collector-remittance-table-wrap">
+                                    <table class="table table-vcenter table-nowrap card-table mb-0 collector-remittance-table">
+                                        <caption class="visually-hidden">Collector cash remittances</caption>
+                                        <thead>
+                                            <tr>
+                                                <th>Collector</th>
+                                                <th>Amount</th>
+                                                <th>Payments</th>
+                                                <th>Date</th>
+                                                <th>Status / Batch</th>
+                                                <th class="text-end">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="collectorRemittanceList" aria-live="polite"></tbody>
+                                    </table>
                                 </div>
-                                <div class="collector-remittance-list" id="collectorRemittanceList" role="list" aria-live="polite"></div>
                                 <div class="empty-state p-3" id="collectorRemittanceEmptyState" style="display:none;">
                                     <i class="ti ti-receipt-off" aria-hidden="true"></i>
                                     <p>No cash remittances match this status.</p>
@@ -778,12 +809,15 @@
                         <input type="hidden" id="collectorRemittanceReviewAction">
                         <div class="alert alert-info collector-remittance-review-summary" id="collectorRemittanceReviewSummary" role="status"></div>
                         <div class="collector-remittance-review-payments" id="collectorRemittanceReviewPayments"></div>
-                        <label class="form-label mt-3" for="collectorRemittanceReviewNote" id="collectorRemittanceReviewNoteLabel">Admin note <span class="text-secondary">(optional)</span></label>
-                        <textarea class="form-control" id="collectorRemittanceReviewNote" rows="3" maxlength="500" placeholder="Example: Cash and electronic totals verified."></textarea>
+                        <div class="list-group list-group-flush border rounded mt-3" id="collectorRemittanceReviewAudit" hidden></div>
+                        <div id="collectorRemittanceReviewNoteField">
+                            <label class="form-label mt-3" for="collectorRemittanceReviewNote" id="collectorRemittanceReviewNoteLabel">Admin note <span class="text-secondary">(optional)</span></label>
+                            <textarea class="form-control" id="collectorRemittanceReviewNote" rows="3" maxlength="500" placeholder="Example: Cash and electronic totals verified."></textarea>
+                        </div>
                         <div class="modal-message" id="collectorRemittanceReviewMessage" role="status" aria-live="polite"></div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorRemittanceReviewModal">Cancel</button>
+                    <div class="modal-footer" id="collectorRemittanceReviewFooter">
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorRemittanceReviewModal"><span id="collectorRemittanceReviewCancelLabel">Cancel</span></button>
                         <button type="submit" class="btn btn-success btn-sm" id="collectorRemittanceReviewSubmit">
                             <i class="ti ti-check" aria-hidden="true"></i>
                             <span>Confirm Remitted</span>
@@ -829,7 +863,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=3.19"></script>
+    <script src="js/collectors-page.js?v=3.21"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

@@ -28,6 +28,16 @@ const normalizeMoney = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0;
 };
+const normalizeOptionalMoney = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Number(amount.toFixed(2)) : null;
+};
+
+const normalizeAdjustmentDirection = (value) => {
+  const normalized = cleanText(value, 20).toLowerCase();
+  return ['credit', 'debit'].includes(normalized) ? normalized : null;
+};
 
 const normalizeBalanceTreatment = (value, { balanceBefore = 0 } = {}) => {
   const normalized = cleanText(value, 40).toLowerCase();
@@ -88,6 +98,9 @@ const sanitizeRecord = (record = {}) => {
     balanceBefore,
     balanceTreatment: normalizeBalanceTreatment(record.balanceTreatment, { balanceBefore, writeOffAmount }),
     writeOffAmount,
+    requestedFinalBalance: normalizeOptionalMoney(record.requestedFinalBalance),
+    balanceAdjustmentAmount: normalizeMoney(record.balanceAdjustmentAmount),
+    balanceAdjustmentDirection: normalizeAdjustmentDirection(record.balanceAdjustmentDirection),
     finalBalance: normalizeMoney(record.finalBalance),
     closedAt: cleanText(record.closedAt, 80) || null,
     closedBy: normalizeActor(record.closedBy || {}),
@@ -227,12 +240,12 @@ const beginCustomerAccountClosure = async ({
   reason,
   balanceBefore = 0,
   balanceTreatment = '',
+  requestedFinalBalance = null,
   closedBy = {}
 } = {}) => {
   const accountNumber = normalizeAccountNumber(customer.accountNumber || customer.account_number);
   if (!accountNumber) throw createError(400, 'Customer account number is required.');
-  const normalizedReason = cleanText(reason, 500);
-  if (normalizedReason.length < 3) throw createError(400, 'Enter a reason for closing this account.');
+  const normalizedReason = cleanText(reason, 500) || 'Account closed by Admin.';
   const normalizedClosureDate = cleanText(closureDate, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedClosureDate)) {
     throw createError(400, 'Choose a valid closure date.');
@@ -244,6 +257,13 @@ const beginCustomerAccountClosure = async ({
     : (Math.abs(normalizedBalance) <= 0.005 ? BALANCE_TREATMENT_ZERO : '');
   if (!normalizedBalanceTreatment) {
     throw createError(400, 'Choose whether to keep or write off the remaining balance.');
+  }
+  const explicitRequestedFinalBalance = normalizeOptionalMoney(requestedFinalBalance);
+  const normalizedRequestedFinalBalance = explicitRequestedFinalBalance === null
+    ? (normalizedBalanceTreatment === BALANCE_TREATMENT_WRITE_OFF ? 0 : normalizedBalance)
+    : explicitRequestedFinalBalance;
+  if (normalizedRequestedFinalBalance < 0) {
+    throw createError(400, 'Enter a valid final balance.');
   }
 
   return mutateStore(branchId, async (records, branchKey) => {
@@ -258,6 +278,12 @@ const beginCustomerAccountClosure = async ({
       if (sanitized?.balanceTreatment !== normalizedBalanceTreatment) {
         throw createError(409, 'Retry this closure with its original balance treatment.');
       }
+      if (
+        sanitized?.requestedFinalBalance !== null
+        && Math.abs(sanitized.requestedFinalBalance - normalizedRequestedFinalBalance) > 0.005
+      ) {
+        throw createError(409, 'Retry this closure with its original final balance.');
+      }
       const retryBalance = normalizeMoney(balanceBefore);
       const originalBalance = normalizeMoney(existing.balanceBefore);
       existing.closureDate = normalizedClosureDate;
@@ -269,6 +295,7 @@ const beginCustomerAccountClosure = async ({
         ? originalBalance
         : retryBalance;
       existing.finalBalance = retryBalance;
+      existing.requestedFinalBalance = sanitized?.requestedFinalBalance ?? normalizedRequestedFinalBalance;
       existing.balanceTreatment = normalizedBalanceTreatment;
       existing.state = STATE_CLOSING;
       existing.warning = '';
@@ -298,6 +325,9 @@ const beginCustomerAccountClosure = async ({
       balanceBefore: normalizedBalance,
       balanceTreatment: normalizedBalanceTreatment,
       writeOffAmount: 0,
+      requestedFinalBalance: normalizedRequestedFinalBalance,
+      balanceAdjustmentAmount: 0,
+      balanceAdjustmentDirection: null,
       finalBalance: normalizedBalance,
       closedAt: null,
       closedBy: normalizeActor(closedBy),
@@ -319,6 +349,9 @@ const completeCustomerAccountClosure = async (closureId, {
   branchId,
   balanceTreatment = '',
   writeOffAmount = 0,
+  requestedFinalBalance = null,
+  balanceAdjustmentAmount = 0,
+  balanceAdjustmentDirection = null,
   finalBalance = 0,
   warning = '',
   actor = {}
@@ -333,6 +366,9 @@ const completeCustomerAccountClosure = async (closureId, {
     writeOffAmount
   });
   record.writeOffAmount = normalizeMoney(writeOffAmount);
+  record.requestedFinalBalance = normalizeOptionalMoney(requestedFinalBalance) ?? normalizeOptionalMoney(record.requestedFinalBalance);
+  record.balanceAdjustmentAmount = normalizeMoney(balanceAdjustmentAmount);
+  record.balanceAdjustmentDirection = normalizeAdjustmentDirection(balanceAdjustmentDirection);
   record.finalBalance = normalizeMoney(finalBalance);
   record.warning = cleanText(warning, 1000);
   record.closedAt = record.closedAt || now;

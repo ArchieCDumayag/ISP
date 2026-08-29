@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-08-24
+Last reviewed: 2026-08-27
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -63,7 +63,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - JSON reset rewrites known business stores to empty canonical shapes with rollback on store-write failure. MySQL reset deletes business tables and business `app_store` keys in a transaction, retaining only Admin users/sessions and configuration tables/keys. Generated-file cleanup runs after the record transaction and reports any file warnings.
 - Full-system archives include accounts/users, customers, plans, all payment and billing stores, imported GCash rows and allocations, Collector/Technician/Finance/Network/Customer App/Temp records, business and encrypted integration settings, activity/audit data, app-download records, and both upload roots. The manifest discovers records dynamically so new JSON stores or MySQL tables are not silently omitted.
 - Full-system archives intentionally exclude Admin/customer runtime sessions, `CONFIG_MASTER_KEY`, MySQL connection files, Firebase/service-account files, environment/source/log data, generated caches, and prior backup directories. Encrypted integration settings restored on another server require the same externally managed `CONFIG_MASTER_KEY`.
-- Complete restore replaces eligible records/uploads rather than merging them. It blocks other API requests, activates the shared maintenance write gate for background JSON/shared-MySQL mutations, drains queued JSON writes, creates `data/backups/pre-import-system-backup-*.isp-backup.zip`, and invalidates every server session after success. JSON file/upload swaps retain rollback copies until installation succeeds. Same-driver MySQL archives still require an exact table/column match; JSON-to-MySQL restore requires the mapped target columns and transactional InnoDB tables, preserves supplemental JSON stores in `app_store`, hashes legacy plaintext passwords, rejects conflicting payment IDs, clears sessions, and rolls back database/upload replacement together on failure. MySQL-to-JSON conversion remains unsupported.
+- Complete restore replaces eligible records/uploads rather than merging them. It blocks other API requests, activates the shared maintenance write gate for background JSON/shared-MySQL mutations, drains queued JSON writes, creates `data/backups/pre-import-system-backup-*.isp-backup.zip`, and invalidates every server session after success. JSON file/upload swaps retain rollback copies until installation succeeds. Same-driver MySQL archives still require an exact table/column match; JSON-to-MySQL restore requires the mapped target columns and transactional InnoDB tables, preserves supplemental JSON stores in `app_store`, hashes legacy plaintext passwords, normalizes canonical customer ONU serials, rejects branch-local ONU ownership conflicts and conflicting payment IDs, clears sessions, and rolls back database/upload replacement together on failure. MySQL-to-JSON conversion remains unsupported.
 
 ## Verification contract
 

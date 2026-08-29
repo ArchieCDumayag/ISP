@@ -871,13 +871,24 @@
         reviewForm.elements.remarks.value = draft.remarks || '';
         if (reviewOnboardingSummary) {
             const onboardingNotes = [];
-            if (draft.firstBillPaid === true) {
-                const submittedAmount = Number(draft.firstBillProratedAmount);
-                onboardingNotes.push(`Technician marked the first bill collected${Number.isFinite(submittedAmount)
-                    ? ` (submitted estimate: PHP ${submittedAmount.toLocaleString('en-PH')})`
-                    : ''}. The server recalculates the amount from the approved plan and activation date, then records the payment on approval.`);
+            const amountDue = Number(draft.firstBillProratedAmount);
+            const submittedAmountReceived = Number(draft.firstBillAmountReceived);
+            const amountReceived = Number.isFinite(submittedAmountReceived)
+                ? submittedAmountReceived
+                : (draft.firstBillPaid === true && Number.isFinite(amountDue) ? amountDue : Number.NaN);
+            const hasAmountReceived = Number.isFinite(amountReceived) && amountReceived > 0;
+            const formatPeso = (value) => `PHP ${Number(value).toLocaleString('en-PH', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2
+            })}`;
+            if (!hasAmountReceived) {
+                onboardingNotes.push('Technician recorded no prorated first-bill payment.');
+            } else if (Number.isFinite(amountDue) && amountReceived < amountDue) {
+                onboardingNotes.push(`Technician collected ${formatPeso(amountReceived)} as a partial first-bill payment; ${formatPeso(amountDue - amountReceived)} remains due. Approval records the collected amount.`);
+            } else if (Number.isFinite(amountDue) && amountReceived > amountDue) {
+                onboardingNotes.push(`Technician collected ${formatPeso(amountReceived)}: ${formatPeso(amountDue)} covers the prorated first bill and ${formatPeso(amountReceived - amountDue)} becomes advance credit on approval.`);
             } else {
-                onboardingNotes.push('Technician marked the prorated first bill as not paid.');
+                onboardingNotes.push(`Technician collected ${formatPeso(amountReceived)} for the prorated first bill. Approval records the collected amount.`);
             }
             const referrerAccount = String(draft.referralCustomerAccountNumber || '').trim();
             if (referrerAccount) {

@@ -17,7 +17,7 @@ const REQUIRED_TABLE_COLUMNS = Object.freeze({
     'scheduled_plan_billing', 'scheduled_plan_category', 'scheduled_plan_apply_at', 'scheduled_pppoe_profile',
     'bill_date', 'due_date', 'prepaid_expiration_at', 'due_offset', 'credit_limit', 'login_username',
     'login_password_hash', 'pppoe_mode', 'mikrotik_id', 'pppoe_username', 'pppoe_password', 'pppoe_profile',
-    'created_at', 'updated_at'
+    'onu_serial_number', 'created_at', 'updated_at'
   ],
   plans: [
     'branch_id', 'plan_id', 'name', 'label', 'category', 'description', 'profile', 'profile_bindings',
@@ -66,6 +66,17 @@ const toText = (value, maxLength = 0) => {
   return maxLength > 0 ? text.slice(0, maxLength) : text;
 };
 const toNullableText = (value, maxLength = 0) => toText(value, maxLength) || null;
+const normalizeOnuSerialNumber = (value) => {
+  const normalized = String(value == null ? '' : value)
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+  if (normalized.length > 160) {
+    throw new Error('JSON backup contains an ONU serial number longer than 160 characters.');
+  }
+  return normalized || null;
+};
 const toPositiveInt = (value, fallback = null) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -421,6 +432,7 @@ function buildJsonToMysqlPlan(parsedStores) {
   if (!Array.isArray(customerSource)) throw new Error('JSON backup customers store must be an array.');
   const customerAccounts = new Set();
   const customerBranchByAccount = new Map();
+  const customerOnuSerialOwners = new Map();
   const customers = customerSource.map((customer) => {
     const accountNumber = toText(customer?.accountNumber || customer?.account_number, 20);
     if (!accountNumber) throw new Error('JSON backup contains a customer without an account number.');
@@ -428,6 +440,19 @@ function buildJsonToMysqlPlan(parsedStores) {
     customerAccounts.add(accountNumber);
     const branchId = defaultBranch(customer.branchId || customer.branch_id);
     customerBranchByAccount.set(accountNumber, branchId);
+    const onuSerialNumber = normalizeOnuSerialNumber(
+      customer.onuSerialNumber ?? customer.onu_serial_number ?? customer.onuSerial
+    );
+    if (onuSerialNumber) {
+      const onuSerialKey = `${branchId}:${onuSerialNumber}`;
+      const existingAccount = customerOnuSerialOwners.get(onuSerialKey);
+      if (existingAccount && existingAccount !== accountNumber) {
+        throw new Error(
+          `JSON backup assigns ONU serial ${onuSerialNumber} to both ${existingAccount} and ${accountNumber} in branch ${branchId}.`
+        );
+      }
+      customerOnuSerialOwners.set(onuSerialKey, accountNumber);
+    }
     const createdAt = parseDateTime(customer.createdAt || customer.created_at, nowMysql());
     return {
       accountNumber,
@@ -477,6 +502,7 @@ function buildJsonToMysqlPlan(parsedStores) {
       pppoeUsername: toNullableText(customer.pppoeUsername || customer.pppoe_username, 120),
       pppoePassword: toNullableText(customer.pppoePassword || customer.pppoe_password, 120),
       pppoeProfile: toNullableText(customer.pppoeProfile || customer.pppoe_profile, 120),
+      onuSerialNumber,
       createdAt,
       updatedAt: parseDateTime(customer.updatedAt || customer.updated_at, createdAt)
     };
@@ -755,7 +781,7 @@ async function applyJsonToMysqlPlan(connection, plan, options = {}) {
     row.scheduledPlanBilling, row.scheduledPlanCategory, row.scheduledPlanApplyAt, row.scheduledPppoeProfile,
     row.billDate, row.dueDate, row.prepaidExpirationAt, row.dueOffset, row.creditLimit, row.loginUsername,
     row.loginPasswordHash, row.pppoeMode, row.mikrotikId, row.pppoeUsername, row.pppoePassword, row.pppoeProfile,
-    row.createdAt, row.updatedAt
+    row.onuSerialNumber, row.createdAt, row.updatedAt
   ]);
   await insertRows(connection, 'coverage_areas', REQUIRED_TABLE_COLUMNS.coverage_areas, plan.coverage, (row) => [
     row.branchId, row.name, row.category, row.lat, row.lng, row.status, row.notes, row.areaCode, row.mikrotikId,

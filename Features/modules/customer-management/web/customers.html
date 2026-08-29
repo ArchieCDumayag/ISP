@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
-    <link rel="stylesheet" href="css/customers-tabler.css?v=1.1">
+    <link rel="stylesheet" href="css/customers-tabler.css?v=1.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -1047,13 +1047,22 @@
                                 </div>
 
                                 <div class="view-panel view-panel--network view-panel--pppoe-grid" id="mikrotikPanel">
-                                    <h3 class="view-panel-title"><i class="ti ti-router" aria-hidden="true"></i> MikroTik &amp; PPPoE</h3>
+                                    <h3 class="view-panel-title"><i class="ti ti-router" aria-hidden="true"></i> Network Details</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
+                                            <span class="view-row-label">ONU Serial Number</span>
+                                            <span class="view-row-value view-value--mono view-copy">
+                                                <span data-view="onuSerialNumber">Not recorded</span>
+                                                <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm copy-btn" data-copy-field="onuSerialNumber" aria-label="Copy ONU serial number" title="Copy ONU serial number">
+                                                    <i class="ti ti-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">Router</span>
                                             <span class="view-row-value" data-view="routerLabel"></span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">PPPoE Username</span>
                                             <span class="view-row-value view-value--mono view-copy">
                                                 <span data-view="pppoeUsername"></span>
@@ -1062,7 +1071,7 @@
                                                 </button>
                                             </span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">PPPoE Password</span>
                                             <span class="view-row-value view-value--mono view-copy view-sensitive">
                                                 <span data-view="pppoePassword"></span>
@@ -1071,21 +1080,21 @@
                                                 </button>
                                             </span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">PPPoE Profile</span>
                                             <span class="view-row-value view-copy">
                                                 <span class="speed-pill" data-view="pppoeProfile"></span>
                                             </span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">PPPoE Status</span>
                                             <span class="view-row-value"><span class="pppoe-live-pill" data-view="pppoeLiveStatus">Offline</span></span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">Uptime</span>
                                             <span class="view-row-value" data-view="pppoeUptime">Not set</span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">Assigned IP</span>
                                             <span class="view-row-value view-value--mono view-copy">
                                                 <button type="button" class="btn btn-link btn-sm p-0 assigned-ip-browser-link" data-view="pppoeAssignedIp" data-browser-player-ip>Not set</button>
@@ -1094,7 +1103,7 @@
                                                 </button>
                                             </span>
                                         </div>
-                                        <div class="view-row">
+                                        <div class="view-row" data-view-pppoe-row>
                                             <span class="view-row-label">Live Traffic</span>
                                             <span class="view-row-value pppoe-live-traffic">
                                                 <span class="pppoe-live-rate pppoe-live-rate--up"><i class="ti ti-arrow-up" aria-hidden="true"></i><span data-view="pppoeUploadRate">0 bps</span></span>
@@ -5435,23 +5444,42 @@
                 const paymentRecord = getPaymentRecord(accountNumber);
                 const buildViewState = (recordOverride) => {
                     if (!accountViewShared) return null;
-                    return accountViewShared.buildState({
-                        customerData,
+                    const liveCustomerData = {
+                        ...customerData,
+                        ...(currentViewCustomer || {}),
+                        ...(recordOverride || {})
+                    };
+                    const liveRouterInfo = getRouterDetails(liveCustomerData);
+                    const state = accountViewShared.buildState({
+                        customerData: liveCustomerData,
                         paymentRecord: recordOverride,
                         planByName,
                         normalizePlanName,
                         resolvePlanCategory: resolveCustomerPlanCategory,
-                        routerInfo,
+                        routerInfo: liveRouterInfo,
                         formatNextBillDate: (customer, category) => getNextBillDateDisplay(customer, category),
-                        defaultRouterLabel: routerInfo?.routerLabel || 'Default router'
+                        defaultRouterLabel: liveRouterInfo?.routerLabel || 'Default router'
                     });
+                    return {
+                        ...state,
+                        onuSerialNumber: String(
+                            liveCustomerData.onuSerialNumber
+                            || liveCustomerData.onu_serial_number
+                            || liveCustomerData.onuSerial
+                            || ''
+                        ).trim()
+                    };
                 };
 
                 const applyViewState = (viewState) => {
                     if (!viewState) return;
                     if (mikrotikPanel) {
-                        const linkedPppoe = hasLinkedPppoeAccount(customerData, viewState);
-                        mikrotikPanel.style.display = linkedPppoe ? '' : 'none';
+                        const liveCustomerData = { ...customerData, ...(currentViewCustomer || {}) };
+                        const linkedPppoe = hasLinkedPppoeAccount(liveCustomerData, viewState);
+                        mikrotikPanel.style.display = '';
+                        mikrotikPanel.querySelectorAll('[data-view-pppoe-row]').forEach((row) => {
+                            row.style.display = linkedPppoe ? '' : 'none';
+                        });
                         setViewPppoeLiveRowsVisible(mikrotikEnabled && linkedPppoe);
                     }
                     if (napManagementPanel) {
@@ -5488,6 +5516,7 @@
                     setViewValue('routerLabel', viewState.routerLabel);
                     setViewValue('routerAddress', formatViewText(routerInfo.routerAddress));
                     setViewValue('routerId', formatViewText(routerInfo.routerId));
+                    setViewValue('onuSerialNumber', formatViewText(viewState.onuSerialNumber, 'Not recorded'));
                     setViewValue('pppoeMode', pppoeMode);
                     setViewValue('pppoeUsername', viewState.pppoeUsername);
                     setViewValue('pppoePassword', viewState.pppoePassword);
@@ -8553,6 +8582,13 @@
                             : (normalizedStatus === 'disabled' ? 'Disabled' : 'Inactive');
                         const areaName = String(customer?.area || '').trim() || 'Unassigned';
                         const areaMeta = [customer?.barangay, customer?.municipality].map((value) => String(value || '').trim()).filter(Boolean).join(', ') || 'No location details';
+                        const customerCoordinates = parseCoordinateValue(customer?.mapPin);
+                        const coordinateLabel = customerCoordinates
+                            ? formatCoordinatePair(customerCoordinates.lat, customerCoordinates.lng)
+                            : '';
+                        const locationBadge = customerCoordinates
+                            ? `<span class="badge bg-green-lt text-green customer-location-badge" title="Coordinates: ${escapeHtml(coordinateLabel)}" aria-label="Location set. Coordinates: ${escapeHtml(coordinateLabel)}"><i class="ti ti-map-pin-check" aria-hidden="true"></i><span>Location Set</span></span>`
+                            : '';
                         const mobileNumber = String(customer?.mobileRaw || customer?.contactNumber || customer?.mobile || '').trim() || 'No phone';
                         const canonicalBalance = getCustomerCanonicalBalance(customer);
                         const balanceClass = canonicalBalance === null
@@ -8617,7 +8653,10 @@
                             </td>
                             <td class="area-col" data-label="Area">
                                 <div class="customer-area-copy">
-                                    <strong title="${escapeHtml(areaName)}">${escapeHtml(areaName)}</strong>
+                                    <div class="customer-area-heading">
+                                        <strong title="${escapeHtml(areaName)}">${escapeHtml(areaName)}</strong>
+                                        ${locationBadge}
+                                    </div>
                                     <small title="${escapeHtml(areaMeta)}">${escapeHtml(areaMeta)}</small>
                                 </div>
                             </td>

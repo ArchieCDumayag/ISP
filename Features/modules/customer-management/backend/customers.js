@@ -158,6 +158,7 @@ const CUSTOMER_FIELD_LIMITS = Object.freeze({
     province: 150,
     area: 150,
     planName: 120,
+    onuSerialNumber: 160,
     remarks: 4000,
     loginUsername: 120,
     loginPassword: 200
@@ -230,6 +231,60 @@ const normalizeCustomerField = (value, field, { required = false } = {}) => {
     return normalized;
 };
 
+const toOnuSerialNumberKey = (value) => String(value == null ? '' : value)
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+
+const normalizeOnuSerialNumber = (value) => {
+    const normalized = toOnuSerialNumberKey(value);
+    if (normalized.length > CUSTOMER_FIELD_LIMITS.onuSerialNumber) {
+        throw createError(400, `ONU serial number must be ${CUSTOMER_FIELD_LIMITS.onuSerialNumber} characters or fewer.`);
+    }
+    return normalized;
+};
+
+const findCustomerOnuSerialDuplicate = (
+    value,
+    existingCustomers = [],
+    branchId = null,
+    excludeAccountNumber = ''
+) => {
+    const onuSerialNumber = toOnuSerialNumberKey(value);
+    if (!onuSerialNumber) return null;
+    const scopedBranchId = Number(branchId || 0) || null;
+    const excludedAccount = String(excludeAccountNumber || '').trim();
+    const match = (Array.isArray(existingCustomers) ? existingCustomers : []).find((customer) => {
+        if (!customer || typeof customer !== 'object') return false;
+        const accountNumber = String(customer.accountNumber || customer.account_number || '').trim();
+        if (excludedAccount && accountNumber === excludedAccount) return false;
+        const customerBranchId = Number(customer.branchId || customer.branch_id || 0)
+            || (scopedBranchId === 1 ? 1 : null);
+        if (scopedBranchId && customerBranchId !== scopedBranchId) return false;
+        return toOnuSerialNumberKey(
+            customer.onuSerialNumber ?? customer.onu_serial_number ?? customer.onuSerial
+        ) === onuSerialNumber;
+    });
+    if (!match) return null;
+    const accountNumber = String(match.accountNumber || match.account_number || '').trim();
+    return {
+        kind: 'onuSerialNumber',
+        accountNumber,
+        message: `ONU serial number is already assigned to account ${accountNumber}.`
+    };
+};
+
+const createOnuSerialDuplicateError = (duplicate = null) => {
+    const error = createError(
+        409,
+        duplicate?.message || 'ONU serial number is already assigned to another customer in this branch.'
+    );
+    error.code = 'CUSTOMER_ONU_SERIAL_DUPLICATE';
+    if (duplicate) error.duplicate = duplicate;
+    return error;
+};
+
 const normalizeOpeningAmount = (value, label) => {
     if (value === '' || value === null || value === undefined) return 0;
     const amount = Number(value);
@@ -265,6 +320,9 @@ const findCustomerCreateDuplicate = (payload = {}, existingCustomers = [], branc
     const addressKey = [payload?.street, payload?.barangay, payload?.municipality, payload?.province]
         .map(normalizeDuplicateText)
         .join('|');
+    const onuSerialNumber = toOnuSerialNumberKey(
+        payload?.onuSerialNumber ?? payload?.onu_serial_number ?? payload?.onuSerial
+    );
 
     for (const customer of customers) {
         if (!customer || typeof customer !== 'object') continue;
@@ -274,6 +332,16 @@ const findCustomerCreateDuplicate = (payload = {}, existingCustomers = [], branc
         }
         const sameBranch = !scopedBranchId || Number(customer.branchId || 0) === scopedBranchId;
         if (!sameBranch) continue;
+        const existingOnuSerialNumber = toOnuSerialNumberKey(
+            customer.onuSerialNumber ?? customer.onu_serial_number ?? customer.onuSerial
+        );
+        if (onuSerialNumber && existingOnuSerialNumber === onuSerialNumber) {
+            return {
+                kind: 'onuSerialNumber',
+                accountNumber,
+                message: `ONU serial number is already assigned to account ${accountNumber}.`
+            };
+        }
         const existingMobile = normalizePhilippineMobile(customer.mobileRaw || customer.mobile, { fallbackToRaw: false });
         if (mobile && existingMobile && existingMobile === mobile) {
             return { kind: 'mobile', accountNumber, message: `Mobile number already belongs to account ${accountNumber}.` };
@@ -305,6 +373,10 @@ const validateAdminCustomerCreatePayload = (payload = {}, existingCustomers = []
     normalized.area = normalizeCustomerField(payload?.area, 'area', { required: true });
     normalized.remarks = normalizeCustomerField(payload?.remarks, 'remarks');
     normalized.planName = normalizeCustomerField(payload?.planName, 'planName', { required: true });
+    // Hardware identity is written only by the trusted technician completion flow.
+    delete normalized.onuSerialNumber;
+    delete normalized.onu_serial_number;
+    delete normalized.onuSerial;
 
     const rawMobile = String(
         payload?.mobileRaw ?? payload?.mobile ?? payload?.contactNumber ?? payload?.contact ?? ''
@@ -1350,6 +1422,9 @@ const mapArchivedCustomerPayloadForJson = (customer = {}, branchId = null, fallb
         pppoeUsername: customer?.pppoeUsername ?? customer?.pppoe_username ?? undefined,
         pppoePassword: customer?.pppoePassword ?? customer?.pppoe_password ?? undefined,
         pppoeProfile: customer?.pppoeProfile ?? customer?.pppoe_profile ?? undefined,
+        onuSerialNumber: normalizeOnuSerialNumber(
+            customer?.onuSerialNumber ?? customer?.onu_serial_number ?? customer?.onuSerial
+        ) || undefined,
         createdAt: customer?.createdAt ?? customer?.created_at ?? undefined,
         updatedAt: customer?.updatedAt ?? customer?.updated_at ?? new Date().toISOString()
     };
@@ -1695,29 +1770,38 @@ const restoreArchivedCustomerRecord = async (
     }
 
     if (!(await isRelationalReady())) {
-        const customers = await readCustomers(scopedBranchId);
-        const existing = customers.find((customer) =>
-            String(customer?.accountNumber || '').trim() === accountNumber &&
-            Number(customer?.branchId || scopedBranchId) === scopedBranchId
-        );
-        if (existing) {
-            throw createError(409, `Customer account ${accountNumber} already exists.`);
-        }
-        const restoredCustomer = mapArchivedCustomerPayloadForJson(customerRow, scopedBranchId, accountNumber);
-        await writeCustomers([...customers, restoredCustomer], scopedBranchId);
-        const marked = await markCustomerArchiveRestored(archive.id, {
-            branchId: scopedBranchId,
-            restoredBy
+        return withCustomerCreateMutationLock(async () => {
+            const customers = await readCustomers(scopedBranchId);
+            const existing = customers.find((customer) =>
+                String(customer?.accountNumber || '').trim() === accountNumber &&
+                Number(customer?.branchId || scopedBranchId) === scopedBranchId
+            );
+            if (existing) {
+                throw createError(409, `Customer account ${accountNumber} already exists.`);
+            }
+            const restoredCustomer = mapArchivedCustomerPayloadForJson(customerRow, scopedBranchId, accountNumber);
+            const onuSerialDuplicate = findCustomerOnuSerialDuplicate(
+                restoredCustomer.onuSerialNumber,
+                customers,
+                scopedBranchId,
+                accountNumber
+            );
+            if (onuSerialDuplicate) throw createOnuSerialDuplicateError(onuSerialDuplicate);
+            await writeCustomers([...customers, restoredCustomer], scopedBranchId);
+            const marked = await markCustomerArchiveRestored(archive.id, {
+                branchId: scopedBranchId,
+                restoredBy
+            });
+            if (!marked) {
+                throw createError(409, 'Archived customer was already restored.');
+            }
+            triggerBranchServiceRefreshSafe(scopedBranchId, 'customers-archive-restore');
+            return {
+                archiveId: String(archive.id || '').trim(),
+                accountNumber,
+                recordType: 'customer'
+            };
         });
-        if (!marked) {
-            throw createError(409, 'Archived customer was already restored.');
-        }
-        triggerBranchServiceRefreshSafe(scopedBranchId, 'customers-archive-restore');
-        return {
-            archiveId: String(archive.id || '').trim(),
-            accountNumber,
-            recordType: 'customer'
-        };
     }
 
     const pool = await getPool();
@@ -1771,6 +1855,7 @@ const restoreArchivedCustomerRecord = async (
         await connection.commit();
     } catch (error) {
         await connection.rollback().catch(() => {});
+        if (isOnuSerialDuplicateError(error)) throw createOnuSerialDuplicateError();
         throw error;
     } finally {
         connection.release();
@@ -1974,6 +2059,7 @@ const mapCustomerRow = (row) => ({
     pppoeUsername: row.pppoeUsername || undefined,
     pppoePassword: row.pppoePassword || undefined,
     pppoeProfile: row.pppoeProfile || undefined,
+    onuSerialNumber: row.onuSerialNumber || undefined,
     firstName: row.firstName || undefined,
     lastName: row.lastName || undefined,
     creditLimit: row.creditLimit != null ? Number(row.creditLimit) : undefined,
@@ -2086,6 +2172,7 @@ const readCustomers = async (branchId = null) => {
                 pppoe_username AS pppoeUsername,
                 pppoe_password AS pppoePassword,
                 pppoe_profile AS pppoeProfile,
+                onu_serial_number AS onuSerialNumber,
                 created_at AS createdAt,
                 updated_at AS updatedAt
             FROM customers
@@ -2096,6 +2183,57 @@ const readCustomers = async (branchId = null) => {
     }
     const data = await readJson(STORE_KEYS.customers, []);
     return Array.isArray(data) ? data.map(hydrateCustomerStatus) : [];
+};
+
+const CUSTOMER_MYSQL_MUTABLE_COLUMNS = Object.freeze([
+    'first_name', 'last_name', 'name', 'email', 'mobile', 'mobile_raw',
+    'street', 'barangay', 'municipality', 'province', 'area', 'map_pin',
+    'status', 'remarks', 'since', 'activation_date', 'plan_id', 'plan_name',
+    'plan_amount', 'plan_billing', 'plan_category', 'customer_start_type',
+    'scheduled_plan_id', 'scheduled_plan_name', 'scheduled_plan_amount',
+    'scheduled_plan_billing', 'scheduled_plan_category', 'scheduled_plan_apply_at',
+    'scheduled_pppoe_profile', 'bill_date', 'due_date', 'prepaid_expiration_at',
+    'due_offset', 'credit_limit', 'login_username', 'login_password_hash',
+    'pppoe_mode', 'mikrotik_id', 'pppoe_username', 'pppoe_password',
+    'pppoe_profile', 'onu_serial_number'
+]);
+
+const persistCustomerMysqlValuesByAccount = async ({
+    executeQuery,
+    accountNumber,
+    branchId,
+    customerValues,
+    insertOnly = false
+} = {}) => {
+    if (typeof executeQuery !== 'function') throw new Error('Customer MySQL executor is required.');
+    if (!Array.isArray(customerValues) || customerValues.length !== CUSTOMER_MYSQL_MUTABLE_COLUMNS.length) {
+        throw new Error('Customer MySQL value mapping is incomplete.');
+    }
+    if (!insertOnly) {
+        const [existingRows] = await executeQuery(
+            'SELECT account_number, branch_id FROM customers WHERE account_number = ? LIMIT 1',
+            [accountNumber]
+        );
+        const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+        if (existing && Number(existing.branch_id) !== Number(branchId)) {
+            throw createError(409, `Customer account ${accountNumber} belongs to another branch.`);
+        }
+        if (existing) {
+            return executeQuery(
+                `UPDATE customers
+                 SET ${CUSTOMER_MYSQL_MUTABLE_COLUMNS.map((column) => `${column} = ?`).join(', ')}
+                 WHERE account_number = ?
+                   AND branch_id = ?`,
+                [...customerValues, accountNumber, branchId]
+            );
+        }
+    }
+    const insertColumns = ['account_number', 'branch_id', ...CUSTOMER_MYSQL_MUTABLE_COLUMNS];
+    return executeQuery(
+        `INSERT INTO customers (${insertColumns.join(', ')})
+         VALUES (${insertColumns.map(() => '?').join(', ')})`,
+        [accountNumber, branchId, ...customerValues]
+    );
 };
 
 const writeCustomers = async (customers, branchId = null, options = {}) => {
@@ -2117,112 +2255,58 @@ const writeCustomers = async (customers, branchId = null, options = {}) => {
             };
             const statusState = resolveCustomerStatusState(customer.status, customer.statusMode, existingStatusState);
             const loginPassword = ensureHashedCustomerPassword(customer.loginPassword) || null;
-            const duplicateClause = insertOnly ? '' : `ON DUPLICATE KEY UPDATE
-                    first_name = VALUES(first_name),
-                    last_name = VALUES(last_name),
-                    name = VALUES(name),
-                    email = VALUES(email),
-                    mobile = VALUES(mobile),
-                    mobile_raw = VALUES(mobile_raw),
-                    street = VALUES(street),
-                    barangay = VALUES(barangay),
-                    municipality = VALUES(municipality),
-                    province = VALUES(province),
-                    area = VALUES(area),
-                    map_pin = VALUES(map_pin),
-                    status = VALUES(status),
-                    remarks = VALUES(remarks),
-                    since = VALUES(since),
-                    activation_date = VALUES(activation_date),
-                    plan_id = VALUES(plan_id),
-                    plan_name = VALUES(plan_name),
-                    plan_amount = VALUES(plan_amount),
-                    plan_billing = VALUES(plan_billing),
-                    plan_category = VALUES(plan_category),
-                    customer_start_type = VALUES(customer_start_type),
-                    scheduled_plan_id = VALUES(scheduled_plan_id),
-                    scheduled_plan_name = VALUES(scheduled_plan_name),
-                    scheduled_plan_amount = VALUES(scheduled_plan_amount),
-                    scheduled_plan_billing = VALUES(scheduled_plan_billing),
-                    scheduled_plan_category = VALUES(scheduled_plan_category),
-                    scheduled_plan_apply_at = VALUES(scheduled_plan_apply_at),
-                    scheduled_pppoe_profile = VALUES(scheduled_pppoe_profile),
-                    bill_date = VALUES(bill_date),
-                    due_date = VALUES(due_date),
-                    prepaid_expiration_at = VALUES(prepaid_expiration_at),
-                    due_offset = VALUES(due_offset),
-                    credit_limit = VALUES(credit_limit),
-                    login_username = VALUES(login_username),
-                    login_password_hash = VALUES(login_password_hash),
-                    pppoe_mode = VALUES(pppoe_mode),
-                    mikrotik_id = VALUES(mikrotik_id),
-                    pppoe_username = VALUES(pppoe_username),
-                    pppoe_password = VALUES(pppoe_password),
-                    pppoe_profile = VALUES(pppoe_profile)`;
-            await executeQuery(
-                `INSERT INTO customers (
-                    account_number, branch_id, first_name, last_name, name, email, mobile, mobile_raw,
-                    street, barangay, municipality, province, area, map_pin, status, remarks, since,
-                    activation_date, plan_id, plan_name, plan_amount, plan_billing, plan_category,
-                    customer_start_type,
-                    scheduled_plan_id, scheduled_plan_name, scheduled_plan_amount, scheduled_plan_billing,
-                    scheduled_plan_category, scheduled_plan_apply_at, scheduled_pppoe_profile,
-                    bill_date, due_date, prepaid_expiration_at, due_offset, credit_limit,
-                    login_username, login_password_hash, pppoe_mode, mikrotik_id, pppoe_username, pppoe_password, pppoe_profile
-                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?
-                 )
-                 ${duplicateClause}`,
-                [
-                    String(customer.accountNumber || '').trim(),
-                    resolvedBranchId,
-                    customer.firstName || null,
-                    customer.lastName || null,
-                    customer.name || null,
-                    customer.email || null,
-                    customer.mobile || null,
-                    customer.mobileRaw || null,
-                    customer.street || null,
-                    customer.barangay || null,
-                    customer.municipality || null,
-                    customer.province || null,
-                    customer.area || null,
-                    customer.mapPin || null,
-                    statusState.stored || null,
-                    customer.remarks || null,
-                    customer.since || null,
-                    customer.activationDate || null,
-                    customer.planId || null,
-                    customer.planName || null,
-                    customer.planAmount != null ? Number(customer.planAmount) : null,
-                    customer.planBilling || null,
-                    customer.planCategory || null,
-                    customer.customerStartType || customer.subscriberStartType || null,
-                    customer.scheduledPlanId || null,
-                    customer.scheduledPlanName || null,
-                    customer.scheduledPlanAmount != null ? Number(customer.scheduledPlanAmount) : null,
-                    customer.scheduledPlanBilling || null,
-                    customer.scheduledPlanCategory || null,
-                    toMysqlDateTime(customer.scheduledPlanApplyAt),
-                    customer.scheduledPppoeProfile || null,
-                    customer.billDate || null,
-                    customer.dueDate || null,
-                    toMysqlDateTime(customer.prepaidExpirationAt),
-                    Number.isFinite(Number(customer.dueOffset)) ? Number(customer.dueOffset) : null,
-                    Number.isFinite(Number(customer.creditLimit)) ? Number(customer.creditLimit) : null,
-                    customer.loginUsername || null,
-                    loginPassword,
-                    customer.pppoeMode || null,
-                    customer.mikrotikId || null,
-                    customer.pppoeUsername || null,
-                    customer.pppoePassword != null ? String(customer.pppoePassword) : null,
-                    customer.pppoeProfile || null
-                ]
-            );
+            const accountNumber = String(customer.accountNumber || '').trim();
+            const customerValues = [
+                customer.firstName || null,
+                customer.lastName || null,
+                customer.name || null,
+                customer.email || null,
+                customer.mobile || null,
+                customer.mobileRaw || null,
+                customer.street || null,
+                customer.barangay || null,
+                customer.municipality || null,
+                customer.province || null,
+                customer.area || null,
+                customer.mapPin || null,
+                statusState.stored || null,
+                customer.remarks || null,
+                customer.since || null,
+                customer.activationDate || null,
+                customer.planId || null,
+                customer.planName || null,
+                customer.planAmount != null ? Number(customer.planAmount) : null,
+                customer.planBilling || null,
+                customer.planCategory || null,
+                customer.customerStartType || customer.subscriberStartType || null,
+                customer.scheduledPlanId || null,
+                customer.scheduledPlanName || null,
+                customer.scheduledPlanAmount != null ? Number(customer.scheduledPlanAmount) : null,
+                customer.scheduledPlanBilling || null,
+                customer.scheduledPlanCategory || null,
+                toMysqlDateTime(customer.scheduledPlanApplyAt),
+                customer.scheduledPppoeProfile || null,
+                customer.billDate || null,
+                customer.dueDate || null,
+                toMysqlDateTime(customer.prepaidExpirationAt),
+                Number.isFinite(Number(customer.dueOffset)) ? Number(customer.dueOffset) : null,
+                Number.isFinite(Number(customer.creditLimit)) ? Number(customer.creditLimit) : null,
+                customer.loginUsername || null,
+                loginPassword,
+                customer.pppoeMode || null,
+                customer.mikrotikId || null,
+                customer.pppoeUsername || null,
+                customer.pppoePassword != null ? String(customer.pppoePassword) : null,
+                customer.pppoeProfile || null,
+                normalizeOnuSerialNumber(customer.onuSerialNumber || customer.onu_serial_number) || null
+            ];
+            await persistCustomerMysqlValuesByAccount({
+                executeQuery,
+                accountNumber,
+                branchId: resolvedBranchId,
+                customerValues,
+                insertOnly
+            });
         }
         return;
     }
@@ -2250,7 +2334,17 @@ const writeCustomers = async (customers, branchId = null, options = {}) => {
 const sanitizeCustomerPayload = (customer) => {
     if (!customer) return null;
     const normalized = hydrateCustomerStatus(customer);
-    const { loginPassword, login_password_hash, login_password, statusRaw, statusMode, ...rest } = normalized;
+    const {
+        loginPassword,
+        login_password_hash,
+        login_password,
+        onuSerialNumber,
+        onu_serial_number,
+        onuSerial,
+        statusRaw,
+        statusMode,
+        ...rest
+    } = normalized;
     return rest;
 };
 
@@ -2322,7 +2416,8 @@ const getCustomerFromSession = async (req, res = null) => {
                 mikrotik_id AS mikrotikId,
                 pppoe_username AS pppoeUsername,
                 pppoe_password AS pppoePassword,
-                pppoe_profile AS pppoeProfile
+                pppoe_profile AS pppoeProfile,
+                onu_serial_number AS onuSerialNumber
             FROM customers
             WHERE account_number = ?
             LIMIT 1`,
@@ -5442,6 +5537,13 @@ const isAccountNumberDuplicateError = (error) => {
         && /\binsert\s+into\s+customers\b/i.test(String(error?.sql || ''));
 };
 
+const isOnuSerialDuplicateError = (error) => {
+    if (error?.code !== 'ER_DUP_ENTRY') return false;
+    return /uniq_customers_branch_onu_serial/i.test(
+        String(error?.message || error?.sqlMessage || '')
+    );
+};
+
 const buildCustomerCreateLockName = () => 'customer-create:global';
 
 const buildOpeningAdjustmentEntry = ({
@@ -5652,7 +5754,8 @@ const createCustomerRecordUnlocked = async (
         defaultStatus = STATUS_ACTIVE,
         includePortalSetup = false,
         actor = null,
-        accountCreateAttempt = 0
+        accountCreateAttempt = 0,
+        trustedOnuSerialNumber
     } = {}
 ) => {
     const scopedBranchId = Number(branchId);
@@ -5664,6 +5767,18 @@ const createCustomerRecordUnlocked = async (
     const effectivePayload = enforceAdminValidation
         ? validateAdminCustomerCreatePayload(payload, customers, scopedBranchId)
         : { ...(payload || {}) };
+    delete effectivePayload.onuSerialNumber;
+    delete effectivePayload.onu_serial_number;
+    delete effectivePayload.onuSerial;
+    if (trustedOnuSerialNumber !== undefined) {
+        effectivePayload.onuSerialNumber = normalizeOnuSerialNumber(trustedOnuSerialNumber);
+    }
+    const onuSerialDuplicate = findCustomerOnuSerialDuplicate(
+        effectivePayload.onuSerialNumber,
+        customers,
+        scopedBranchId
+    );
+    if (onuSerialDuplicate) throw createOnuSerialDuplicateError(onuSerialDuplicate);
     const existing = new Set();
     customers.forEach((customer) => {
         const accountNumber = String(customer?.accountNumber || '').trim();
@@ -5856,7 +5971,8 @@ const createCustomerRecordUnlocked = async (
                     street,
                     barangay,
                     municipality,
-                    province
+                    province,
+                    onu_serial_number AS onuSerialNumber
                  FROM customers
                  FOR UPDATE`
             );
@@ -5927,6 +6043,9 @@ const createCustomerRecordUnlocked = async (
         }
 
         if (relationalCreateError) {
+            if (isOnuSerialDuplicateError(relationalCreateError)) {
+                throw createOnuSerialDuplicateError();
+            }
             if (isAccountNumberDuplicateError(relationalCreateError) && accountCreateAttempt < CUSTOMER_CREATE_MAX_RETRIES) {
                 return createCustomerRecordUnlocked(
                     { ...effectivePayload, accountNumber: '' },
@@ -5938,7 +6057,8 @@ const createCustomerRecordUnlocked = async (
                         defaultStatus,
                         includePortalSetup,
                         actor,
-                        accountCreateAttempt: accountCreateAttempt + 1
+                        accountCreateAttempt: accountCreateAttempt + 1,
+                        trustedOnuSerialNumber
                     }
                 );
             }
@@ -6047,7 +6167,8 @@ const updateCustomerRecordUnlocked = async (
         refreshSource = 'customers-update',
         allowPastBillingDates = false,
         planChangeEffectiveAt = null,
-        allowClosedAccountLifecycleMutation = false
+        allowClosedAccountLifecycleMutation = false,
+        trustedOnuSerialNumber
     } = {}
 ) => {
     const scopedBranchId = Number(branchId);
@@ -6102,10 +6223,23 @@ const updateCustomerRecordUnlocked = async (
     delete incomingBody.scheduledPlanCategory;
     delete incomingBody.scheduledPlanApplyAt;
     delete incomingBody.scheduledPppoeProfile;
+    delete incomingBody.onuSerialNumber;
+    delete incomingBody.onu_serial_number;
+    delete incomingBody.onuSerial;
+    if (trustedOnuSerialNumber !== undefined) {
+        incomingBody.onuSerialNumber = normalizeOnuSerialNumber(trustedOnuSerialNumber) || null;
+    }
     applyNormalizedCustomerMobileFields(incomingBody, payload, {
         fallback: existing.mobileRaw || existing.mobile || ''
     });
     applyNormalizedCustomerMapPin(incomingBody, payload);
+    const onuSerialDuplicate = findCustomerOnuSerialDuplicate(
+        incomingBody.onuSerialNumber,
+        customers,
+        scopedBranchId,
+        targetAccountNumber
+    );
+    if (onuSerialDuplicate) throw createOnuSerialDuplicateError(onuSerialDuplicate);
     const hasIncomingNapAssignment = Object.prototype.hasOwnProperty.call(payload || {}, 'napId')
         || Object.prototype.hasOwnProperty.call(payload || {}, 'napPort')
         || Object.prototype.hasOwnProperty.call(payload || {}, 'opticalInfo')
@@ -6342,10 +6476,15 @@ const updateCustomerRecordUnlocked = async (
     const persistedCustomer = applyRuntimeStatusRules(updatedCustomer, { inactiveByRules });
 
     customers[index] = { ...persistedCustomer, branchId: scopedBranchId };
-    if (await isRelationalReady()) {
-        await writeCustomers([customers[index]], scopedBranchId);
-    } else {
-        await writeCustomers(customers, scopedBranchId);
+    try {
+        if (await isRelationalReady()) {
+            await writeCustomers([customers[index]], scopedBranchId);
+        } else {
+            await writeCustomers(customers, scopedBranchId);
+        }
+    } catch (error) {
+        if (isOnuSerialDuplicateError(error)) throw createOnuSerialDuplicateError();
+        throw error;
     }
 
     if (
@@ -6369,10 +6508,15 @@ const updateCustomerRecordUnlocked = async (
                 pppoeProfile: pppoeProfileSync.profile,
                 ...(pppoeProfileSync.routerId ? { mikrotikId: pppoeProfileSync.routerId } : {})
             };
-            if (await isRelationalReady()) {
-                await writeCustomers([customers[index]], scopedBranchId);
-            } else {
-                await writeCustomers(customers, scopedBranchId);
+            try {
+                if (await isRelationalReady()) {
+                    await writeCustomers([customers[index]], scopedBranchId);
+                } else {
+                    await writeCustomers(customers, scopedBranchId);
+                }
+            } catch (error) {
+                if (isOnuSerialDuplicateError(error)) throw createOnuSerialDuplicateError();
+                throw error;
             }
         } else if (pppoeProfileSync?.warning) {
             console.warn(`[customers] ${pppoeProfileSync.warning}`);
@@ -6403,13 +6547,16 @@ const updateCustomerRecordUnlocked = async (
 };
 
 const updateCustomerRecord = (accountNumber, payload = {}, options = {}) => {
+    const runUpdate = () => withCustomerCreateMutationLock(
+        () => updateCustomerRecordUnlocked(accountNumber, payload, options)
+    );
     if (
         options?.allowClosedAccountLifecycleMutation === true
         || options?.paymentMutationAlreadySerialized === true
     ) {
-        return updateCustomerRecordUnlocked(accountNumber, payload, options);
+        return runUpdate();
     }
-    return enqueuePaymentMutation(() => updateCustomerRecordUnlocked(accountNumber, payload, options));
+    return enqueuePaymentMutation(runUpdate);
 };
 
 const assertCustomerDeletionHasNoClosedAccountHistory = async (branchId, accountNumber) => {
@@ -6974,6 +7121,15 @@ router.get('/closed-accounts', async (req, res, next) => {
         });
         const closureBilling = require('../../billing/backend/account-closure-service');
         const items = await Promise.all((result.items || []).map(async (record) => {
+            const rawRequestedFinalBalance = record?.requestedFinalBalance;
+            const hasRequestedFinalBalance = rawRequestedFinalBalance !== null
+                && rawRequestedFinalBalance !== undefined
+                && rawRequestedFinalBalance !== '';
+            const requestedFinalBalance = Number(rawRequestedFinalBalance);
+            const legacyFinalBalance = Number(record?.finalBalance);
+            const closureFinalBalance = hasRequestedFinalBalance && Number.isFinite(requestedFinalBalance)
+                ? Number(requestedFinalBalance.toFixed(2))
+                : (Number.isFinite(legacyFinalBalance) ? Number(legacyFinalBalance.toFixed(2)) : 0);
             try {
                 const { balance } = await closureBilling.getCanonicalAccountClosureBalance(
                     record.accountNumber,
@@ -6981,12 +7137,14 @@ router.get('/closed-accounts', async (req, res, next) => {
                 );
                 return {
                     ...record,
+                    closureFinalBalance,
                     remainingBalance: Number(Number(balance || 0).toFixed(2)),
                     balanceAvailable: true
                 };
             } catch (error) {
                 return {
                     ...record,
+                    closureFinalBalance,
                     remainingBalance: null,
                     balanceAvailable: false,
                     balanceWarning: error?.message || 'Current balance is unavailable.'
@@ -8400,6 +8558,7 @@ module.exports.requireCustomer = requireCustomer;
 module.exports.readCustomers = readCustomers;
 module.exports.readVisibleCustomers = readVisibleCustomers;
 module.exports.writeCustomers = writeCustomers;
+module.exports.persistCustomerMysqlValuesByAccount = persistCustomerMysqlValuesByAccount;
 module.exports.readPayments = readPayments;
 module.exports.readPlans = readPlans;
 module.exports.computePaymentSummary = computePaymentSummary;
@@ -8409,6 +8568,7 @@ module.exports.updateCustomerRecord = updateCustomerRecord;
 module.exports.deleteCustomerRecord = deleteCustomerRecord;
 module.exports.removeCustomerPppoeAccounts = removeCustomerPppoeAccounts;
 module.exports.restoreArchivedCustomerRecord = restoreArchivedCustomerRecord;
+module.exports.mapArchivedCustomerPayloadForJson = mapArchivedCustomerPayloadForJson;
 module.exports.purgeExpiredArchivedCustomerRecords = purgeExpiredArchivedCustomerRecords;
 module.exports.scheduleCustomerArchiveCleanupWithPppoe = scheduleCustomerArchiveCleanupWithPppoe;
 module.exports.sanitizeCustomerForAdmin = sanitizeCustomerForAdmin;
@@ -8420,6 +8580,9 @@ module.exports.recordIssuedAccountNumber = recordIssuedAccountNumber;
 module.exports.generateTemporaryPortalPassword = generateTemporaryPortalPassword;
 module.exports.validateAdminCustomerCreatePayload = validateAdminCustomerCreatePayload;
 module.exports.findCustomerCreateDuplicate = findCustomerCreateDuplicate;
+module.exports.findCustomerOnuSerialDuplicate = findCustomerOnuSerialDuplicate;
+module.exports.normalizeOnuSerialNumber = normalizeOnuSerialNumber;
+module.exports.isOnuSerialDuplicateError = isOnuSerialDuplicateError;
 module.exports.buildOpeningAdjustmentEntry = buildOpeningAdjustmentEntry;
 module.exports.recordCustomerOpeningAdjustment = recordCustomerOpeningAdjustment;
 module.exports.normalizeImportedClientCorrectionRecord = normalizeImportedClientCorrectionRecord;

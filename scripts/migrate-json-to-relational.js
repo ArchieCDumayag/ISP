@@ -42,6 +42,18 @@ const parseDateTime = (value) => {
   return parsed.toISOString().slice(0, 19).replace('T', ' ');
 };
 
+const normalizeOnuSerialNumber = (value) => {
+  const normalized = String(value == null ? '' : value)
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+  if (normalized.length > 160) {
+    throw new Error('ONU serial number must be 160 characters or fewer.');
+  }
+  return normalized || null;
+};
+
 async function resetTables() {
   const tables = [
     'sms_automation_runs',
@@ -109,65 +121,18 @@ async function upsertUser(user, branchId) {
 
 async function upsertCustomer(customer, branchId) {
   const loginPassword = String(customer.loginPassword || '').trim() || null;
-  await query(
-    `INSERT INTO customers (
-        account_number, branch_id, first_name, last_name, name, email, mobile, mobile_raw,
-        street, barangay, municipality, province, area, map_pin, status, remarks, since,
-        activation_date, plan_name, plan_amount, plan_billing, plan_category,
-        scheduled_plan_id, scheduled_plan_name, scheduled_plan_amount, scheduled_plan_billing, scheduled_plan_category,
-        scheduled_plan_apply_at, scheduled_pppoe_profile,
-        bill_date, due_date, prepaid_expiration_at, due_offset, credit_limit,
-        login_username, login_password_hash, pppoe_mode, mikrotik_id, pppoe_username, pppoe_password, pppoe_profile
-     ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?
-     )
-     ON DUPLICATE KEY UPDATE
-        first_name = VALUES(first_name),
-        last_name = VALUES(last_name),
-        name = VALUES(name),
-        email = VALUES(email),
-        mobile = VALUES(mobile),
-        mobile_raw = VALUES(mobile_raw),
-        street = VALUES(street),
-        barangay = VALUES(barangay),
-        municipality = VALUES(municipality),
-        province = VALUES(province),
-        area = VALUES(area),
-        map_pin = VALUES(map_pin),
-        status = VALUES(status),
-        remarks = VALUES(remarks),
-        since = VALUES(since),
-        activation_date = VALUES(activation_date),
-        plan_name = VALUES(plan_name),
-        plan_amount = VALUES(plan_amount),
-        plan_billing = VALUES(plan_billing),
-        plan_category = VALUES(plan_category),
-        scheduled_plan_id = VALUES(scheduled_plan_id),
-        scheduled_plan_name = VALUES(scheduled_plan_name),
-        scheduled_plan_amount = VALUES(scheduled_plan_amount),
-        scheduled_plan_billing = VALUES(scheduled_plan_billing),
-        scheduled_plan_category = VALUES(scheduled_plan_category),
-        scheduled_plan_apply_at = VALUES(scheduled_plan_apply_at),
-        scheduled_pppoe_profile = VALUES(scheduled_pppoe_profile),
-        bill_date = VALUES(bill_date),
-        due_date = VALUES(due_date),
-        prepaid_expiration_at = VALUES(prepaid_expiration_at),
-        due_offset = VALUES(due_offset),
-        credit_limit = VALUES(credit_limit),
-        login_username = VALUES(login_username),
-        login_password_hash = VALUES(login_password_hash),
-        pppoe_mode = VALUES(pppoe_mode),
-        mikrotik_id = VALUES(mikrotik_id),
-        pppoe_username = VALUES(pppoe_username),
-        pppoe_password = VALUES(pppoe_password),
-        pppoe_profile = VALUES(pppoe_profile)`,
-    [
-      String(customer.accountNumber || '').trim(),
-      branchId,
+  const accountNumber = String(customer.accountNumber || '').trim();
+  const customerColumns = [
+    'first_name', 'last_name', 'name', 'email', 'mobile', 'mobile_raw',
+    'street', 'barangay', 'municipality', 'province', 'area', 'map_pin', 'status', 'remarks', 'since',
+    'activation_date', 'plan_name', 'plan_amount', 'plan_billing', 'plan_category',
+    'scheduled_plan_id', 'scheduled_plan_name', 'scheduled_plan_amount', 'scheduled_plan_billing',
+    'scheduled_plan_category', 'scheduled_plan_apply_at', 'scheduled_pppoe_profile',
+    'bill_date', 'due_date', 'prepaid_expiration_at', 'due_offset', 'credit_limit',
+    'login_username', 'login_password_hash', 'pppoe_mode', 'mikrotik_id', 'pppoe_username',
+    'pppoe_password', 'pppoe_profile', 'onu_serial_number'
+  ];
+  const customerValues = [
       customer.firstName || null,
       customer.lastName || null,
       customer.name || null,
@@ -206,8 +171,39 @@ async function upsertCustomer(customer, branchId) {
       customer.mikrotikId || customer.routerId || null,
       customer.pppoeUsername || null,
       customer.pppoePassword != null ? String(customer.pppoePassword) : null,
-      customer.pppoeProfile || null
-    ]
+      customer.pppoeProfile || null,
+      normalizeOnuSerialNumber(
+        customer.onuSerialNumber ?? customer.onu_serial_number ?? customer.onuSerial
+      )
+  ];
+  const [existingRows] = await query(
+    'SELECT account_number, branch_id FROM customers WHERE account_number = ? LIMIT 1',
+    [accountNumber]
+  );
+  const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+  if (existing && Number(existing.branch_id) !== Number(branchId)) {
+    throw new Error(`Customer account ${accountNumber} already belongs to another branch.`);
+  }
+  if (existing) {
+    const assignments = customerColumns.map((column) => (
+      column === 'onu_serial_number'
+        ? `${column} = COALESCE(?, ${column})`
+        : `${column} = ?`
+    ));
+    await query(
+      `UPDATE customers
+       SET ${assignments.join(', ')}
+       WHERE account_number = ?
+         AND branch_id = ?`,
+      [...customerValues, accountNumber, branchId]
+    );
+    return;
+  }
+  const insertColumns = ['account_number', 'branch_id', ...customerColumns];
+  await query(
+    `INSERT INTO customers (${insertColumns.join(', ')})
+     VALUES (${insertColumns.map(() => '?').join(', ')})`,
+    [accountNumber, branchId, ...customerValues]
   );
 }
 

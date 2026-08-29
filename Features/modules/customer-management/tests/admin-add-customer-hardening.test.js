@@ -5,12 +5,18 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const customerBackend = require('../backend/customers');
+const { buildCustomerFullJsonImport } = require('../backend/customer-full-json-import');
+const { buildPaymentRecord } = require('../../billing/backend/payment-records');
 
 const {
   buildOpeningAdjustmentEntry,
   findCustomerCreateDuplicate,
+  findCustomerOnuSerialDuplicate,
   generateAccountNumber,
   generateTemporaryPortalPassword,
+  mapArchivedCustomerPayloadForJson,
+  normalizeOnuSerialNumber,
+  persistCustomerMysqlValuesByAccount,
   sanitizeCustomerForAdmin,
   validateAdminCustomerCreatePayload
 } = customerBackend;
@@ -153,6 +159,191 @@ test('server duplicate checks normalize username, mobile, and email', () => {
   }, existing), null);
 
   assertValidationError({}, /already|duplicate|used|exists/i, existing);
+});
+
+test('ONU identity is canonical, branch-scoped, and not writable through ordinary Admin payloads', () => {
+  assert.equal(normalizeOnuSerialNumber('  zte f680-ab 12  '), 'ZTEF680-AB12');
+  assert.throws(
+    () => normalizeOnuSerialNumber('x'.repeat(161)),
+    /160 characters or fewer/
+  );
+
+  const customers = [
+    { accountNumber: '700000001', branchId: 7, onuSerialNumber: 'ONU-ONE' },
+    { accountNumber: '800000001', branchId: 8, onuSerialNumber: 'ONU-ONE' }
+  ];
+  assert.equal(
+    findCustomerOnuSerialDuplicate(' onu-one ', customers, 7)?.accountNumber,
+    '700000001'
+  );
+  assert.equal(
+    findCustomerOnuSerialDuplicate(' onu-one ', customers, 7, '700000001'),
+    null
+  );
+  assert.equal(
+    findCustomerOnuSerialDuplicate('new-onu', customers, 7),
+    null
+  );
+  assert.equal(
+    findCustomerOnuSerialDuplicate('legacy-onu', [
+      { accountNumber: '100000001', onuSerialNumber: 'LEGACY-ONU' }
+    ], 1)?.accountNumber,
+    '100000001'
+  );
+
+  const normalizedAdminPayload = validate({
+    onuSerialNumber: 'ADMIN-INJECTED',
+    onu_serial_number: 'ADMIN-INJECTED-SNAKE',
+    onuSerial: 'ADMIN-INJECTED-ALIAS'
+  });
+  assert.equal(Object.hasOwn(normalizedAdminPayload, 'onuSerialNumber'), false);
+  assert.equal(Object.hasOwn(normalizedAdminPayload, 'onu_serial_number'), false);
+  assert.equal(Object.hasOwn(normalizedAdminPayload, 'onuSerial'), false);
+
+  const adminView = sanitizeCustomerForAdmin({
+    accountNumber: '700000001',
+    onuSerialNumber: 'ONU-ONE'
+  });
+  assert.equal(adminView.onuSerialNumber, 'ONU-ONE');
+});
+
+test('ONU serial survives legacy full JSON import and reaches the billing read model', () => {
+  const result = buildCustomerFullJsonImport({
+    branchId: 7,
+    tables: {
+      customers: [{ account_number: '700000001', name: 'Updated Customer' }]
+    },
+    stores: {
+      customers: [{
+        accountNumber: '700000001',
+        branchId: 7,
+        name: 'Existing Customer',
+        onuSerialNumber: 'ONU-KEEP-1'
+      }],
+      plans: [],
+      payments: {},
+      tickets: [],
+      jobs: [],
+      sms_messages: [],
+      sms_automation_runs: [],
+      'pon-state': {},
+      payment_breakdown_adjustments: {},
+      closed_customer_accounts: { version: 1, branches: {} }
+    },
+    now: new Date('2026-08-27T00:00:00.000Z')
+  });
+  const importedCustomer = result.stores.customers.find(
+    (customer) => customer.accountNumber === '700000001'
+  );
+  assert.equal(importedCustomer.name, 'Updated Customer');
+  assert.equal(importedCustomer.onuSerialNumber, 'ONU-KEEP-1');
+
+  const paymentRecord = buildPaymentRecord({
+    accountNumber: '700000001',
+    branchId: 7,
+    name: 'Customer',
+    planCategory: 'postpaid',
+    planAmount: 999,
+    onuSerialNumber: 'ONU-KEEP-1'
+  });
+  assert.equal(paymentRecord.onuSerialNumber, 'ONU-KEEP-1');
+});
+
+test('full JSON import rejects duplicate ONU serials inside one branch', () => {
+  assert.throws(
+    () => buildCustomerFullJsonImport({
+      branchId: 7,
+      tables: {
+        customers: [
+          { account_number: '700000010', onu_serial_number: 'onu duplicate' },
+          { account_number: '700000011', onuSerialNumber: 'ONU DUPLICATE' }
+        ]
+      },
+      stores: { closed_customer_accounts: { version: 1, branches: {} } }
+    }),
+    (error) => error?.status === 409 && error?.code === 'CUSTOMER_FULL_IMPORT_CONFLICT'
+  );
+});
+
+test('account-keyed MySQL persistence never upserts a different ONU owner', async () => {
+  const rows = new Map([
+    ['700000001', { accountNumber: '700000001', branchId: 7, onuSerialNumber: 'ONU-OWNER' }]
+  ]);
+  const sqlCalls = [];
+  const executeQuery = async (sql, params = []) => {
+    sqlCalls.push(sql);
+    if (/^SELECT account_number, branch_id FROM customers/i.test(sql.trim())) {
+      const row = rows.get(params[0]);
+      return [row ? [{ account_number: row.accountNumber, branch_id: row.branchId }] : []];
+    }
+    if (/^INSERT INTO customers/i.test(sql.trim())) {
+      const accountNumber = params[0];
+      const branchId = params[1];
+      const onuSerialNumber = params.at(-1);
+      const owner = [...rows.values()].find((row) => (
+        row.branchId === branchId && row.onuSerialNumber === onuSerialNumber
+      ));
+      if (owner) {
+        const error = new Error("Duplicate entry for key 'uniq_customers_branch_onu_serial'");
+        error.code = 'ER_DUP_ENTRY';
+        throw error;
+      }
+      rows.set(accountNumber, { accountNumber, branchId, onuSerialNumber });
+      return [{ affectedRows: 1 }];
+    }
+    throw new Error(`Unexpected SQL: ${sql}`);
+  };
+  const customerValues = Array(42).fill(null);
+  customerValues[41] = 'ONU-OWNER';
+
+  await assert.rejects(
+    persistCustomerMysqlValuesByAccount({
+      executeQuery,
+      accountNumber: '700000002',
+      branchId: 7,
+      customerValues
+    }),
+    (error) => error?.code === 'ER_DUP_ENTRY'
+  );
+  assert.deepEqual(rows.get('700000001'), {
+    accountNumber: '700000001',
+    branchId: 7,
+    onuSerialNumber: 'ONU-OWNER'
+  });
+  assert.equal(rows.has('700000002'), false);
+  assert.equal(sqlCalls.some((sql) => /ON DUPLICATE KEY UPDATE/i.test(sql)), false);
+});
+
+test('JSON archive reopen preserves ONU identity and detects reassignment', () => {
+  const restored = mapArchivedCustomerPayloadForJson({
+    account_number: '700000020',
+    branch_id: 7,
+    name: 'Archived Customer',
+    onu_serial_number: ' onu archived-20 '
+  }, 7);
+  assert.equal(restored.onuSerialNumber, 'ONUARCHIVED-20');
+
+  const duplicate = findCustomerOnuSerialDuplicate(
+    restored.onuSerialNumber,
+    [{ accountNumber: '700000021', branchId: 7, onuSerialNumber: 'ONUARCHIVED-20' }],
+    7,
+    restored.accountNumber
+  );
+  assert.equal(duplicate?.accountNumber, '700000021');
+
+  const backendSource = fs.readFileSync(
+    path.resolve(__dirname, '../backend/customers.js'),
+    'utf8'
+  );
+  const restoreStart = backendSource.indexOf('const restoreArchivedCustomerRecord = async');
+  const customerRestoreStart = backendSource.indexOf('const customerRow =', restoreStart);
+  const jsonRestoreSource = backendSource.slice(
+    backendSource.indexOf("if (!(await isRelationalReady())) {", customerRestoreStart),
+    backendSource.indexOf('const pool = await getPool()', customerRestoreStart)
+  );
+  assert.match(jsonRestoreSource, /withCustomerCreateMutationLock/);
+  assert.match(jsonRestoreSource, /findCustomerOnuSerialDuplicate\(/);
+  assert.match(jsonRestoreSource, /createOnuSerialDuplicateError/);
 });
 
 test('migrated customers accept an explicit zero opening balance', () => {
@@ -326,6 +517,53 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
   );
   assert.match(schemaSource, /customer_start_type\s+VARCHAR\(20\)/i);
   assert.match(migrationSource, /ALTER TABLE customers ADD COLUMN customer_start_type/i);
+  assert.match(schemaSource, /onu_serial_number\s+VARCHAR\(160\)\s+NULL/i);
+  assert.match(schemaSource, /UNIQUE KEY uniq_customers_branch_onu_serial\s*\(branch_id, onu_serial_number\)/i);
+  assert.match(migrationSource, /ADD COLUMN onu_serial_number VARCHAR\(160\)/i);
+  assert.match(migrationSource, /ADD UNIQUE KEY uniq_customers_branch_onu_serial/i);
+
+  const relationalMigrationSource = fs.readFileSync(
+    path.resolve(__dirname, '../../../../scripts/migrate-json-to-relational.js'),
+    'utf8'
+  );
+  const restoreSource = fs.readFileSync(
+    path.resolve(__dirname, '../../admin/backend/json-to-mysql-restore.js'),
+    'utf8'
+  );
+  const serverSource = fs.readFileSync(
+    path.resolve(__dirname, '../../../../server.js'),
+    'utf8'
+  );
+  assert.match(relationalMigrationSource, /onu_serial_number/);
+  const relationalCustomerUpsert = relationalMigrationSource.slice(
+    relationalMigrationSource.indexOf('async function upsertCustomer'),
+    relationalMigrationSource.indexOf('async function upsertPlan')
+  );
+  assert.doesNotMatch(relationalCustomerUpsert, /ON DUPLICATE KEY UPDATE/);
+  assert.match(relationalCustomerUpsert, /UPDATE customers/);
+  assert.match(relationalCustomerUpsert, /WHERE account_number = \?/);
+  assert.match(relationalCustomerUpsert, /INSERT INTO customers/);
+  assert.match(restoreSource, /'onu_serial_number'/);
+  assert.match(restoreSource, /customerOnuSerialOwners/);
+  assert.match(serverSource, /normalizeCustomerOnuSerialNumber/);
+  const serverCustomerImport = serverSource.slice(
+    serverSource.indexOf('for (const row of importCustomers)'),
+    serverSource.indexOf('const referencedAccounts = new Set()', serverSource.indexOf('for (const row of importCustomers)'))
+  );
+  assert.doesNotMatch(serverCustomerImport, /ON DUPLICATE KEY UPDATE/);
+  assert.match(serverCustomerImport, /UPDATE customers SET/);
+  assert.match(serverCustomerImport, /WHERE account_number = \?/);
+  assert.match(serverCustomerImport, /INSERT INTO customers/);
+  assert.match(backendSource, /onu_serial_number AS onuSerialNumber/);
+  assert.match(backendSource, /isOnuSerialDuplicateError/);
+  const writeCustomerSource = backendSource.slice(
+    backendSource.indexOf('const persistCustomerMysqlValuesByAccount = async'),
+    backendSource.indexOf('const writeCustomers = async')
+  );
+  assert.doesNotMatch(writeCustomerSource, /ON DUPLICATE KEY UPDATE/);
+  assert.match(writeCustomerSource, /UPDATE customers/);
+  assert.match(writeCustomerSource, /WHERE account_number = \?/);
+  assert.match(writeCustomerSource, /INSERT INTO customers/);
 });
 
 test('Add Customer uses a Tabler horizontal wizard, inline errors, network review, and one atomic create request', () => {

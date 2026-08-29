@@ -12,11 +12,11 @@ const customersTablerCss = fs.readFileSync(
   'utf8'
 );
 
-assert.equal(customersPage.includes('css/customers-tabler.css?v=1.1'), true);
+assert.equal(customersPage.includes('css/customers-tabler.css?v=1.2'), true);
 assert.equal(customersPage.includes('href="css/customers.css'), false);
 assert.equal(
   customersPage.indexOf('css/account-view-shared.css?v=2.4')
-    < customersPage.indexOf('css/customers-tabler.css?v=1.1'),
+    < customersPage.indexOf('css/customers-tabler.css?v=1.2'),
   true
 );
 assert.equal(customersPage.includes('class="table table-vcenter table-hover card-table customer-table"'), true);
@@ -27,6 +27,14 @@ assert.equal(customersTablerCss.includes('layout additions for native Tabler com
 assert.equal(customersPage.includes('class="view-panel view-panel--account"'), true);
 assert.equal(customersPage.includes('class="view-panel view-panel--billing"'), true);
 assert.equal(customersPage.includes('class="view-panel view-panel--network view-panel--pppoe-grid"'), true);
+assert.equal(customersPage.includes('Network Details'), true);
+assert.match(customersPage, /ONU Serial Number[\s\S]*data-view="onuSerialNumber">Not recorded</);
+assert.match(customersPage, /data-copy-field="onuSerialNumber"/);
+assert.match(customersPage, /onuSerialNumber:\s*String\([\s\S]*liveCustomerData\.onuSerialNumber/);
+assert.match(customersPage, /setViewValue\('onuSerialNumber', formatViewText\(viewState\.onuSerialNumber, 'Not recorded'\)\)/);
+assert.match(customersPage, /liveCustomerData = \{[\s\S]*currentViewCustomer[\s\S]*recordOverride/);
+assert.match(customersPage, /mikrotikPanel\.style\.display = ''/);
+assert.match(customersPage, /querySelectorAll\('\[data-view-pppoe-row\]'\)/);
 assert.equal(customersPage.includes('class="view-panel view-panel--nap"'), true);
 assert.equal(customersPage.includes('Billing Schedule'), true);
 assert.equal(customersPage.includes('table table-vcenter table-hover view-table__table mb-0'), true);
@@ -48,6 +56,11 @@ assert.match(customersPage, /id="closeAccountFinalBalance"/);
 assert.match(customersPage, /balanceAdjustmentConfirmed:\s*closeAccountAdjustmentConfirmed/);
 assert.doesNotMatch(customersPage, /id="closeAccountReason"[^>]*required/);
 assert.match(customersPage, /No customer records will be deleted\./);
+assert.match(customersPage, /const customerCoordinates = parseCoordinateValue\(customer\?\.mapPin\);/);
+assert.match(customersPage, /const locationBadge = customerCoordinates[\s\S]*class="badge bg-green-lt text-green customer-location-badge"[\s\S]*Location Set[\s\S]*:\s*'';/);
+assert.match(customersPage, /title="Coordinates: \$\{escapeHtml\(coordinateLabel\)\}"/);
+assert.match(customersPage, /<div class="customer-area-heading">/);
+assert.match(customersTablerCss, /\.customer-location-badge\s*\{/);
 const backdropZIndex = customersTablerCss.match(/\.modal-backdrop\s*\{[^}]*z-index:\s*(\d+)/s);
 const closeAccountModalZIndex = customersTablerCss.match(/\.modal\.account-closure-modal\s*\{[^}]*z-index:\s*(\d+)/s);
 assert.ok(backdropZIndex, 'Customers modal backdrop must define its stacking level.');

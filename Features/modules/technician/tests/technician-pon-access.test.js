@@ -1,12 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const installationsRouter = require('../backend/technician-installations');
 
 test('installation completion evidence is normalized and replay-safe', () => {
   const completion = installationsRouter.normalizeInstallationCompletion({
     clientEventId: 'install-event-1',
-    onuSerialNumber: 'ONU-001',
+    onuSerialNumber: ' onu-001 ',
     onuBrand: 'Huawei',
     opticalSignal: '-18.4 dBm',
     cableMeterStart: '100.5',
@@ -26,6 +28,7 @@ test('installation completion evidence is normalized and replay-safe', () => {
     materials: [{ name: 'Drop cable', quantity: 42.5, unit: 'm' }],
     notes: 'Speed test passed.'
   });
+  assert.equal(completion.onuSerialNumber, 'ONU-001');
   assert.equal(completion.cableLengthMeters, 42.5);
   assert.equal(completion.onuBrand, 'Huawei');
   assert.equal(completion.installationMaterials.patchCordType, 'upc-to-apc');
@@ -79,13 +82,53 @@ test('installation completion rejects reversed meter readings and incomplete pat
   );
 });
 
-test('installation completion requires stable event, ONU, and optical signal', () => {
+test('new installation completion requires only a stable event and normalized ONU serial', () => {
+  const completion = installationsRouter.normalizeInstallationCompletion({
+    clientEventId: 'install-event-2',
+    onuSerialNumber: ' zte f680-abc123 '
+  });
+  assert.equal(completion.onuSerialNumber, 'ZTEF680-ABC123');
+  assert.deepEqual(completion, {
+    clientEventId: 'install-event-2',
+    onuSerialNumber: 'ZTEF680-ABC123'
+  });
+
   assert.throws(
     () => installationsRouter.normalizeInstallationCompletion({
-      clientEventId: 'install-event-2',
       onuSerialNumber: 'ONU-002'
     }),
-    (error) => error.statusCode === 400 && /Optical signal/.test(error.message)
+    (error) => error.statusCode === 400 && /clientEventId/.test(error.message)
+  );
+  assert.throws(
+    () => installationsRouter.normalizeInstallationCompletion({
+      clientEventId: 'install-event-3'
+    }),
+    (error) => error.statusCode === 400 && /ONU serial/.test(error.message)
+  );
+});
+
+test('case normalization keeps legacy mixed-case completion retries compatible', () => {
+  const normalized = installationsRouter.normalizeInstallationCompletion({
+    clientEventId: 'install-event-legacy-case',
+    onuSerialNumber: 'onu-legacy-1'
+  });
+  const legacyCompletion = {
+    ...normalized,
+    onuSerialNumber: 'onu-legacy-1',
+    macAddress: '',
+    opticalSignal: '',
+    cableLengthMeters: null,
+    materials: [],
+    notes: ''
+  };
+  const existing = {
+    ...legacyCompletion,
+    fingerprint: installationsRouter.installationCompletionFingerprint(legacyCompletion)
+  };
+  assert.equal(normalized.onuSerialNumber, 'ONU-LEGACY-1');
+  assert.equal(
+    installationsRouter.assertInstallationCompletionReplay(existing, normalized),
+    true
   );
 });
 
@@ -102,12 +145,86 @@ test('technician customer access predicates require draft ownership or matching 
     status: 'approved',
     submittedBy: { id: 'tech-1' }
   }, { id: 'tech-1' }), false);
+  assert.equal(installationsRouter.technicianOwnsApprovedDraft({
+    status: 'approved',
+    submittedBy: { id: 'tech-1' }
+  }, { id: 'tech-1' }), true);
+  assert.equal(installationsRouter.technicianOwnsApprovedDraft({
+    status: 'approved',
+    submittedBy: { id: 'tech-2' }
+  }, { id: 'tech-1' }), false);
 
   const job = { branchId: 7, customerAccountNumber: '30010001' };
   assert.equal(installationsRouter.jobGrantsCustomerAccess(job, 7, '30010001'), true);
   assert.equal(installationsRouter.jobGrantsCustomerAccess(job, 8, '30010001'), false);
   assert.equal(installationsRouter.jobGrantsCustomerAccess(job, 7, '30010002'), false);
   assert.equal(installationsRouter.jobGrantsCustomerAccess({ customerAccountNumber: '30010001' }, 7, '30010001'), false);
+});
+
+test('approved-draft ONU reconciliation is no-op while pending and promotes after approval', async () => {
+  const calls = [];
+  const updateCustomer = async (...args) => {
+    calls.push(args);
+    return { accountNumber: args[0], onuSerialNumber: args[2].trustedOnuSerialNumber };
+  };
+  const completion = { clientEventId: 'install-race-1', onuSerialNumber: ' onu race-1 ' };
+
+  const pendingResult = await installationsRouter.promoteApprovedDraftOnuSerial({
+    completionUpdate: {
+      item: {
+        status: 'pending',
+        draftAccountNumber: '30010001'
+      }
+    },
+    completion,
+    branchId: 7,
+    updateCustomer
+  });
+  assert.equal(pendingResult, null);
+  assert.equal(calls.length, 0);
+
+  const approvedResult = await installationsRouter.promoteApprovedDraftOnuSerial({
+    completionUpdate: {
+      item: {
+        status: 'approved',
+        draftAccountNumber: '30010001',
+        approvedCustomerAccountNumber: '30010009'
+      }
+    },
+    completion,
+    branchId: 7,
+    updateCustomer
+  });
+  assert.equal(approvedResult.onuSerialNumber, 'ONURACE-1');
+  assert.deepEqual(calls, [[
+    '30010009',
+    {},
+    {
+      branchId: 7,
+      refreshSource: 'technician-installation-onu-reconcile',
+      trustedOnuSerialNumber: 'ONURACE-1'
+    }
+  ]]);
+});
+
+test('finalize contract preflights ONU duplicates and supports approval-first completion convergence', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../backend/technician-installations.js'),
+    'utf8'
+  );
+  const finalizeSource = source.slice(
+    source.indexOf('const finalizePonAssignmentHandler = async'),
+    source.indexOf("router.post('/pon/reservations/:reservationId/finalize'")
+  );
+  assert.match(finalizeSource, /allowApprovedDraftReplay:\s*true/);
+  assert.match(finalizeSource, /access\.accessType === 'own-approved-draft'/);
+  assert.match(finalizeSource, /if \(existingCompletion\)\s*\{\s*assertInstallationCompletionReplay/);
+  assert.match(finalizeSource, /findCustomerOnuSerialDuplicate\(/);
+  assert.ok(finalizeSource.indexOf('findCustomerOnuSerialDuplicate(')
+    < finalizeSource.indexOf('await finalizePonAssignment('));
+  assert.match(finalizeSource, /statuses:\s*\['pending', 'approved'\]/);
+  assert.match(finalizeSource, /const completionRecord = existingCompletion \|\| \{/);
+  assert.match(finalizeSource, /promoteApprovedDraftOnuSerial\(/);
 });
 
 test('technician PON overview redacts every other subscriber identity', () => {

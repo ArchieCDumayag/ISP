@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.3">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-history-tabler.css?v=2.1">
+    <link rel="stylesheet" href="css/collectors-history-tabler.css?v=3.0">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -23,7 +23,7 @@
                     <div>
                         <div class="page-pretitle">Collections</div>
                         <h1 class="page-title" id="collectionHistoryTitle">Collection History</h1>
-                        <p class="text-secondary mb-0">Review approved collector performance by period, collector, and service area.</p>
+                        <p class="text-secondary mb-0">Review approved collector payments in one simple transaction list.</p>
                     </div>
                     <div class="collection-history-page-actions">
                         <a class="btn btn-outline-secondary btn-sm" href="collectors.html">
@@ -129,8 +129,8 @@
                 <section class="card collection-history-shell" aria-labelledby="collectionHistoryTableTitle">
                     <div class="card-header collection-history-table-header">
                         <div>
-                            <h2 class="card-title" id="collectionHistoryTableTitle">Approved Collection Records</h2>
-                            <p class="text-secondary mb-0">Select a collector row to review its area breakdown.</p>
+                            <h2 class="card-title" id="collectionHistoryTableTitle">Approved Payments</h2>
+                            <p class="text-secondary mb-0">One row per approved payment recorded by a collector.</p>
                         </div>
                         <span class="badge bg-primary-lt text-primary" id="historyTableBadge">0 records</span>
                     </div>
@@ -139,25 +139,19 @@
                         <table class="table table-vcenter table-hover collection-history-table">
                             <thead>
                                 <tr>
-                                    <th>
-                                        <button class="collection-history-sort" type="button" data-history-sort="month">Period <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
-                                    </th>
-                                    <th>
-                                        <button class="collection-history-sort" type="button" data-history-sort="collectorName">Collector <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
-                                    </th>
-                                    <th>Service Areas</th>
-                                    <th class="text-end">
-                                        <button class="collection-history-sort justify-content-end" type="button" data-history-sort="payments">Payments <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
-                                    </th>
-                                    <th>Status</th>
-                                    <th class="text-end">
-                                        <button class="collection-history-sort justify-content-end" type="button" data-history-sort="amount">Total Collected <i class="ti ti-arrows-sort" aria-hidden="true"></i></button>
-                                    </th>
+                                    <th><button class="collection-history-sort" type="button" data-history-sort="date">Date <i class="ti ti-arrows-sort" aria-hidden="true"></i></button></th>
+                                    <th><button class="collection-history-sort" type="button" data-history-sort="customerName">Customer <i class="ti ti-arrows-sort" aria-hidden="true"></i></button></th>
+                                    <th><button class="collection-history-sort" type="button" data-history-sort="collectorName">Collector <i class="ti ti-arrows-sort" aria-hidden="true"></i></button></th>
+                                    <th><button class="collection-history-sort" type="button" data-history-sort="area">Area <i class="ti ti-arrows-sort" aria-hidden="true"></i></button></th>
+                                    <th class="text-end"><button class="collection-history-sort justify-content-end" type="button" data-history-sort="amount">Amount <i class="ti ti-arrows-sort" aria-hidden="true"></i></button></th>
+                                    <th>Method</th>
+                                    <th>Reference</th>
+                                    <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="historyTableBody">
                                 <tr>
-                                    <td colspan="6" class="collection-history-empty">Loading...</td>
+                                    <td colspan="8" class="collection-history-empty">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -191,7 +185,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <h2 class="modal-title" id="historyModalTitle">Area breakdown</h2>
+                        <h2 class="modal-title" id="historyModalTitle">Payment details</h2>
                         <p class="modal-subtitle mb-0" id="historyModalSubtitle"></p>
                     </div>
                     <button class="btn-close" type="button" id="historyModalClose" aria-label="Close"></button>
@@ -207,7 +201,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-history.js?v=2.1"></script>
+    <script src="js/collectors-history.js?v=3.0"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

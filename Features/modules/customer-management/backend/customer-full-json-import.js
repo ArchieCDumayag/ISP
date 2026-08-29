@@ -51,6 +51,20 @@ const DUPLICATES_TEMPLATE = Object.freeze(Object.fromEntries(
 
 const identityText = (value) => String(value == null ? '' : value).trim();
 const identityKey = (value) => identityText(value).toLowerCase();
+const normalizeOnuSerialNumber = (value) => {
+    const normalized = String(value == null ? '' : value)
+        .normalize('NFKC')
+        .trim()
+        .replace(/\s+/g, '')
+        .toUpperCase();
+    if (normalized.length > 160) {
+        const error = new Error('ONU serial number must be 160 characters or fewer.');
+        error.code = 'CUSTOMER_FULL_IMPORT_ONU_SERIAL_INVALID';
+        error.status = 400;
+        throw error;
+    }
+    return normalized;
+};
 const identityNumber = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? String(parsed) : identityKey(value);
@@ -117,6 +131,14 @@ const getCustomerFullPaymentSecondaryAliases = (row = {}) => {
 };
 
 const secondaryIdentitiesForImportRow = (tableName, row = {}) => {
+    if (tableName === 'customers') {
+        const onuSerialNumber = normalizeOnuSerialNumber(
+            row?.onu_serial_number ?? row?.onuSerialNumber ?? row?.onuSerial
+        );
+        return onuSerialNumber
+            ? [{ alias: `onu_serial_number:${onuSerialNumber}`, type: 'onu_serial_number' }]
+            : [];
+    }
     if (tableName === 'payment_entries') {
         return getCustomerFullPaymentSecondaryAliases(row);
     }
@@ -821,6 +843,11 @@ const normalizeCustomer = (row, branchId, nowIso) => {
         pppoeUsername: textValue(row, ['pppoe_username', 'pppoeUsername']),
         pppoePassword: textValue(row, ['pppoe_password', 'pppoePassword']),
         pppoeProfile: textValue(row, ['pppoe_profile', 'pppoeProfile']),
+        onuSerialNumber: normalizeOnuSerialNumber(pickValue(row, [
+            'onu_serial_number',
+            'onuSerialNumber',
+            'onuSerial'
+        ])) || undefined,
         createdAt,
         updatedAt: dateTimeValue(row, ['updated_at', 'updatedAt']) || createdAt
     });
@@ -1164,6 +1191,35 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
         }
         imported.customers += 1;
     });
+
+    const onuSerialOwners = new Map();
+    const onuSerialConflicts = [];
+    customers.forEach((customer, index) => {
+        const onuSerialNumber = normalizeOnuSerialNumber(
+            customer?.onuSerialNumber ?? customer?.onu_serial_number ?? customer?.onuSerial
+        );
+        if (!onuSerialNumber) return;
+        customer.onuSerialNumber = onuSerialNumber;
+        const ownerBranchId = customerBranchId(customer) || scopedBranchId;
+        const identity = `${ownerBranchId}:${onuSerialNumber}`;
+        const accountNumber = customerAccountNumber(customer);
+        const existing = onuSerialOwners.get(identity);
+        if (existing && existing.accountNumber !== accountNumber) {
+            onuSerialConflicts.push({
+                table: 'customers',
+                identityType: 'onu_serial_number',
+                firstRow: existing.index + 2,
+                conflictingRow: index + 2,
+                firstAccountNumber: existing.accountNumber,
+                conflictingAccountNumber: accountNumber
+            });
+            return;
+        }
+        onuSerialOwners.set(identity, { accountNumber, index });
+    });
+    if (onuSerialConflicts.length) {
+        throw createCustomerFullImportConflictError(onuSerialConflicts);
+    }
 
     const branchAccounts = new Map();
     customers.forEach((customer) => {

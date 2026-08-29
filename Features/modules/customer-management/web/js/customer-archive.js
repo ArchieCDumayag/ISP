@@ -689,6 +689,7 @@
     const reopenClose = document.getElementById('reopenAccountClose');
     const reopenCancel = document.getElementById('reopenAccountCancel');
     const reopenCustomerName = document.getElementById('reopenAccountCustomerName');
+    const reopenBalanceLabel = document.getElementById('reopenAccountBalanceLabel');
     const reopenBalance = document.getElementById('reopenAccountBalance');
     const reopenBalanceAction = document.getElementById('reopenAccountBalanceAction');
     const reopenBalanceHint = document.getElementById('reopenAccountBalanceHint');
@@ -744,10 +745,34 @@
         }).format(parsed);
     };
 
+    const formatDateTime = (value) => {
+        const parsed = parseDate(value);
+        if (!parsed) return String(value || '-').trim() || '-';
+        return new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        }).format(parsed);
+    };
+
+    const readMoney = (value) => {
+        if (value === null || value === undefined || value === '') return null;
+        const amount = Number(value);
+        return Number.isFinite(amount) ? Number(amount.toFixed(2)) : null;
+    };
+
     const formatMoney = (value) => {
         const amount = Number(value);
         if (!Number.isFinite(amount)) return 'Unavailable';
         return `₱${Math.abs(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const formatBalance = (value) => {
+        const amount = readMoney(value);
+        if (amount === null) return 'Unavailable';
+        return amount < -0.005 ? `${formatMoney(amount)} advance credit` : formatMoney(amount);
     };
 
     const getInitials = (value) => {
@@ -827,36 +852,53 @@
             const stateClass = item?.state === 'failed'
                 ? 'archive-status-pill archive-status-pill--danger'
                 : 'archive-status-pill archive-status-pill--closed';
-            const balanceBefore = Number(item?.balanceBefore) || 0;
-            const writeOffAmount = Number(item?.writeOffAmount) || 0;
-            const balanceAdjustmentAmount = Number(item?.balanceAdjustmentAmount) || 0;
+            const balanceBefore = readMoney(item?.balanceBefore) ?? 0;
+            const writeOffAmount = readMoney(item?.writeOffAmount) ?? 0;
+            const balanceAdjustmentAmount = readMoney(item?.balanceAdjustmentAmount) ?? 0;
             const balanceAdjustmentDirection = String(item?.balanceAdjustmentDirection || '').trim().toLowerCase();
-            const finalBalance = Number(item?.finalBalance) || 0;
+            const legacyFinalBalance = readMoney(item?.finalBalance) ?? 0;
+            const requestedFinalBalance = readMoney(item?.requestedFinalBalance);
+            // Final Balance is the immutable closure audit snapshot. The live
+            // remaining balance may change later through retained-debt payments.
+            const closureFinalBalance = readMoney(item?.closureFinalBalance)
+                ?? requestedFinalBalance
+                ?? legacyFinalBalance;
+            const liveRemainingBalance = readMoney(item?.remainingBalance);
             const remainingBalance = item?.balanceAvailable === true
-                && Number.isFinite(Number(item?.remainingBalance))
-                ? Number(item.remainingBalance)
-                : finalBalance;
+                && liveRemainingBalance !== null
+                ? liveRemainingBalance
+                : legacyFinalBalance;
             const balanceTreatment = String(item?.balanceTreatment || '').trim().toLowerCase();
-            const hasRequestedFinalBalance = item?.requestedFinalBalance !== null
-                && item?.requestedFinalBalance !== undefined
-                && item?.requestedFinalBalance !== '';
-            const requestedFinalBalance = hasRequestedFinalBalance && Number.isFinite(Number(item.requestedFinalBalance))
-                ? Number(item.requestedFinalBalance)
-                : (balanceTreatment === 'write-off' ? 0 : balanceBefore);
-            const balanceMeta = item?.balanceAvailable === false
-                ? String(item?.balanceWarning || 'Live balance unavailable; showing closure snapshot')
-                : (balanceAdjustmentAmount > 0 && ['credit', 'debit'].includes(balanceAdjustmentDirection)
-                ? `${formatMoney(balanceAdjustmentAmount)} audited ${balanceAdjustmentDirection} adjustment`
-                : (writeOffAmount > 0
-                ? `${formatMoney(writeOffAmount)} audited write-off`
-                : (balanceTreatment === 'keep' && remainingBalance > 0.005
+            const retryFinalBalance = requestedFinalBalance
+                ?? (balanceTreatment === 'write-off' ? 0 : closureFinalBalance);
+            const auditMeta = [`Previous ${formatBalance(balanceBefore)}`];
+            if (balanceAdjustmentAmount > 0.005 && ['credit', 'debit'].includes(balanceAdjustmentDirection)) {
+                auditMeta.push(`${balanceAdjustmentDirection === 'credit' ? 'Credit' : 'Debit'} adjustment ${formatMoney(balanceAdjustmentAmount)}`);
+            } else if (writeOffAmount > 0.005) {
+                auditMeta.push(`Write-off ${formatMoney(writeOffAmount)}`);
+            } else {
+                auditMeta.push('No balance adjustment');
+            }
+            const balanceMeta = auditMeta.join(' · ');
+            const liveBalanceChanged = item?.balanceAvailable === true
+                && Math.abs(remainingBalance - closureFinalBalance) > 0.005;
+            let liveBalanceMeta = '';
+            if (item?.balanceAvailable === false) {
+                liveBalanceMeta = String(item?.balanceWarning || 'Current balance unavailable; showing closure snapshot');
+            } else if (liveBalanceChanged) {
+                liveBalanceMeta = remainingBalance < -0.005
+                    ? `Current advance credit ${formatMoney(remainingBalance)}`
+                    : (balanceTreatment === 'keep' && remainingBalance <= 0.005
+                        ? `Current retained balance ${formatMoney(remainingBalance)} · Retained balance paid in full`
+                        : `Current remaining balance ${formatMoney(remainingBalance)}`);
+            } else if (balanceTreatment === 'keep') {
+                liveBalanceMeta = remainingBalance > 0.005
                     ? 'Outstanding balance retained'
-                    : (balanceTreatment === 'keep'
-                        ? 'Retained balance paid in full'
-                        : (Math.abs(balanceBefore) < 0.005 ? 'Closed at zero balance' : 'No write-off')))));
+                    : 'Retained balance paid in full';
+            }
             const retryAction = item?.state === 'failed'
                 ? `
-                    <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-final-balance="${escapeHtml(requestedFinalBalance.toFixed(2))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                    <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-final-balance="${escapeHtml(retryFinalBalance.toFixed(2))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
                         <i class="ti ti-refresh" aria-hidden="true"></i>
                     </button>
                 `
@@ -877,11 +919,13 @@
                     <td>
                         <p class="archive-date">${escapeHtml(formatDate(item?.closureDate || item?.closedAt))}</p>
                         <p class="archive-time">${escapeHtml(item?.reason || 'No closure reason saved')}</p>
+                        ${item?.closedAt ? `<p class="archive-time">Saved ${escapeHtml(formatDateTime(item.closedAt))}</p>` : ''}
                         ${item?.warning ? `<p class="archive-warning-text">${escapeHtml(item.warning)}</p>` : ''}
                     </td>
                     <td>
-                        <p class="archive-date">${escapeHtml(formatMoney(remainingBalance))}</p>
+                        <p class="archive-date">${escapeHtml(formatBalance(closureFinalBalance))}</p>
                         <p class="archive-time">${escapeHtml(balanceMeta)}</p>
+                        ${liveBalanceMeta ? `<p class="archive-time">${escapeHtml(liveBalanceMeta)}</p>` : ''}
                     </td>
                     <td class="actions-col">
                         <div class="archive-actions">
@@ -954,22 +998,44 @@
         const record = state.reopenRecord || {};
         const finalBalance = Number(record.finalBalance) || 0;
         const action = String(reopenBalanceAction?.value || 'collect-first').trim();
-        const hasBalance = finalBalance > 0.005;
+        const hasOutstandingBalance = finalBalance > 0.005;
+        const hasAdvanceCredit = finalBalance < -0.005;
+        const collectFirstOption = reopenBalanceAction?.querySelector('option[value="collect-first"]');
+        const keepOption = reopenBalanceAction?.querySelector('option[value="keep"]');
         const writeOffOption = reopenBalanceAction?.querySelector('option[value="write-off"]');
-        if (writeOffOption) writeOffOption.disabled = !hasBalance;
-        if (!hasBalance && action === 'write-off' && reopenBalanceAction) reopenBalanceAction.value = 'keep';
+        if (collectFirstOption) {
+            collectFirstOption.disabled = hasAdvanceCredit;
+            collectFirstOption.textContent = hasAdvanceCredit
+                ? 'Collect first — not applicable to advance credit'
+                : 'Collect first — keep service stopped';
+        }
+        if (keepOption) {
+            keepOption.textContent = hasAdvanceCredit
+                ? 'Keep advance credit — continue to reconnect'
+                : 'Keep outstanding — continue to reconnect';
+        }
+        if (writeOffOption) writeOffOption.disabled = !hasOutstandingBalance;
+        if (hasAdvanceCredit && reopenBalanceAction) {
+            reopenBalanceAction.value = 'keep';
+        } else if (!hasOutstandingBalance && action === 'write-off' && reopenBalanceAction) {
+            reopenBalanceAction.value = 'keep';
+        }
         const selectedAction = String(reopenBalanceAction?.value || 'collect-first').trim();
         if (reopenBalanceHint) {
-            reopenBalanceHint.textContent = selectedAction === 'collect-first'
+            reopenBalanceHint.textContent = hasAdvanceCredit
+                ? 'The advance credit remains on the account. Billing opens with Keep selected, and service stays stopped until reconnection is confirmed.'
+                : (selectedAction === 'collect-first'
                 ? 'The customer returns as Disabled. Record payment first, then reconnect from Billing.'
                 : (selectedAction === 'write-off'
                     ? 'The account returns as Disabled, then Billing opens with Write off selected. Service does not resume until that settlement is confirmed.'
-                    : 'The account returns as Disabled, then Billing opens with Keep for collection selected. Service does not resume until that settlement is confirmed.');
+                    : 'The account returns as Disabled, then Billing opens with Keep for collection selected. Service does not resume until that settlement is confirmed.'));
         }
         if (reopenConfirmationLabel) {
-            reopenConfirmationLabel.textContent = selectedAction === 'collect-first'
+            reopenConfirmationLabel.textContent = hasAdvanceCredit
+                ? 'I confirm the account will reopen as Disabled and the advance credit will remain on the account.'
+                : (selectedAction === 'collect-first'
                 ? 'I confirm the account will reopen as Disabled and the retained balance will remain for collection.'
-                : 'I confirm the account will reopen as Disabled and I must review the Billing settlement before service resumes.';
+                : 'I confirm the account will reopen as Disabled and I must review the Billing settlement before service resumes.');
         }
         const validReason = String(reopenReason?.value || '').trim().length >= 3;
         if (reopenSubmit) {
@@ -986,11 +1052,14 @@
 
     const openReopenModal = ({ closureId, accountNumber, customerName, finalBalance }) => {
         if (!closureId || !reopenModal) return;
-        state.reopenRecord = { closureId, accountNumber, customerName, finalBalance: Number(finalBalance) || 0 };
+        const normalizedFinalBalance = Number(finalBalance) || 0;
+        const hasAdvanceCredit = normalizedFinalBalance < -0.005;
+        state.reopenRecord = { closureId, accountNumber, customerName, finalBalance: normalizedFinalBalance };
         reopenForm?.reset();
-        if (reopenBalanceAction) reopenBalanceAction.value = 'collect-first';
+        if (reopenBalanceAction) reopenBalanceAction.value = hasAdvanceCredit ? 'keep' : 'collect-first';
         if (reopenCustomerName) reopenCustomerName.textContent = `${customerName} · Account # ${accountNumber}`;
-        if (reopenBalance) reopenBalance.textContent = formatMoney(finalBalance);
+        if (reopenBalanceLabel) reopenBalanceLabel.textContent = hasAdvanceCredit ? 'Advance credit' : 'Retained balance';
+        if (reopenBalance) reopenBalance.textContent = formatMoney(normalizedFinalBalance);
         setReopenError('');
         renderReopenForm();
         const controller = getReopenModalController();

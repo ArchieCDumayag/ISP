@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
   normalizeDraftPayload,
   applyFirstBillDefaults,
+  computeFirstBillCollection,
   applyReferralDefaults,
   computeFirstBillProration,
   preserveInstallationCompletion,
@@ -27,6 +28,7 @@ test('technician onboarding keeps structured identity, address, payment, and ref
     barangay: 'San Jose',
     barangayCode: '01506001',
     firstBillPaid: true,
+    firstBillAmountReceived: 500,
     referralCustomerAccountNumber: '100000001',
     referralCustomerName: 'Existing Customer'
   });
@@ -36,6 +38,7 @@ test('technician onboarding keeps structured identity, address, payment, and ref
   assert.equal(draft.municipalityCode, '01506');
   assert.equal(draft.barangayCode, '01506001');
   assert.equal(draft.firstBillPaid, true);
+  assert.equal(draft.firstBillAmountReceived, 500);
   assert.equal(draft.referralCustomerAccountNumber, '100000001');
 });
 
@@ -59,7 +62,70 @@ test('postpaid technician first bill is recomputed server-side through month end
   assert.equal(draft.billDate, '2026-08-31');
   assert.equal(draft.dueDate, '2026-08-31');
   assert.equal(draft.firstBillProratedAmount, 258);
+  assert.equal(draft.firstBillAmountReceived, 258);
+  assert.equal(draft.firstBillAppliedAmount, 258);
+  assert.equal(draft.firstBillBalanceDue, 0);
+  assert.equal(draft.firstBillAdvanceCredit, 0);
+  assert.equal(draft.firstBillPaymentStatus, 'paid');
   assert.equal(draft.firstBillPaid, true);
+});
+
+test('technician first-bill collection supports partial and advance amounts', () => {
+  assert.deepEqual(computeFirstBillCollection(161, 100), {
+    firstBillAmountReceived: 100,
+    firstBillAppliedAmount: 100,
+    firstBillBalanceDue: 61,
+    firstBillAdvanceCredit: 0,
+    firstBillPaymentStatus: 'partially_paid',
+    firstBillPaid: false
+  });
+  assert.deepEqual(computeFirstBillCollection(161, 500), {
+    firstBillAmountReceived: 500,
+    firstBillAppliedAmount: 161,
+    firstBillBalanceDue: 0,
+    firstBillAdvanceCredit: 339,
+    firstBillPaymentStatus: 'paid_with_advance',
+    firstBillPaid: true
+  });
+
+  const advanceDraft = applyFirstBillDefaults({
+    planCategory: 'postpaid',
+    planAmount: 1000,
+    activationDate: '2026-08-27',
+    firstBillAmountReceived: 500,
+    firstBillPaid: false
+  });
+  assert.equal(advanceDraft.firstBillProratedAmount, 161);
+  assert.equal(advanceDraft.firstBillAdvanceCredit, 339);
+  assert.equal(advanceDraft.firstBillPaymentStatus, 'paid_with_advance');
+  assert.equal(advanceDraft.firstBillPaid, true);
+});
+
+test('technician first-bill collection rejects invalid amounts', () => {
+  assert.throws(
+    () => normalizeDraftPayload({ firstBillAmountReceived: -1 }),
+    /between PHP 0 and PHP 10,000,000/
+  );
+  assert.throws(
+    () => normalizeDraftPayload({ firstBillAmountReceived: 10000000.01 }),
+    /between PHP 0 and PHP 10,000,000/
+  );
+});
+
+test('legacy paid-checkbox fingerprints match the equivalent exact amount', () => {
+  const legacy = {
+    firstBillPaid: true,
+    firstBillProratedAmount: 258
+  };
+  const current = {
+    ...legacy,
+    firstBillAmountReceived: 258,
+    firstBillAppliedAmount: 258,
+    firstBillBalanceDue: 0,
+    firstBillAdvanceCredit: 0,
+    firstBillPaymentStatus: 'paid'
+  };
+  assert.equal(draftSubmissionFingerprint(legacy), draftSubmissionFingerprint(current));
 });
 
 test('referral selection is resolved from the branch customer list', () => {
@@ -153,7 +219,7 @@ test('technician draft rejects partial or invalid GPS input', () => {
 test('admin approval preserves trusted installation completion evidence', () => {
   const trustedCompletion = {
     clientEventId: 'install-complete-1',
-    onuSerialNumber: 'ONU-1001',
+    onuSerialNumber: ' onu 1001 ',
     opticalSignal: '-21.4 dBm',
     fingerprint: 'trusted-fingerprint',
     ponAssignment: { napCode: 'NP08', port: 3 }
@@ -168,12 +234,20 @@ test('admin approval preserves trusted installation completion evidence', () => 
   );
   assert.deepEqual(reviewed.installationCompletion, trustedCompletion);
   assert.notEqual(reviewed.installationCompletion, trustedCompletion);
+  assert.equal(reviewed.onuSerialNumber, 'ONU1001');
 
   const attemptedOverride = preserveInstallationCompletion(
-    { name: 'Edited', installationCompletion: { fingerprint: 'admin-override' } },
+    {
+      name: 'Edited',
+      onuSerialNumber: 'ADMIN-INJECTED-ONU',
+      onu_serial_number: 'ADMIN-INJECTED-SNAKE',
+      installationCompletion: { fingerprint: 'admin-override' }
+    },
     { installationCompletion: trustedCompletion }
   );
   assert.equal(attemptedOverride.installationCompletion.fingerprint, 'trusted-fingerprint');
+  assert.equal(attemptedOverride.onuSerialNumber, 'ONU1001');
+  assert.equal(Object.hasOwn(attemptedOverride, 'onu_serial_number'), false);
 });
 
 test('draft retry fingerprint covers material installation and account fields', () => {
@@ -198,6 +272,10 @@ test('draft retry fingerprint covers material installation and account fields', 
   assert.notEqual(
     draftSubmissionFingerprint(base),
     draftSubmissionFingerprint({ ...base, loginUsername: 'another-user' })
+  );
+  assert.notEqual(
+    draftSubmissionFingerprint(base),
+    draftSubmissionFingerprint({ ...base, firstBillAmountReceived: 500 })
   );
 });
 
@@ -237,7 +315,9 @@ test('draft decisions serialize JSON and claim MySQL state before destructive cl
   );
   assert.match(approve, /return await withDraftSubmissionLock/);
   assert.match(approve, /recordDraftFirstBillPayment/);
+  assert.match(source, /advancePayment: collection\.firstBillAmountReceived/);
   assert.match(approve, /createPendingDraftReferral/);
+  assert.equal((approve.match(/trustedOnuSerialNumber:\s*reviewedDraft\.onuSerialNumber/g) || []).length, 4);
   assert.match(reject, /return await withDraftSubmissionLock/);
   assert.match(reject, /FOR UPDATE/);
   assert.ok(reject.indexOf('await connection.commit()')
@@ -247,4 +327,14 @@ test('draft decisions serialize JSON and claim MySQL state before destructive cl
     < deletion.indexOf('cleanupRejectedOrDeletedDraftResources'));
   assert.ok(deletion.indexOf('await connection.commit()')
     < deletion.lastIndexOf('cleanupRejectedOrDeletedDraftResources'));
+});
+
+test('Admin draft review explains partial payments and advance credit', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../web/js/customer-draft-queue.js'),
+    'utf8'
+  );
+  assert.match(source, /firstBillAmountReceived/);
+  assert.match(source, /partial first-bill payment/);
+  assert.match(source, /becomes advance credit on approval/);
 });

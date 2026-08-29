@@ -29,7 +29,8 @@ const {
     readPlans,
     readCustomers,
     recordCustomerOpeningAdjustment,
-    normalizeCustomerMapPin
+    normalizeCustomerMapPin,
+    normalizeOnuSerialNumber
 } = require('./customers');
 const {
     mutateReferralRegistry,
@@ -132,6 +133,17 @@ const toOptionalNumber = (value, decimals = 2) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return null;
     return Number(parsed.toFixed(decimals));
+};
+
+const MAX_FIRST_BILL_COLLECTION = 10000000;
+const normalizeFirstBillAmountReceived = (source = {}) => {
+    const raw = source.firstBillAmountReceived ?? source.first_bill_amount_received;
+    if (raw === '' || raw == null) return null;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > MAX_FIRST_BILL_COLLECTION) {
+        throw createError(400, 'First-bill amount received must be between PHP 0 and PHP 10,000,000.');
+    }
+    return toOptionalNumber(parsed);
 };
 
 const normalizePlanCategory = (value) => {
@@ -313,6 +325,7 @@ const normalizeDraftPayload = (payload = {}) => {
         firstBillProratedAmount: toOptionalNumber(
             source.firstBillProratedAmount ?? source.first_bill_prorated_amount
         ),
+        firstBillAmountReceived: normalizeFirstBillAmountReceived(source),
         firstBillPeriodStart: normalizeDateOnly(
             source.firstBillPeriodStart || source.first_bill_period_start
         ),
@@ -348,6 +361,7 @@ const normalizeDraftPayload = (payload = {}) => {
     if (!normalized.clientEventId) delete normalized.clientEventId;
     if (!normalized.prepaidExpirationAt) delete normalized.prepaidExpirationAt;
     if (normalized.firstBillProratedAmount == null) delete normalized.firstBillProratedAmount;
+    if (normalized.firstBillAmountReceived == null) delete normalized.firstBillAmountReceived;
     if (!normalized.firstBillPeriodStart) delete normalized.firstBillPeriodStart;
     if (!normalized.firstBillPeriodEnd) delete normalized.firstBillPeriodEnd;
     if (!normalized.referralSourceType) delete normalized.referralSourceType;
@@ -358,14 +372,23 @@ const normalizeDraftPayload = (payload = {}) => {
 };
 
 const preserveInstallationCompletion = (reviewedDraft = {}, existingDraftData = {}) => {
+    const sanitizedDraft = { ...(reviewedDraft || {}) };
+    delete sanitizedDraft.installationCompletion;
+    delete sanitizedDraft.onuSerialNumber;
+    delete sanitizedDraft.onu_serial_number;
+    delete sanitizedDraft.onuSerial;
     const completion = existingDraftData?.installationCompletion;
     if (!completion || typeof completion !== 'object' || Array.isArray(completion)) {
-        return reviewedDraft;
+        return sanitizedDraft;
     }
     // Installation evidence is written by the authenticated technician finalize flow.
     // Admin form payloads may edit customer fields, but must not replace or erase it.
+    const onuSerialNumber = normalizeOnuSerialNumber(
+        completion.onuSerialNumber ?? completion.onuSerial
+    );
     return {
-        ...reviewedDraft,
+        ...sanitizedDraft,
+        ...(onuSerialNumber ? { onuSerialNumber } : {}),
         installationCompletion: JSON.parse(JSON.stringify(completion))
     };
 };
@@ -503,11 +526,43 @@ const computeFirstBillProration = (activationDateValue, planAmountValue) => {
     };
 };
 
+const computeFirstBillCollection = (amountDueValue, amountReceivedValue) => {
+    const amountDue = toOptionalNumber(amountDueValue);
+    const amountReceived = toOptionalNumber(amountReceivedValue);
+    if (amountDue == null || amountDue < 0) {
+        throw createError(400, 'The prorated first-bill amount is invalid.');
+    }
+    if (amountReceived == null || amountReceived < 0 || amountReceived > MAX_FIRST_BILL_COLLECTION) {
+        throw createError(400, 'First-bill amount received must be between PHP 0 and PHP 10,000,000.');
+    }
+    const amountApplied = Number(Math.min(amountDue, amountReceived).toFixed(2));
+    const balanceDue = Number(Math.max(amountDue - amountReceived, 0).toFixed(2));
+    const advanceCredit = Number(Math.max(amountReceived - amountDue, 0).toFixed(2));
+    const firstBillPaymentStatus = amountReceived <= 0
+        ? 'unpaid'
+        : (amountReceived < amountDue
+            ? 'partially_paid'
+            : (amountReceived > amountDue ? 'paid_with_advance' : 'paid'));
+    return {
+        firstBillAmountReceived: amountReceived,
+        firstBillAppliedAmount: amountApplied,
+        firstBillBalanceDue: balanceDue,
+        firstBillAdvanceCredit: advanceCredit,
+        firstBillPaymentStatus,
+        firstBillPaid: amountDue > 0 && balanceDue === 0
+    };
+};
+
 const applyFirstBillDefaults = (draft = {}) => {
     const normalizedDraft = { ...(draft || {}) };
     if (normalizePlanCategory(normalizedDraft.planCategory) !== 'postpaid') {
         normalizedDraft.firstBillPaid = false;
         delete normalizedDraft.firstBillProratedAmount;
+        delete normalizedDraft.firstBillAmountReceived;
+        delete normalizedDraft.firstBillAppliedAmount;
+        delete normalizedDraft.firstBillBalanceDue;
+        delete normalizedDraft.firstBillAdvanceCredit;
+        delete normalizedDraft.firstBillPaymentStatus;
         delete normalizedDraft.firstBillPeriodStart;
         delete normalizedDraft.firstBillPeriodEnd;
         return normalizedDraft;
@@ -523,7 +578,10 @@ const applyFirstBillDefaults = (draft = {}) => {
     normalizedDraft.firstBillProratedAmount = proration.amount;
     normalizedDraft.firstBillPeriodStart = proration.periodStart;
     normalizedDraft.firstBillPeriodEnd = proration.periodEnd;
-    normalizedDraft.firstBillPaid = normalizedDraft.firstBillPaid === true;
+    const amountReceived = normalizedDraft.firstBillAmountReceived == null
+        ? (normalizedDraft.firstBillPaid === true ? proration.amount : 0)
+        : normalizedDraft.firstBillAmountReceived;
+    Object.assign(normalizedDraft, computeFirstBillCollection(proration.amount, amountReceived));
     return normalizedDraft;
 };
 
@@ -561,20 +619,29 @@ const recordDraftFirstBillPayment = async ({
     actor,
     executor = null
 } = {}) => {
-    if (draft?.firstBillPaid !== true) return null;
     const proration = computeFirstBillProration(
         customer?.activationDate || draft?.activationDate,
         customer?.planAmount ?? draft?.planAmount
     );
     if (!proration || proration.amount <= 0) return null;
+    const amountReceived = draft?.firstBillAmountReceived == null
+        ? (draft?.firstBillPaid === true ? proration.amount : 0)
+        : toOptionalNumber(draft.firstBillAmountReceived);
+    if (amountReceived == null || amountReceived <= 0) return null;
+    const collection = computeFirstBillCollection(proration.amount, amountReceived);
+    const description = collection.firstBillPaymentStatus === 'partially_paid'
+        ? 'Partial prorated first-bill collection during installation'
+        : (collection.firstBillPaymentStatus === 'paid_with_advance'
+            ? 'Prorated first bill and advance collected during installation'
+            : 'Prorated first bill collected during installation');
     return recordCustomerOpeningAdjustment({
         branchId,
         accountNumber: customer?.accountNumber,
-        advancePayment: proration.amount,
+        advancePayment: collection.firstBillAmountReceived,
         effectiveDate: proration.periodStart,
         actor,
         executor,
-        description: 'Prorated first bill collected during installation',
+        description,
         paymentMethod: 'Technician Collection',
         referencePrefix: 'PFB'
     });
@@ -1131,6 +1198,8 @@ const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     gpsCapturedAt: toSafeText(draft.gpsCapturedAt, 80),
     firstBillPaid: draft.firstBillPaid === true,
     firstBillProratedAmount: toOptionalNumber(draft.firstBillProratedAmount),
+    firstBillAmountReceived: toOptionalNumber(draft.firstBillAmountReceived)
+        ?? (draft.firstBillPaid === true ? toOptionalNumber(draft.firstBillProratedAmount) : 0),
     firstBillPeriodStart: normalizeDateOnly(draft.firstBillPeriodStart),
     firstBillPeriodEnd: normalizeDateOnly(draft.firstBillPeriodEnd),
     referralSourceType: toSafeText(draft.referralSourceType, 40),
@@ -1600,7 +1669,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 persistedCustomer = await updateCustomerRecord(linkedCustomerAccountNumber, reviewedDraft, {
                     branchId: req.branchId,
                     refreshSource: 'customer-drafts-finalize',
-                    allowPastBillingDates: true
+                    allowPastBillingDates: true,
+                    trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
                 });
             } catch (error) {
                 if (Number(error?.status || 0) !== 404) {
@@ -1612,7 +1682,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 }, {
                     branchId: req.branchId,
                     refreshSource: 'customer-drafts-finalize',
-                    allowPastBillingDates: true
+                    allowPastBillingDates: true,
+                    trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
                 });
             }
 
@@ -1756,7 +1827,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             persistedCustomer = await updateCustomerRecord(linkedCustomerAccountNumber, reviewedDraft, {
                 branchId: req.branchId,
                 refreshSource: 'customer-drafts-finalize',
-                allowPastBillingDates: true
+                allowPastBillingDates: true,
+                trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
             });
         } catch (error) {
             if (Number(error?.status || 0) !== 404) {
@@ -1768,7 +1840,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             }, {
                 branchId: req.branchId,
                 refreshSource: 'customer-drafts-finalize',
-                allowPastBillingDates: true
+                allowPastBillingDates: true,
+                trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
             });
         }
 
@@ -2033,6 +2106,7 @@ module.exports.loadTechnicianByToken = loadTechnicianByToken;
 module.exports.requireTechnicianAuth = requireTechnicianAuth;
 module.exports.normalizeDraftPayload = normalizeDraftPayload;
 module.exports.applyFirstBillDefaults = applyFirstBillDefaults;
+module.exports.computeFirstBillCollection = computeFirstBillCollection;
 module.exports.applyReferralDefaults = applyReferralDefaults;
 module.exports.computeFirstBillProration = computeFirstBillProration;
 module.exports.preserveInstallationCompletion = preserveInstallationCompletion;

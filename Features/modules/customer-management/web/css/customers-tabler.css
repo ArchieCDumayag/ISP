@@ -296,6 +296,33 @@
     gap: .125rem;
 }
 
+.customer-area-heading {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: .25rem;
+}
+
+.customer-area-heading > strong {
+    min-width: 0;
+}
+
+.customer-location-badge {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: .125rem;
+    padding: .125rem .25rem;
+    font-size: .5rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.customer-location-badge .ti {
+    font-size: .625rem;
+}
+
 .customer-area-copy strong,
 .customer-area-copy small,
 .customer-balance strong,

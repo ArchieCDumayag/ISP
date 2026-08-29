@@ -192,7 +192,20 @@ async function run() {
   });
   assert.equal(finalizedClosed.balanceAdjustmentAmount, 700);
   assert.equal(finalizedClosed.balanceAdjustmentDirection, 'credit');
+  assert.equal(finalizedClosed.balanceBefore, 1200);
+  assert.equal(finalizedClosed.requestedFinalBalance, 500);
   assert.equal(finalizedClosed.finalBalance, 500);
+  assert.equal(finalizedClosed.reason, 'Account closed by Admin.');
+  assert.equal(finalizedClosed.closedBy.id, ADMIN.id);
+  assert.ok(finalizedClosed.createdAt);
+  assert.ok(finalizedClosed.closedAt);
+  assert.equal(finalizedClosed.auditHistory.at(0).action, 'closure-started');
+  assert.equal(finalizedClosed.auditHistory.at(-1).action, 'account-closed');
+  assert.ok(finalizedClosed.auditHistory.every((event) => event.at));
+  const finalizedListed = (await closedAccounts.listClosedCustomerAccounts({ branchId: 1 })).items
+    .find((record) => record.id === finalizedClosed.id);
+  assert.equal(finalizedListed?.requestedFinalBalance, 500, 'the Admin-finalized closure snapshot must remain durable');
+  assert.equal(finalizedListed?.finalBalance, 500);
 
   const customerBackendSource = fs.readFileSync(
     path.join(__dirname, '..', 'backend', 'customers.js'),
@@ -236,6 +249,8 @@ async function run() {
   assert.match(customerBackendSource, /closureStage = 'post-stop-balance-check'/);
   assert.match(customerBackendSource, /router\.post\('\/closed-accounts\/:closureId\/reopen'/);
   assert.match(customerBackendSource, /remainingBalance: Number\(Number\(balance \|\| 0\)\.toFixed\(2\)\)/);
+  assert.match(customerBackendSource, /const closureFinalBalance = hasRequestedFinalBalance/);
+  assert.match(customerBackendSource, /closureFinalBalance,\s+remainingBalance:/);
   assert.match(customerBackendSource, /getCanonicalAccountClosureBalance/);
   assert.match(customerBackendSource, /balance: canonicalBalance/);
   assert.match(customerBackendSource, /CUSTOMER_UPDATE_ACCOUNT_CLOSED/);
@@ -246,7 +261,8 @@ async function run() {
   assert.match(archivePage, /Closed \/ Disconnected Accounts/);
   assert.match(archivePage, /Records are preserved permanently/);
   assert.match(archivePage, /id="reopenAccountModal"/);
-  assert.match(archivePage, /customer-archive\.js\?v=2\.1/);
+  assert.match(archivePage, /id="reopenAccountBalanceLabel"/);
+  assert.match(archivePage, /customer-archive\.js\?v=2\.2/);
   assert.match(archivePage, /Collect first — keep service stopped/);
   assert.match(customersPage, /id="closeAccountFinalBalance"/);
   assert.match(customersPage, /Reason <span class="text-secondary">\(optional\)<\/span>/);
@@ -261,9 +277,196 @@ async function run() {
   assert.match(archiveScript, /payload\?\.nextUrl/);
   assert.match(archiveScript, /returns as Disabled/i);
   assert.match(archiveScript, /item\?\.balanceAvailable === true/);
-  assert.match(archiveScript, /item\.remainingBalance/);
+  assert.match(archiveScript, /item\?\.remainingBalance/);
+  assert.match(archiveScript, /const closureFinalBalance = readMoney\(item\?\.closureFinalBalance\)/);
+  assert.match(archiveScript, /formatBalance\(closureFinalBalance\)/);
+  assert.doesNotMatch(
+    archiveScript,
+    /<p class="archive-date">\$\{escapeHtml\(formatMoney\(remainingBalance\)\)\}<\/p>/,
+    'the Final Balance column must not be replaced by the live remaining balance'
+  );
+  assert.match(archiveScript, /Current remaining balance/);
+  assert.match(archiveScript, /Current advance credit/);
+  assert.match(archiveScript, /Keep advance credit/);
+  assert.match(archiveScript, /advance credit will remain on the account/);
+  assert.match(archiveScript, /data-action="reopen-closed"[^>]*data-final-balance="\$\{escapeHtml\(remainingBalance\)\}"/);
   assert.match(archiveScript, /Retained balance paid in full/);
   new vm.Script(archiveScript, { filename: 'customer-archive.js' });
+
+  const archiveFixture = {
+    id: finalizedClosed.id,
+    accountNumber: finalizedClosed.accountNumber,
+    customerName: finalizedClosed.customerName,
+    closureDate: finalizedClosed.closureDate,
+    reason: finalizedClosed.reason,
+    state: 'closed',
+    balanceBefore: 1200,
+    balanceTreatment: 'keep',
+    requestedFinalBalance: 500,
+    closureFinalBalance: 500,
+    finalBalance: 500,
+    balanceAdjustmentAmount: 700,
+    balanceAdjustmentDirection: 'credit',
+    remainingBalance: 200,
+    balanceAvailable: true,
+    closedAt: finalizedClosed.closedAt
+  };
+  const renderClosedAccountFixture = async (fixture) => {
+    const tableBody = { innerHTML: '', addEventListener() {} };
+    const pageSize = { value: '10', addEventListener() {} };
+    vm.runInNewContext(archiveScript, {
+      console,
+      document: {
+        getElementById(id) {
+          if (id === 'closedAccountsTableBody') return tableBody;
+          if (id === 'closedAccountsPageSize') return pageSize;
+          return null;
+        },
+        querySelectorAll() { return []; }
+      },
+      window: {
+        location: { hash: '#closed-accounts' },
+        history: { replaceState() {} },
+        setTimeout,
+        clearTimeout
+      },
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({ ok: true, items: [fixture], total: 1 })
+      }),
+      URLSearchParams,
+      Intl,
+      encodeURIComponent,
+      setTimeout,
+      clearTimeout
+    }, { filename: 'customer-archive.js' });
+    await new Promise((resolve) => setImmediate(resolve));
+    return tableBody.innerHTML;
+  };
+  const closedAccountHtml = await renderClosedAccountFixture(archiveFixture);
+  assert.match(
+    closedAccountHtml,
+    /archive-date">[^<]*500\.00/,
+    'Final Balance must render the saved Admin closure snapshot'
+  );
+  assert.match(
+    closedAccountHtml,
+    /Current remaining balance[^<]*200\.00/,
+    'a later live balance must be labeled separately'
+  );
+  assert.match(
+    closedAccountHtml,
+    /data-action="reopen-closed"[^>]*data-final-balance="200"/,
+    'Reopen must continue using the live remaining balance'
+  );
+  const advanceCreditHtml = await renderClosedAccountFixture({
+    ...archiveFixture,
+    remainingBalance: -100
+  });
+  assert.match(
+    advanceCreditHtml,
+    /archive-date">[^<]*500\.00/,
+    'a later advance credit must not replace the closure Final Balance'
+  );
+  assert.match(
+    advanceCreditHtml,
+    /Current advance credit[^<]*100\.00/,
+    'a negative live balance must be labeled as advance credit, not debt'
+  );
+  assert.doesNotMatch(advanceCreditHtml, /Current remaining balance[^<]*100\.00/);
+  assert.match(
+    advanceCreditHtml,
+    /data-action="reopen-closed"[^>]*data-final-balance="-100"/,
+    'Reopen must retain the signed advance credit'
+  );
+
+  const reopenTableBody = {
+    innerHTML: '',
+    listeners: {},
+    addEventListener(type, listener) { this.listeners[type] = listener; }
+  };
+  const makeControl = (overrides = {}) => ({
+    addEventListener() {},
+    classList: { add() {}, remove() {} },
+    setAttribute() {},
+    focus() {},
+    style: {},
+    ...overrides
+  });
+  const reopenOptions = {
+    'collect-first': { disabled: false, textContent: '' },
+    keep: { disabled: false, textContent: '' },
+    'write-off': { disabled: false, textContent: '' }
+  };
+  const reopenControls = {
+    closedAccountsTableBody: reopenTableBody,
+    closedAccountsPageSize: makeControl({ value: '10' }),
+    reopenAccountModal: makeControl(),
+    reopenAccountForm: makeControl({ reset() {} }),
+    reopenAccountClose: makeControl(),
+    reopenAccountCancel: makeControl(),
+    reopenAccountCustomerName: makeControl({ textContent: '' }),
+    reopenAccountBalanceLabel: makeControl({ textContent: '' }),
+    reopenAccountBalance: makeControl({ textContent: '' }),
+    reopenAccountBalanceAction: makeControl({
+      value: 'collect-first',
+      querySelector(selector) {
+        const value = String(selector).match(/value="([^"]+)"/)?.[1];
+        return reopenOptions[value] || null;
+      }
+    }),
+    reopenAccountBalanceHint: makeControl({ textContent: '' }),
+    reopenAccountReason: makeControl({ value: '' }),
+    reopenAccountConfirmed: makeControl({ checked: false }),
+    reopenAccountConfirmationLabel: makeControl({ textContent: '' }),
+    reopenAccountError: makeControl({ textContent: '', hidden: true }),
+    reopenAccountSubmit: makeControl({ disabled: true, innerHTML: '' })
+  };
+  vm.runInNewContext(archiveScript, {
+    console,
+    document: {
+      getElementById(id) { return reopenControls[id] || null; },
+      querySelectorAll() { return []; }
+    },
+    window: {
+      location: { hash: '#closed-accounts' },
+      history: { replaceState() {} },
+      setTimeout,
+      clearTimeout
+    },
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({ ok: true, items: [{ ...archiveFixture, remainingBalance: -100 }], total: 1 })
+    }),
+    URLSearchParams,
+    Intl,
+    encodeURIComponent,
+    setTimeout,
+    clearTimeout
+  }, { filename: 'customer-archive.js' });
+  await new Promise((resolve) => setImmediate(resolve));
+  const advanceReopenButton = {
+    dataset: {
+      closureId: finalizedClosed.id,
+      accountNumber: finalizedClosed.accountNumber,
+      customerName: finalizedClosed.customerName,
+      finalBalance: '-100'
+    }
+  };
+  reopenTableBody.listeners.click({
+    target: {
+      closest(selector) {
+        return selector === '[data-action="reopen-closed"]' ? advanceReopenButton : null;
+      }
+    }
+  });
+  assert.equal(reopenControls.reopenAccountBalanceLabel.textContent, 'Advance credit');
+  assert.equal(reopenControls.reopenAccountBalance.textContent, '₱100.00');
+  assert.equal(reopenControls.reopenAccountBalanceAction.value, 'keep');
+  assert.equal(reopenOptions['collect-first'].disabled, true);
+  assert.match(reopenOptions.keep.textContent, /Keep advance credit/);
+  assert.match(reopenControls.reopenAccountBalanceHint.textContent, /advance credit remains on the account/i);
+  assert.match(reopenControls.reopenAccountConfirmationLabel.textContent, /advance credit will remain on the account/i);
   const staticMarkup = archivePage.replace(/<script[\s\S]*?<\/script>/gi, '');
   const ids = [...staticMarkup.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, 'Customer Archive IDs must be unique.');

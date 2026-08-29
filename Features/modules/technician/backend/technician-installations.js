@@ -12,7 +12,9 @@ const {
     readVisibleCustomers: readCustomers,
     readPlans,
     updateCustomerRecord,
-    sanitizeCustomerForAdmin
+    sanitizeCustomerForAdmin,
+    findCustomerOnuSerialDuplicate,
+    normalizeOnuSerialNumber
 } = require('../../customer-management/backend/customers');
 const {
     loadIntegrationSettings,
@@ -178,12 +180,11 @@ const normalizeInstallationCompletion = (value) => {
         throw createError(400, 'installationCompletion must be an object.');
     }
     const clientEventId = toSafeText(value.clientEventId, 100);
-    const onuSerialNumber = toSafeText(value.onuSerialNumber || value.onuSerial, 160);
+    const onuSerialNumber = normalizeOnuSerialNumber(value.onuSerialNumber || value.onuSerial);
     const onuBrand = toSafeText(value.onuBrand, 40);
     const opticalSignal = toSafeText(value.opticalSignal || value.rxPower, 80);
     if (!clientEventId) throw createError(400, 'Installation completion clientEventId is required.');
     if (!onuSerialNumber) throw createError(400, 'ONU serial number is required for installation completion.');
-    if (!opticalSignal) throw createError(400, 'Optical signal is required for installation completion.');
     if (onuBrand && !ONU_BRANDS.has(onuBrand)) {
         throw createError(400, 'ONU brand is not supported.');
     }
@@ -217,26 +218,47 @@ const normalizeInstallationCompletion = (value) => {
         cableLengthMeters = Math.round(cableLengthMeters * 1000) / 1000;
     }
 
-    return {
+    const normalized = {
         clientEventId,
         onuSerialNumber,
-        macAddress: toSafeText(value.macAddress, 80),
+        ...(toSafeText(value.macAddress, 80) ? { macAddress: toSafeText(value.macAddress, 80) } : {}),
         ...(onuBrand ? { onuBrand } : {}),
-        opticalSignal,
-        ...(hasCableMeterStart ? { cableMeterStart, cableMeterEnd } : {}),
-        cableLengthMeters,
-        materials: normalizeInstallationMaterials(value.materials),
+        ...(opticalSignal ? { opticalSignal } : {}),
+        ...(hasCableMeterStart ? { cableMeterStart, cableMeterEnd, cableLengthMeters } : {}),
+        ...(!hasCableMeterStart && cableLengthMeters != null ? { cableLengthMeters } : {}),
+        ...(value.materials != null ? { materials: normalizeInstallationMaterials(value.materials) } : {}),
         ...(value.installationMaterials != null ? {
             installationMaterials: normalizeInstallationMaterialUsage(value.installationMaterials)
         } : {}),
-        notes: toSafeText(value.notes || value.completionNotes, 2000)
+        ...(toSafeText(value.notes || value.completionNotes, 2000)
+            ? { notes: toSafeText(value.notes || value.completionNotes, 2000) }
+            : {})
     };
+    return normalized;
 };
 
 const installationCompletionFingerprint = (completion) => crypto
     .createHash('sha256')
     .update(JSON.stringify(completion || null))
     .digest('hex');
+
+const toLegacyInstallationCompletionShape = (completion = {}, onuSerialNumber = '') => ({
+    clientEventId: completion.clientEventId,
+    onuSerialNumber: onuSerialNumber || completion.onuSerialNumber,
+    macAddress: completion.macAddress || '',
+    ...(completion.onuBrand ? { onuBrand: completion.onuBrand } : {}),
+    opticalSignal: completion.opticalSignal || '',
+    ...(completion.cableMeterStart != null ? {
+        cableMeterStart: completion.cableMeterStart,
+        cableMeterEnd: completion.cableMeterEnd
+    } : {}),
+    cableLengthMeters: completion.cableLengthMeters ?? null,
+    materials: Array.isArray(completion.materials) ? completion.materials : [],
+    ...(completion.installationMaterials != null
+        ? { installationMaterials: completion.installationMaterials }
+        : {}),
+    notes: completion.notes || ''
+});
 
 const assertInstallationCompletionReplay = (existing, completion) => {
     if (!existing || typeof existing !== 'object') return false;
@@ -246,10 +268,56 @@ const assertInstallationCompletionReplay = (existing, completion) => {
     }
     const expectedFingerprint = installationCompletionFingerprint(completion);
     const storedFingerprint = toSafeText(existing.fingerprint, 64);
-    if (storedFingerprint && storedFingerprint !== expectedFingerprint) {
+    const legacySerialNumber = toSafeText(existing.onuSerialNumber || existing.onuSerial, 160);
+    const compatibleFingerprints = new Set([expectedFingerprint]);
+    compatibleFingerprints.add(installationCompletionFingerprint(
+        toLegacyInstallationCompletionShape(completion)
+    ));
+    if (legacySerialNumber && legacySerialNumber !== completion.onuSerialNumber) {
+        compatibleFingerprints.add(installationCompletionFingerprint({
+            ...completion,
+            onuSerialNumber: legacySerialNumber
+        }));
+        compatibleFingerprints.add(installationCompletionFingerprint(
+            toLegacyInstallationCompletionShape(completion, legacySerialNumber)
+        ));
+    }
+    if (
+        storedFingerprint
+        && !compatibleFingerprints.has(storedFingerprint)
+    ) {
         throw createError(409, 'Installation completion clientEventId was reused with different evidence.');
     }
     return true;
+};
+
+const promoteApprovedDraftOnuSerial = async ({
+    completionUpdate,
+    completion,
+    branchId,
+    fallbackAccountNumber = '',
+    updateCustomer = updateCustomerRecord
+} = {}) => {
+    const item = completionUpdate?.item;
+    const status = toSafeText(item?.rawStatus || item?.status, 20).toLowerCase();
+    if (status !== 'approved') return null;
+    const accountNumber = toSafeText(
+        item?.approvedCustomerAccountNumber
+            || item?.draftAccountNumber
+            || fallbackAccountNumber,
+        20
+    );
+    const onuSerialNumber = normalizeOnuSerialNumber(
+        completion?.onuSerialNumber || completion?.onuSerial
+    );
+    if (!accountNumber || !onuSerialNumber) {
+        throw createError(409, 'Approved installation completion could not be linked to its customer account.');
+    }
+    return updateCustomer(accountNumber, {}, {
+        branchId,
+        refreshSource: 'technician-installation-onu-reconcile',
+        trustedOnuSerialNumber: onuSerialNumber
+    });
 };
 const normalizePlanName = (value) => normalizeNameKey(value);
 const resolveCustomerCoverageAreaName = (customer = {}) => toSafeText(
@@ -642,6 +710,11 @@ const technicianOwnsPendingDraft = (submission = {}, technician = {}) => (
     && toSafeText(submission?.submittedBy?.id, 64) === toSafeText(technician?.id, 64)
 );
 
+const technicianOwnsApprovedDraft = (submission = {}, technician = {}) => (
+    toSafeText(submission?.status, 20).toLowerCase() === 'approved'
+    && toSafeText(submission?.submittedBy?.id, 64) === toSafeText(technician?.id, 64)
+);
+
 const jobGrantsCustomerAccess = (job = {}, branchId, accountNumber = '') => {
     if (
         (isJsonStorageMode() || job?.branchId != null)
@@ -687,7 +760,12 @@ const loadTechnicianAccessibleCustomers = async (branchId, technician = {}) => {
     };
 };
 
-const resolveTechnicianAccessibleCustomer = async (branchId, technician = {}, accountNumber = '') => {
+const resolveTechnicianAccessibleCustomer = async (
+    branchId,
+    technician = {},
+    accountNumber = '',
+    { allowApprovedDraftReplay = false } = {}
+) => {
     const targetAccount = toSafeText(accountNumber, 20);
     if (!targetAccount) throw createError(400, 'Customer account number is required.');
 
@@ -699,6 +777,25 @@ const resolveTechnicianAccessibleCustomer = async (branchId, technician = {}, ac
     if (ownDraft && technicianOwnsPendingDraft(ownDraft, technician)) {
         const customer = buildDraftCustomerRecordFromSubmission(ownDraft);
         if (customer) return { accessType: 'own-pending-draft', customer, draft: ownDraft, job: null };
+    }
+
+    if (allowApprovedDraftReplay) {
+        const approvedDraft = await findCustomerDraftSubmissionByAccountNumber(
+            targetAccount,
+            branchId,
+            { statuses: ['approved'] }
+        );
+        if (approvedDraft && technicianOwnsApprovedDraft(approvedDraft, technician)) {
+            const customer = buildDraftCustomerRecordFromSubmission(approvedDraft);
+            if (customer) {
+                return {
+                    accessType: 'own-approved-draft',
+                    customer,
+                    draft: approvedDraft,
+                    job: null
+                };
+            }
+        }
     }
 
     const jobs = await loadTechnicianOpenJobs(branchId, technician);
@@ -1421,14 +1518,41 @@ const finalizePonAssignmentHandler = async (req, res, next) => {
         assertPonOverrideFlagsDenied(req.body || {});
         const branchId = req.technician.branchId;
         const customerAccountNumber = requestedCustomerAccountNumber(req);
-        const access = await resolveTechnicianAccessibleCustomer(branchId, req.technician, customerAccountNumber);
+        const access = await resolveTechnicianAccessibleCustomer(
+            branchId,
+            req.technician,
+            customerAccountNumber,
+            { allowApprovedDraftReplay: true }
+        );
         const completion = normalizeInstallationCompletion(req.body?.installationCompletion);
-        if (completion && access.accessType !== 'own-pending-draft') {
+        const existingCompletion = access.draft?.draftData?.installationCompletion;
+        if (access.accessType === 'own-approved-draft') {
+            if (!completion) {
+                throw createError(409, 'Installation completion is required for an approved client draft.');
+            }
+            if (existingCompletion) {
+                assertInstallationCompletionReplay(existingCompletion, completion);
+            }
+        } else if (completion && access.accessType !== 'own-pending-draft') {
             throw createError(409, 'Installation completion evidence can only be attached to the technician\'s pending client draft.');
         }
-        const existingCompletion = access.draft?.draftData?.installationCompletion;
         if (completion && existingCompletion) {
             assertInstallationCompletionReplay(existingCompletion, completion);
+        }
+        if (completion) {
+            const customers = await readCustomers(branchId);
+            const onuDuplicate = findCustomerOnuSerialDuplicate(
+                completion.onuSerialNumber,
+                customers,
+                branchId,
+                customerAccountNumber
+            );
+            if (onuDuplicate) {
+                const error = createError(409, onuDuplicate.message);
+                error.code = 'CUSTOMER_ONU_SERIAL_DUPLICATE';
+                error.duplicate = onuDuplicate;
+                throw error;
+            }
         }
         const reservationId = toSafeText(
             req.params?.reservationId || req.body?.reservationId,
@@ -1451,7 +1575,9 @@ const finalizePonAssignmentHandler = async (req, res, next) => {
         }
         let persistedCompletion = existingCompletion || null;
         if (completion) {
-            const completionRecord = {
+            // Once compatibility validation accepts a replay, propose the stored record
+            // verbatim so the strict draft CAS cannot reinterpret sparse/new normalization.
+            const completionRecord = existingCompletion || {
                 ...completion,
                 fingerprint: installationCompletionFingerprint(completion),
                 submittedAt: new Date().toISOString(),
@@ -1477,6 +1603,12 @@ const finalizePonAssignmentHandler = async (req, res, next) => {
                 throw createError(503, 'The PON assignment was finalized, but installation evidence could not be stored. Retry the same submission event.');
             }
             persistedCompletion = completionUpdate.installationCompletion || completionRecord;
+            await promoteApprovedDraftOnuSerial({
+                completionUpdate,
+                completion: persistedCompletion,
+                branchId,
+                fallbackAccountNumber: customerAccountNumber
+            });
         }
         return res.json({
             ok: true,
@@ -1840,6 +1972,7 @@ module.exports = router;
 module.exports.TECHNICIAN_COVERAGE_RADIUS_METERS = TECHNICIAN_COVERAGE_RADIUS_METERS;
 module.exports.resolveJobCustomerAccountNumber = resolveJobCustomerAccountNumber;
 module.exports.technicianOwnsPendingDraft = technicianOwnsPendingDraft;
+module.exports.technicianOwnsApprovedDraft = technicianOwnsApprovedDraft;
 module.exports.jobGrantsCustomerAccess = jobGrantsCustomerAccess;
 module.exports.sanitizeTechnicianPonOverview = sanitizeTechnicianPonOverview;
 module.exports.sanitizeTechnicianNearbyCandidate = sanitizeTechnicianNearbyCandidate;
@@ -1847,3 +1980,4 @@ module.exports.assertPonOverrideFlagsDenied = assertPonOverrideFlagsDenied;
 module.exports.normalizeInstallationCompletion = normalizeInstallationCompletion;
 module.exports.installationCompletionFingerprint = installationCompletionFingerprint;
 module.exports.assertInstallationCompletionReplay = assertInstallationCompletionReplay;
+module.exports.promoteApprovedDraftOnuSerial = promoteApprovedDraftOnuSerial;

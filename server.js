@@ -1465,6 +1465,7 @@ const normalizeJsonCustomerExportRow = (customer = {}) => ({
     pppoe_username: customer.pppoeUsername || customer.pppoe_username || '',
     pppoe_password: customer.pppoePassword || customer.pppoe_password || '',
     pppoe_profile: customer.pppoeProfile || customer.pppoe_profile || '',
+    onu_serial_number: customer.onuSerialNumber || customer.onu_serial_number || customer.onuSerial || '',
     created_at: customer.createdAt || customer.created_at || '',
     updated_at: customer.updatedAt || customer.updated_at || ''
 });
@@ -1614,6 +1615,20 @@ const resolveMysqlStoreTableName = () => {
 const toNullableString = (value) => {
     const text = toNonEmptyString(value);
     return text || null;
+};
+const normalizeCustomerOnuSerialNumber = (value) => {
+    const normalized = String(value == null ? '' : value)
+        .normalize('NFKC')
+        .trim()
+        .replace(/\s+/g, '')
+        .toUpperCase();
+    if (normalized.length > 160) {
+        const error = new Error('ONU serial number must be 160 characters or fewer.');
+        error.code = 'CUSTOMER_FULL_IMPORT_ONU_SERIAL_INVALID';
+        error.status = 400;
+        throw error;
+    }
+    return normalized || null;
 };
 const toNullableNumber = (value) => {
     if (value === '' || value == null) return null;
@@ -6906,7 +6921,19 @@ app.post(
         }
 
         const rawTables = parsedImport?.tables || {};
-        const importIntegrity = deduplicateCustomerFullTables(rawTables);
+        let importIntegrity;
+        try {
+            importIntegrity = deduplicateCustomerFullTables(rawTables);
+        } catch (error) {
+            if (error?.code === 'CUSTOMER_FULL_IMPORT_ONU_SERIAL_INVALID') {
+                return res.status(400).json({
+                    ok: false,
+                    code: error.code,
+                    error: error.message
+                });
+            }
+            throw error;
+        }
         if (importIntegrity.conflictCount) {
             return res.status(409).json({
                 ok: false,
@@ -7334,90 +7361,89 @@ app.post(
                 const lastName = toNullableString(pickRowValue(row, ['last_name', 'lastName']));
                 const explicitName = toNullableString(pickRowValue(row, ['name', 'customer_name', 'customerName']));
                 const derivedName = explicitName || [firstName, lastName].filter(Boolean).join(' ').trim() || null;
-
-                await connection.query(
-                    `INSERT INTO customers (
-                        account_number, branch_id, first_name, last_name, name, email, mobile, mobile_raw,
-                        street, barangay, municipality, province, area, map_pin, status, remarks, since,
-                        activation_date, plan_name, plan_amount, plan_billing, plan_category, bill_date, due_date, prepaid_expiration_at, due_offset,
-                        credit_limit, login_username, login_password_hash, pppoe_mode, pppoe_username,
-                        pppoe_password, pppoe_profile, created_at, updated_at
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                     ON DUPLICATE KEY UPDATE
-                        first_name = VALUES(first_name),
-                        last_name = VALUES(last_name),
-                        name = VALUES(name),
-                        email = VALUES(email),
-                        mobile = VALUES(mobile),
-                        mobile_raw = VALUES(mobile_raw),
-                        street = VALUES(street),
-                        barangay = VALUES(barangay),
-                        municipality = VALUES(municipality),
-                        province = VALUES(province),
-                        area = VALUES(area),
-                        map_pin = VALUES(map_pin),
-                        status = VALUES(status),
-                        remarks = VALUES(remarks),
-                        since = VALUES(since),
-                        activation_date = VALUES(activation_date),
-                        plan_name = VALUES(plan_name),
-                        plan_amount = VALUES(plan_amount),
-                        plan_billing = VALUES(plan_billing),
-                        plan_category = VALUES(plan_category),
-                        bill_date = VALUES(bill_date),
-                        due_date = VALUES(due_date),
-                        prepaid_expiration_at = VALUES(prepaid_expiration_at),
-                        due_offset = VALUES(due_offset),
-                        credit_limit = VALUES(credit_limit),
-                        login_username = VALUES(login_username),
-                        login_password_hash = VALUES(login_password_hash),
-                        pppoe_mode = VALUES(pppoe_mode),
-                        pppoe_username = VALUES(pppoe_username),
-                        pppoe_password = VALUES(pppoe_password),
-                        pppoe_profile = VALUES(pppoe_profile),
-                        created_at = VALUES(created_at),
-                        updated_at = VALUES(updated_at)`,
-                    [
-                        accountNumber,
-                        branchId,
-                        firstName,
-                        lastName,
-                        derivedName,
-                        toNullableString(pickRowValue(row, ['email'])),
-                        toNullableString(pickRowValue(row, ['mobile'])),
-                        toNullableString(pickRowValue(row, ['mobile_raw', 'mobileRaw'])),
-                        toNullableString(pickRowValue(row, ['street'])),
-                        toNullableString(pickRowValue(row, ['barangay'])),
-                        toNullableString(pickRowValue(row, ['municipality'])),
-                        toNullableString(pickRowValue(row, ['province'])),
-                        toNullableString(pickRowValue(row, ['area'])),
-                        toNullableString(pickRowValue(row, ['map_pin', 'mapPin'])),
-                        toNullableString(pickRowValue(row, ['status'])),
-                        toNullableString(pickRowValue(row, ['remarks'])),
-                        toNullableString(pickRowValue(row, ['since'])),
-                        toMysqlDateOnly(pickRowValue(row, ['activation_date', 'activationDate'])),
-                        toNullableString(pickRowValue(row, ['plan_name', 'planName'])),
-                        toNullableNumber(pickRowValue(row, ['plan_amount', 'planAmount'])),
-                        toNullableString(pickRowValue(row, ['plan_billing', 'planBilling'])),
-                        toNullableString(pickRowValue(row, ['plan_category', 'planCategory'])),
-                        toMysqlDateOnly(pickRowValue(row, ['bill_date', 'billDate'])),
-                        toMysqlDateOnly(pickRowValue(row, ['due_date', 'dueDate'])),
-                        toMysqlDateTime(pickRowValue(row, ['prepaid_expiration_at', 'prepaidExpirationAt', 'expiry_datetime', 'expiryDateTime'])),
-                        (() => {
-                            const value = toNullableNumber(pickRowValue(row, ['due_offset', 'dueOffset']));
-                            return Number.isFinite(value) ? Math.trunc(value) : null;
-                        })(),
-                        toNullableNumber(pickRowValue(row, ['credit_limit', 'creditLimit'])),
-                        toNullableString(pickRowValue(row, ['login_username', 'loginUsername'])),
-                        toNullableString(pickRowValue(row, ['login_password_hash', 'loginPassword', 'login_password'])),
-                        toNullableString(pickRowValue(row, ['pppoe_mode', 'pppoeMode'])),
-                        toNullableString(pickRowValue(row, ['pppoe_username', 'pppoeUsername'])),
-                        toNullableString(pickRowValue(row, ['pppoe_password', 'pppoePassword'])),
-                        toNullableString(pickRowValue(row, ['pppoe_profile', 'pppoeProfile'])),
-                        toMysqlDateTime(pickRowValue(row, ['created_at', 'createdAt'])) || nowDateTime,
-                        toMysqlDateTime(pickRowValue(row, ['updated_at', 'updatedAt'])) || nowDateTime
-                    ]
+                const importedOnuSerialNumber = normalizeCustomerOnuSerialNumber(pickRowValue(row, [
+                    'onu_serial_number',
+                    'onuSerialNumber',
+                    'onuSerial'
+                ]));
+                const customerColumns = [
+                    'first_name', 'last_name', 'name', 'email', 'mobile', 'mobile_raw',
+                    'street', 'barangay', 'municipality', 'province', 'area', 'map_pin',
+                    'status', 'remarks', 'since', 'activation_date', 'plan_name', 'plan_amount',
+                    'plan_billing', 'plan_category', 'bill_date', 'due_date', 'prepaid_expiration_at',
+                    'due_offset', 'credit_limit', 'login_username', 'login_password_hash', 'pppoe_mode',
+                    'pppoe_username', 'pppoe_password', 'pppoe_profile', 'onu_serial_number',
+                    'created_at', 'updated_at'
+                ];
+                const customerValues = [
+                    firstName,
+                    lastName,
+                    derivedName,
+                    toNullableString(pickRowValue(row, ['email'])),
+                    toNullableString(pickRowValue(row, ['mobile'])),
+                    toNullableString(pickRowValue(row, ['mobile_raw', 'mobileRaw'])),
+                    toNullableString(pickRowValue(row, ['street'])),
+                    toNullableString(pickRowValue(row, ['barangay'])),
+                    toNullableString(pickRowValue(row, ['municipality'])),
+                    toNullableString(pickRowValue(row, ['province'])),
+                    toNullableString(pickRowValue(row, ['area'])),
+                    toNullableString(pickRowValue(row, ['map_pin', 'mapPin'])),
+                    toNullableString(pickRowValue(row, ['status'])),
+                    toNullableString(pickRowValue(row, ['remarks'])),
+                    toNullableString(pickRowValue(row, ['since'])),
+                    toMysqlDateOnly(pickRowValue(row, ['activation_date', 'activationDate'])),
+                    toNullableString(pickRowValue(row, ['plan_name', 'planName'])),
+                    toNullableNumber(pickRowValue(row, ['plan_amount', 'planAmount'])),
+                    toNullableString(pickRowValue(row, ['plan_billing', 'planBilling'])),
+                    toNullableString(pickRowValue(row, ['plan_category', 'planCategory'])),
+                    toMysqlDateOnly(pickRowValue(row, ['bill_date', 'billDate'])),
+                    toMysqlDateOnly(pickRowValue(row, ['due_date', 'dueDate'])),
+                    toMysqlDateTime(pickRowValue(row, ['prepaid_expiration_at', 'prepaidExpirationAt', 'expiry_datetime', 'expiryDateTime'])),
+                    (() => {
+                        const value = toNullableNumber(pickRowValue(row, ['due_offset', 'dueOffset']));
+                        return Number.isFinite(value) ? Math.trunc(value) : null;
+                    })(),
+                    toNullableNumber(pickRowValue(row, ['credit_limit', 'creditLimit'])),
+                    toNullableString(pickRowValue(row, ['login_username', 'loginUsername'])),
+                    toNullableString(pickRowValue(row, ['login_password_hash', 'loginPassword', 'login_password'])),
+                    toNullableString(pickRowValue(row, ['pppoe_mode', 'pppoeMode'])),
+                    toNullableString(pickRowValue(row, ['pppoe_username', 'pppoeUsername'])),
+                    toNullableString(pickRowValue(row, ['pppoe_password', 'pppoePassword'])),
+                    toNullableString(pickRowValue(row, ['pppoe_profile', 'pppoeProfile'])),
+                    importedOnuSerialNumber,
+                    toMysqlDateTime(pickRowValue(row, ['created_at', 'createdAt'])) || nowDateTime,
+                    toMysqlDateTime(pickRowValue(row, ['updated_at', 'updatedAt'])) || nowDateTime
+                ];
+                const [existingCustomerRows] = await connection.query(
+                    `SELECT account_number
+                     FROM customers
+                     WHERE account_number = ?
+                       AND branch_id = ?
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [accountNumber, branchId]
                 );
+                if (Array.isArray(existingCustomerRows) && existingCustomerRows.length) {
+                    const assignments = customerColumns.map((column) => (
+                        column === 'onu_serial_number'
+                            ? `${column} = COALESCE(?, ${column})`
+                            : `${column} = ?`
+                    ));
+                    await connection.query(
+                        `UPDATE customers SET
+                            ${assignments.join(', ')}
+                         WHERE account_number = ?
+                           AND branch_id = ?`,
+                        [...customerValues, accountNumber, branchId]
+                    );
+                } else {
+                    const insertColumns = ['account_number', 'branch_id', ...customerColumns];
+                    await connection.query(
+                        `INSERT INTO customers (${insertColumns.join(', ')})
+                         VALUES (${insertColumns.map(() => '?').join(', ')})`,
+                        [accountNumber, branchId, ...customerValues]
+                    );
+                }
                 importedAccounts.add(accountNumber);
                 imported.customers += 1;
             }
@@ -7986,6 +8012,21 @@ app.post(
                     error: `${error.message} No records were changed.`,
                     conflicts: error.conflicts || [],
                     conflictCount: Array.isArray(error.conflicts) ? error.conflicts.length : 0
+                });
+            }
+            if (
+                error?.code === 'CUSTOMER_FULL_IMPORT_ONU_SERIAL_INVALID'
+                || (error?.code === 'ER_DUP_ENTRY'
+                    && /uniq_customers_branch_onu_serial/i.test(String(error?.message || error?.sqlMessage || '')))
+            ) {
+                return res.status(error?.status === 400 ? 400 : 409).json({
+                    ok: false,
+                    code: error?.code === 'ER_DUP_ENTRY'
+                        ? 'CUSTOMER_ONU_SERIAL_DUPLICATE'
+                        : error.code,
+                    error: error?.code === 'ER_DUP_ENTRY'
+                        ? 'Import stopped because an ONU serial number is already assigned to another customer in this branch. No records were changed.'
+                        : `${error.message} No records were changed.`
                 });
             }
             return res.status(500).json({ ok: false, error: 'Failed to import full customer data.' });

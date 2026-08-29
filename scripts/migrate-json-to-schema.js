@@ -81,6 +81,58 @@ async function ensureCustomersMikrotikIdColumn() {
   console.log('Added customers.mikrotik_id column.');
 }
 
+async function ensureCustomersOnuSerialColumnAndIndex() {
+  const [columnRows] = await query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'customers'
+       AND column_name = 'onu_serial_number'
+     LIMIT 1`
+  );
+  if (!columnRows || !columnRows.length) {
+    await query(
+      'ALTER TABLE customers ADD COLUMN onu_serial_number VARCHAR(160) NULL AFTER pppoe_profile'
+    );
+    console.log('Added customers.onu_serial_number column.');
+  }
+
+  await query(
+    `UPDATE customers
+     SET onu_serial_number = NULLIF(
+       UPPER(
+         REPLACE(
+           REPLACE(
+             REPLACE(
+               REPLACE(TRIM(onu_serial_number), ' ', ''),
+               CHAR(9), ''
+             ),
+             CHAR(10), ''
+           ),
+           CHAR(13), ''
+         )
+       ),
+       ''
+     )
+     WHERE onu_serial_number IS NOT NULL`
+  );
+
+  const [indexRows] = await query(
+    `SELECT 1
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'customers'
+       AND index_name = 'uniq_customers_branch_onu_serial'
+     LIMIT 1`
+  );
+  if (!indexRows || !indexRows.length) {
+    await query(
+      'ALTER TABLE customers ADD UNIQUE KEY uniq_customers_branch_onu_serial (branch_id, onu_serial_number)'
+    );
+    console.log('Added customers uniq_customers_branch_onu_serial index.');
+  }
+}
+
 async function ensureCustomersPlanIdColumn() {
   const [rows] = await query(
     `SELECT 1
@@ -535,6 +587,7 @@ async function updateSchema() {
   await ensureCustomersPrepaidExpirationColumn();
   await ensureCustomersActivationDateColumn();
   await ensureCustomersMikrotikIdColumn();
+  await ensureCustomersOnuSerialColumnAndIndex();
   await ensureCustomersPlanIdColumn();
   await ensureCustomersStartTypeColumn();
   await ensureCustomersScheduledPlanColumns();

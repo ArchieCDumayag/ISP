@@ -13,6 +13,10 @@ const {
   sanitizeReconnectionHistory
 } = require('../backend/reconnection-settlement');
 const { calculatePaymentBreakdownEndingBalance } = require('../backend/payment-breakdown-balance');
+const {
+  requiresReconnectionSettlementBeforeActivation,
+  resolveDisconnectedPreviousBalance
+} = require('../backend/disconnection-store');
 
 const baseOptions = {
   accountNumber: 'RECONNECT-001',
@@ -114,6 +118,186 @@ assert.strictEqual(keepRow.planAmount, 806);
 assert.strictEqual(keepRow.due, 2806);
 assert.strictEqual(keepBreakdown.endingBalance, 2806);
 
+assert.strictEqual(resolveDisconnectedPreviousBalance({
+  closedAccountBalanceMode: 'snapshot',
+  closedAccountCanonicalBalanceAtClosure: 2400,
+  finalClosedCustomerBalance: 2398
+}, 2400), 2398);
+assert.strictEqual(resolveDisconnectedPreviousBalance({
+  closedAccountBalanceMode: 'snapshot',
+  closedAccountCanonicalBalanceAtClosure: 2400,
+  finalClosedCustomerBalance: 2398
+}, 1800), 1798);
+assert.strictEqual(
+  resolveDisconnectedPreviousBalance({}, 1800),
+  1800,
+  'legacy disconnections without a snapshot marker must keep their canonical Billing balance'
+);
+assert.strictEqual(requiresReconnectionSettlementBeforeActivation({
+  accountNumber: baseRecord.accountNumber,
+  closedAccountBalanceMode: 'snapshot',
+  closedAccountCanonicalBalanceAtClosure: 2400,
+  finalClosedCustomerBalance: 2398
+}), true);
+assert.strictEqual(requiresReconnectionSettlementBeforeActivation({
+  accountNumber: baseRecord.accountNumber,
+  closedAccountClosureId: 'legacy-closure-1'
+}), true, 'legacy closure handoffs must also use the Billing reconnect path');
+
+const finalClosedBalanceSettlement = buildReconnectionSettlement({
+  ...baseOptions,
+  previousBalance: 2398,
+  previousBalanceIsAuthoritative: true,
+  balanceTreatment: 'keep'
+});
+assert.strictEqual(finalClosedBalanceSettlement.previousBalanceIsAuthoritative, true);
+const finalClosedBalanceBreakdown = calculatePaymentBreakdownEndingBalance({
+  ...baseRecord,
+  history: [{
+    ...baseRecord.history[0],
+    amount: 2400
+  }],
+  billDate: finalClosedBalanceSettlement.nextRegularCycleDate,
+  dueDate: finalClosedBalanceSettlement.nextDueDate,
+  disconnection: {
+    accountNumber: baseRecord.accountNumber,
+    status: 'kept-active',
+    billingPolicy: 'continue',
+    reconnectionHistory: [finalClosedBalanceSettlement]
+  }
+});
+const finalClosedBalanceRow = finalClosedBalanceBreakdown.rows
+  .find((row) => row.sourceType === 'reconnection-proration');
+assert.strictEqual(finalClosedBalanceRow.reconnectionPreviousBalance, 2398);
+assert.strictEqual(finalClosedBalanceRow.previousBalance, 2398);
+assert.strictEqual(finalClosedBalanceRow.due, 3204);
+assert.strictEqual(finalClosedBalanceBreakdown.endingBalance, 3204);
+
+const capturedFinalBalanceSettlement = buildReconnectionSettlement({
+  ...baseOptions,
+  previousBalance: 1798,
+  previousBalanceIsAuthoritative: true,
+  balanceTreatment: 'keep',
+  now: new Date('2026-08-07T08:00:00.000Z')
+});
+const calculateCapturedFinalBalance = (additionalHistory = []) => calculatePaymentBreakdownEndingBalance({
+  ...baseRecord,
+  history: [
+    { ...baseRecord.history[0], amount: 2400 },
+    {
+      id: 'closed-payment-before-reconnect',
+      amount: 600,
+      date: '2026-08-07',
+      recordedAt: '2026-08-07T07:00:00.000Z',
+      kind: 'payment',
+      direction: 'credit'
+    },
+    ...additionalHistory
+  ],
+  billDate: capturedFinalBalanceSettlement.nextRegularCycleDate,
+  dueDate: capturedFinalBalanceSettlement.nextDueDate,
+  disconnection: {
+    accountNumber: baseRecord.accountNumber,
+    status: 'kept-active',
+    billingPolicy: 'continue',
+    reconnectionHistory: [capturedFinalBalanceSettlement]
+  }
+});
+const capturedFinalBalance = calculateCapturedFinalBalance();
+const capturedFinalBalanceRow = capturedFinalBalance.rows
+  .find((row) => row.sourceType === 'reconnection-proration');
+assert.strictEqual(capturedFinalBalanceRow.previousBalance, 1798);
+assert.strictEqual(capturedFinalBalanceRow.amountPaid, 0);
+assert.strictEqual(capturedFinalBalance.endingBalance, 2604,
+  'a payment included in the captured Final Closed Balance must not be subtracted again');
+
+const paymentAfterCapturedFinalBalance = calculateCapturedFinalBalance([{
+  id: 'closed-payment-after-reconnect',
+  amount: 100,
+  date: '2026-08-07',
+  recordedAt: '2026-08-07T09:00:00.000Z',
+  kind: 'payment',
+  direction: 'credit'
+}]);
+const paymentAfterCapturedRow = paymentAfterCapturedFinalBalance.rows
+  .find((row) => row.sourceType === 'reconnection-proration');
+assert.strictEqual(paymentAfterCapturedRow.amountPaid, 100);
+assert.strictEqual(paymentAfterCapturedFinalBalance.endingBalance, 2504,
+  'a payment recorded after the captured Final Closed Balance must reduce the reconnect balance');
+
+const debitAfterCapturedFinalBalance = calculateCapturedFinalBalance([{
+  id: 'charge-posted-after-reconnect',
+  amount: 100,
+  date: '2026-05-31',
+  recordedAt: '2026-08-07T09:00:00.000Z',
+  kind: 'charge',
+  type: 'charge',
+  direction: 'debit'
+}]);
+assert.strictEqual(debitAfterCapturedFinalBalance.endingBalance, 2704,
+  'a debit posted after capture must remain after the authoritative reconnect reset even when backdated');
+
+const firstSameMonthReset = buildReconnectionSettlement({
+  ...baseOptions,
+  effectiveDate: '2026-08-05',
+  previousBalance: 1800,
+  previousBalanceIsAuthoritative: true,
+  balanceTreatment: 'keep',
+  now: new Date('2026-08-05T08:00:00.000Z')
+});
+const secondSameMonthReset = buildReconnectionSettlement({
+  ...baseOptions,
+  effectiveDate: '2026-08-20',
+  previousBalance: 1500,
+  previousBalanceIsAuthoritative: true,
+  balanceTreatment: 'keep',
+  now: new Date('2026-08-20T08:00:00.000Z')
+});
+const sameMonthResetBreakdown = calculatePaymentBreakdownEndingBalance({
+  ...baseRecord,
+  history: [
+    baseRecord.history[0],
+    {
+      id: 'payment-after-second-reset',
+      amount: 100,
+      date: '2026-08-25',
+      recordedAt: '2026-08-25T08:00:00.000Z',
+      kind: 'payment',
+      direction: 'credit'
+    }
+  ],
+  billDate: secondSameMonthReset.nextRegularCycleDate,
+  dueDate: secondSameMonthReset.nextDueDate,
+  disconnection: {
+    accountNumber: baseRecord.accountNumber,
+    status: 'kept-active',
+    billingPolicy: 'continue',
+    reconnectionHistory: [firstSameMonthReset, secondSameMonthReset]
+  }
+});
+const sameMonthResetRows = sameMonthResetBreakdown.rows
+  .filter((row) => row.sourceType === 'reconnection-proration');
+assert.strictEqual(sameMonthResetRows.length, 2);
+assert.strictEqual(sameMonthResetRows[0].amountPaid, 0);
+assert.strictEqual(sameMonthResetRows[1].amountPaid, 100);
+assert.strictEqual(sameMonthResetBreakdown.endingBalance, 1787,
+  'a payment after the second same-month reset must not be consumed by the first reset');
+
+const advanceFinalBalanceSettlement = buildReconnectionSettlement({
+  ...baseOptions,
+  previousBalance: -100,
+  previousBalanceIsAuthoritative: true,
+  balanceTreatment: 'keep'
+});
+assert.strictEqual(advanceFinalBalanceSettlement.previousBalanceSnapshot, -100);
+const advanceFinalBalanceBreakdown = calculateFor(advanceFinalBalanceSettlement);
+const advanceFinalBalanceRow = advanceFinalBalanceBreakdown.rows
+  .find((row) => row.sourceType === 'reconnection-proration');
+assert.strictEqual(advanceFinalBalanceRow.previousBalance, 0);
+assert.strictEqual(advanceFinalBalanceRow.advance, 100);
+assert.strictEqual(advanceFinalBalanceRow.due, 706);
+assert.strictEqual(advanceFinalBalanceBreakdown.endingBalance, 706);
+
 const fullMonthBreakdown = calculateFor(fullMonthSettlement);
 const fullMonthRow = fullMonthBreakdown.rows.find((row) => row.sourceType === 'reconnection-full-month');
 assert(fullMonthRow, 'The full-month reconnection charge must use its own canonical row type.');
@@ -186,6 +370,10 @@ const pendingHistory = sanitizeReconnectionHistory([{
 }]);
 const pendingSummary = buildReconnectionSummary({ reconnectionHistory: pendingHistory });
 assert.strictEqual(pendingSummary.pendingPayment, true);
+assert.strictEqual(requiresReconnectionSettlementBeforeActivation({
+  accountNumber: baseRecord.accountNumber,
+  reconnectionHistory: pendingHistory
+}), true, 'a pending-payment reconnect must not be bypassed after its snapshot marker is consumed');
 assert.strictEqual(pendingSummary.paidTowardActivation, 500);
 assert.strictEqual(pendingSummary.remainingActivationPayment, 500);
 const pendingBreakdown = calculateFor(pendingHistory[0]);
@@ -286,9 +474,24 @@ const paidInstallmentBreakdown = calculateActivatedPayments(activateTreatmentFor
 assert.strictEqual(paidInstallmentBreakdown.endingBalance, 700, 'Activation payments must reduce the exact deferred balance without being discarded.');
 
 const breakdownScript = fs.readFileSync(path.join(__dirname, '..', 'web', 'js', 'payment-breakdown.js'), 'utf8');
+const breakdownPage = fs.readFileSync(path.join(__dirname, '..', 'web', 'payment-breakdown.html'), 'utf8');
+const disconnectionsSource = fs.readFileSync(path.join(__dirname, '..', 'backend', 'disconnections.js'), 'utf8');
+const customerSource = fs.readFileSync(path.join(__dirname, '..', '..', 'customer-management', 'backend', 'customers.js'), 'utf8');
+const mikrotikSource = fs.readFileSync(path.join(__dirname, '..', '..', 'network', 'backend', 'mikrotik.js'), 'utf8');
+const technicianInstallationsSource = fs.readFileSync(path.join(__dirname, '..', '..', 'technician', 'backend', 'technician-installations.js'), 'utf8');
 assert.match(breakdownScript, /reconnectBalanceIntent/);
+assert.match(breakdownScript, /getReconnectionPreviousBalance/);
+assert.match(breakdownScript, /closedAccountCanonicalBalanceAtClosure/);
+assert.match(breakdownScript, /advance credit will reduce the new reconnection charge/);
 assert.match(breakdownScript, /reconnectFromBreakdown\(preferredBalanceTreatment = 'keep'\)/);
 assert.match(breakdownScript, /reconnectForm\.balanceTreatment\.value = balanceTreatment/);
 assert.match(breakdownScript, /cleanParams\.delete\('reconnect'\)/);
+assert.match(breakdownPage, /payment-breakdown\.js\?v=5\.6/);
+assert.match(disconnectionsSource, /requiresReconnectionSettlementBeforeActivation/);
+assert.match(disconnectionsSource, /billingPolicy === BILLING_POLICY_CONTINUE\s+&& !requiresReconnectionSettlementBeforeActivation\(currentDecision\)/);
+assert.match(disconnectionsSource, /assertFinalClosedBalanceSettlementNotBypassed\(getAccountDisconnection\(decisions, accountNumber\)\)/);
+assert.match(customerSource, /CUSTOMER_RECONNECTION_SETTLEMENT_REQUIRED/);
+assert.match(mikrotikSource, /PPPOE_RECONNECTION_SETTLEMENT_REQUIRED/);
+assert.match(technicianInstallationsSource, /TECHNICIAN_PPPOE_RECONNECTION_SETTLEMENT_REQUIRED/);
 
 console.log('PASS reconnection cycle suppression, balance treatments, proration, installments, and activation summary');

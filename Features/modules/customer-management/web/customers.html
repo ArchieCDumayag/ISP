@@ -256,7 +256,7 @@
                                     <span class="input-group-text">₱</span>
                                     <input type="number" class="form-control" id="closeAccountFinalBalance" min="0" max="999999999.99" step="0.01" inputmode="decimal" required disabled>
                                 </div>
-                                <div class="form-hint" id="closeAccountAdjustmentHint">Loads the canonical balance by default.</div>
+                                <div class="form-hint" id="closeAccountFinalBalanceHint">This becomes the Final Closed Customer Balance. Billing history is not changed.</div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label" for="closeAccountReason">Reason <span class="text-secondary">(optional)</span></label>
@@ -264,13 +264,6 @@
                                 <div class="form-hint">Blank saves “Account closed by Admin.”</div>
                             </div>
                         </div>
-                        <label class="form-check mt-3 d-none" id="closeAccountAdjustmentField" hidden>
-                            <input class="form-check-input" type="checkbox" id="closeAccountAdjustmentConfirmed">
-                            <span class="form-check-label">
-                                <strong id="closeAccountAdjustmentLabel">Confirm the finalized-balance adjustment</strong>
-                                <span class="form-check-description" id="closeAccountAdjustmentDescription">This creates one audited non-cash ledger entry. Existing payments and history are never rewritten.</span>
-                            </span>
-                        </label>
                         <div class="alert alert-danger mt-3 mb-0" id="closeAccountError" role="alert" hidden></div>
                     </div>
                     <div class="modal-footer">
@@ -1517,11 +1510,7 @@
             const closeAccountDate = document.getElementById('closeAccountDate');
             const closeAccountReason = document.getElementById('closeAccountReason');
             const closeAccountFinalBalance = document.getElementById('closeAccountFinalBalance');
-            const closeAccountAdjustmentHint = document.getElementById('closeAccountAdjustmentHint');
-            const closeAccountAdjustmentField = document.getElementById('closeAccountAdjustmentField');
-            const closeAccountAdjustmentConfirmed = document.getElementById('closeAccountAdjustmentConfirmed');
-            const closeAccountAdjustmentLabel = document.getElementById('closeAccountAdjustmentLabel');
-            const closeAccountAdjustmentDescription = document.getElementById('closeAccountAdjustmentDescription');
+            const closeAccountFinalBalanceHint = document.getElementById('closeAccountFinalBalanceHint');
             const closeAccountError = document.getElementById('closeAccountError');
             const pppoeRouterSelect = document.getElementById('pppoeRouter');
             const contactNumberInput = document.getElementById('contactNumber');
@@ -6137,16 +6126,11 @@
                     && finalBalance <= 999999999.99;
                 const hasDate = Boolean(String(closeAccountDate?.value || '').trim());
                 const hasAdvance = balanceReady && balance < -0.005;
-                const requiresAdjustment = balanceReady
-                    && finalBalanceReady
-                    && Math.abs(finalBalance - balance) > 0.005;
-                const adjustmentConfirmed = closeAccountAdjustmentConfirmed?.checked === true;
                 closeAccountSubmit.disabled = closeAccountState.submitting
                     || !balanceReady
                     || !finalBalanceReady
                     || !hasDate
-                    || hasAdvance
-                    || (requiresAdjustment && !adjustmentConfirmed);
+                    || hasAdvance;
                 closeAccountSubmit.innerHTML = closeAccountState.submitting
                     ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Closing...'
                     : '<i class="ti ti-user-off" aria-hidden="true"></i> Close Account';
@@ -6161,48 +6145,17 @@
                     && Number.isFinite(finalBalance)
                     && finalBalance >= 0
                     && finalBalance <= 999999999.99;
-                const adjustment = ready && finalBalanceReady
-                    ? Number((finalBalance - balance).toFixed(2))
-                    : 0;
-                const requiresAdjustment = Math.abs(adjustment) > 0.005;
                 if (closeAccountBalance) closeAccountBalance.textContent = ready ? formatPeso(Math.abs(balance)) : '—';
-                if (closeAccountAdjustmentField) {
-                    closeAccountAdjustmentField.hidden = !requiresAdjustment;
-                    closeAccountAdjustmentField.classList.toggle('d-none', !requiresAdjustment);
-                    if (!requiresAdjustment) {
-                        closeAccountAdjustmentField.style.setProperty('display', 'none', 'important');
-                    } else {
-                        closeAccountAdjustmentField.style.removeProperty('display');
-                    }
-                }
-                if (closeAccountAdjustmentConfirmed && !requiresAdjustment) {
-                    closeAccountAdjustmentConfirmed.checked = false;
-                }
-                if (closeAccountAdjustmentLabel && requiresAdjustment) {
-                    closeAccountAdjustmentLabel.textContent = adjustment < 0
-                        ? `Confirm the audited ${formatPeso(Math.abs(adjustment))} credit adjustment`
-                        : `Confirm the audited ${formatPeso(adjustment)} debit adjustment`;
-                }
-                if (closeAccountAdjustmentDescription && requiresAdjustment) {
-                    closeAccountAdjustmentDescription.textContent = adjustment < 0
-                        ? 'One non-cash credit reduces the balance. Existing payments and history remain unchanged.'
-                        : 'One non-cash charge increases the balance. Existing payments and history remain unchanged.';
-                }
-                if (closeAccountAdjustmentHint) {
-                    closeAccountAdjustmentHint.classList.remove('text-danger', 'text-warning', 'text-success');
+                if (closeAccountFinalBalanceHint) {
+                    closeAccountFinalBalanceHint.classList.remove('text-danger', 'text-warning', 'text-success');
                     if (!ready) {
-                        closeAccountAdjustmentHint.textContent = 'Loading the canonical balance.';
+                        closeAccountFinalBalanceHint.textContent = 'Loading the canonical balance.';
                     } else if (!finalBalanceReady) {
-                        closeAccountAdjustmentHint.textContent = 'Enter a final balance from ₱0.00 to ₱999,999,999.99.';
-                        closeAccountAdjustmentHint.classList.add('text-danger');
-                    } else if (requiresAdjustment) {
-                        closeAccountAdjustmentHint.textContent = adjustment < 0
-                            ? `${formatPeso(Math.abs(adjustment))} audited credit will be added.`
-                            : `${formatPeso(adjustment)} audited debit will be added.`;
-                        closeAccountAdjustmentHint.classList.add('text-warning');
+                        closeAccountFinalBalanceHint.textContent = 'Enter a final balance from ₱0.00 to ₱999,999,999.99.';
+                        closeAccountFinalBalanceHint.classList.add('text-danger');
                     } else {
-                        closeAccountAdjustmentHint.textContent = 'No balance adjustment — the current balance will be retained.';
-                        closeAccountAdjustmentHint.classList.add('text-success');
+                        closeAccountFinalBalanceHint.textContent = 'This amount becomes the Final Closed Customer Balance. Billing history is not changed.';
+                        closeAccountFinalBalanceHint.classList.add('text-success');
                     }
                 }
                 if (!closeAccountBalanceState) {
@@ -6328,15 +6281,13 @@
                         body: JSON.stringify({
                             closureDate,
                             reason,
-                            finalBalance: Number(finalBalance.toFixed(2)),
-                            balanceAdjustmentConfirmed: closeAccountAdjustmentConfirmed?.checked === true
+                            finalBalance: Number(finalBalance.toFixed(2))
                         })
                     });
                     const payload = await response.json().catch(() => ({}));
                     if (!response.ok) {
                         if (Number.isFinite(Number(payload?.balance))) {
                             closeAccountState.balance = Number(payload.balance);
-                            if (closeAccountAdjustmentConfirmed) closeAccountAdjustmentConfirmed.checked = false;
                             renderCloseAccountBalance();
                         }
                         throw new Error(payload?.error || payload?.message || 'Failed to close customer account.');
@@ -6365,10 +6316,8 @@
             closeAccountReason?.addEventListener('input', syncCloseAccountSubmitState);
             closeAccountDate?.addEventListener('change', syncCloseAccountSubmitState);
             closeAccountFinalBalance?.addEventListener('input', () => {
-                if (closeAccountAdjustmentConfirmed) closeAccountAdjustmentConfirmed.checked = false;
                 renderCloseAccountBalance();
             });
-            closeAccountAdjustmentConfirmed?.addEventListener('change', syncCloseAccountSubmitState);
 
             function getImportWarningCatalogPlans() {
                 return ['prepaid', 'postpaid'].flatMap((category) => (

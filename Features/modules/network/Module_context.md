@@ -1,6 +1,6 @@
 # Network Module Context
 
-Last reviewed: 2026-08-26
+Last reviewed: 2026-08-29
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -16,7 +16,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 ## Backend and APIs
 
 - `backend/index.js` is the lazy module descriptor loaded by `server.js` through `core/runtime/module-loader`.
-- `backend/mikrotik.js`: `/api/mikrotik` operations for tests, PPPoE, profiles, traffic, sync, and router information. Active PPPoE creation is serialized with Billing's customer/payment lifecycle boundary and rejects a customer whose permanent closure overlay is active, preventing stale Admin or automation calls from restoring service to a closed account.
+- `backend/mikrotik.js`: `/api/mikrotik` operations for tests, PPPoE, profiles, traffic, sync, and router information. Active PPPoE creation is serialized with Billing's customer/payment lifecycle boundary and rejects both an active permanent closure and an unconsumed closed-balance/pending-payment reconnection decision. When a cached PPPoE link lacks an account number, activation resolves the canonical customer by normalized PPPoE username before applying the same guard.
 - `backend/mikrotik-client.js` and `backend/mikrotik-endpoint.js`: RouterOS connectivity and endpoint normalization.
 - `backend/mikrotik-audit-log.js`: records network commands through the Admin activity log.
 - `backend/pon-management-api.js`: `/api/pon/state`, `/api/pon/overview`, and PON state updates. State and overview reads expose an opaque `revision`; full-state `PUT /api/pon/state` requires the matching `expectedRevision`, returns the next revision, and rejects stale snapshots with `409 PON_STATE_CONFLICT` before changing records.
@@ -78,6 +78,8 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - 2026-08-25 coverage-map validation: focused serviceability tests prove full and offline NAPs inside 600 meters remain visible, farther NAPs are excluded, every numbered port has a deterministic status, occupied ports retain the internal client label, and only online free ports are marked available.
 
 ## Latest meaningful changes
+
+- 2026-08-29: Extended PPPoE activation protection through Customer Archive Reopen. A reopened subscriber remains blocked while the Final Closed Customer Balance or pending-payment reconnection is unsettled, including username-only saves whose cached PPPoE row lacks an account link.
 
 - 2026-08-26: Guarded active PPPoE creation with the shared Billing mutation boundary and current Customer closure overlay. Closed-account payments remain financial-only and cannot recreate or enable PPPoE service.
 

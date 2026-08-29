@@ -20,7 +20,10 @@ const {
 const {
   STATE_CLOSED,
   listClosedCustomerAccounts,
-  getActiveClosedCustomerAccount
+  getActiveClosedCustomerAccount,
+  getClosedCustomerAccountById,
+  resolveFinalClosedCustomerBalance,
+  resolveClosedCustomerBalance
 } = require('../../customer-management/backend/closed-customer-account-store');
 const {
   listGcashTransactionHistory,
@@ -554,7 +557,10 @@ async function readClosedAccountCollectionState({
       excludeEntryId
     })
   ]);
-  const currentBalance = normalizeCurrency(Math.max(Number(balance) || 0, 0));
+  const currentBalance = normalizeCurrency(Math.max(
+    Number(resolveClosedCustomerBalance(closure, balance)) || 0,
+    0
+  ));
   const normalizedPendingAmount = normalizeCurrency(Math.max(Number(pendingAmount) || 0, 0));
   const paymentAllowed = currentBalance > BALANCE_EPSILON
     && normalizedPendingAmount <= BALANCE_EPSILON;
@@ -623,7 +629,10 @@ async function assertCollectorPaymentApprovalAllowedForAccountState({
     );
   }
   const { balance } = await getCanonicalAccountClosureBalance(accountNumber, branchId);
-  const currentBalance = normalizeCurrency(Math.max(Number(balance) || 0, 0));
+  const currentBalance = normalizeCurrency(Math.max(
+    Number(resolveClosedCustomerBalance(closure, balance)) || 0,
+    0
+  ));
   const paymentAmount = normalizeCurrency(Math.abs(Number(entry?.amount) || 0));
   if (currentBalance <= BALANCE_EPSILON) {
     throw createError(409, 'This closed account no longer has a balance. Reject the duplicate payment.');
@@ -655,6 +664,9 @@ function buildClosedAccountCollectionPayload(record, state) {
     billingStatus: 'stopped',
     billingAction: 'none',
     currentBalance: state.currentBalance,
+    currentBillAmount: state.currentBalance,
+    endingBalance: state.currentBalance,
+    paymentBreakdownEndingBalance: state.currentBalance,
     pendingCollectionAmount: state.pendingCollectionAmount,
     collectibleBalance: state.collectibleBalance,
     paymentAllowed: state.paymentAllowed,
@@ -1841,6 +1853,97 @@ async function buildCollectorReceiptPayloadWithAdminBalance(
   };
 }
 
+async function applyActiveClosedAccountBalanceToReceipt(receipt, {
+  branchId,
+  accountNumber,
+  history = null,
+  targetPayment = null
+} = {}) {
+  let receiptClosure = null;
+  const closureId = resolveClosedAccountCollectionClosureId(targetPayment);
+  try {
+    receiptClosure = closureId
+      ? await getClosedCustomerAccountById(closureId, { branchId, activeOnly: false })
+      : await getActiveClosedCustomerAccount(branchId, accountNumber);
+  } catch {
+    receiptClosure = null;
+  }
+  const lifecycleOpeningBalance = receiptClosure
+    ? normalizeCurrency(Math.max(resolveFinalClosedCustomerBalance(receiptClosure), 0))
+    : null;
+  const lifecycleClosureId = String(receiptClosure?.id || closureId || '').trim();
+  let lifecyclePreviousBalance = lifecycleOpeningBalance;
+  let lifecycleBalanceAfterPayment = lifecycleOpeningBalance;
+  if (lifecycleOpeningBalance !== null && targetPayment) {
+    let runningBalance = lifecycleOpeningBalance;
+    const relationalHistoryOrder = await isRelationalReady().catch(() => false);
+    const getReceiptSequence = (entry = {}) => {
+      const raw = String(entry?.orNumber || entry?.or_number || '').replace(/\D+/g, '');
+      const value = Number(raw);
+      return raw && Number.isFinite(value) ? value : null;
+    };
+    const lifecyclePayments = (Array.isArray(history) ? history : [])
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => isClosedAccountCollectionEntry(entry))
+      .filter(({ entry }) => {
+        const entryClosureId = resolveClosedAccountCollectionClosureId(entry);
+        return !lifecycleClosureId || !entryClosureId || entryClosureId === lifecycleClosureId;
+      })
+      .filter(({ entry }) => (
+        isSamePaymentEntry(entry, targetPayment)
+          || ['approved', 'posted', 'completed'].includes(normalizeCollectorPaymentStatus(entry?.status))
+      ))
+      .sort((left, right) => (
+        getLedgerSortTimestamp(left.entry) - getLedgerSortTimestamp(right.entry)
+          || (
+            getReceiptSequence(left.entry) !== null
+              && getReceiptSequence(right.entry) !== null
+              ? getReceiptSequence(left.entry) - getReceiptSequence(right.entry)
+              : 0
+          )
+          || (relationalHistoryOrder ? left.index - right.index : right.index - left.index)
+      ));
+    let targetFound = false;
+    lifecyclePayments.forEach(({ entry }) => {
+      const paymentAmount = normalizeCurrency(Math.abs(Number(entry?.amount) || 0));
+      if (!targetFound && isSamePaymentEntry(entry, targetPayment)) {
+        lifecyclePreviousBalance = runningBalance;
+        runningBalance = normalizeCurrency(Math.max(runningBalance - paymentAmount, 0));
+        lifecycleBalanceAfterPayment = runningBalance;
+        targetFound = true;
+        return;
+      }
+      if (!targetFound) {
+        runningBalance = normalizeCurrency(Math.max(runningBalance - paymentAmount, 0));
+      }
+    });
+    if (!targetFound) {
+      const targetAmount = normalizeCurrency(Math.abs(Number(targetPayment?.amount) || 0));
+      lifecyclePreviousBalance = runningBalance;
+      lifecycleBalanceAfterPayment = normalizeCurrency(Math.max(runningBalance - targetAmount, 0));
+    }
+  }
+  const adjustedReceipt = {
+    ...receipt,
+    previousBalance: lifecyclePreviousBalance ?? receipt.previousBalance,
+    balanceAfterPayment: lifecycleBalanceAfterPayment ?? receipt.balanceAfterPayment
+  };
+  try {
+    const state = await readClosedAccountCollectionState({ branchId, accountNumber, history });
+    return {
+      ...adjustedReceipt,
+      currentBillAmount: state.currentBalance,
+      paymentBreakdownEndingBalance: state.currentBalance,
+      endingBalance: state.currentBalance,
+      currentBalance: state.currentBalance
+    };
+  } catch {
+    // Historical before/after values retain the closed lifecycle's immutable
+    // offset after reopen; only the live current balance returns to Billing.
+    return adjustedReceipt;
+  }
+}
+
 async function isCollectorAssignedToCustomer(branchId, collectorId, customer) {
   if (!collectorId) return true;
   const area = String(customer?.area || '').trim();
@@ -2481,13 +2584,21 @@ router.get('/reprint', async (req, res, next) => {
         const history = await readPaymentHistoryForReceipt(branchId, customer.accountNumber);
         const resolvedTarget = history.find((entry) => isSamePaymentEntry(entry, targetPayment)) || targetPayment;
         const closedReceipt = isClosedAccountCollectionEntry(resolvedTarget);
-        const receipt = await buildCollectorReceiptPayloadWithAdminBalance(
+        let receipt = await buildCollectorReceiptPayloadWithAdminBalance(
           customer,
           history,
           resolvedTarget,
           branchId,
           { applyQueuedReferrals: !closedReceipt }
         );
+        if (closedReceipt) {
+          receipt = await applyActiveClosedAccountBalanceToReceipt(receipt, {
+            branchId,
+            accountNumber: customer.accountNumber,
+            history,
+            targetPayment: resolvedTarget
+          });
+        }
         return res.json(closedReceipt ? {
           ...receipt,
           closedAccountCollection: true,
@@ -2521,13 +2632,21 @@ router.get('/reprint', async (req, res, next) => {
         continue;
       }
       const closedReceipt = isClosedAccountCollectionEntry(targetPayment);
-      const receipt = await buildCollectorReceiptPayloadWithAdminBalance(
+      let receipt = await buildCollectorReceiptPayloadWithAdminBalance(
         customer,
         history,
         targetPayment,
         branchId,
         { applyQueuedReferrals: !closedReceipt }
       );
+      if (closedReceipt) {
+          receipt = await applyActiveClosedAccountBalanceToReceipt(receipt, {
+            branchId,
+            accountNumber,
+            history,
+            targetPayment
+          });
+      }
       return res.json(closedReceipt ? {
         ...receipt,
         closedAccountCollection: true,
@@ -3396,7 +3515,7 @@ async function submitCollectorPayment(req, res, next, { closedAccountCollection 
       });
 
       const receiptHistory = await readPaymentHistoryForReceipt(branchId, accountNumber);
-      const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
+      let receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
         customer,
         receiptHistory,
         storedPayment,
@@ -3405,6 +3524,12 @@ async function submitCollectorPayment(req, res, next, { closedAccountCollection 
       );
       let closedCollectionPayload = {};
       if (closedAccountCollection) {
+        receiptPayload = await applyActiveClosedAccountBalanceToReceipt(receiptPayload, {
+          branchId,
+          accountNumber,
+          history: receiptHistory,
+          targetPayment: storedPayment
+        });
         if (!closedCollectionState) {
           closedCollectionState = await readClosedAccountCollectionState({
             branchId,
@@ -3559,7 +3684,7 @@ async function submitCollectorPayment(req, res, next, { closedAccountCollection 
         collectorName: collectorAccount.name || collectorAccount.username,
         branchId: collectorAccount.branchId || customer?.branchId || null
       });
-      const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
+      let receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
         customer,
         duplicateHistory,
         duplicateEntry,
@@ -3568,6 +3693,12 @@ async function submitCollectorPayment(req, res, next, { closedAccountCollection 
       );
       let closedCollectionPayload = {};
       if (closedAccountCollection) {
+        receiptPayload = await applyActiveClosedAccountBalanceToReceipt(receiptPayload, {
+          branchId,
+          accountNumber,
+          history: duplicateHistory,
+          targetPayment: duplicateEntry
+        });
         try {
           const replayState = await readClosedAccountCollectionState({
             branchId,
@@ -3662,7 +3793,7 @@ async function submitCollectorPayment(req, res, next, { closedAccountCollection 
     if (!closedAccountCollection) {
       triggerBranchServiceRefresh(branchId, 'collector-payments');
     }
-    const receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
+    let receiptPayload = await buildCollectorReceiptPayloadWithAdminBalance(
       customer,
       payments[accountNumber].history,
       newEntry,
@@ -3671,6 +3802,12 @@ async function submitCollectorPayment(req, res, next, { closedAccountCollection 
     );
     let closedCollectionPayload = {};
     if (closedAccountCollection) {
+      receiptPayload = await applyActiveClosedAccountBalanceToReceipt(receiptPayload, {
+        branchId,
+        accountNumber,
+        history: payments[accountNumber].history,
+        targetPayment: newEntry
+      });
       closedCollectionState = {
         ...closedCollectionState,
         pendingCollectionAmount: normalizeCurrency(

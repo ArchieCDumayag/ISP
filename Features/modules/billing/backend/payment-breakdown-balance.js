@@ -504,6 +504,13 @@ const normalizeEntry = (entry, index) => {
   const paymentDisplayDateObj = direction === 'credit'
     ? (safeDate(resolvePaymentReceivedAt(entry)) || dateObj)
     : dateObj;
+  const mutationDateObj = safeDate(
+    entry?.recordedAt
+      || entry?.recorded_at
+      || entry?.createdAt
+      || entry?.created_at
+      || entry?.date
+  ) || dateObj;
   return {
     raw: entry || {},
     index,
@@ -514,6 +521,8 @@ const normalizeEntry = (entry, index) => {
     dateObj,
     paymentDisplayDateObj,
     time: dateObj ? dateObj.getTime() : index,
+    mutationDateObj,
+    mutationTime: mutationDateObj ? mutationDateObj.getTime() : (dateObj ? dateObj.getTime() : index),
     isOpeningPreviousBalance: openingPreviousBalance,
     isOpeningAdvance: isOpeningAdvanceRaw(entry),
     isPrepaidAutoCharge: isPrepaidAutoChargeRaw(entry)
@@ -1193,11 +1202,15 @@ const takeReconnectionEffects = ({
   let installmentMonths = 0;
 
   if (settlement?.reconnectionId && !balanceApplied.has(settlement.reconnectionId)) {
-    previousBalanceSnapshot = roundMoney(Math.max(0, Number(settlement.previousBalanceSnapshot) || 0));
+    const rawPreviousBalanceSnapshot = roundMoney(Number(settlement.previousBalanceSnapshot) || 0);
+    previousBalanceSnapshot = settlement.previousBalanceIsAuthoritative === true
+      ? rawPreviousBalanceSnapshot
+      : roundMoney(Math.max(0, rawPreviousBalanceSnapshot));
+    const positivePreviousBalanceSnapshot = roundMoney(Math.max(0, previousBalanceSnapshot));
     if (settlement.balanceTreatment === 'write-off') {
-      writeOffAmount = roundMoney(Math.max(0, Number(settlement.writeOffAmount) || previousBalanceSnapshot));
+      writeOffAmount = roundMoney(Math.max(0, Number(settlement.writeOffAmount) || positivePreviousBalanceSnapshot));
     } else if (settlement.balanceTreatment === 'installment') {
-      deferredBalanceAmount = roundMoney(Math.max(0, Number(settlement.deferredBalanceAmount) || previousBalanceSnapshot));
+      deferredBalanceAmount = roundMoney(Math.max(0, Number(settlement.deferredBalanceAmount) || positivePreviousBalanceSnapshot));
     }
     balanceApplied.add(settlement.reconnectionId);
   }
@@ -1259,12 +1272,100 @@ const getReconnectionSourceType = (settlement = {}) => {
     : 'reconnection-opening';
 };
 
+const getAuthoritativePreviousBalanceCutoff = (settlement = {}) => {
+  if (settlement?.previousBalanceIsAuthoritative !== true) return null;
+  return safeDate(settlement.previousBalanceCapturedAt || settlement.requestedAt);
+};
+
+const getEntryMutationTime = (entry = {}) => {
+  const mutationTime = Number(entry.mutationTime);
+  if (Number.isFinite(mutationTime)) return mutationTime;
+  const mutationDate = safeDate(
+    entry?.mutationDateObj
+      || entry?.raw?.recordedAt
+      || entry?.raw?.recorded_at
+      || entry?.raw?.createdAt
+      || entry?.raw?.created_at
+      || entry?.dateObj
+  );
+  if (mutationDate) return mutationDate.getTime();
+  return Number(entry.time) || Number(entry.index) || 0;
+};
+
+const buildAuthoritativeResetTimeline = (syntheticEntries = []) => (
+  (Array.isArray(syntheticEntries) ? syntheticEntries : [])
+    .map((entry) => ({
+      entry,
+      cutoff: getAuthoritativePreviousBalanceCutoff(entry?.reconnectionSettlement)
+    }))
+    .filter((item) => item.cutoff)
+    .map((item) => ({ ...item, cutoffTime: item.cutoff.getTime() }))
+    .sort((left, right) => (
+      left.cutoffTime - right.cutoffTime
+      || compareEntries(left.entry, right.entry)
+    ))
+);
+
+const getAuthoritativeResetEpochForMutation = (entry = {}, timeline = []) => {
+  const mutationTime = getEntryMutationTime(entry);
+  return timeline.reduce((epoch, reset) => (
+    mutationTime > reset.cutoffTime ? epoch + 1 : epoch
+  ), 0);
+};
+
+const getAuthoritativeResetEpochForSettlement = (settlement = {}, timeline = []) => {
+  const reconnectionId = String(settlement?.reconnectionId || '').trim();
+  const resetIndex = timeline.findIndex((reset) => (
+    reset.entry?.reconnectionSettlement === settlement
+      || (
+        reconnectionId
+        && String(reset.entry?.reconnectionSettlement?.reconnectionId || '').trim() === reconnectionId
+      )
+  ));
+  return resetIndex >= 0 ? resetIndex + 1 : null;
+};
+
+const orderEntriesAroundAuthoritativeResets = (entries = []) => {
+  const source = Array.isArray(entries) ? entries : [];
+  const timeline = buildAuthoritativeResetTimeline(
+    source.filter((entry) => entry?.isSyntheticReconnection)
+  );
+  if (!timeline.length) {
+    return source
+      .map((entry) => ({ ...entry, authoritativeResetEpoch: 0 }))
+      .sort(compareEntries);
+  }
+  const resetEpochs = new Map(
+    timeline.map((reset, index) => [reset.entry, index + 1])
+  );
+  return source
+    .map((entry) => {
+      const resetEpoch = resetEpochs.get(entry);
+      return {
+        ...entry,
+        authoritativeResetEpoch: resetEpoch
+          || getAuthoritativeResetEpochForMutation(entry, timeline),
+        isAuthoritativeResetBoundary: Boolean(resetEpoch)
+      };
+    })
+    .sort((left, right) => {
+      if (left.authoritativeResetEpoch !== right.authoritativeResetEpoch) {
+        return left.authoritativeResetEpoch - right.authoritativeResetEpoch;
+      }
+      if (left.isAuthoritativeResetBoundary !== right.isAuthoritativeResetBoundary) {
+        return left.isAuthoritativeResetBoundary ? -1 : 1;
+      }
+      return compareEntries(left, right);
+    });
+};
+
 const buildSyntheticReconnectionEntries = (context = {}) => (
   (Array.isArray(context.reconnectionSettlements) ? context.reconnectionSettlements : [])
     .filter((settlement) => settlement?.status === 'active')
     .map((settlement, index) => {
       const dateObj = safeDate(settlement.effectiveDate);
       if (!dateObj) return null;
+      const mutationDateObj = getAuthoritativePreviousBalanceCutoff(settlement) || dateObj;
       return {
         raw: { reconnectionSettlement: settlement },
         index: 1000000 + index,
@@ -1274,6 +1375,8 @@ const buildSyntheticReconnectionEntries = (context = {}) => (
         kind: 'reconnection',
         dateObj,
         time: dateObj.getTime(),
+        mutationDateObj,
+        mutationTime: mutationDateObj.getTime(),
         isSyntheticReconnection: true,
         reconnectionSettlement: settlement
       };
@@ -1310,13 +1413,25 @@ const createBreakdownRow = ({
   const effectiveAdvanceOverride = firstBillAdjustment
     ? firstBillAdjustment.advance
     : advanceOverride;
-  const hasPreviousBalanceOverride = hasAmountOverride(effectivePreviousBalanceOverride);
+  const reconnectionPreviousBalance = Number(reconnectionSettlement?.previousBalanceSnapshot);
+  const hasReconnectionPreviousBalance = reconnectionSettlement?.previousBalanceIsAuthoritative === true
+    && Boolean(reconnectionSettlement?.reconnectionId)
+    && Number.isFinite(reconnectionPreviousBalance);
+  const hasPreviousBalanceOverride = hasReconnectionPreviousBalance
+    || hasAmountOverride(effectivePreviousBalanceOverride);
   const hasAdvanceOverride = hasAmountOverride(effectiveAdvanceOverride);
   const carryOver = splitBalanceCarryOver(runningBalance);
-  let previousBalance = hasPreviousBalanceOverride
+  const authoritativeCarryOver = hasReconnectionPreviousBalance
+    ? splitBalanceCarryOver(reconnectionPreviousBalance)
+    : null;
+  let previousBalance = hasReconnectionPreviousBalance
+    ? authoritativeCarryOver.previousBalance
+    : hasPreviousBalanceOverride
     ? roundMoney(Math.max(0, Number(effectivePreviousBalanceOverride) || 0))
     : carryOver.previousBalance;
-  let advance = hasAdvanceOverride
+  let advance = hasReconnectionPreviousBalance
+    ? authoritativeCarryOver.advance
+    : hasAdvanceOverride
     ? roundMoney(Math.max(0, Number(effectiveAdvanceOverride) || 0))
     : carryOver.advance;
   const reconnectionEffects = takeReconnectionEffects({
@@ -1466,11 +1581,10 @@ const resolvePendingPostpaidBillDate = (record = {}, todayBillingDate = getToday
 const buildRowsFromPostedDebits = (record, entries, context) => {
   const rows = [];
   const ignoredAutoChargeOrders = findIgnoredOpeningAutoChargeOrders(record, entries);
-  const effectiveEntries = [
+  const effectiveEntries = orderEntriesAroundAuthoritativeResets([
     ...entries.filter((entry) => !ignoredAutoChargeOrders.has(entry.sortOrder)),
     ...buildSyntheticReconnectionEntries(context)
-  ]
-    .sort(compareEntries)
+  ])
     .map((entry, sortOrder) => ({ ...entry, sortOrder }));
   const debitEntries = effectiveEntries.filter((entry) => entry.direction === 'debit');
   if (!debitEntries.length) return rows;
@@ -1491,8 +1605,24 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
 
   debitEntries.forEach((debit, index) => {
     const nextDebit = debitEntries[index + 1] || null;
+    const reconnectionSettlement = debit.isSyntheticReconnection ? debit.reconnectionSettlement : null;
+    const authoritativePreviousBalanceCutoff = getAuthoritativePreviousBalanceCutoff(reconnectionSettlement);
+    if (authoritativePreviousBalanceCutoff) {
+      effectiveEntries.forEach((entry) => {
+        if (
+          entry.direction === 'credit'
+          && getEntryMutationTime(entry) <= authoritativePreviousBalanceCutoff.getTime()
+        ) {
+          // These credits are already reflected in the captured Final Closed
+          // Customer Balance. Mark them consumed so the reconnect row cannot
+          // subtract them for a second time.
+          assignedCreditOrders.add(entry.sortOrder);
+        }
+      });
+    }
     const cycleCredits = effectiveEntries.filter((entry) => {
       if (entry.direction !== 'credit' || assignedCreditOrders.has(entry.sortOrder)) return false;
+      if (entry.authoritativeResetEpoch !== debit.authoritativeResetEpoch) return false;
       const attachesToCurrentBillMonth = shouldAttachCreditToBillMonth(entry, debit.dateObj, record);
       const attachesToNextBillMonth = nextDebit
         ? shouldAttachCreditToBillMonth(entry, nextDebit.dateObj, record)
@@ -1510,7 +1640,6 @@ const buildRowsFromPostedDebits = (record, entries, context) => {
         );
     });
     cycleCredits.forEach((entry) => assignedCreditOrders.add(entry.sortOrder));
-    const reconnectionSettlement = debit.isSyntheticReconnection ? debit.reconnectionSettlement : null;
     const openingPreviousBalance = !reconnectionSettlement && isOpeningPreviousBalanceEntry(debit);
     const planChange = resolvePlanChangeForMonth(context, debit.dateObj);
     const planAmount = reconnectionSettlement
@@ -1648,6 +1777,9 @@ const createReconnectionMarkerRow = ({
 
 const buildRowsFromMonthlyPlan = (record, entries, context) => {
   const planAmount = context.planAmount;
+  const authoritativeResetTimeline = buildAuthoritativeResetTimeline(
+    buildSyntheticReconnectionEntries(context)
+  );
   const entryDates = entries.map((entry) => entry.dateObj).filter(Boolean);
   const firstEntryDate = getMinDate(entryDates);
   const lastEntryDate = getMaxDate(entryDates);
@@ -1768,10 +1900,26 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
     const markersAfterBill = settlementMarkers.filter((settlement) => settlement.effectiveDate > billDateKey);
     let cycleCreditsAvailable = cycleCredits;
     const appendMarker = (settlement) => {
+      const authoritativePreviousBalanceCutoff = getAuthoritativePreviousBalanceCutoff(settlement);
+      const authoritativeResetEpoch = authoritativePreviousBalanceCutoff
+        ? getAuthoritativeResetEpochForSettlement(settlement, authoritativeResetTimeline)
+        : null;
+      const markerCredits = authoritativeResetEpoch == null
+        ? cycleCreditsAvailable
+        : cycleCreditsAvailable.filter((entry) => (
+            getAuthoritativeResetEpochForMutation(entry, authoritativeResetTimeline)
+              === authoritativeResetEpoch
+          ));
+      const creditsAfterLaterReset = authoritativeResetEpoch == null
+        ? []
+        : cycleCreditsAvailable.filter((entry) => (
+            getAuthoritativeResetEpochForMutation(entry, authoritativeResetTimeline)
+              > authoritativeResetEpoch
+          ));
       const markerResult = createReconnectionMarkerRow({
         record,
         settlement,
-        credits: cycleCreditsAvailable,
+        credits: markerCredits,
         runningBalance,
         context,
         planOverride: planChange,
@@ -1780,7 +1928,7 @@ const buildRowsFromMonthlyPlan = (record, entries, context) => {
       if (!markerResult) return;
       rows.push(markerResult.row);
       runningBalance = markerResult.nextBalance;
-      cycleCreditsAvailable = [];
+      cycleCreditsAvailable = creditsAfterLaterReset;
     };
 
     markersBeforeBill.forEach(appendMarker);

@@ -27,6 +27,7 @@ const {
 const {
   readBranchDisconnections,
   getAccountDisconnection,
+  requiresReconnectionSettlementBeforeActivation,
   shouldContinueBillingAfterDisconnection,
   shouldStopBillingAfterDisconnection
 } = require('./disconnection-store');
@@ -1323,6 +1324,7 @@ async function enforcePppoeGracePeriodForBranchUnlocked(branchId, now = new Date
   const payments = await readPayments(branchId);
   const plans = await readPlans(branchId);
   const paymentBreakdownAdjustments = await readStore(STORE_KEYS.paymentBreakdownAdjustments, {});
+  const disconnections = await readBranchDisconnections(branchId);
   let settings;
   try {
     settings = await loadIntegrationSettings(branchId);
@@ -1373,6 +1375,11 @@ async function enforcePppoeGracePeriodForBranchUnlocked(branchId, now = new Date
     const eligibleUsers = [];
     const ineligibleUsers = [];
     group.usernames.forEach((customer, unameLower) => {
+      const disconnection = getAccountDisconnection(disconnections, customer?.accountNumber);
+      if (requiresReconnectionSettlementBeforeActivation(disconnection)) {
+        ineligibleUsers.push(unameLower);
+        return;
+      }
       const currentStatus = resolveCustomerStatusState(customer);
       if (currentStatus.status === STATUS_DISABLED) {
         // Disabled is admin lock: keep disabled and never auto-enable.
@@ -1480,6 +1487,14 @@ async function enforcePppoeGracePeriodForBranchUnlocked(branchId, now = new Date
         const cust = customers[idx];
         if (!cust) return;
         const currentStatus = resolveCustomerStatusState(cust);
+        const disconnection = getAccountDisconnection(disconnections, cust?.accountNumber);
+        if (requiresReconnectionSettlementBeforeActivation(disconnection)) {
+          if (currentStatus.status !== STATUS_DISABLED || currentStatus.statusMode !== STATUS_MODE_AUTO) {
+            customers[idx] = { ...cust, status: STATUS_DISABLED, statusMode: STATUS_MODE_AUTO };
+            customersChanged = true;
+          }
+          return;
+        }
         let desiredStatus = currentStatus.status;
         if (currentStatus.status === STATUS_DISABLED) {
           // Keep disabled until explicitly set active by admin.
@@ -1677,6 +1692,17 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
     let activeToInactiveCount = 0;
     customers.forEach((cust, idx) => {
       const currentStatus = resolveCustomerStatusState(cust);
+      const disconnection = getAccountDisconnection(disconnections, cust?.accountNumber);
+      if (requiresReconnectionSettlementBeforeActivation(disconnection)) {
+        if (currentStatus.status !== STATUS_DISABLED || currentStatus.statusMode !== STATUS_MODE_AUTO) {
+          updates.push({
+            idx,
+            next: { ...cust, status: STATUS_DISABLED, statusMode: STATUS_MODE_AUTO },
+            downgrade: false
+          });
+        }
+        return;
+      }
       if (currentStatus.status === STATUS_DISABLED) {
         // Respect disabled admin lock; do not auto-reactivate here.
         if (currentStatus.statusMode !== STATUS_MODE_AUTO) {
@@ -1718,6 +1744,7 @@ async function runMonthlyBillingForBranch(branchId, now = new Date(), options = 
     let customer = customers[index];
     const accountNumber = customer.accountNumber;
     const disconnection = getAccountDisconnection(disconnections, accountNumber);
+    if (requiresReconnectionSettlementBeforeActivation(disconnection)) continue;
     const continueDisconnectedBilling = shouldContinueBillingAfterDisconnection(disconnection);
     const stopDisconnectedBilling = shouldStopBillingAfterDisconnection(disconnection);
     if (stopDisconnectedBilling) continue;

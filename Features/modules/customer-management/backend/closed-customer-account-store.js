@@ -3,7 +3,7 @@ const createError = require('http-errors');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 
 const STORE_KEY = 'closed_customer_accounts';
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 const MAX_AUDIT_EVENTS = 200;
 const STATE_CLOSING = 'closing';
 const STATE_CLOSED = 'closed';
@@ -11,6 +11,8 @@ const STATE_FAILED = 'failed';
 const BALANCE_TREATMENT_ZERO = 'zero';
 const BALANCE_TREATMENT_KEEP = 'keep';
 const BALANCE_TREATMENT_WRITE_OFF = 'write-off';
+const BALANCE_MODE_CANONICAL = 'canonical';
+const BALANCE_MODE_SNAPSHOT = 'snapshot';
 const REOPEN_ACTION_COLLECT_FIRST = 'collect-first';
 const REOPEN_ACTION_KEEP = 'keep';
 const REOPEN_ACTION_WRITE_OFF = 'write-off';
@@ -32,6 +34,36 @@ const normalizeOptionalMoney = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const amount = Number(value);
   return Number.isFinite(amount) ? Number(amount.toFixed(2)) : null;
+};
+
+const normalizeBalanceMode = (value) => (
+  cleanText(value, 40).toLowerCase() === BALANCE_MODE_SNAPSHOT
+    ? BALANCE_MODE_SNAPSHOT
+    : BALANCE_MODE_CANONICAL
+);
+
+const resolveFinalClosedCustomerBalance = (record = {}) => {
+  const explicit = normalizeOptionalMoney(record.finalClosedCustomerBalance);
+  if (explicit !== null) return explicit;
+  const requested = normalizeOptionalMoney(record.requestedFinalBalance);
+  if (requested !== null) return requested;
+  return normalizeMoney(record.finalBalance);
+};
+
+// New closures keep an authoritative closed-account balance without changing
+// Billing history. Effective payments still post to Billing, so the same
+// canonical delta is applied to the saved closed-balance snapshot. Records
+// created before this contract remain canonical to avoid double-counting their
+// permanent Account Closure Adjustment entries.
+const resolveClosedCustomerBalance = (record = {}, canonicalBalance) => {
+  const canonical = normalizeOptionalMoney(canonicalBalance);
+  if (canonical === null) return null;
+  if (normalizeBalanceMode(record.balanceMode) !== BALANCE_MODE_SNAPSHOT) return canonical;
+  const canonicalAtClosure = normalizeOptionalMoney(record.canonicalBalanceAtClosure)
+    ?? normalizeMoney(record.balanceBefore);
+  return normalizeMoney(
+    resolveFinalClosedCustomerBalance(record) + canonical - canonicalAtClosure
+  );
 };
 
 const normalizeAdjustmentDirection = (value) => {
@@ -83,6 +115,7 @@ const sanitizeRecord = (record = {}) => {
     : STATE_CLOSING;
   const balanceBefore = normalizeMoney(record.balanceBefore);
   const writeOffAmount = normalizeMoney(record.writeOffAmount);
+  const balanceMode = normalizeBalanceMode(record.balanceMode);
   return {
     id: cleanText(record.id, 96),
     branchId: normalizeBranchKey(record.branchId),
@@ -96,6 +129,9 @@ const sanitizeRecord = (record = {}) => {
     state,
     active: record.active !== false,
     balanceBefore,
+    balanceMode,
+    canonicalBalanceAtClosure: normalizeOptionalMoney(record.canonicalBalanceAtClosure) ?? balanceBefore,
+    finalClosedCustomerBalance: resolveFinalClosedCustomerBalance(record),
     balanceTreatment: normalizeBalanceTreatment(record.balanceTreatment, { balanceBefore, writeOffAmount }),
     writeOffAmount,
     requestedFinalBalance: normalizeOptionalMoney(record.requestedFinalBalance),
@@ -239,8 +275,11 @@ const beginCustomerAccountClosure = async ({
   closureDate,
   reason,
   balanceBefore = 0,
+  balanceMode = BALANCE_MODE_CANONICAL,
+  canonicalBalanceAtClosure = null,
   balanceTreatment = '',
   requestedFinalBalance = null,
+  finalClosedCustomerBalance = null,
   closedBy = {}
 } = {}) => {
   const accountNumber = normalizeAccountNumber(customer.accountNumber || customer.account_number);
@@ -251,20 +290,26 @@ const beginCustomerAccountClosure = async ({
     throw createError(400, 'Choose a valid closure date.');
   }
   const normalizedBalance = normalizeMoney(balanceBefore);
+  const normalizedBalanceMode = normalizeBalanceMode(balanceMode);
   const requestedBalanceTreatment = cleanText(balanceTreatment, 40).toLowerCase();
-  const normalizedBalanceTreatment = [BALANCE_TREATMENT_KEEP, BALANCE_TREATMENT_WRITE_OFF].includes(requestedBalanceTreatment)
-    ? requestedBalanceTreatment
-    : (Math.abs(normalizedBalance) <= 0.005 ? BALANCE_TREATMENT_ZERO : '');
-  if (!normalizedBalanceTreatment) {
-    throw createError(400, 'Choose whether to keep or write off the remaining balance.');
-  }
-  const explicitRequestedFinalBalance = normalizeOptionalMoney(requestedFinalBalance);
+  const explicitRequestedFinalBalance = normalizeOptionalMoney(finalClosedCustomerBalance)
+    ?? normalizeOptionalMoney(requestedFinalBalance);
   const normalizedRequestedFinalBalance = explicitRequestedFinalBalance === null
-    ? (normalizedBalanceTreatment === BALANCE_TREATMENT_WRITE_OFF ? 0 : normalizedBalance)
+    ? (requestedBalanceTreatment === BALANCE_TREATMENT_WRITE_OFF ? 0 : normalizedBalance)
     : explicitRequestedFinalBalance;
   if (normalizedRequestedFinalBalance < 0) {
     throw createError(400, 'Enter a valid final balance.');
   }
+  const normalizedBalanceTreatment = normalizedBalanceMode === BALANCE_MODE_SNAPSHOT
+    ? (normalizedRequestedFinalBalance <= 0.005 ? BALANCE_TREATMENT_ZERO : BALANCE_TREATMENT_KEEP)
+    : ([BALANCE_TREATMENT_KEEP, BALANCE_TREATMENT_WRITE_OFF].includes(requestedBalanceTreatment)
+      ? requestedBalanceTreatment
+      : (Math.abs(normalizedBalance) <= 0.005 ? BALANCE_TREATMENT_ZERO : ''));
+  if (!normalizedBalanceTreatment) {
+    throw createError(400, 'Choose whether to keep or write off the remaining balance.');
+  }
+  const normalizedCanonicalBalanceAtClosure = normalizeOptionalMoney(canonicalBalanceAtClosure)
+    ?? normalizedBalance;
 
   return mutateStore(branchId, async (records, branchKey) => {
     const existing = records.find((entry) => (
@@ -274,6 +319,9 @@ const beginCustomerAccountClosure = async ({
       const sanitized = sanitizeRecord(existing);
       if (sanitized?.state === STATE_CLOSED) {
         throw createError(409, 'This customer account is already closed.');
+      }
+      if (sanitized?.balanceMode !== normalizedBalanceMode) {
+        throw createError(409, 'Retry this closure with its original balance tracking mode.');
       }
       if (sanitized?.balanceTreatment !== normalizedBalanceTreatment) {
         throw createError(409, 'Retry this closure with its original balance treatment.');
@@ -294,7 +342,13 @@ const beginCustomerAccountClosure = async ({
       existing.balanceBefore = Math.abs(originalBalance) > 0.005
         ? originalBalance
         : retryBalance;
-      existing.finalBalance = retryBalance;
+      existing.balanceMode = sanitized.balanceMode;
+      existing.canonicalBalanceAtClosure = normalizeOptionalMoney(existing.canonicalBalanceAtClosure)
+        ?? normalizedCanonicalBalanceAtClosure;
+      existing.finalClosedCustomerBalance = resolveFinalClosedCustomerBalance(sanitized);
+      existing.finalBalance = sanitized.balanceMode === BALANCE_MODE_SNAPSHOT
+        ? resolveClosedCustomerBalance(existing, retryBalance)
+        : retryBalance;
       existing.requestedFinalBalance = sanitized?.requestedFinalBalance ?? normalizedRequestedFinalBalance;
       existing.balanceTreatment = normalizedBalanceTreatment;
       existing.state = STATE_CLOSING;
@@ -323,6 +377,9 @@ const beginCustomerAccountClosure = async ({
       state: STATE_CLOSING,
       active: true,
       balanceBefore: normalizedBalance,
+      balanceMode: normalizedBalanceMode,
+      canonicalBalanceAtClosure: normalizedCanonicalBalanceAtClosure,
+      finalClosedCustomerBalance: normalizedRequestedFinalBalance,
       balanceTreatment: normalizedBalanceTreatment,
       writeOffAmount: 0,
       requestedFinalBalance: normalizedRequestedFinalBalance,
@@ -348,8 +405,11 @@ const beginCustomerAccountClosure = async ({
 const completeCustomerAccountClosure = async (closureId, {
   branchId,
   balanceTreatment = '',
+  balanceMode = '',
+  canonicalBalanceAtClosure = null,
   writeOffAmount = 0,
   requestedFinalBalance = null,
+  finalClosedCustomerBalance = null,
   balanceAdjustmentAmount = 0,
   balanceAdjustmentDirection = null,
   finalBalance = 0,
@@ -361,14 +421,27 @@ const completeCustomerAccountClosure = async (closureId, {
   if (!record) throw createError(404, 'Closed-account record not found.');
   const now = new Date().toISOString();
   record.state = STATE_CLOSED;
-  record.balanceTreatment = normalizeBalanceTreatment(balanceTreatment || record.balanceTreatment, {
-    balanceBefore: record.balanceBefore,
-    writeOffAmount
-  });
-  record.writeOffAmount = normalizeMoney(writeOffAmount);
-  record.requestedFinalBalance = normalizeOptionalMoney(requestedFinalBalance) ?? normalizeOptionalMoney(record.requestedFinalBalance);
-  record.balanceAdjustmentAmount = normalizeMoney(balanceAdjustmentAmount);
-  record.balanceAdjustmentDirection = normalizeAdjustmentDirection(balanceAdjustmentDirection);
+  record.balanceMode = balanceMode ? normalizeBalanceMode(balanceMode) : normalizeBalanceMode(record.balanceMode);
+  record.canonicalBalanceAtClosure = normalizeOptionalMoney(canonicalBalanceAtClosure)
+    ?? normalizeOptionalMoney(record.canonicalBalanceAtClosure)
+    ?? normalizeMoney(record.balanceBefore);
+  record.finalClosedCustomerBalance = normalizeOptionalMoney(finalClosedCustomerBalance)
+    ?? normalizeOptionalMoney(requestedFinalBalance)
+    ?? resolveFinalClosedCustomerBalance(record);
+  record.balanceTreatment = record.balanceMode === BALANCE_MODE_SNAPSHOT
+    ? (record.finalClosedCustomerBalance <= 0.005 ? BALANCE_TREATMENT_ZERO : BALANCE_TREATMENT_KEEP)
+    : normalizeBalanceTreatment(balanceTreatment || record.balanceTreatment, {
+      balanceBefore: record.balanceBefore,
+      writeOffAmount
+    });
+  record.writeOffAmount = record.balanceMode === BALANCE_MODE_SNAPSHOT ? 0 : normalizeMoney(writeOffAmount);
+  record.requestedFinalBalance = record.finalClosedCustomerBalance;
+  record.balanceAdjustmentAmount = record.balanceMode === BALANCE_MODE_SNAPSHOT
+    ? 0
+    : normalizeMoney(balanceAdjustmentAmount);
+  record.balanceAdjustmentDirection = record.balanceMode === BALANCE_MODE_SNAPSHOT
+    ? null
+    : normalizeAdjustmentDirection(balanceAdjustmentDirection);
   record.finalBalance = normalizeMoney(finalBalance);
   record.warning = cleanText(warning, 1000);
   record.closedAt = record.closedAt || now;
@@ -425,6 +498,8 @@ module.exports = {
   BALANCE_TREATMENT_ZERO,
   BALANCE_TREATMENT_KEEP,
   BALANCE_TREATMENT_WRITE_OFF,
+  BALANCE_MODE_CANONICAL,
+  BALANCE_MODE_SNAPSHOT,
   REOPEN_ACTION_COLLECT_FIRST,
   REOPEN_ACTION_KEEP,
   REOPEN_ACTION_WRITE_OFF,
@@ -432,6 +507,8 @@ module.exports = {
   getActiveClosedCustomerAccount,
   getClosedCustomerAccountById,
   getActiveClosedAccountNumberSet,
+  resolveFinalClosedCustomerBalance,
+  resolveClosedCustomerBalance,
   beginCustomerAccountClosure,
   completeCustomerAccountClosure,
   failCustomerAccountClosure,

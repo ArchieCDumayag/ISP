@@ -852,15 +852,12 @@
             const stateClass = item?.state === 'failed'
                 ? 'archive-status-pill archive-status-pill--danger'
                 : 'archive-status-pill archive-status-pill--closed';
-            const balanceBefore = readMoney(item?.balanceBefore) ?? 0;
-            const writeOffAmount = readMoney(item?.writeOffAmount) ?? 0;
-            const balanceAdjustmentAmount = readMoney(item?.balanceAdjustmentAmount) ?? 0;
-            const balanceAdjustmentDirection = String(item?.balanceAdjustmentDirection || '').trim().toLowerCase();
             const legacyFinalBalance = readMoney(item?.finalBalance) ?? 0;
             const requestedFinalBalance = readMoney(item?.requestedFinalBalance);
             // Final Balance is the immutable closure audit snapshot. The live
             // remaining balance may change later through retained-debt payments.
-            const closureFinalBalance = readMoney(item?.closureFinalBalance)
+            const closureFinalBalance = readMoney(item?.finalClosedCustomerBalance)
+                ?? readMoney(item?.closureFinalBalance)
                 ?? requestedFinalBalance
                 ?? legacyFinalBalance;
             const liveRemainingBalance = readMoney(item?.remainingBalance);
@@ -871,15 +868,6 @@
             const balanceTreatment = String(item?.balanceTreatment || '').trim().toLowerCase();
             const retryFinalBalance = requestedFinalBalance
                 ?? (balanceTreatment === 'write-off' ? 0 : closureFinalBalance);
-            const auditMeta = [`Previous ${formatBalance(balanceBefore)}`];
-            if (balanceAdjustmentAmount > 0.005 && ['credit', 'debit'].includes(balanceAdjustmentDirection)) {
-                auditMeta.push(`${balanceAdjustmentDirection === 'credit' ? 'Credit' : 'Debit'} adjustment ${formatMoney(balanceAdjustmentAmount)}`);
-            } else if (writeOffAmount > 0.005) {
-                auditMeta.push(`Write-off ${formatMoney(writeOffAmount)}`);
-            } else {
-                auditMeta.push('No balance adjustment');
-            }
-            const balanceMeta = auditMeta.join(' · ');
             const liveBalanceChanged = item?.balanceAvailable === true
                 && Math.abs(remainingBalance - closureFinalBalance) > 0.005;
             let liveBalanceMeta = '';
@@ -889,12 +877,12 @@
                 liveBalanceMeta = remainingBalance < -0.005
                     ? `Current advance credit ${formatMoney(remainingBalance)}`
                     : (balanceTreatment === 'keep' && remainingBalance <= 0.005
-                        ? `Current retained balance ${formatMoney(remainingBalance)} · Retained balance paid in full`
-                        : `Current remaining balance ${formatMoney(remainingBalance)}`);
+                        ? 'Final Closed Balance paid in full'
+                        : `Current closed balance ${formatMoney(remainingBalance)}`);
             } else if (balanceTreatment === 'keep') {
                 liveBalanceMeta = remainingBalance > 0.005
-                    ? 'Outstanding balance retained'
-                    : 'Retained balance paid in full';
+                    ? 'Available for Closed Account Collection'
+                    : 'Final Closed Balance paid in full';
             }
             const retryAction = item?.state === 'failed'
                 ? `
@@ -924,7 +912,6 @@
                     </td>
                     <td>
                         <p class="archive-date">${escapeHtml(formatBalance(closureFinalBalance))}</p>
-                        <p class="archive-time">${escapeHtml(balanceMeta)}</p>
                         ${liveBalanceMeta ? `<p class="archive-time">${escapeHtml(liveBalanceMeta)}</p>` : ''}
                     </td>
                     <td class="actions-col">
@@ -1116,7 +1103,7 @@
     };
 
     const confirmRetryClose = async (customerName) => {
-        const message = `Retry closing ${customerName}? This continues the same closure audit. Any completed balance adjustment is locked and cannot be duplicated.`;
+        const message = `Retry closing ${customerName}? This continues the same closure audit and preserves the original Final Closed Balance.`;
         if (!window.appConfirm) return window.confirm(message);
         const result = await window.appConfirm(message, { title: 'Retry Account Closure', okText: 'Retry Close' });
         return result && typeof result === 'object'
@@ -1135,8 +1122,7 @@
                 body: JSON.stringify({
                     closureDate,
                     reason,
-                    finalBalance,
-                    balanceAdjustmentConfirmed: true
+                    finalBalance
                 })
             });
             notify(`${customerName} is closed. Billing stopped and all history was preserved.`, 'success');

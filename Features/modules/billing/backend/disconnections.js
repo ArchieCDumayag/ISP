@@ -38,9 +38,12 @@ const {
   STATUS_DISCONNECTED,
   BILLING_POLICY_STOP,
   BILLING_POLICY_CONTINUE,
+  CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT,
   normalizeBillingPolicy,
   readBranchDisconnections,
   getAccountDisconnection,
+  requiresReconnectionSettlementBeforeActivation,
+  resolveDisconnectedPreviousBalance,
   upsertBranchDisconnection
 } = require('./disconnection-store');
 const { accountHasRole } = require('../../../../core/security/role-utils');
@@ -82,6 +85,15 @@ const assertClosedAccountLifecycleInactive = async (branchId, accountNumber) => 
     'This customer account is closed. Reopen it from Customer Archive before changing billing or service status.'
   );
   error.code = 'DISCONNECTION_ACCOUNT_CLOSED';
+  throw error;
+};
+const assertFinalClosedBalanceSettlementNotBypassed = (decision = null) => {
+  if (!requiresReconnectionSettlementBeforeActivation(decision)) return;
+  const error = createError(
+    409,
+    'This account has a Final Closed Customer Balance. Use Reconnect and confirm its Billing settlement before restoring service.'
+  );
+  error.code = 'DISCONNECTION_FINAL_CLOSED_BALANCE_SETTLEMENT_REQUIRED';
   throw error;
 };
 const branchAdjustmentKey = (branchId = null) => String(branchId || 'global');
@@ -807,12 +819,14 @@ router.post('/:accountNumber/keep-active', async (req, res, next) => {
     const branchId = user.branchId || null;
     const accountNumber = normalizeAccountNumber(req.params.accountNumber);
     await assertClosedAccountLifecycleInactive(branchId, accountNumber);
-    const [customers, payments, adjustments, referralRegistry] = await Promise.all([
+    const [customers, payments, adjustments, referralRegistry, decisions] = await Promise.all([
       readCustomers(branchId),
       readPayments(branchId),
       readPaymentBreakdownAdjustments(),
-      readReferralRegistry(branchId)
+      readReferralRegistry(branchId),
+      readBranchDisconnections(branchId)
     ]);
+    assertFinalClosedBalanceSettlementNotBypassed(getAccountDisconnection(decisions, accountNumber));
     const customer = findCustomerOrThrow(customers, accountNumber);
     const referralDiscountsByAccount = buildReferralDiscountMap(
       buildReferralLedger({ customers, payments, registry: referralRegistry, now: new Date() })
@@ -917,7 +931,10 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
 
     // Accounts whose billing continued have no stopped months to settle. Preserve
     // the existing cycle and use the legacy immediate service reconnection path.
-    if (currentDecision.billingPolicy === BILLING_POLICY_CONTINUE) {
+    if (
+      currentDecision.billingPolicy === BILLING_POLICY_CONTINUE
+      && !requiresReconnectionSettlementBeforeActivation(currentDecision)
+    ) {
       const pppoeResult = await enableCustomerPppoe(customer, branchId);
       const nextCustomer = await saveCustomerStatus(customer, branchId, STATUS_ACTIVE);
       const now = new Date().toISOString();
@@ -929,6 +946,10 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
         reconnectedAt: now,
         decidedAt: now,
         notes: sanitizeText(req.body?.reason || req.body?.notes),
+        closedAccountBalanceMode: null,
+        closedAccountCanonicalBalanceAtClosure: null,
+        finalClosedCustomerBalance: null,
+        closedAccountClosureId: null,
         pppoeWarning: sanitizeText(pppoeResult.warning),
         decidedBy: actorFromUser(user)
       });
@@ -978,7 +999,9 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
       branchId,
       referralDiscountsByAccount
     });
-    if (balanceTreatment === 'installment' && snapshot.balance <= 0.005) {
+    const previousBalance = resolveDisconnectedPreviousBalance(currentDecision, snapshot.balance);
+    const previousBalanceIsAuthoritative = currentDecision.closedAccountBalanceMode === CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT;
+    if (balanceTreatment === 'installment' && previousBalance <= 0.005) {
       throw createError(409, 'There is no previous balance to convert into installments.');
     }
     if (chargePolicy !== 'next-cycle' && hasGeneratedCycleForMonth(snapshot.billingRows, effectiveDate.slice(0, 7))) {
@@ -1002,7 +1025,8 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
       planId: customer.planId,
       planName: customer.planName,
       planAmount,
-      previousBalance: snapshot.balance,
+      previousBalance,
+      previousBalanceIsAuthoritative,
       balanceTreatment,
       installmentMonths,
       chargePolicy,
@@ -1042,7 +1066,11 @@ router.post('/:accountNumber/reconnect', async (req, res, next) => {
       reconnectedAt: activateImmediately ? now : null,
       decidedAt: now,
       notes: reason,
-      balanceSnapshot: snapshot.balance,
+      balanceSnapshot: previousBalance,
+      closedAccountBalanceMode: null,
+      closedAccountCanonicalBalanceAtClosure: null,
+      finalClosedCustomerBalance: null,
+      closedAccountClosureId: null,
       reconnectionHistory,
       pppoeWarning: sanitizeText(pppoeResult.warning),
       decidedBy: actor
@@ -1075,8 +1103,14 @@ router.patch('/:accountNumber/billing-policy', async (req, res, next) => {
     if (![BILLING_POLICY_STOP, BILLING_POLICY_CONTINUE].includes(billingPolicy)) {
       throw createError(400, 'Choose a valid billing policy.');
     }
-    const customers = await readCustomers(branchId);
+    const [customers, decisions] = await Promise.all([
+      readCustomers(branchId),
+      readBranchDisconnections(branchId)
+    ]);
     findCustomerOrThrow(customers, accountNumber);
+    if (billingPolicy === BILLING_POLICY_CONTINUE) {
+      assertFinalClosedBalanceSettlementNotBypassed(getAccountDisconnection(decisions, accountNumber));
+    }
     const now = new Date().toISOString();
     const decision = await upsertBranchDisconnection(branchId, accountNumber, {
       status: STATUS_DISCONNECTED,

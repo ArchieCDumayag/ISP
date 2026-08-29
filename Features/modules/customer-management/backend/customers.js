@@ -66,6 +66,10 @@ const {
     getActiveClosedCustomerAccount,
     getClosedCustomerAccountById,
     getActiveClosedAccountNumberSet,
+    BALANCE_MODE_CANONICAL,
+    BALANCE_MODE_SNAPSHOT,
+    resolveFinalClosedCustomerBalance,
+    resolveClosedCustomerBalance,
     beginCustomerAccountClosure,
     completeCustomerAccountClosure,
     failCustomerAccountClosure,
@@ -74,6 +78,9 @@ const {
 const {
     STATUS_DISCONNECTED,
     BILLING_POLICY_STOP,
+    readBranchDisconnections,
+    getAccountDisconnection,
+    requiresReconnectionSettlementBeforeActivation,
     upsertBranchDisconnection
 } = require('../../billing/backend/disconnection-store');
 const {
@@ -3734,7 +3741,10 @@ const importClientListRecordsUnlocked = async ({ records = [], branchId, importe
         }
     };
     let skipped = 0;
-    const activeClosedAccounts = await getActiveClosedAccountNumberSet(scopedBranchId);
+    const [activeClosedAccounts, disconnectionDecisions] = await Promise.all([
+        getActiveClosedAccountNumberSet(scopedBranchId),
+        readBranchDisconnections(scopedBranchId)
+    ]);
     const validRecords = sourceRecords.filter((record) => {
         if (!record?.accountNumber) {
             const message = `Row ${record?.rowNumber || '?'} skipped: account number is missing.`;
@@ -3754,6 +3764,21 @@ const importClientListRecordsUnlocked = async ({ records = [], branchId, importe
                 code: 'closed_account_protected',
                 message,
                 fields: ['accountNumber']
+            });
+            skipped += 1;
+            return false;
+        }
+        const disconnectionDecision = getAccountDisconnection(
+            disconnectionDecisions,
+            record.accountNumber
+        );
+        if (requiresReconnectionSettlementBeforeActivation(disconnectionDecision)) {
+            const message = `Row ${record.rowNumber}: skipped ${record.accountNumber} because its Billing reconnection settlement is incomplete.`;
+            pushWarning(message);
+            addWarningDetail(record, {
+                code: 'reconnection_settlement_required',
+                message,
+                fields: ['accountNumber', 'status']
             });
             skipped += 1;
             return false;
@@ -6437,6 +6462,18 @@ const updateCustomerRecordUnlocked = async (
     const desiredStatus = requestedStatus === STATUS_DISABLED
         ? STATUS_DISABLED
         : (serviceReady ? requestedStatus : STATUS_INACTIVE);
+    if (desiredStatus !== STATUS_DISABLED) {
+        const disconnections = await readBranchDisconnections(scopedBranchId);
+        const decision = getAccountDisconnection(disconnections, targetAccountNumber);
+        if (requiresReconnectionSettlementBeforeActivation(decision)) {
+            const error = createError(
+                409,
+                'This account has a Final Closed Customer Balance or pending reconnection. Complete the Billing reconnection settlement before activating the customer.'
+            );
+            error.code = 'CUSTOMER_RECONNECTION_SETTLEMENT_REQUIRED';
+            throw error;
+        }
+    }
     const nextStatusState = resolveCustomerStatusState(
         desiredStatus,
         STATUS_MODE_AUTO,
@@ -7121,15 +7158,7 @@ router.get('/closed-accounts', async (req, res, next) => {
         });
         const closureBilling = require('../../billing/backend/account-closure-service');
         const items = await Promise.all((result.items || []).map(async (record) => {
-            const rawRequestedFinalBalance = record?.requestedFinalBalance;
-            const hasRequestedFinalBalance = rawRequestedFinalBalance !== null
-                && rawRequestedFinalBalance !== undefined
-                && rawRequestedFinalBalance !== '';
-            const requestedFinalBalance = Number(rawRequestedFinalBalance);
-            const legacyFinalBalance = Number(record?.finalBalance);
-            const closureFinalBalance = hasRequestedFinalBalance && Number.isFinite(requestedFinalBalance)
-                ? Number(requestedFinalBalance.toFixed(2))
-                : (Number.isFinite(legacyFinalBalance) ? Number(legacyFinalBalance.toFixed(2)) : 0);
+            const closureFinalBalance = resolveFinalClosedCustomerBalance(record);
             try {
                 const { balance } = await closureBilling.getCanonicalAccountClosureBalance(
                     record.accountNumber,
@@ -7138,7 +7167,7 @@ router.get('/closed-accounts', async (req, res, next) => {
                 return {
                     ...record,
                     closureFinalBalance,
-                    remainingBalance: Number(Number(balance || 0).toFixed(2)),
+                    remainingBalance: resolveClosedCustomerBalance(record, balance),
                     balanceAvailable: true
                 };
             } catch (error) {
@@ -7177,7 +7206,10 @@ router.post('/closed-accounts/:closureId/reopen', (req, res, next) => (
             closure.accountNumber,
             branchId
         );
-        const remainingBalance = Number(Number(canonicalBalance || 0).toFixed(2));
+        const remainingBalance = resolveClosedCustomerBalance(closure, canonicalBalance);
+        if (!Number.isFinite(remainingBalance)) {
+            throw createError(409, 'The final closed customer balance is unavailable. Reload the account before reopening it.');
+        }
         const reason = sanitizeString(req.body?.reason).slice(0, 500) || 'Account closed by Admin.';
         if (reason.length < 3) throw createError(400, 'Enter a reason for reopening this account.');
         const balanceAction = sanitizeString(req.body?.balanceAction).toLowerCase();
@@ -7331,12 +7363,20 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
         const targetFinalBalance = savedRequestedFinalBalance
             ?? normalizedRequestedFinalBalance
             ?? legacyTargetFinalBalance;
-        const adjustmentRequired = Math.abs(targetFinalBalance - balanceBefore) > closureBilling.BALANCE_EPSILON;
-        const adjustmentConfirmed = body.balanceAdjustmentConfirmed === true
-            || (targetFinalBalance <= closureBilling.BALANCE_EPSILON && body.writeOffConfirmed === true);
-        const derivedBalanceTreatment = targetFinalBalance <= closureBilling.BALANCE_EPSILON
-            ? (balanceBefore > closureBilling.BALANCE_EPSILON ? 'write-off' : 'zero')
-            : 'keep';
+        // Records created before snapshot accounting keep their deterministic
+        // legacy ledger adjustment on retry. Every new closure stores the
+        // entered amount as its own closed-account balance and does not write a
+        // Billing adjustment.
+        const balanceMode = existingClosure?.balanceMode === BALANCE_MODE_SNAPSHOT
+            ? BALANCE_MODE_SNAPSHOT
+            : (existingClosure ? BALANCE_MODE_CANONICAL : BALANCE_MODE_SNAPSHOT);
+        const adjustmentRequired = balanceMode === BALANCE_MODE_CANONICAL
+            && Math.abs(targetFinalBalance - balanceBefore) > closureBilling.BALANCE_EPSILON;
+        const derivedBalanceTreatment = balanceMode === BALANCE_MODE_SNAPSHOT
+            ? (targetFinalBalance <= closureBilling.BALANCE_EPSILON ? 'zero' : 'keep')
+            : (targetFinalBalance <= closureBilling.BALANCE_EPSILON
+                ? (balanceBefore > closureBilling.BALANCE_EPSILON ? 'write-off' : 'zero')
+                : 'keep');
         const savedBalanceTreatment = ['zero', 'keep', 'write-off'].includes(existingClosure?.balanceTreatment)
             ? existingClosure.balanceTreatment
             : '';
@@ -7362,16 +7402,6 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
                 error: `This account has an advance balance of ₱${Math.abs(balanceBefore).toFixed(2)}. Resolve or refund it before closing the account.`
             });
         }
-        if (adjustmentRequired && !adjustmentConfirmed) {
-            return res.status(409).json({
-                ok: false,
-                code: 'ACCOUNT_CLOSURE_BALANCE_ADJUSTMENT_CONFIRMATION_REQUIRED',
-                balance: balanceBefore,
-                finalBalance: targetFinalBalance,
-                error: `Confirm the audited PHP ${Math.abs(targetFinalBalance - balanceBefore).toFixed(2)} balance adjustment before closing this account.`
-            });
-        }
-
         closureStage = 'closure-audit';
         closure = await beginCustomerAccountClosure({
             branchId,
@@ -7379,13 +7409,19 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
             closureDate,
             reason,
             balanceBefore,
+            balanceMode,
+            canonicalBalanceAtClosure: existingClosure?.canonicalBalanceAtClosure ?? balanceBefore,
             balanceTreatment,
             requestedFinalBalance: targetFinalBalance,
+            finalClosedCustomerBalance: targetFinalBalance,
             closedBy: user
         });
 
         let adjustment = { amount: 0, inserted: false, idempotent: false };
-        if (adjustmentRequired || existingClosure?.state === 'failed') {
+        if (
+            closure.balanceMode === BALANCE_MODE_CANONICAL
+            && (adjustmentRequired || ['failed', 'closing'].includes(existingClosure?.state))
+        ) {
             closureStage = 'billing-balance-adjustment';
             adjustment = await closureBilling.recordAccountClosureBalanceAdjustment({
                 branchId,
@@ -7395,19 +7431,26 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
                 reason,
                 actor: user,
                 targetFinalBalance,
-                confirmed: adjustmentConfirmed
+                confirmed: true
             });
         } else {
-            closureStage = 'billing-balance-retained';
+            closureStage = closure.balanceMode === BALANCE_MODE_SNAPSHOT
+                ? 'closed-balance-snapshot'
+                : 'billing-balance-retained';
         }
         closureStage = 'final-balance-check';
         const canonicalAfter = await closureBilling.getCanonicalAccountClosureBalance(accountNumber, branchId);
-        const finalBalance = Number(canonicalAfter.balance) || 0;
-        if (finalBalance < -closureBilling.BALANCE_EPSILON) {
-            throw createError(409, `The account now has an advance balance of PHP ${Math.abs(finalBalance).toFixed(2)}. Resolve or refund it before closing this account.`);
+        const canonicalBalanceAfter = Number(canonicalAfter.balance) || 0;
+        if (canonicalBalanceAfter < -closureBilling.BALANCE_EPSILON) {
+            throw createError(409, `The account now has an advance balance of PHP ${Math.abs(canonicalBalanceAfter).toFixed(2)}. Resolve or refund it before closing this account.`);
         }
-        if (Math.abs(finalBalance - targetFinalBalance) > closureBilling.BALANCE_EPSILON) {
-            throw createError(409, `The final balance is PHP ${finalBalance.toFixed(2)}, not the finalized PHP ${targetFinalBalance.toFixed(2)}. Reload billing data and retry.`);
+        const expectedCanonicalBalance = closure.balanceMode === BALANCE_MODE_SNAPSHOT
+            ? balanceBefore
+            : targetFinalBalance;
+        if (Math.abs(canonicalBalanceAfter - expectedCanonicalBalance) > closureBilling.BALANCE_EPSILON) {
+            throw createError(409, closure.balanceMode === BALANCE_MODE_SNAPSHOT
+                ? `Billing changed from PHP ${balanceBefore.toFixed(2)} to PHP ${canonicalBalanceAfter.toFixed(2)} during closure. Reload billing data and retry.`
+                : `The final balance is PHP ${canonicalBalanceAfter.toFixed(2)}, not the finalized PHP ${targetFinalBalance.toFixed(2)}. Reload billing data and retry.`);
         }
 
         closureStage = 'network-disable';
@@ -7422,6 +7465,7 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
         });
         const now = new Date().toISOString();
         closureStage = 'billing-stop';
+        const closedBalanceBeforeStop = resolveClosedCustomerBalance(closure, canonicalBalanceAfter);
         await upsertBranchDisconnection(branchId, accountNumber, {
             status: STATUS_DISCONNECTED,
             billingPolicy: BILLING_POLICY_STOP,
@@ -7431,9 +7475,13 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
             reconnectedAt: null,
             decidedAt: now,
             notes: `Account closed: ${reason}`,
-            balanceSnapshot: Number(closure?.balanceBefore) || balanceBefore,
+            balanceSnapshot: closedBalanceBeforeStop,
+            closedAccountBalanceMode: closure.balanceMode,
+            closedAccountCanonicalBalanceAtClosure: closure.canonicalBalanceAtClosure,
+            finalClosedCustomerBalance: resolveFinalClosedCustomerBalance(closure),
+            closedAccountClosureId: closure.id,
             creditLimitSnapshot: Number(customer?.creditLimit) || null,
-            overAmountSnapshot: Math.max(0, Number(closure?.balanceBefore) || balanceBefore),
+            overAmountSnapshot: Math.max(0, Number(closedBalanceBeforeStop) || 0),
             pppoeWarning: sanitizeString(pppoeWarning),
             decidedBy: {
                 id: user.id || null,
@@ -7443,8 +7491,12 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
         });
         closureStage = 'post-stop-balance-check';
         const canonicalStopped = await closureBilling.getCanonicalAccountClosureBalance(accountNumber, branchId);
-        const stoppedBalance = Number(canonicalStopped.balance) || 0;
-        const stoppedBalanceChanged = Math.abs(stoppedBalance - targetFinalBalance) > closureBilling.BALANCE_EPSILON;
+        const stoppedCanonicalBalance = Number(canonicalStopped.balance) || 0;
+        const stoppedBalance = resolveClosedCustomerBalance(closure, stoppedCanonicalBalance);
+        const expectedStoppedCanonicalBalance = closure.balanceMode === BALANCE_MODE_SNAPSHOT
+            ? canonicalBalanceAfter
+            : targetFinalBalance;
+        const stoppedBalanceChanged = Math.abs(stoppedCanonicalBalance - expectedStoppedCanonicalBalance) > closureBilling.BALANCE_EPSILON;
         if (stoppedBalanceChanged) {
             throw createError(409, `Stopping future billing left a final balance of ₱${stoppedBalance.toFixed(2)}. Retry after the billing data is refreshed.`);
         }
@@ -7462,10 +7514,13 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
         const completed = await completeCustomerAccountClosure(closure.id, {
             branchId,
             balanceTreatment,
+            balanceMode: closure.balanceMode,
+            canonicalBalanceAtClosure: closure.canonicalBalanceAtClosure,
             writeOffAmount: balanceTreatment === 'write-off' && adjustment.direction === 'credit'
                 ? adjustment.amount
                 : 0,
             requestedFinalBalance: targetFinalBalance,
+            finalClosedCustomerBalance: targetFinalBalance,
             balanceAdjustmentAmount: adjustment.amount,
             balanceAdjustmentDirection: adjustment.direction,
             finalBalance: stoppedBalance,
@@ -7479,9 +7534,12 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
             billingStatus: BILLING_POLICY_STOP,
             collectorExcluded: true,
             balanceTreatment,
+            balanceMode: completed.balanceMode,
             requestedFinalBalance: targetFinalBalance,
-            balanceAdjustmentAmount: adjustment.amount,
-            balanceAdjustmentDirection: adjustment.direction,
+            closureFinalBalance: completed.finalClosedCustomerBalance,
+            finalClosedCustomerBalance: completed.finalClosedCustomerBalance,
+            balanceAdjustmentAmount: completed.balanceAdjustmentAmount,
+            balanceAdjustmentDirection: completed.balanceAdjustmentDirection,
             remainingBalance: stoppedBalance,
             warning: warnings.join(' ') || undefined
         });
@@ -7491,6 +7549,7 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
                 'closure-audit': 'closure audit',
                 'billing-balance-adjustment': 'Billing final-balance adjustment',
                 'billing-balance-retained': 'remaining-balance preservation',
+                'closed-balance-snapshot': 'Final Closed Balance preservation',
                 'final-balance-check': 'final balance verification',
                 'network-disable': 'network service disable',
                 'customer-disable': 'customer status update',
@@ -7511,7 +7570,9 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
                 const current = closureBilling && accountNumber
                     ? await closureBilling.getCanonicalAccountClosureBalance(accountNumber, branchId)
                     : null;
-                if (Number.isFinite(Number(current?.balance))) currentBalance = Number(current.balance);
+                if (Number.isFinite(Number(current?.balance))) {
+                    currentBalance = resolveClosedCustomerBalance(closure, current.balance);
+                }
             } catch {
                 currentBalance = null;
             }
@@ -7520,7 +7581,7 @@ router.post('/:accountNumber/close-account', (req, res, next) => (
             const responseStatus = sourceStatus >= 400 && sourceStatus < 500 ? sourceStatus : 500;
             const responseMessage = responseStatus < 500 && failureMessage
                 ? failureMessage
-                : `Account closure paused during ${stageLabel}. Any completed balance adjustment is locked to this closure and will not be duplicated. Retry Close Account.`;
+                : `Account closure paused during ${stageLabel}. The original Final Closed Balance is preserved for a safe retry. Retry Close Account.`;
             return res.status(responseStatus).json({
                 ok: false,
                 code: 'ACCOUNT_CLOSURE_RETRYABLE_FAILURE',

@@ -57,19 +57,35 @@ const { serializePaymentMutationRequest } = require('../../billing/backend/payme
 const {
     getActiveClosedCustomerAccount
 } = require('../../customer-management/backend/closed-customer-account-store');
+const {
+    readBranchDisconnections,
+    getAccountDisconnection,
+    requiresReconnectionSettlementBeforeActivation
+} = require('../../billing/backend/disconnection-store');
 
 const router = express.Router();
 const TECHNICIAN_COVERAGE_RADIUS_METERS = 600;
 
 const assertTechnicianPppoeAccountOpen = async (branchId, accountNumber) => {
     const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
-    if (!activeClosure) return;
-    const error = createError(
-        409,
-        'This customer account is closed. Reopen it from Customer Archive before generating PPPoE service.'
-    );
-    error.code = 'TECHNICIAN_PPPOE_ACCOUNT_CLOSED';
-    throw error;
+    if (activeClosure) {
+        const error = createError(
+            409,
+            'This customer account is closed. Reopen it from Customer Archive before generating PPPoE service.'
+        );
+        error.code = 'TECHNICIAN_PPPOE_ACCOUNT_CLOSED';
+        throw error;
+    }
+    const decisions = await readBranchDisconnections(branchId);
+    const decision = getAccountDisconnection(decisions, accountNumber);
+    if (requiresReconnectionSettlementBeforeActivation(decision)) {
+        const error = createError(
+            409,
+            'Complete the Final Closed Customer Balance reconnection settlement before generating PPPoE service.'
+        );
+        error.code = 'TECHNICIAN_PPPOE_RECONNECTION_SETTLEMENT_REQUIRED';
+        throw error;
+    }
 };
 
 const toSafeText = (value, maxLen = 0) => {

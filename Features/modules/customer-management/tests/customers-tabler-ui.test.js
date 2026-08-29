@@ -53,7 +53,10 @@ assert.match(customersPage, /id="closeAccountModal" class="[^"]*\baccount-closur
 assert.match(customersPage, /class="[^"]*\bclose-customer-account\b[^"]*"/);
 assert.match(customersPage, /\/api\/customers\/\$\{encodeURIComponent\(accountNumber\)\}\/close-account/);
 assert.match(customersPage, /id="closeAccountFinalBalance"/);
-assert.match(customersPage, /balanceAdjustmentConfirmed:\s*closeAccountAdjustmentConfirmed/);
+assert.match(customersPage, /id="closeAccountFinalBalanceHint"/);
+assert.match(customersPage, /Final Closed Customer Balance\. Billing history is not changed\./);
+assert.doesNotMatch(customersPage, /closeAccountAdjustmentConfirmed|balanceAdjustmentConfirmed/);
+assert.doesNotMatch(customersPage, /Confirm the audited|non-cash ledger entry/);
 assert.doesNotMatch(customersPage, /id="closeAccountReason"[^>]*required/);
 assert.match(customersPage, /No customer records will be deleted\./);
 assert.match(customersPage, /const customerCoordinates = parseCoordinateValue\(customer\?\.mapPin\);/);

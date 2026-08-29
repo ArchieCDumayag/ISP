@@ -10,9 +10,26 @@ const STATUS_KEPT_ACTIVE = 'kept-active';
 const STATUS_DISCONNECTED = 'disconnected';
 const BILLING_POLICY_STOP = 'stop';
 const BILLING_POLICY_CONTINUE = 'continue';
+const CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT = 'snapshot';
 
 const normalizeAccountNumber = (value) => String(value || '').trim();
 const branchStoreKey = (branchId = null) => String(branchId || 'global');
+const normalizeOptionalAmount = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Number(amount.toFixed(2)) : null;
+};
+
+const resolveDisconnectedPreviousBalance = (record = {}, canonicalBalance = 0) => {
+  const canonical = normalizeOptionalAmount(canonicalBalance) ?? 0;
+  if (String(record?.closedAccountBalanceMode || '').trim().toLowerCase() !== CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT) {
+    return canonical;
+  }
+  const baseline = normalizeOptionalAmount(record.closedAccountCanonicalBalanceAtClosure);
+  const finalClosedBalance = normalizeOptionalAmount(record.finalClosedCustomerBalance);
+  if (baseline === null || finalClosedBalance === null) return canonical;
+  return Number((finalClosedBalance + canonical - baseline).toFixed(2));
+};
 
 const normalizeDisconnectionStatus = (value, fallback = STATUS_PENDING) => {
   const raw = String(value || '').trim().toLowerCase();
@@ -51,6 +68,12 @@ const sanitizeDecisionRecord = (record = {}) => {
     updatedAt: record.updatedAt || record.decidedAt || record.disconnectedAt || null,
     notes: String(record.notes || '').trim(),
     balanceSnapshot: Number.isFinite(Number(record.balanceSnapshot)) ? Number(record.balanceSnapshot) : null,
+    closedAccountBalanceMode: String(record.closedAccountBalanceMode || '').trim().toLowerCase() === CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT
+      ? CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT
+      : null,
+    closedAccountCanonicalBalanceAtClosure: normalizeOptionalAmount(record.closedAccountCanonicalBalanceAtClosure),
+    finalClosedCustomerBalance: normalizeOptionalAmount(record.finalClosedCustomerBalance),
+    closedAccountClosureId: String(record.closedAccountClosureId || '').trim() || null,
     creditLimitSnapshot: Number.isFinite(Number(record.creditLimitSnapshot)) ? Number(record.creditLimitSnapshot) : null,
     overAmountSnapshot: Number.isFinite(Number(record.overAmountSnapshot)) ? Number(record.overAmountSnapshot) : null,
     pppoeWarning: String(record.pppoeWarning || '').trim(),
@@ -132,12 +155,22 @@ const shouldContinueBillingAfterDisconnection = (record = null) => {
   return Boolean(sanitized && sanitized.status === STATUS_DISCONNECTED && sanitized.billingPolicy === BILLING_POLICY_CONTINUE);
 };
 
+const requiresReconnectionSettlementBeforeActivation = (record = null) => {
+  const sanitized = record ? sanitizeDecisionRecord(record) : null;
+  if (!sanitized) return false;
+  return sanitized.closedAccountBalanceMode === CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT
+    || Boolean(sanitized.closedAccountClosureId)
+    || sanitized.reconnection?.status === 'pending-payment'
+    || sanitized.reconnection?.pendingPayment === true;
+};
+
 module.exports = {
   STATUS_PENDING,
   STATUS_KEPT_ACTIVE,
   STATUS_DISCONNECTED,
   BILLING_POLICY_STOP,
   BILLING_POLICY_CONTINUE,
+  CLOSED_ACCOUNT_BALANCE_MODE_SNAPSHOT,
   normalizeDisconnectionStatus,
   normalizeBillingPolicy,
   sanitizeDecisionRecord,
@@ -145,6 +178,8 @@ module.exports = {
   writeDisconnectionStore,
   readBranchDisconnections,
   getAccountDisconnection,
+  resolveDisconnectedPreviousBalance,
+  requiresReconnectionSettlementBeforeActivation,
   upsertBranchDisconnection,
   shouldStopBillingAfterDisconnection,
   shouldContinueBillingAfterDisconnection

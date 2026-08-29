@@ -1369,6 +1369,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return disconnection;
     };
 
+    const getReconnectionPreviousBalance = (record = {}) => {
+        const canonical = Number(record?.billingSummary?.endingBalance ?? record?.endingBalance);
+        const safeCanonical = Number.isFinite(canonical) ? canonical : 0;
+        const disconnection = record?.disconnection || {};
+        if (String(disconnection?.closedAccountBalanceMode || '').trim().toLowerCase() !== 'snapshot') {
+            return roundMoney(safeCanonical);
+        }
+        const baselineRaw = disconnection?.closedAccountCanonicalBalanceAtClosure;
+        const finalClosedBalanceRaw = disconnection?.finalClosedCustomerBalance;
+        const baseline = baselineRaw === null || baselineRaw === undefined || baselineRaw === ''
+            ? null
+            : Number(baselineRaw);
+        const finalClosedBalance = finalClosedBalanceRaw === null
+            || finalClosedBalanceRaw === undefined
+            || finalClosedBalanceRaw === ''
+            ? null
+            : Number(finalClosedBalanceRaw);
+        if (baseline === null || finalClosedBalance === null
+            || !Number.isFinite(baseline) || !Number.isFinite(finalClosedBalance)) {
+            return roundMoney(safeCanonical);
+        }
+        return roundMoney(finalClosedBalance + safeCanonical - baseline);
+    };
+
     const getMonthlyReferralAdjustment = (context = {}, billDate = null, isFirstRow = false) => {
         if (isFirstRow || !billDate) return null;
         const monthKey = getBillingMonthKey(billDate);
@@ -2630,10 +2654,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderReconnectForm = ({ resetRequiredPayment = false } = {}) => {
         if (!reconnectForm.form) return;
         const today = getCurrentBillingDateKey();
-        const balance = Math.max(0, Number(state.record?.billingSummary?.endingBalance ?? state.record?.endingBalance) || 0);
+        const signedBalance = getReconnectionPreviousBalance(state.record);
+        const balance = Math.max(0, signedBalance);
+        const advanceCredit = Math.max(0, -signedBalance);
         const planAmount = Math.max(0, Number(state.record?.planAmount) || 0);
         const planType = normalizePlanTypeValue(state.record?.planCategory || state.record?.planType) || 'postpaid';
-        const balanceTreatment = reconnectForm.balanceTreatment?.value || 'keep';
+        let balanceTreatment = reconnectForm.balanceTreatment?.value || 'keep';
+        const debtTreatmentUnavailable = balance <= EPSILON;
+        Array.from(reconnectForm.balanceTreatment?.options || []).forEach((option) => {
+            if (['write-off', 'installment'].includes(option.value)) {
+                option.disabled = debtTreatmentUnavailable;
+            }
+        });
+        if (debtTreatmentUnavailable && balanceTreatment !== 'keep') {
+            balanceTreatment = 'keep';
+            reconnectForm.balanceTreatment.value = balanceTreatment;
+        }
         const installmentMonths = Math.max(2, Math.min(24, Math.trunc(Number(reconnectForm.installmentMonths?.value) || 3)));
         const currentCycleExists = hasGeneratedReconnectionMonth();
         const immediateChargeOptions = Array.from(reconnectForm.chargePolicy?.options || [])
@@ -2655,9 +2691,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ? roundMoney(Math.ceil((balance * 100) / installmentMonths) / 100)
             : 0;
         const suggestedRequiredPayment = roundMoney(
-            reconnectionCharge
-                + (balanceTreatment === 'keep' ? balance : 0)
-                + (balanceTreatment === 'installment' ? firstInstallment : 0)
+            Math.max(
+                0,
+                reconnectionCharge
+                    + (balanceTreatment === 'keep' ? signedBalance : 0)
+                    + (balanceTreatment === 'installment' ? firstInstallment : 0)
+            )
         );
         const nextCycleDate = getReconnectionNextCycleDate(today, planType, chargePolicy);
 
@@ -2673,7 +2712,9 @@ document.addEventListener('DOMContentLoaded', () => {
             reconnectForm.requiredPayment.value = suggestedRequiredPayment > EPSILON ? suggestedRequiredPayment.toFixed(2) : '';
         }
         if (reconnectForm.summary) {
-            reconnectForm.summary.textContent = `Previous disconnected balance: ${formatCurrency(balance)}. Existing bills and payments remain unchanged.`;
+            reconnectForm.summary.textContent = advanceCredit > EPSILON
+                ? `Final closed balance: ${formatCurrency(advanceCredit)} advance credit. Existing bills and payments remain unchanged.`
+                : `Final closed balance: ${formatCurrency(balance)} due. Existing bills and payments remain unchanged.`;
         }
         if (reconnectForm.chargeHint) {
             reconnectForm.chargeHint.textContent = currentCycleExists
@@ -2681,7 +2722,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `${planType === 'prepaid' ? 'Prepaid' : 'Postpaid'} proration covers today through month-end; full month charges the complete plan amount.`;
         }
         if (reconnectForm.preview) {
-            const balanceText = balanceTreatment === 'write-off'
+            const balanceText = advanceCredit > EPSILON
+                ? `${formatCurrency(advanceCredit)} advance credit will reduce the new reconnection charge.`
+                : balanceTreatment === 'write-off'
                 ? `${formatCurrency(balance)} will be written off.`
                 : (balanceTreatment === 'installment'
                     ? `${formatCurrency(balance)} will be deferred into ${installmentMonths} installments; first installment is ${formatCurrency(firstInstallment)}.`

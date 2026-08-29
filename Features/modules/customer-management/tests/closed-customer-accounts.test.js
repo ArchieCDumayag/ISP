@@ -207,6 +207,53 @@ async function run() {
   assert.equal(finalizedListed?.requestedFinalBalance, 500, 'the Admin-finalized closure snapshot must remain durable');
   assert.equal(finalizedListed?.finalBalance, 500);
 
+  const snapshotStart = await closedAccounts.beginCustomerAccountClosure({
+    branchId: 1,
+    customer: { accountNumber: '100000019', name: 'Snapshot Balance Subscriber' },
+    closureDate: '2026-08-29',
+    reason: 'Final closed balance set by Admin',
+    balanceBefore: 2400,
+    balanceMode: closedAccounts.BALANCE_MODE_SNAPSHOT,
+    canonicalBalanceAtClosure: 2400,
+    requestedFinalBalance: 2398,
+    finalClosedCustomerBalance: 2398,
+    closedBy: ADMIN
+  });
+  const snapshotClosed = await closedAccounts.completeCustomerAccountClosure(snapshotStart.id, {
+    branchId: 1,
+    balanceMode: closedAccounts.BALANCE_MODE_SNAPSHOT,
+    canonicalBalanceAtClosure: 2400,
+    requestedFinalBalance: 2398,
+    finalClosedCustomerBalance: 2398,
+    balanceAdjustmentAmount: 2,
+    balanceAdjustmentDirection: 'credit',
+    finalBalance: 2398,
+    actor: ADMIN
+  });
+  assert.equal(snapshotClosed.balanceMode, closedAccounts.BALANCE_MODE_SNAPSHOT);
+  assert.equal(snapshotClosed.balanceBefore, 2400);
+  assert.equal(snapshotClosed.canonicalBalanceAtClosure, 2400);
+  assert.equal(snapshotClosed.finalClosedCustomerBalance, 2398);
+  assert.equal(snapshotClosed.requestedFinalBalance, 2398);
+  assert.equal(snapshotClosed.finalBalance, 2398);
+  assert.equal(snapshotClosed.balanceAdjustmentAmount, 0, 'snapshot closures never create a Billing adjustment');
+  assert.equal(snapshotClosed.balanceAdjustmentDirection, null);
+  assert.equal(closedAccounts.resolveClosedCustomerBalance(snapshotClosed, 2400), 2398);
+  assert.equal(closedAccounts.resolveClosedCustomerBalance(snapshotClosed, 1800), 1798);
+  assert.equal(closedAccounts.resolveClosedCustomerBalance(snapshotClosed, 2), 0);
+  assert.equal(
+    closedAccounts.resolveClosedCustomerBalance({
+      balanceBefore: 1200,
+      requestedFinalBalance: 500,
+      finalBalance: 500,
+      balanceAdjustmentAmount: 700,
+      balanceAdjustmentDirection: 'credit'
+    }, 500),
+    500,
+    'unmarked legacy closures must remain canonical and must not double-count their old adjustment'
+  );
+  assert.equal(stores.closed_customer_accounts.version, 2);
+
   const customerBackendSource = fs.readFileSync(
     path.join(__dirname, '..', 'backend', 'customers.js'),
     'utf8'
@@ -238,18 +285,25 @@ async function run() {
   assert.match(customerBackendSource, /excludeCollectorClient/);
   assert.match(customerBackendSource, /getActiveClosedAccountNumberSet/);
   assert.match(customerBackendSource, /ACCOUNT_CLOSURE_RETRYABLE_FAILURE/);
-  assert.match(customerBackendSource, /Any completed balance adjustment is locked to this closure and will not be duplicated/);
-  assert.match(customerBackendSource, /closureStage = 'billing-balance-adjustment'/);
-  assert.match(customerBackendSource, /ACCOUNT_CLOSURE_BALANCE_ADJUSTMENT_CONFIRMATION_REQUIRED/);
+  assert.match(customerBackendSource, /original Final Closed Balance is preserved/);
+  assert.match(customerBackendSource, /const balanceMode = existingClosure/);
+  assert.match(customerBackendSource, /BALANCE_MODE_SNAPSHOT/);
+  assert.match(customerBackendSource, /const adjustmentRequired = balanceMode === BALANCE_MODE_CANONICAL/);
+  assert.match(customerBackendSource, /closure\.balanceMode === BALANCE_MODE_CANONICAL/);
+  assert.match(customerBackendSource, /\['failed', 'closing'\]\.includes\(existingClosure\?\.state\)/);
   assert.match(customerBackendSource, /recordAccountClosureBalanceAdjustment/);
-  assert.match(customerBackendSource, /stoppedBalance - targetFinalBalance/);
+  assert.doesNotMatch(customerBackendSource, /balanceAdjustmentConfirmed/);
+  assert.doesNotMatch(customerBackendSource, /ACCOUNT_CLOSURE_BALANCE_ADJUSTMENT_CONFIRMATION_REQUIRED/);
+  assert.match(customerBackendSource, /closedAccountCanonicalBalanceAtClosure/);
+  assert.match(customerBackendSource, /finalClosedCustomerBalance/);
+  assert.match(customerBackendSource, /resolveClosedCustomerBalance/);
   assert.match(customerBackendSource, /balanceAction/);
   assert.match(customerBackendSource, /nextUrl/);
   assert.match(customerBackendSource, /billingThroughDate/);
   assert.match(customerBackendSource, /closureStage = 'post-stop-balance-check'/);
   assert.match(customerBackendSource, /router\.post\('\/closed-accounts\/:closureId\/reopen'/);
-  assert.match(customerBackendSource, /remainingBalance: Number\(Number\(balance \|\| 0\)\.toFixed\(2\)\)/);
-  assert.match(customerBackendSource, /const closureFinalBalance = hasRequestedFinalBalance/);
+  assert.match(customerBackendSource, /remainingBalance: resolveClosedCustomerBalance\(record, balance\)/);
+  assert.match(customerBackendSource, /const closureFinalBalance = resolveFinalClosedCustomerBalance\(record\)/);
   assert.match(customerBackendSource, /closureFinalBalance,\s+remainingBalance:/);
   assert.match(customerBackendSource, /getCanonicalAccountClosureBalance/);
   assert.match(customerBackendSource, /balance: canonicalBalance/);
@@ -262,54 +316,64 @@ async function run() {
   assert.match(archivePage, /Records are preserved permanently/);
   assert.match(archivePage, /id="reopenAccountModal"/);
   assert.match(archivePage, /id="reopenAccountBalanceLabel"/);
-  assert.match(archivePage, /customer-archive\.js\?v=2\.2/);
+  assert.match(archivePage, /customer-archive\.js\?v=2\.3/);
   assert.match(archivePage, /Collect first — keep service stopped/);
   assert.match(customersPage, /id="closeAccountFinalBalance"/);
+  assert.match(customersPage, /id="closeAccountFinalBalanceHint"/);
+  assert.match(customersPage, /Final Closed Customer Balance/);
   assert.match(customersPage, /Reason <span class="text-secondary">\(optional\)<\/span>/);
   assert.doesNotMatch(customersPage, /id="closeAccountReason"[^>]*required/);
-  assert.match(customersPage, /balanceAdjustmentConfirmed:/);
+  assert.doesNotMatch(customersPage, /balanceAdjustmentConfirmed/);
+  assert.doesNotMatch(customersPage, /Audited Credit Adjustment/i);
+  assert.doesNotMatch(customersPage, /non-cash credit/i);
   assert.match(archiveScript, /\/api\/customers\/closed-accounts/);
   assert.match(archiveScript, /data-action="retry-close"/);
   assert.match(archiveScript, /\/api\/customers\/\$\{encodeURIComponent\(accountNumber\)\}\/close-account/);
-  assert.match(archiveScript, /Any completed balance adjustment is locked and cannot be duplicated/);
+  assert.match(archiveScript, /original Final Closed Balance/);
   assert.match(archiveScript, /payment-breakdown\.html\?account=/);
   assert.match(archiveScript, /balanceAction/);
   assert.match(archiveScript, /payload\?\.nextUrl/);
   assert.match(archiveScript, /returns as Disabled/i);
   assert.match(archiveScript, /item\?\.balanceAvailable === true/);
   assert.match(archiveScript, /item\?\.remainingBalance/);
-  assert.match(archiveScript, /const closureFinalBalance = readMoney\(item\?\.closureFinalBalance\)/);
+  assert.match(archiveScript, /const closureFinalBalance = readMoney\(item\?\.finalClosedCustomerBalance\)/);
+  assert.match(archiveScript, /\?\? readMoney\(item\?\.closureFinalBalance\)/);
   assert.match(archiveScript, /formatBalance\(closureFinalBalance\)/);
   assert.doesNotMatch(
     archiveScript,
     /<p class="archive-date">\$\{escapeHtml\(formatMoney\(remainingBalance\)\)\}<\/p>/,
     'the Final Balance column must not be replaced by the live remaining balance'
   );
-  assert.match(archiveScript, /Current remaining balance/);
+  assert.match(archiveScript, /Current closed balance/);
   assert.match(archiveScript, /Current advance credit/);
   assert.match(archiveScript, /Keep advance credit/);
   assert.match(archiveScript, /advance credit will remain on the account/);
   assert.match(archiveScript, /data-action="reopen-closed"[^>]*data-final-balance="\$\{escapeHtml\(remainingBalance\)\}"/);
-  assert.match(archiveScript, /Retained balance paid in full/);
+  assert.match(archiveScript, /Final Closed Balance paid in full/);
+  assert.doesNotMatch(archiveScript, /balanceAdjustmentAmount/);
+  assert.doesNotMatch(archiveScript, /No balance adjustment/);
   new vm.Script(archiveScript, { filename: 'customer-archive.js' });
 
   const archiveFixture = {
-    id: finalizedClosed.id,
-    accountNumber: finalizedClosed.accountNumber,
-    customerName: finalizedClosed.customerName,
-    closureDate: finalizedClosed.closureDate,
-    reason: finalizedClosed.reason,
+    id: snapshotClosed.id,
+    accountNumber: snapshotClosed.accountNumber,
+    customerName: snapshotClosed.customerName,
+    closureDate: snapshotClosed.closureDate,
+    reason: snapshotClosed.reason,
     state: 'closed',
-    balanceBefore: 1200,
+    balanceMode: closedAccounts.BALANCE_MODE_SNAPSHOT,
+    balanceBefore: 2400,
+    canonicalBalanceAtClosure: 2400,
     balanceTreatment: 'keep',
-    requestedFinalBalance: 500,
-    closureFinalBalance: 500,
-    finalBalance: 500,
-    balanceAdjustmentAmount: 700,
-    balanceAdjustmentDirection: 'credit',
-    remainingBalance: 200,
+    requestedFinalBalance: 2398,
+    finalClosedCustomerBalance: 2398,
+    closureFinalBalance: 2398,
+    finalBalance: 2398,
+    balanceAdjustmentAmount: 0,
+    balanceAdjustmentDirection: null,
+    remainingBalance: 1798,
     balanceAvailable: true,
-    closedAt: finalizedClosed.closedAt
+    closedAt: snapshotClosed.closedAt
   };
   const renderClosedAccountFixture = async (fixture) => {
     const tableBody = { innerHTML: '', addEventListener() {} };
@@ -346,17 +410,17 @@ async function run() {
   const closedAccountHtml = await renderClosedAccountFixture(archiveFixture);
   assert.match(
     closedAccountHtml,
-    /archive-date">[^<]*500\.00/,
+    /archive-date">[^<]*2,398\.00/,
     'Final Balance must render the saved Admin closure snapshot'
   );
   assert.match(
     closedAccountHtml,
-    /Current remaining balance[^<]*200\.00/,
+    /Current closed balance[^<]*1,798\.00/,
     'a later live balance must be labeled separately'
   );
   assert.match(
     closedAccountHtml,
-    /data-action="reopen-closed"[^>]*data-final-balance="200"/,
+    /data-action="reopen-closed"[^>]*data-final-balance="1798"/,
     'Reopen must continue using the live remaining balance'
   );
   const advanceCreditHtml = await renderClosedAccountFixture({
@@ -365,7 +429,7 @@ async function run() {
   });
   assert.match(
     advanceCreditHtml,
-    /archive-date">[^<]*500\.00/,
+    /archive-date">[^<]*2,398\.00/,
     'a later advance credit must not replace the closure Final Balance'
   );
   assert.match(
@@ -373,7 +437,7 @@ async function run() {
     /Current advance credit[^<]*100\.00/,
     'a negative live balance must be labeled as advance credit, not debt'
   );
-  assert.doesNotMatch(advanceCreditHtml, /Current remaining balance[^<]*100\.00/);
+  assert.doesNotMatch(advanceCreditHtml, /Current closed balance[^<]*100\.00/);
   assert.match(
     advanceCreditHtml,
     /data-action="reopen-closed"[^>]*data-final-balance="-100"/,
@@ -447,9 +511,9 @@ async function run() {
   await new Promise((resolve) => setImmediate(resolve));
   const advanceReopenButton = {
     dataset: {
-      closureId: finalizedClosed.id,
-      accountNumber: finalizedClosed.accountNumber,
-      customerName: finalizedClosed.customerName,
+      closureId: snapshotClosed.id,
+      accountNumber: snapshotClosed.accountNumber,
+      customerName: snapshotClosed.customerName,
       finalBalance: '-100'
     }
   };

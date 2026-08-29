@@ -189,12 +189,17 @@ const sanitizeReconnectionSettlement = (value = {}) => {
   const activationPolicy = trimText(value.activationPolicy, 40).toLowerCase() === 'after-payment'
     ? 'after-payment'
     : 'immediate';
-  const previousBalanceSnapshot = roundMoney(Math.max(0, Number(value.previousBalanceSnapshot) || 0));
+  const previousBalanceIsAuthoritative = value.previousBalanceIsAuthoritative === true;
+  const rawPreviousBalanceSnapshot = roundMoney(Number(value.previousBalanceSnapshot) || 0);
+  const previousBalanceSnapshot = previousBalanceIsAuthoritative
+    ? rawPreviousBalanceSnapshot
+    : roundMoney(Math.max(0, rawPreviousBalanceSnapshot));
+  const positivePreviousBalance = roundMoney(Math.max(0, previousBalanceSnapshot));
   const writeOffAmount = balanceTreatment === 'write-off'
-    ? roundMoney(Math.min(previousBalanceSnapshot, Math.max(0, Number(value.writeOffAmount) || previousBalanceSnapshot)))
+    ? roundMoney(Math.min(positivePreviousBalance, Math.max(0, Number(value.writeOffAmount) || positivePreviousBalance)))
     : 0;
   const deferredBalanceAmount = balanceTreatment === 'installment'
-    ? roundMoney(Math.min(previousBalanceSnapshot, Math.max(0, Number(value.deferredBalanceAmount) || previousBalanceSnapshot)))
+    ? roundMoney(Math.min(positivePreviousBalance, Math.max(0, Number(value.deferredBalanceAmount) || positivePreviousBalance)))
     : 0;
   const installmentMonths = balanceTreatment === 'installment'
     ? Math.max(2, Math.min(24, Math.trunc(Number(value.installmentMonths) || 2)))
@@ -228,6 +233,10 @@ const sanitizeReconnectionSettlement = (value = {}) => {
     reconnectionId: trimText(value.reconnectionId || value.id, 160) || `reconnection-${effectiveDate}`,
     disconnectedAt,
     requestedAt: trimText(value.requestedAt || value.createdAt, 80),
+    previousBalanceCapturedAt: trimText(
+      value.previousBalanceCapturedAt || value.requestedAt || value.createdAt,
+      80
+    ),
     effectiveDate,
     activatedAt: trimText(value.activatedAt, 80),
     status,
@@ -236,6 +245,7 @@ const sanitizeReconnectionSettlement = (value = {}) => {
     planName: trimText(value.planName, 160),
     planAmount: roundMoney(Math.max(0, Number(value.planAmount) || 0)),
     previousBalanceSnapshot,
+    previousBalanceIsAuthoritative,
     balanceTreatment,
     writeOffAmount,
     deferredBalanceAmount,
@@ -301,6 +311,8 @@ const buildReconnectionSettlement = ({
   planName = '',
   planAmount = 0,
   previousBalance = 0,
+  previousBalanceIsAuthoritative = false,
+  previousBalanceCapturedAt = '',
   balanceTreatment = 'keep',
   installmentMonths = 0,
   chargePolicy = 'next-cycle',
@@ -320,7 +332,11 @@ const buildReconnectionSettlement = ({
   const safeActivationPolicy = String(activationPolicy || '').trim().toLowerCase() === 'after-payment'
     ? 'after-payment'
     : 'immediate';
-  const balance = roundMoney(Math.max(0, Number(previousBalance) || 0));
+  const rawBalance = roundMoney(Number(previousBalance) || 0);
+  const balance = previousBalanceIsAuthoritative === true
+    ? rawBalance
+    : roundMoney(Math.max(0, rawBalance));
+  const positiveBalance = roundMoney(Math.max(0, balance));
   const nextRegularCycleDate = getNextRegularCycleDate({
     effectiveDate: safeEffectiveDate,
     planType: safePlanType,
@@ -343,6 +359,7 @@ const buildReconnectionSettlement = ({
     reconnectionId: `reconnection-${trimText(accountNumber, 80)}-${safeEffectiveDate}-${Date.now()}`,
     disconnectedAt,
     requestedAt,
+    previousBalanceCapturedAt: previousBalanceCapturedAt || requestedAt,
     effectiveDate: safeEffectiveDate,
     activatedAt: safeActivationPolicy === 'immediate' ? requestedAt : '',
     status: safeActivationPolicy === 'immediate' ? 'active' : 'pending-payment',
@@ -351,9 +368,10 @@ const buildReconnectionSettlement = ({
     planName,
     planAmount,
     previousBalanceSnapshot: balance,
+    previousBalanceIsAuthoritative: previousBalanceIsAuthoritative === true,
     balanceTreatment: safeBalanceTreatment,
-    writeOffAmount: safeBalanceTreatment === 'write-off' ? balance : 0,
-    deferredBalanceAmount: safeBalanceTreatment === 'installment' ? balance : 0,
+    writeOffAmount: safeBalanceTreatment === 'write-off' ? positiveBalance : 0,
+    deferredBalanceAmount: safeBalanceTreatment === 'installment' ? positiveBalance : 0,
     installmentMonths: safeInstallmentMonths,
     installmentSchedule,
     chargePolicy: safeChargePolicy,
@@ -399,6 +417,8 @@ const activatePendingReconnectionSettlement = (value = {}, {
     planName: pending.planName,
     planAmount: pending.planAmount,
     previousBalance: pending.previousBalanceSnapshot,
+    previousBalanceIsAuthoritative: pending.previousBalanceIsAuthoritative,
+    previousBalanceCapturedAt: pending.previousBalanceCapturedAt,
     balanceTreatment: pending.balanceTreatment,
     installmentMonths: pending.installmentMonths,
     chargePolicy: pending.chargePolicy,

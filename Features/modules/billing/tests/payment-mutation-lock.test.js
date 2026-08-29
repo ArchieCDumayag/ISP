@@ -114,6 +114,7 @@ async function run() {
   );
 
   const billingSource = fs.readFileSync(require.resolve('../backend/payments'), 'utf8');
+  const paymentRecordsSource = fs.readFileSync(require.resolve('../backend/payment-records'), 'utf8');
   const numberingSource = fs.readFileSync(require.resolve('../backend/payment-numbering'), 'utf8');
   const confirmationsSource = fs.readFileSync(require.resolve('../backend/payment-confirmations'), 'utf8');
   const schedulerSource = fs.readFileSync(require.resolve('../backend/billing-scheduler'), 'utf8');
@@ -149,12 +150,22 @@ async function run() {
     schedulerSource,
     /enforcePppoeGracePeriodForBranch[\s\S]*?return enqueuePaymentMutation\(\(\) => enforcePppoeGracePeriodForBranchUnlocked/
   );
+  assert.match(schedulerSource, /requiresReconnectionSettlementBeforeActivation\(disconnection\)/);
   assert.match(customerSource, /const deleteCustomerRecord = [\s\S]*?enqueuePaymentMutation/);
   assert.match(customerSource, /await lockPaymentAccount\(connection, scopedBranchId, targetAccountNumber\)/);
   assert.match(customerSource, /CUSTOMER_DELETE_PROTECTED_CLOSED_ACCOUNT_HISTORY/);
   assert.match(customerSource, /CUSTOMER_UPDATE_ACCOUNT_CLOSED/);
   assert.match(customerSource, /closed_account_protected/);
+  assert.match(customerSource, /reconnection_settlement_required/);
   assert.match(billingSource, /Closed-account collection and write-off records cannot be deleted/);
+  assert.match(billingSource, /createClosedAccountFinalBalanceProtectedError/);
+  assert.match(billingSource, /activeClosure && kind !== 'payment'/);
+  assert.match(billingSource, /getActiveClosedAccountNumberSet/);
+  assert.match(billingSource, /Payment History cannot be deleted while the customer account is closed/);
+  assert.match(billingSource, /requiresReconnectionSettlementBeforeActivation\(currentDecision\)/);
+  assert.match(billingSource, /requiresReconnectionSettlementBeforeActivation\(disconnection\)/);
+  assert.match(paymentRecordsSource, /BILLING_CLOSED_ACCOUNT_FINAL_BALANCE_PROTECTED/);
+  assert.match(paymentRecordsSource, /Reopen the account before changing Billing adjustments/);
   const clearRouteSource = billingSource.slice(
     billingSource.indexOf("router.delete('/clear'"),
     billingSource.indexOf("router.post('/import-excel'")

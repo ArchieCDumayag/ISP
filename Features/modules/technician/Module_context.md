@@ -1,6 +1,6 @@
 # Technician Module Context
 
-Last reviewed: 2026-08-27
+Last reviewed: 2026-08-29
 Status: Canonical module runtime with Admin ticket triage/linked dispatch, least-privilege field installation APIs, atomic PON reservations, and a technician inventory ledger consumed by the standalone THRE3J Jobs Android client.
 
 ## Purpose and current scope
@@ -26,7 +26,7 @@ Status: Canonical module runtime with Admin ticket triage/linked dispatch, least
 - `backend/job-events.js` persists append-only dispatch events with branch-scoped offline idempotency keys.
 - `backend/technician-assignments.js` exposes only the authenticated technician's assigned jobs/tickets under `/api/technician`.
 - `backend/technician-inventory.js` owns the authenticated inventory ledger mounted at `/api/technician/inventory`; it is also declared as the `technicianInventory` backend entry.
-- `backend/technician-installations.js` retains technician customer/PON/PPPoE installation workflows under `/api/technician/installations`. PPPoE generation is serialized with Billing's lifecycle boundary and rechecks the current Customer closure overlay, so an assigned or previously cached job cannot provision a permanently closed subscriber.
+- `backend/technician-installations.js` retains technician customer/PON/PPPoE installation workflows under `/api/technician/installations`. PPPoE generation is serialized with Billing's lifecycle boundary and rechecks both the current Customer closure overlay and any unconsumed closed-balance/pending-payment reconnection decision, so an assigned or previously cached job cannot provision a closed or merely reopened subscriber before Billing settlement.
 - `backend/job-numbering.js` retains manual job-number schema, backfill, formatting, and fallback helpers.
 
 Dispatch endpoints:
@@ -125,6 +125,8 @@ Customer Management supplies customer snapshots, owned pending drafts, canonical
 - Automated acceptance checks use isolated stores and do not modify live tickets, jobs, customers, PON, PPPoE, MikroTik, or installation data.
 
 ## Latest meaningful changes
+
+- 2026-08-29: Extended technician PPPoE generation protection through Customer Archive Reopen. An assigned retained job cannot enable service until Billing consumes the Final Closed Customer Balance or pending-payment reconnection settlement.
 
 - 2026-08-26: Blocked technician PPPoE generation for permanently closed customer accounts under the shared Billing mutation boundary. This keeps retained-balance Collector payments from implicitly reopening service or provisioning.
 

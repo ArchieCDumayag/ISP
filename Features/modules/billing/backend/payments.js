@@ -33,6 +33,7 @@ const {
     STATUS_KEPT_ACTIVE,
     getAccountDisconnection,
     readBranchDisconnections,
+    requiresReconnectionSettlementBeforeActivation,
     upsertBranchDisconnection
 } = require('./disconnection-store');
 const {
@@ -48,7 +49,8 @@ const {
     normalizeReference: normalizeGcashReference
 } = require('./gcash-transaction-history-store');
 const {
-    getActiveClosedCustomerAccount
+    getActiveClosedCustomerAccount,
+    getActiveClosedAccountNumberSet
 } = require('../../customer-management/backend/closed-customer-account-store');
 const {
     isProtectedClosedAccountPaymentEvidence
@@ -85,6 +87,14 @@ const readPlans = async (branchId = null) => {
     return [];
 };
 const sanitizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+const createClosedAccountFinalBalanceProtectedError = (message = '') => {
+    const error = createError(
+        409,
+        message || 'The Final Closed Customer Balance is locked. Reopen the account before changing non-payment Billing entries.'
+    );
+    error.code = 'BILLING_CLOSED_ACCOUNT_FINAL_BALANCE_PROTECTED';
+    return error;
+};
 const ABSOLUTE_HTTP_URL_PATTERN = /^https?:\/\/\S+$/i;
 const ABSOLUTE_SCHEME_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
 const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -4177,6 +4187,9 @@ const maybeExtendPrepaidExpiryOnPayment = async (accountNumber, paymentEntry, br
 
     const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
     if (activeClosure) return;
+    const disconnections = await readBranchDisconnections(branchId);
+    const disconnection = getAccountDisconnection(disconnections, accountNumber);
+    if (requiresReconnectionSettlementBeforeActivation(disconnection)) return;
 
     const customers = await readCustomers(branchId);
     const idx = customers.findIndex((customer) => String(customer?.accountNumber || '') === String(accountNumber));
@@ -4314,6 +4327,12 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
     }
     if (!normalizedEntryIds.length) {
         throw createError(400, 'Select at least one transaction to delete.');
+    }
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, normalizedAccountNumber);
+    if (activeClosure) {
+        throw createClosedAccountFinalBalanceProtectedError(
+            'Payment History cannot be deleted while the customer account is closed. Reopen the account first.'
+        );
     }
     const disconnections = await readBranchDisconnections(branchId);
     const reconnectionDecision = getAccountDisconnection(disconnections, normalizedAccountNumber);
@@ -4645,6 +4664,7 @@ const applyReenableOnPaid = async (accountNumber, branchId = null, paymentsCache
         queuePppoeEnableForCustomer(nextCustomer, current.branchId || branchId);
         return;
     }
+    if (requiresReconnectionSettlementBeforeActivation(currentDecision)) return;
     if (currentStatus.status === STATUS_DISABLED) {
         // Disabled is admin lock: never auto-reactivate from payments.
         return;
@@ -5085,6 +5105,12 @@ router.delete('/clear', async (req, res, next) => {
         const user = await assertAdminUser(req);
         const branchId = user.branchId || null;
         const payments = await readPayments(branchId);
+        const activeClosedAccounts = await getActiveClosedAccountNumberSet(branchId);
+        if (activeClosedAccounts.size > 0) {
+            throw createClosedAccountFinalBalanceProtectedError(
+                'Payment History cannot be cleared while closed customer accounts are active.'
+            );
+        }
         const entries = Object.values(payments || {}).flatMap((bucket) => (
             Array.isArray(bucket?.history) ? bucket.history : []
         ));
@@ -5439,6 +5465,10 @@ router.post('/:accountNumber', async (req, res, next) => {
         const currentCustomer = customers.find((c) => String(c.accountNumber) === String(accountNumber));
         if (!currentCustomer) {
             return next(createError(404, 'Customer not found'));
+        }
+        const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+        if (activeClosure && kind !== 'payment') {
+            return next(createClosedAccountFinalBalanceProtectedError());
         }
         let providedReference = '';
         try {

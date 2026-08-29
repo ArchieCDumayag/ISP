@@ -16,6 +16,11 @@ const { serializePaymentMutationRequest } = require('../../billing/backend/payme
 const {
     getActiveClosedCustomerAccount
 } = require('../../customer-management/backend/closed-customer-account-store');
+const {
+    readBranchDisconnections,
+    getAccountDisconnection,
+    requiresReconnectionSettlementBeforeActivation
+} = require('../../billing/backend/disconnection-store');
 const { auditMikrotikPppoeCommand } = require('./mikrotik-audit-log');
 const {
     dedupeActivePppoeSessions,
@@ -96,13 +101,24 @@ const assertPppoeActivationAccountOpen = async (branchId, accountNumber) => {
     const normalizedAccountNumber = String(accountNumber || '').trim();
     if (!normalizedAccountNumber) return;
     const activeClosure = await getActiveClosedCustomerAccount(branchId, normalizedAccountNumber);
-    if (!activeClosure) return;
-    const error = new Error(
-        'This customer account is closed. Reopen it from Customer Archive before enabling or creating PPPoE service.'
-    );
-    error.status = 409;
-    error.code = 'PPPOE_ACCOUNT_CLOSED';
-    throw error;
+    if (activeClosure) {
+        const error = new Error(
+            'This customer account is closed. Reopen it from Customer Archive before enabling or creating PPPoE service.'
+        );
+        error.status = 409;
+        error.code = 'PPPOE_ACCOUNT_CLOSED';
+        throw error;
+    }
+    const disconnections = await readBranchDisconnections(branchId);
+    const decision = getAccountDisconnection(disconnections, normalizedAccountNumber);
+    if (requiresReconnectionSettlementBeforeActivation(decision)) {
+        const error = new Error(
+            'Complete the Final Closed Customer Balance reconnection settlement before enabling or creating PPPoE service.'
+        );
+        error.status = 409;
+        error.code = 'PPPOE_RECONNECTION_SETTLEMENT_REQUIRED';
+        throw error;
+    }
 };
 
 const findConfiguredRouterById = (settings = {}, routerId = '') => {
@@ -1719,9 +1735,20 @@ router.post('/pppoe', requireAuth, serializePppoeActivationRequest, async (req, 
             })
             : null;
         if (activationMutationSerialized) {
+            let activationAccountNumber = String(
+                customerAccount || preflightStoredAccount?.customerAccount || ''
+            ).trim();
+            if (!activationAccountNumber) {
+                const usernameKey = normalizePppoeUsernameKey(username);
+                const customers = await readCustomers(branchId);
+                const matchedCustomer = (Array.isArray(customers) ? customers : []).find((customer) => (
+                    normalizePppoeUsernameKey(customer?.pppoeUsername) === usernameKey
+                ));
+                activationAccountNumber = String(matchedCustomer?.accountNumber || '').trim();
+            }
             await assertPppoeActivationAccountOpen(
                 branchId,
-                customerAccount || preflightStoredAccount?.customerAccount
+                activationAccountNumber
             );
         }
         validateCredentials(creds);

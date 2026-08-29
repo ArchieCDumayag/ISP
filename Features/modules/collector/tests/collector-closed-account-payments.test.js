@@ -194,7 +194,15 @@ const stores = {
       1: {
         records: [
           closedRecord('ACC-CLOSED', 'Closed North Client', 'North Area', {
-            reason: 'SECRET-ONLY-REASON'
+            reason: 'SECRET-ONLY-REASON',
+            balanceMode: 'snapshot',
+            canonicalBalanceAtClosure: 1600,
+            requestedFinalBalance: 1598,
+            finalClosedCustomerBalance: 1598,
+            closureFinalBalance: 1598,
+            finalBalance: 1598,
+            balanceAdjustmentAmount: 0,
+            balanceAdjustmentDirection: null
           }),
           closedRecord('ACC-OTHER', 'Closed South Client', 'South Area', {
             balanceBefore: 800,
@@ -369,6 +377,14 @@ async function run() {
       'search must exclude other areas and reopened accounts'
     );
     assert.equal(assignedSearch.body.records[0].accountRemainsClosed, true);
+    const initialSnapshotAccount = assignedSearch.body.records
+      .find((record) => record.accountNumber === 'ACC-CLOSED');
+    assert.equal(initialSnapshotAccount.currentBalance, 1598);
+    assert.equal(
+      effectiveBalance('ACC-CLOSED'),
+      1600,
+      'the entered Final Closed Balance must not create an Account Closure Adjustment in Billing'
+    );
 
     const otherAreaSearch = await request('/closed-accounts?search=South', {
       headers: { 'x-test-actor': 'other' }
@@ -484,6 +500,8 @@ async function run() {
     assert.equal(submitted.body.serviceAction, 'none');
     assert.equal(submitted.body.billingAction, 'none');
     assert.equal(submitted.body.paymentAllowed, false);
+    assert.equal(submitted.body.previousBalance, 1598);
+    assert.equal(submitted.body.balanceAfterPayment, 998);
     assert.equal(stores.payments['ACC-CLOSED'].history.length, 1, 'prepaid closed collection must not create a renewal debit');
     assert.match(stores.payments['ACC-CLOSED'].history[0].description, /^Closed Account Collection \| Closure ID:/);
     assert.doesNotMatch(stores.payments['ACC-CLOSED'].history[0].description, /spoofed|unsafe detail/i);
@@ -589,13 +607,22 @@ async function run() {
       .find((record) => record.accountNumber === 'ACC-CLOSED').active, true);
 
     const liveAfterPartial = await request('/closed-accounts?search=ACC-CLOSED');
-    assert.equal(liveAfterPartial.body.records[0].currentBalance, 1000);
+    assert.equal(liveAfterPartial.body.records[0].currentBalance, 998);
     assert.equal(liveAfterPartial.body.records[0].paymentAllowed, true);
+
+    const partialReceipt = await request('/reprint?accountNumber=ACC-CLOSED&reference=CLOSED-REF-1');
+    assert.equal(partialReceipt.status, 200);
+    assert.equal(partialReceipt.body.currentBalance, 998);
+    assert.equal(partialReceipt.body.currentBillAmount, 998);
+    assert.equal(partialReceipt.body.endingBalance, 998);
+    assert.equal(partialReceipt.body.paymentBreakdownEndingBalance, 998);
+    assert.equal(partialReceipt.body.previousBalance, 1598);
+    assert.equal(partialReceipt.body.balanceAfterPayment, 998);
 
     const overpayment = await request('/closed-accounts/ACC-CLOSED', {
       method: 'POST',
       body: JSON.stringify(payment({
-        amount: 1000.01,
+        amount: 998.01,
         reference: 'CLOSED-OVERPAY-1',
         clientPaymentId: 'closed-overpay-1'
       }))
@@ -606,7 +633,7 @@ async function run() {
     const finalPayment = await request('/closed-accounts/ACC-CLOSED', {
       method: 'POST',
       body: JSON.stringify(payment({
-        amount: 1000,
+        amount: 998,
         reference: 'CLOSED-FINAL-1',
         clientPaymentId: 'closed-final-1'
       }))
@@ -618,7 +645,11 @@ async function run() {
       body: JSON.stringify({})
     });
     assert.equal(finalApproval.status, 200);
-    assert.equal(effectiveBalance('ACC-CLOSED'), 0);
+    assert.equal(
+      effectiveBalance('ACC-CLOSED'),
+      2,
+      'Billing retains the intentional ₱2 difference while the Final Closed Balance reaches zero'
+    );
     const paidSearch = await request('/closed-accounts?search=ACC-CLOSED');
     assert.equal(paidSearch.body.records[0].currentBalance, 0);
     assert.equal(paidSearch.body.records[0].paymentAllowed, false);
@@ -683,6 +714,27 @@ async function run() {
     assert.equal(closedReceipt.status, 200);
     assert.equal(closedReceipt.body.closedAccountCollection, true);
     assert.equal(closedReceipt.body.accountRemainsClosed, true);
+    assert.equal(closedReceipt.body.currentBalance, 0);
+    assert.equal(closedReceipt.body.endingBalance, 0);
+    assert.equal(closedReceipt.body.previousBalance, 1598);
+    assert.equal(closedReceipt.body.balanceAfterPayment, 998);
+    const finalClosedReceipt = await request('/reprint?accountNumber=ACC-CLOSED&reference=CLOSED-FINAL-1');
+    assert.equal(finalClosedReceipt.status, 200);
+    assert.equal(finalClosedReceipt.body.previousBalance, 998);
+    assert.equal(finalClosedReceipt.body.balanceAfterPayment, 0);
+    const closedLifecycle = stores.closed_customer_accounts.branches['1'].records
+      .find((record) => record.accountNumber === 'ACC-CLOSED');
+    closedLifecycle.active = false;
+    const reopenedHistoricalReceipt = await request('/reprint?accountNumber=ACC-CLOSED&reference=CLOSED-REF-1');
+    assert.equal(reopenedHistoricalReceipt.status, 200);
+    assert.equal(reopenedHistoricalReceipt.body.previousBalance, 1598);
+    assert.equal(reopenedHistoricalReceipt.body.balanceAfterPayment, 998);
+    closedLifecycle.active = true;
+    assert.equal(
+      stores.payments['ACC-CLOSED'].history.some((entry) => /Account Closure Adjustment/i.test(entry.description || '')),
+      false,
+      'new snapshot closures must not create a Billing ledger adjustment'
+    );
     assert.equal(
       paymentRecordReadOptions.at(-1)?.applyQueuedReferrals,
       false,

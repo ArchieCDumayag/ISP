@@ -18,6 +18,9 @@ const {
     sanitizeComplimentaryPeriods
 } = require('./complimentary-account');
 const { buildReconnectionSummary } = require('./reconnection-settlement');
+const {
+    getActiveClosedCustomerAccount
+} = require('../../customer-management/backend/closed-customer-account-store');
 
 const router = express.Router();
 const STORE_KEYS = {
@@ -1297,6 +1300,15 @@ router.patch('/:accountNumber/breakdown-adjustment', async (req, res, next) => {
             : null;
         if (!customer) {
             return next(createError(404, 'Customer not found.'));
+        }
+        const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+        if (activeClosure) {
+            const error = createError(
+                409,
+                'The Final Closed Customer Balance is locked. Reopen the account before changing Billing adjustments.'
+            );
+            error.code = 'BILLING_CLOSED_ACCOUNT_FINAL_BALANCE_PROTECTED';
+            return next(error);
         }
 
         const adjustments = await readPaymentBreakdownAdjustments();

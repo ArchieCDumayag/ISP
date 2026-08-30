@@ -24,11 +24,11 @@ const findElementById = (node, id) => {
   return null;
 };
 
-assert.equal(customersPage.includes('css/customers-tabler.css?v=2.1'), true);
+assert.equal(customersPage.includes('css/customers-tabler.css?v=2.2'), true);
 assert.equal(customersPage.includes('href="css/customers.css'), false);
 assert.equal(
   customersPage.indexOf('css/account-view-shared.css?v=2.4')
-    < customersPage.indexOf('css/customers-tabler.css?v=2.1'),
+    < customersPage.indexOf('css/customers-tabler.css?v=2.2'),
   true
 );
 assert.equal(customersPage.includes('class="table table-vcenter table-hover card-table customer-table"'), true);
@@ -74,6 +74,13 @@ assert.match(customersPage, /tile\.openstreetmap\.org/);
 assert.match(customersPage, /tile\.opentopomap\.org/);
 assert.match(customersPage, /nominatim\.openstreetmap\.org\/search/);
 assert.match(customersPage, /window\.L\.marker\(latLng,[\s\S]*?draggable:\s*true,[\s\S]*?createMapPickerPinIcon\('customer'\)/);
+assert.match(customersPage, /let mapPinPickerNapLayer = null;/);
+assert.match(customersPage, /mapPinPickerNapLayer = window\.L\.layerGroup\(\)\.addTo\(mapPinPickerMap\)/);
+assert.match(customersPage, /function getNapPortAvailability\(nap = \{\}\)[\s\S]*?availableRatio <= 0\.25[\s\S]*?state/);
+assert.match(customersPage, /function buildNapAvailabilityPopup\(nap = \{\}\)[\s\S]*?Available Ports: \$\{availability\.available\} of \$\{availability\.total\}/);
+assert.match(customersPage, /function buildNapAvailabilityPopup\(nap = \{\}\)[\s\S]*?bg-red-lt text-red[\s\S]*?bg-yellow-lt text-yellow[\s\S]*?bg-green-lt text-green[\s\S]*?Available Ports:/);
+assert.match(customersPage, /const renderMapPinPickerNapMarkers = \(\) => \{[\s\S]*?createMapPickerPinIcon\('nap'\)[\s\S]*?bubblingMouseEvents:\s*false[\s\S]*?marker\.bindPopup\(buildNapAvailabilityPopup\(nap\)/);
+assert.match(customersPage, /openMapPinPicker = async \(\) => \{[\s\S]*?await loadNapCatalog\(\{ quiet: true \}\)[\s\S]*?renderMapPinPickerNapMarkers\(\)/);
 assert.match(customersPage, /window\.L\.map\('mapPinPickerMap',[\s\S]*?zoomAnimation:\s*false,[\s\S]*?markerZoomAnimation:\s*false/);
 assert.match(customersPage, /mapPinPickerMap\.invalidateSize\(\{\s*pan:\s*false\s*\}\);[\s\S]*?setMapPinPickerSelection\(existingCoordinates\.lat/);
 assert.match(customersPage, /setTimeout\(\(\)\s*=>\s*\{[\s\S]*?mapPinPickerMap\?\.invalidateSize\(\{\s*pan:\s*false\s*\}\);[\s\S]*?mapPinPickerMarker\.setIcon\(createMapPickerPinIcon\('customer'\)\);[\s\S]*?\},\s*80\);/);
@@ -82,6 +89,19 @@ assert.doesNotMatch(customersPage, /const svg\s*=\s*`[\s\S]*?<svg xmlns=/);
 assert.match(customersTablerCss, /\.map-picker-tabler-pin\s*\{[^}]*--map-picker-pin-color:[^}]*drop-shadow/s);
 assert.match(customersTablerCss, /\.map-picker-tabler-pin\s*>\s*\.ti\s*\{[^}]*font-size:\s*2\.5rem/s);
 assert.match(customersTablerCss, /\.leaflet-marker-icon\.map-picker-transparent-icon[\s\S]*?width:\s*34px\s*!important;[\s\S]*?height:\s*42px\s*!important;[\s\S]*?margin-top:\s*-40px\s*!important;[\s\S]*?margin-left:\s*-17px\s*!important;[\s\S]*?padding:\s*0\s*!important;[\s\S]*?border:\s*0\s*!important;[\s\S]*?background:\s*transparent\s*!important;[\s\S]*?box-shadow:\s*none\s*!important/);
+assert.match(customersPage, /const CUSTOMER_MAP_PICKER_PIN_ICON_SIZE = \[18, 22\]/);
+assert.match(customersPage, /const iconSize = isNap \? MAP_PICKER_PIN_ICON_SIZE : CUSTOMER_MAP_PICKER_PIN_ICON_SIZE/);
+assert.match(customersPage, /const iconAnchor = isNap \? \[17, 40\] : \[9, 21\]/);
+assert.match(customersTablerCss, /\.map-picker-canvas \.leaflet-marker-icon\.map-picker-transparent-icon--customer,[\s\S]*?width:\s*18px\s*!important;[\s\S]*?height:\s*22px\s*!important;[\s\S]*?margin-top:\s*-21px\s*!important;[\s\S]*?margin-left:\s*-9px\s*!important/);
+assert.match(customersTablerCss, /\.map-picker-tabler-pin--customer\s*\{[^}]*width:\s*18px;[^}]*height:\s*22px/s);
+assert.match(customersTablerCss, /\.map-picker-tabler-pin--customer\s*>\s*\.ti\s*\{[^}]*font-size:\s*1\.35rem/s);
+assert.match(customersPage, /const NAP_MAP_NEARBY_PIN_LIMIT = 8;/);
+assert.match(customersPage, /renderNapMapPreviewMarkers = \(\{ focusNapId = '' \} = \{\}\) => \{[\s\S]*?const customerCoordinates = parseCoordinateValue\(mapPinInput\?\.value\)/);
+assert.match(customersPage, /title:\s*'Customer Location',[\s\S]*?icon:\s*createMapPickerPinIcon\('customer'\),[\s\S]*?draggable:\s*false,[\s\S]*?bubblingMouseEvents:\s*false,[\s\S]*?zIndexOffset:\s*1000/);
+assert.match(customersPage, /customerMarker\.bindTooltip\('Customer Location',[\s\S]*?customerMarker\.addTo\(napMapPreviewLayer\)/);
+assert.match(customersPage, /const nearbyNaps = \[\.\.\.mappedNaps\][\s\S]*?customerLatLng\.distanceTo[\s\S]*?\.slice\(0, NAP_MAP_NEARBY_PIN_LIMIT\)/);
+assert.match(customersPage, /napMapPreviewMap\?\.fitBounds\(nearbyBounds,[\s\S]*?padding:\s*\[40, 40\],[\s\S]*?maxZoom:\s*17/);
+assert.match(customersPage, /Customer location is shown in blue\./);
 for (const modalId of ['customerModal', 'portalSetupModal', 'mapPinPickerModal', 'napMapPreviewModal', 'creditOverrideModal', 'customerViewModal', 'importWarningModal']) {
   const modalNode = findElementById(customersDocument, modalId);
   assert.ok(modalNode, `${modalId} must exist.`);

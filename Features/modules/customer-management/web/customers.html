@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
-    <link rel="stylesheet" href="css/customers-tabler.css?v=2.1">
+    <link rel="stylesheet" href="css/customers-tabler.css?v=2.2">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -1450,7 +1450,9 @@
             const DEFAULT_MAP_PICKER_CENTER = [12.8797, 121.774];
             const DEFAULT_MAP_PICKER_ZOOM = 6;
             const DETAIL_MAP_PICKER_ZOOM = 18;
+            const NAP_MAP_NEARBY_PIN_LIMIT = 8;
             const MAP_PICKER_PIN_ICON_SIZE = [34, 42];
+            const CUSTOMER_MAP_PICKER_PIN_ICON_SIZE = [18, 22];
             let mapPinPickerMap = null;
             let mapPinPickerMarker = null;
             let mapPinPickerSelection = null;
@@ -1458,6 +1460,7 @@
             let mapPinPickerLocationRequestId = 0;
             let mapPinPickerActiveLayer = MAP_PIN_PICKER_DEFAULT_LAYER;
             let mapPinPickerTileLayers = {};
+            let mapPinPickerNapLayer = null;
             let napMapPreviewMap = null;
             let napMapPreviewLayer = null;
             let napMapPreviewLastTrigger = null;
@@ -3560,6 +3563,56 @@
                 };
             }
 
+            function getNapPortAvailability(nap = {}) {
+                const portEntries = buildNapPortEntries(nap)
+                    .filter((entry) => Boolean(parsePositiveInt(entry?.port)));
+                const total = portEntries.length;
+                const available = portEntries.filter((entry) => !getNapPortOccupant(entry).occupied).length;
+                const availableRatio = total ? available / total : 0;
+                const state = !total
+                    ? 'unconfigured'
+                    : (available === 0
+                        ? 'full'
+                        : (availableRatio <= 0.25 ? 'nearly-full' : 'available'));
+                return {
+                    total,
+                    available,
+                    occupied: Math.max(0, total - available),
+                    state
+                };
+            }
+
+            function buildNapAvailabilityPopup(nap = {}) {
+                const code = normalizeNapValue(nap?.code) || 'NAP';
+                const area = normalizeNapValue(nap?.location) || 'Area not recorded';
+                const availability = getNapPortAvailability(nap);
+                const badgeClass = availability.state === 'full'
+                    ? 'bg-red-lt text-red'
+                    : (availability.state === 'nearly-full'
+                        ? 'bg-yellow-lt text-yellow'
+                        : (availability.state === 'available'
+                            ? 'bg-green-lt text-green'
+                            : 'bg-secondary-lt text-secondary'));
+                const availabilityLabel = availability.total
+                    ? `Available Ports: ${availability.available} of ${availability.total}`
+                    : 'No ports configured';
+                return `
+                    <div class="small">
+                        <div class="fw-bold">${escapeHtml(code)}</div>
+                        <div class="text-secondary mb-2">${escapeHtml(area)}</div>
+                        <span class="badge ${badgeClass}">${escapeHtml(availabilityLabel)}</span>
+                    </div>
+                `.trim();
+            }
+
+            function formatNapAvailabilityTooltip(nap = {}) {
+                const availability = getNapPortAvailability(nap);
+                const availabilityLabel = availability.total
+                    ? `${availability.available} of ${availability.total} ports available`
+                    : 'No ports configured';
+                return `${formatNapSelectLabel(nap)} | ${availabilityLabel}`;
+            }
+
             function formatNapSelectLabel(nap = {}) {
                 const code = normalizeNapValue(nap?.code) || 'NAP';
                 const area = normalizeNapValue(nap?.location);
@@ -4655,13 +4708,17 @@
                 const normalizedType = String(type || '').trim().toLowerCase();
                 const isNap = normalizedType === 'nap';
                 const variant = isNap ? 'nap' : 'customer';
+                const iconSize = isNap ? MAP_PICKER_PIN_ICON_SIZE : CUSTOMER_MAP_PICKER_PIN_ICON_SIZE;
+                const iconAnchor = isNap ? [17, 40] : [9, 21];
+                const popupAnchor = isNap ? [0, -36] : [0, -20];
+                const tooltipAnchor = isNap ? [0, -34] : [0, -18];
                 return window.L.divIcon({
                     html: `<span class="map-picker-tabler-pin map-picker-tabler-pin--${variant}" aria-hidden="true"><i class="ti ti-map-pin"></i></span>`,
                     className: `map-picker-transparent-icon map-picker-transparent-icon--${variant}`,
-                    iconSize: MAP_PICKER_PIN_ICON_SIZE,
-                    iconAnchor: [17, 40],
-                    popupAnchor: [0, -36],
-                    tooltipAnchor: [0, -34]
+                    iconSize,
+                    iconAnchor,
+                    popupAnchor,
+                    tooltipAnchor
                 });
             };
 
@@ -4752,6 +4809,7 @@
                     })
                 };
                 setMapPinPickerLayer(MAP_PIN_PICKER_DEFAULT_LAYER);
+                mapPinPickerNapLayer = window.L.layerGroup().addTo(mapPinPickerMap);
 
                 mapPinPickerMap.on('click', (event) => {
                     setMapPinPickerSelection(event.latlng.lat, event.latlng.lng, {
@@ -4761,6 +4819,33 @@
                 });
 
                 return true;
+            };
+
+            const renderMapPinPickerNapMarkers = () => {
+                if (!mapPinPickerMap || !mapPinPickerNapLayer || !window.L) return [];
+
+                const mappedNaps = getMappableNapEntries();
+                mapPinPickerNapLayer.clearLayers();
+                mappedNaps.forEach((nap) => {
+                    const { parsedCoordinate } = nap;
+                    const marker = window.L.marker([parsedCoordinate.lat, parsedCoordinate.lng], {
+                        title: formatNapAvailabilityTooltip(nap),
+                        icon: createMapPickerPinIcon('nap'),
+                        bubblingMouseEvents: false,
+                        zIndexOffset: -100
+                    });
+                    marker.bindTooltip(formatNapAvailabilityTooltip(nap), {
+                        direction: 'top',
+                        offset: [0, -12]
+                    });
+                    marker.bindPopup(buildNapAvailabilityPopup(nap), {
+                        closeButton: true,
+                        offset: [0, -28]
+                    });
+                    marker.addTo(mapPinPickerNapLayer);
+                });
+                mapPinPickerMarker?.bringToFront?.();
+                return mappedNaps;
             };
 
             const searchMapPinLocation = async (query) => {
@@ -4929,8 +5014,29 @@
                 }
 
                 const normalizedFocusNapId = normalizeNapValue(focusNapId || customerNapIdSelect?.value || '');
+                const customerCoordinates = parseCoordinateValue(mapPinInput?.value);
                 const bounds = [];
                 let focusedEntry = null;
+
+                if (customerCoordinates) {
+                    const customerMarker = window.L.marker(
+                        [customerCoordinates.lat, customerCoordinates.lng],
+                        {
+                            title: 'Customer Location',
+                            alt: 'Customer Location',
+                            icon: createMapPickerPinIcon('customer'),
+                            draggable: false,
+                            bubblingMouseEvents: false,
+                            riseOnHover: true,
+                            zIndexOffset: 1000
+                        }
+                    );
+                    customerMarker.bindTooltip('Customer Location', {
+                        direction: 'top',
+                        offset: [0, -8]
+                    });
+                    customerMarker.addTo(napMapPreviewLayer);
+                }
 
                 mappedNaps.forEach((nap) => {
                     const { parsedCoordinate } = nap;
@@ -4958,10 +5064,47 @@
                 if (selectedNap) {
                     summaryParts.push(`Current: ${normalizeNapValue(selectedNap?.code) || formatNapSelectLabel(selectedNap)}`);
                 }
+                if (customerCoordinates) {
+                    summaryParts.push('Customer location is shown in blue.');
+                }
                 setNapMapPreviewInfo(summaryParts.join(' '));
 
                 setTimeout(() => {
                     napMapPreviewMap?.invalidateSize();
+                    if (customerCoordinates) {
+                        const customerLatLng = window.L.latLng(customerCoordinates.lat, customerCoordinates.lng);
+                        const nearbyNaps = [...mappedNaps]
+                            .sort((left, right) => {
+                                const leftDistance = customerLatLng.distanceTo(window.L.latLng(
+                                    left.parsedCoordinate.lat,
+                                    left.parsedCoordinate.lng
+                                ));
+                                const rightDistance = customerLatLng.distanceTo(window.L.latLng(
+                                    right.parsedCoordinate.lat,
+                                    right.parsedCoordinate.lng
+                                ));
+                                return leftDistance - rightDistance;
+                            })
+                            .slice(0, NAP_MAP_NEARBY_PIN_LIMIT);
+                        const nearbyBounds = [
+                            [customerCoordinates.lat, customerCoordinates.lng],
+                            ...nearbyNaps.map((nap) => [nap.parsedCoordinate.lat, nap.parsedCoordinate.lng])
+                        ];
+                        if (
+                            focusedEntry?.parsedCoordinate
+                            && !nearbyNaps.some((nap) => normalizeNapValue(nap?.id) === normalizeNapValue(focusedEntry?.id))
+                        ) {
+                            nearbyBounds.push([
+                                focusedEntry.parsedCoordinate.lat,
+                                focusedEntry.parsedCoordinate.lng
+                            ]);
+                        }
+                        napMapPreviewMap?.fitBounds(nearbyBounds, {
+                            padding: [40, 40],
+                            maxZoom: 17
+                        });
+                        return;
+                    }
                     if (focusedEntry?.parsedCoordinate) {
                         napMapPreviewMap?.setView(
                             [focusedEntry.parsedCoordinate.lat, focusedEntry.parsedCoordinate.lng],
@@ -5041,6 +5184,20 @@
                     mapPinSearchInput.focus();
                     mapPinSearchInput.select();
                 }
+
+                if (napCatalogLoadingPromise && !napCatalog.length) {
+                    await napCatalogLoadingPromise.catch(() => []);
+                } else if (!napCatalog.length && napCatalogSchemaReady) {
+                    await loadNapCatalog({ quiet: true }).catch(() => []);
+                }
+                if (!mapPinPickerModal.classList.contains('show')) return;
+
+                const mappedNaps = renderMapPinPickerNapMarkers();
+                const napSummary = mappedNaps.length
+                    ? `${mappedNaps.length} NAP pin${mappedNaps.length === 1 ? '' : 's'} shown. Click a violet NAP pin to view available ports.`
+                    : 'No mapped NAP pins are available in this area.';
+                const currentStatus = String(mapPinPickerStatus?.textContent || '').trim();
+                setMapPinPickerStatusText([currentStatus, napSummary].filter(Boolean).join(' '));
             };
 
             const applyMapPinPickerSelection = () => {

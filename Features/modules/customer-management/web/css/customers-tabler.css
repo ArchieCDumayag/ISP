@@ -424,9 +424,26 @@ body.modal-open {
     --map-picker-pin-color: #7c3aed;
 }
 
+.map-picker-canvas .leaflet-marker-icon.map-picker-transparent-icon--customer,
+.map-picker-canvas .leaflet-div-icon.map-picker-transparent-icon--customer {
+    width: 18px !important;
+    height: 22px !important;
+    margin-top: -21px !important;
+    margin-left: -9px !important;
+}
+
+.map-picker-tabler-pin--customer {
+    width: 18px;
+    height: 22px;
+}
+
 .map-picker-tabler-pin > .ti {
     font-size: 2.5rem;
     line-height: 1;
+}
+
+.map-picker-tabler-pin--customer > .ti {
+    font-size: 1.35rem;
 }
 
 .import-warning-table-wrap {

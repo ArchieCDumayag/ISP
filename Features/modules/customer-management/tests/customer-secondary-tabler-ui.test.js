@@ -79,6 +79,7 @@ assert.equal((archiveCss.match(/\{/g) || []).length, 9, 'Archive CSS must stay l
 assert.match(draftPage, /css\/tabler-app\.css\?v=3\.2[\s\S]*css\/customer-draft-queue\.css\?v=3\.0/);
 assert.match(draftPage, /class="card draft-queue-panel"/);
 assert.match(draftPage, /class="input-icon"[\s\S]*id="draftQueueSearch"/);
+assert.match(draftPage, /id="draftQueueStatus"[\s\S]*value="pending"[\s\S]*value="in-progress">Incomplete drafts/);
 assert.match(draftPage, /class="table table-vcenter table-hover card-table mb-0 draft-table"/);
 assert.match(draftPage, /class="[^"]*\balert\b[^"]*\balert-warning\b[^"]*" id="draftQueueBulkToolbar"/);
 assert.match(draftPage, /id="draftReviewModal"[\s\S]*class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"/);
@@ -90,6 +91,9 @@ for (const legacyClass of ['section-frame', 'ghost-btn', 'primary-btn', 'footer-
 assert.match(draftScript, /class="btn btn-icon btn-outline-primary btn-sm"/);
 assert.match(draftScript, /class="btn btn-icon btn-outline-danger btn-sm"/);
 assert.match(draftScript, /class="badge \$\{escapeHtml\(statusUi\.className\)\}"/);
+assert.match(draftScript, /status=\$\{encodeURIComponent\(status\)\}/);
+assert.match(draftScript, /getQueueStatus\(item\) === 'in-progress'/);
+assert.match(draftScript, /Incomplete intake\. The technician can retry the submission/);
 assert.doesNotMatch(draftScript, /fa-(?:solid|regular|spinner|trash|eye)|ghost-icon|status-pill|plan-pill|class="account-tag"/);
 assert.match(draftCss, /^\/\* Customer Draft Queue: page-specific layout for native Tabler components\. \*\//);
 assert.match(draftCss, /\.modal\.draft-modal\.show\s*\{[^}]*display:\s*block;[^}]*z-index:\s*1055/s);
@@ -111,6 +115,22 @@ for (const [label, documentNode, script] of [
 
 new vm.Script(archiveScript, { filename: 'customer-archive.js' });
 new vm.Script(draftScript, { filename: 'customer-draft-queue.js' });
+[
+  'draftReviewMiddleName',
+  'draftReviewFacebookAccount',
+  'draftReviewProvinceCode',
+  'draftReviewGpsAccuracy',
+  'draftReviewNap',
+  'draftReviewNapPort',
+  'draftReviewOnuSerial',
+  'draftReviewPppoeUsername',
+  'draftReviewFirstBillReceived',
+  'draftReviewReferralAccount'
+].forEach((id) => assert.match(draftPage, new RegExp(`id=["']${id}["']`)));
+assert.match(draftPage, /nothing is reserved/i);
+assert.match(draftPage, /Selection Status/i);
+assert.doesNotMatch(draftPage, /Reservation \/ Hold ID/i);
+assert.match(draftScript, /\/pon-options/);
 assert.equal((archiveCss.match(/\{/g) || []).length, (archiveCss.match(/\}/g) || []).length);
 assert.equal((draftCss.match(/\{/g) || []).length, (draftCss.match(/\}/g) || []).length);
 

@@ -3,6 +3,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const {
+    normalizeCustomerName,
+    normalizeCustomerNameRecord
+} = require('../../../../core/data/customer-name-normalizer');
 const { getPool, query } = require('../../../../core/data/db');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
@@ -241,7 +245,9 @@ const generateTemporaryPortalPassword = () => {
 };
 
 const normalizeCustomerField = (value, field, { required = false } = {}) => {
-    const normalized = String(value ?? '').trim().replace(/\s+/g, ' ');
+    const normalized = ['firstName', 'middleName', 'lastName'].includes(field)
+        ? normalizeCustomerName(value)
+        : String(value ?? '').trim().replace(/\s+/g, ' ');
     const limit = CUSTOMER_FIELD_LIMITS[field] || 255;
     if (required && !normalized) {
         const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, (character) => character.toUpperCase());
@@ -2066,7 +2072,7 @@ const scheduleCustomerArchiveCleanupWithPppoe = ({ logger = console } = {}) => {
     return archiveCleanupInterval;
 };
 
-const mapCustomerRow = (row) => ({
+const mapCustomerRow = (row) => normalizeCustomerNameRecord({
     accountNumber: row.accountNumber,
     planId: row.planId || undefined,
     planName: row.planName,
@@ -2217,7 +2223,9 @@ const readCustomers = async (branchId = null) => {
         return (rows || []).map(mapCustomerRow).map(hydrateCustomerStatus);
     }
     const data = await readJson(STORE_KEYS.customers, []);
-    return Array.isArray(data) ? data.map(hydrateCustomerStatus) : [];
+    return Array.isArray(data)
+        ? data.map(normalizeCustomerNameRecord).map(hydrateCustomerStatus)
+        : [];
 };
 
 const CUSTOMER_MYSQL_MUTABLE_COLUMNS = Object.freeze([
@@ -2279,7 +2287,8 @@ const writeCustomers = async (customers, branchId = null, options = {}) => {
     const executeQuery = executor ? executor.query.bind(executor) : query;
     if (await isRelationalReady()) {
         if (executor) assertDataWritesAllowed();
-        for (const customer of customers) {
+        for (const rawCustomer of customers) {
+            const customer = normalizeCustomerNameRecord(rawCustomer);
             const resolvedBranchId = customer.branchId || branchId;
             if (!resolvedBranchId) {
                 throw new Error('Branch ID is required when saving customers to MySQL.');
@@ -2346,8 +2355,9 @@ const writeCustomers = async (customers, branchId = null, options = {}) => {
         return;
     }
     const serialized = Array.isArray(customers)
-        ? customers.map((customer) => {
-            if (!customer || typeof customer !== 'object') return customer;
+        ? customers.map((rawCustomer) => {
+            if (!rawCustomer || typeof rawCustomer !== 'object') return rawCustomer;
+            const customer = normalizeCustomerNameRecord(rawCustomer);
             const existingStatusState = parseStoredCustomerStatus(customer.statusRaw) || {
                 status: STATUS_ACTIVE,
                 statusMode: STATUS_MODE_AUTO
@@ -3639,9 +3649,9 @@ const parseImportedClientRecordsFromWorkbook = (buffer, { sheetName = IMPORT_CLI
             'Account #',
             'account_number'
         ]));
-        const firstName = normalizeImportText(getImportCell(row, headerMap, ['First Name', 'Firstname', 'first_name']));
-        const middleName = normalizeImportText(getImportCell(row, headerMap, ['Middle Name', 'Middlename', 'middle_name']));
-        const lastName = normalizeImportText(getImportCell(row, headerMap, ['Last Name', 'Lastname', 'last_name']));
+        const firstName = normalizeCustomerName(getImportCell(row, headerMap, ['First Name', 'Firstname', 'first_name']), 100);
+        const middleName = normalizeCustomerName(getImportCell(row, headerMap, ['Middle Name', 'Middlename', 'middle_name']), 100);
+        const lastName = normalizeCustomerName(getImportCell(row, headerMap, ['Last Name', 'Lastname', 'last_name']), 100);
         const planValue = normalizeImportText(getImportCell(row, headerMap, ['Plan', 'Plan Name', 'Plan Amount']));
         const planAmount = parseImportNumber(planValue);
         const planCategory = normalizeImportedPlanCategory(getImportCell(row, headerMap, ['Plan Type', 'Type', 'Plan Category']));
@@ -3703,9 +3713,9 @@ const normalizeImportedClientCorrectionRecord = (raw = {}) => {
         status: normalizeImportedClientStatus(raw.status),
         planValue,
         planAmount,
-        firstName: normalizeImportText(raw.firstName),
-        middleName: normalizeImportText(raw.middleName),
-        lastName: normalizeImportText(raw.lastName),
+        firstName: normalizeCustomerName(raw.firstName, 100),
+        middleName: normalizeCustomerName(raw.middleName, 100),
+        lastName: normalizeCustomerName(raw.lastName, 100),
         mobileRaw: normalizePhilippineMobile(raw.mobileRaw ?? raw.mobile),
         email: normalizeImportText(raw.email),
         street: normalizeImportText(raw.street),
@@ -5884,9 +5894,12 @@ const createCustomerRecordUnlocked = async (
     const incomingOpticalInfo = String(effectivePayload?.opticalInfo ?? effectivePayload?.opticalPower ?? '').trim();
     const hasIncomingNapAssignment = Boolean(incomingNapId && incomingNapPort);
 
-    const firstName = String(effectivePayload?.firstName || '').trim();
-    const lastName = String(effectivePayload?.lastName || '').trim();
+    const firstName = normalizeCustomerName(effectivePayload?.firstName, 100);
+    const lastName = normalizeCustomerName(effectivePayload?.lastName, 100);
     const fullName = `${firstName} ${lastName}`.trim();
+    incomingBody.firstName = firstName;
+    incomingBody.lastName = lastName;
+    incomingBody.name = fullName;
     const loginUsername = String(effectivePayload?.loginUsername || '').trim() || incomingAccount;
     const suppliedLoginPassword = String(effectivePayload?.loginPassword || '');
     const temporaryPortalPassword = suppliedLoginPassword ? '' : generateTemporaryPortalPassword();
@@ -6301,8 +6314,8 @@ const updateCustomerRecordUnlocked = async (
     const incomingNapPort = toPositiveInt(payload?.napPort);
     const incomingOpticalInfo = String(payload?.opticalInfo ?? payload?.opticalPower ?? '').trim();
 
-    const firstName = String(payload?.firstName ?? existing.firstName ?? '').trim();
-    const lastName = String(payload?.lastName ?? existing.lastName ?? '').trim();
+    const firstName = normalizeCustomerName(payload?.firstName ?? existing.firstName, 100);
+    const lastName = normalizeCustomerName(payload?.lastName ?? existing.lastName, 100);
     const fullName = `${firstName} ${lastName}`.trim();
     const loginUsername = String(payload?.loginUsername ?? existing.loginUsername ?? '').trim()
         || fullName

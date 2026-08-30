@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const createError = require('http-errors');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const { normalizeCustomerName } = require('../../../../core/data/customer-name-normalizer');
 
 const STORE_KEY = 'closed_customer_accounts';
 const STORE_VERSION = 2;
@@ -120,7 +121,7 @@ const sanitizeRecord = (record = {}) => {
     id: cleanText(record.id, 96),
     branchId: normalizeBranchKey(record.branchId),
     accountNumber,
-    customerName: cleanText(record.customerName, 240),
+    customerName: normalizeCustomerName(record.customerName, 240),
     contactNumber: cleanText(record.contactNumber, 80),
     planName: cleanText(record.planName, 160),
     areaName: cleanText(record.areaName, 180),

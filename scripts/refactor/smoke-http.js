@@ -13,6 +13,7 @@ const checks = [
   { path: '/styles.css', status: 200, bodyIncludes: '.app-shell' },
   { path: '/theme-init.js', status: 200, bodyIncludes: 'localStorage' },
   { path: '/layout.js', status: 200, bodyIncludes: 'loadPartial' },
+  { path: '/js/customer-name-case.js', status: 200, bodyIncludes: 'CustomerNameCase' },
   { path: '/sidebar.html', status: 200, bodyIncludes: 'sidebar' },
   { path: '/dashboard-v2.js', status: 200, bodyIncludes: "fetchJson('/api/payment-records')" },
   { path: '/css/dashboard-v2.css', status: 200, bodyIncludes: '.dashboard-v2-primary-grid' },

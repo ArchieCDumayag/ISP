@@ -132,6 +132,11 @@ assert(!serverSource.includes('const rootPath ='));
 assert(!serverSource.includes('return res.sendFile(rootPath)'));
 console.log('PASS shared server composition uses canonical Core/module/static paths only');
 
+assert(serverSource.includes('if (isServerError) {'));
+assert(serverSource.includes('console.error(err?.stack || err);'));
+assert(!serverSource.includes('console.error(err.stack);'));
+console.log('PASS expected HTTP client errors do not emit server stack traces');
+
 const installerSource = fs.readFileSync(
   path.join(projectRoot, 'Features/modules/admin/backend/setup-installer.js'),
   'utf8'

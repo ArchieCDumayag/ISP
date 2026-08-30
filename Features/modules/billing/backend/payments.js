@@ -457,7 +457,8 @@ const findManualPaymentReferenceConflict = ({
     reference,
     payments = {},
     paymentEntries = [],
-    gcashTransactions = []
+    gcashTransactions = [],
+    gcashPendingReservations = []
 } = {}) => {
     const safeReference = sanitizeReferenceInput(reference);
     if (!safeReference) return null;
@@ -491,6 +492,16 @@ const findManualPaymentReferenceConflict = ({
             source: 'gcash_transaction',
             reference: sanitizeString(importedConflict.reference) || null,
             message: 'This reference already exists in Imported GCash Transactions. Use it from GCash Transactions instead.'
+        };
+    }
+    const pendingReservationConflict = (Array.isArray(gcashPendingReservations) ? gcashPendingReservations : [])
+        .find((reservation) => paymentReferencesMatch(reservation?.reference, safeReference));
+    if (pendingReservationConflict) {
+        return {
+            source: 'temp_pending_gcash',
+            accountNumber: sanitizeString(pendingReservationConflict.accountNumber) || null,
+            pendingReservationId: sanitizeString(pendingReservationConflict.id) || null,
+            message: 'This reference is reserved by a pending Temp GCash payment.'
         };
     }
     return null;
@@ -825,7 +836,8 @@ const getStoredManualPaymentReferenceConflict = async ({
         reference: safeReference,
         payments: paymentRecords,
         paymentEntries,
-        gcashTransactions: gcashHistory?.transactions || []
+        gcashTransactions: gcashHistory?.transactions || [],
+        gcashPendingReservations: gcashHistory?.pendingReservations || []
     });
 };
 

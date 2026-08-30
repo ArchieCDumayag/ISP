@@ -95,13 +95,18 @@ assert(coverageMapSource.includes("workspace: 'temp'"));
 assert(coverageMapSource.includes("type === 'temp' ? 'T'"));
 assert(coverageMapSource.includes('Temporary Subscriber'));
 assert(ponManagementHtmlSource.includes('css/leaflet-popups-tabler.css?v=1.1'));
-assert(ponManagementHtmlSource.includes('js/pon-management.js?v=4.7'));
+assert(ponManagementHtmlSource.includes('js/pon-management.js?v=4.8'));
 assert(ponManagementJsSource.includes('expectedRevision: syncState.revision'));
 assert(ponManagementJsSource.includes('recoverFromPonRevisionConflict'));
 assert(ponManagementJsSource.includes('applyBackendRevision(result)'));
 assert(ponManagementJsSource.includes("fetch('/api/pon/overview'"));
+assert(ponManagementJsSource.includes('const refreshPonOverviewFromBackend = async'));
+assert(ponManagementJsSource.includes('await hydratePonOverviewFromBackend();'));
+assert(ponManagementJsSource.includes('refreshPonOverviewFromBackend({ silent: true })'));
+assert(!ponManagementJsSource.includes('refreshPonStateFromBackend({ silent: true })'));
 assert(ponManagementJsSource.includes('filter((entry) => !entry.readOnly)'));
 assert(ponManagementJsSource.includes('Edit this Temp assignment from temp.html'));
+assert(ponManagementJsSource.includes('>TEMP</span>'));
 assert(ponManagementBackendSource.includes('mergeTempNetworkAssignments'));
 assert(ponManagementBackendSource.includes("workspace: 'temp'"));
 assert(ponManagementBackendSource.includes("SELECT id FROM branches WHERE id = ? FOR UPDATE"));
@@ -121,8 +126,9 @@ assert(mysqlBranchLockIndex >= 0 && mysqlBranchLockIndex < mysqlRevisionSnapshot
 assert(mysqlRevisionSnapshotIndex < mysqlRevisionCompareIndex);
 assert.strictEqual(
   (ponServiceabilityBackendSource.match(/lockRelationalPonBranch\(connection, input\.branchId\)/g) || []).length,
-  3
+  7
 );
+assert(ponServiceabilityBackendSource.includes('const finalizeRequestedPonAssignment = async'));
 assert(ponManagementJsSource.includes("className: 'network-map-popup pon-reference-popup'"));
 assert(ponManagementJsSource.includes('class="card map-popup-card"'));
 [
@@ -295,8 +301,12 @@ assert.strictEqual(mergedPonState.naps[0].availablePorts, 6);
 const ponServiceability = backend.load('ponServiceability');
 assert.strictEqual(typeof ponServiceability.findNearbyPonNaps, 'function');
 assert.strictEqual(typeof ponServiceability.reservePonPort, 'function');
+assert.strictEqual(typeof ponServiceability.submitPonReservationForAdmin, 'function');
 assert.strictEqual(typeof ponServiceability.releasePonPortReservation, 'function');
+assert.strictEqual(typeof ponServiceability.releasePonDraftHold, 'function');
+assert.strictEqual(typeof ponServiceability.reassignPonDraftHold, 'function');
 assert.strictEqual(typeof ponServiceability.finalizePonAssignment, 'function');
+assert.strictEqual(typeof ponServiceability.finalizePonDraftHold, 'function');
 execFileSync(process.execPath, [
   path.join(projectRoot, 'Features/modules/network/tests/pon-serviceability.test.js')
 ], { stdio: 'inherit' });
@@ -312,3 +322,4 @@ assert(migrationSource.includes('async function ensurePonPortNamesColumn()'));
 assert(migrationSource.includes('await ensurePonPortNamesColumn();'));
 console.log('PASS endpoint, PPPoE, audit, client-error, and PON helper contracts');
 console.log('NETWORK COMPATIBILITY PASSED');
+process.exit(0);

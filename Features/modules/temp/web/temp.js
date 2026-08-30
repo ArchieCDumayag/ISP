@@ -74,6 +74,7 @@
             selectedMonth: '',
             availableMonths: [],
             summary: {},
+            pending: [],
             transactions: [],
             loaded: false
         },
@@ -85,6 +86,7 @@
     };
     let gcashAllocationRows = [];
     let gcashAllocationTransaction = null;
+    let gcashPendingReservationId = '';
     let toastTimer = null;
     let coordinateMap = null;
     let coordinateCustomerMarker = null;
@@ -939,6 +941,7 @@
             reconcile: 'Needs review',
             mixed: 'Main + Temp split',
             conflict: 'Already in Main',
+            pending: 'Pending verification',
             claimed: 'Posting pending',
             posted: 'Posted to Temp'
         }[value] || titleCase(value || 'Available');
@@ -946,7 +949,10 @@
 
     function renderGcash() {
         const summary = state.gcash.summary || {};
+        const pending = Array.isArray(state.gcash.pending) ? state.gcash.pending : [];
         const transactions = Array.isArray(state.gcash.transactions) ? state.gcash.transactions : [];
+        byId('gcashPendingCount').textContent = String(summary.pendingCount || 0);
+        byId('gcashPendingReadyCount').textContent = `${summary.readyPendingCount || 0} ready`;
         byId('gcashAvailableCount').textContent = String(summary.availableCount || 0);
         byId('gcashReconcileCount').textContent = String(summary.reconcileCount || 0);
         byId('gcashMixedCount').textContent = String(summary.mixedCount || 0);
@@ -955,6 +961,31 @@
         byId('gcashAvailableAmount').textContent = formatMoney(summary.availableAmount);
         byId('gcashAvailableMonths').innerHTML = (state.gcash.availableMonths || [])
             .map((month) => `<option value="${escapeHtml(month)}"></option>`).join('');
+
+        byId('gcashPendingTableBody').innerHTML = pending.map((reservation) => {
+            const ready = reservation.matchState === 'ready';
+            const statusLabel = {
+                awaiting_pdf: 'Waiting for PDF',
+                ready: 'Exact match',
+                mismatch: 'Needs review',
+                ambiguous: 'Ambiguous',
+                assigned: 'Already assigned',
+                locked: 'Not for Posting'
+            }[reservation.matchState] || 'Pending';
+            const statusClass = ready ? 'posted' : (reservation.matchState === 'awaiting_pdf' ? 'pending' : 'conflict');
+            const officialReference = reservation.officialTransaction?.reference || '';
+            return `<tr>
+                <td><span class="cell-primary">${escapeHtml(reservation.customerName || reservation.accountNumber)}</span><span class="cell-secondary account-code">${escapeHtml(reservation.accountNumber)}</span></td>
+                <td>${formatDate(reservation.paymentDate)}</td>
+                <td><span class="account-code">${escapeHtml(reservation.reference)}</span></td>
+                <td class="text-end"><strong>${formatMoney(reservation.amount)}</strong></td>
+                <td><span class="gcash-pending-match"><span class="gcash-state gcash-state--${statusClass}">${escapeHtml(statusLabel)}</span><small>${escapeHtml(reservation.matchMessage || '')}</small></span></td>
+                <td class="text-end"><span class="gcash-pending-actions">${ready ? `<button class="btn btn-sm btn-primary" type="button" data-gcash-pending-action="verify" data-pending-id="${escapeHtml(reservation.id)}" data-official-reference="${escapeHtml(officialReference)}"><i class="ti ti-shield-check"></i> Verify &amp; post</button>` : ''}<button class="icon-button icon-button--danger" type="button" data-gcash-pending-action="cancel" data-pending-id="${escapeHtml(reservation.id)}" title="Cancel pending payment" aria-label="Cancel pending payment"><i class="ti ti-trash"></i></button></span></td>
+            </tr>`;
+        }).join('');
+        const noPending = pending.length === 0;
+        byId('gcashPendingEmpty').hidden = !noPending;
+        byId('gcashPendingTableWrap').hidden = noPending;
 
         byId('gcashTableBody').innerHTML = transactions.map((transaction) => {
             const transactionState = transaction.state || 'available';
@@ -975,7 +1006,9 @@
                 : (transactionState === 'claimed'
                     ? 'Complete posting'
                     : (transactionState === 'mixed' ? 'Split remainder' : 'Allocate'));
-            const action = transactionState === 'conflict'
+            const action = transactionState === 'pending'
+                ? '<span class="text-warning small"><i class="ti ti-hourglass-empty"></i> Use Pending queue</span>'
+                : transactionState === 'conflict'
                 ? '<span class="text-danger small"><i class="ti ti-shield-x"></i> Already in Main</span>'
                 : transactionState === 'posted'
                 ? '<span class="text-success small"><i class="ti ti-circle-check"></i> Complete</span>'
@@ -1035,6 +1068,7 @@
                 selectedMonth: payload.selectedMonth || month,
                 availableMonths: Array.isArray(payload.availableMonths) ? payload.availableMonths : [],
                 summary: payload.summary || {},
+                pending: Array.isArray(payload.pending) ? payload.pending : [],
                 transactions: Array.isArray(payload.transactions) ? payload.transactions : [],
                 loaded: true
             };
@@ -1136,8 +1170,13 @@
     function updateManualGcashNotice() {
         const isManualGcash = normalizedPaymentMethod(byId('paymentMethod').value) === 'gcash';
         byId('manualGcashNotice').hidden = !isManualGcash;
-        byId('savePaymentBtn').disabled = isManualGcash;
-        byId('paymentReference').required = false;
+        if (isManualGcash) byId('paymentKind').value = 'payment';
+        byId('paymentKind').disabled = isManualGcash;
+        byId('paymentReference').required = isManualGcash;
+        byId('paymentReference').maxLength = isManualGcash ? 64 : 120;
+        byId('savePaymentBtn').innerHTML = isManualGcash
+            ? '<i class="ti ti-hourglass-empty"></i> Save pending GCash'
+            : '<i class="ti ti-device-floppy"></i> Save transaction';
     }
 
     function openReceipt(paymentId) {
@@ -1275,14 +1314,15 @@
             guidance.className = 'alert alert-danger mt-3 mb-3';
             guidance.innerHTML = `<i class="ti ti-alert-circle me-2"></i><span>Reduce allocations by <strong>${formatMoney(Math.abs(remaining))}</strong>.</span>`;
         }
-        byId('addGcashAllocationBtn').disabled = gcashAllocationRows.length >= GCASH_MAX_ALLOCATIONS;
+        byId('addGcashAllocationBtn').disabled = Boolean(gcashPendingReservationId)
+            || gcashAllocationRows.length >= GCASH_MAX_ALLOCATIONS;
     }
 
     function renderGcashAllocationRows() {
         byId('gcashAllocationRows').innerHTML = gcashAllocationRows.map((allocation, index) => {
             const isMain = allocation.workspace === 'main';
             const lockedNote = allocation.locked
-                ? `<span class="allocation-lock"><i class="ti ti-lock"></i> ${isMain ? 'Existing Main payment; will not be posted again' : (allocation.source === 'legacy' ? `Existing receipt ${escapeHtml(allocation.receiptNumber || '')}` : 'Claimed allocation')}</span>`
+                ? `<span class="allocation-lock"><i class="ti ti-lock"></i> ${isMain ? 'Existing Main payment; will not be posted again' : (allocation.source === 'pending' ? 'Pending customer and amount are locked' : (allocation.source === 'legacy' ? `Existing receipt ${escapeHtml(allocation.receiptNumber || '')}` : 'Claimed allocation'))}</span>`
                 : '<span class="allocation-hint">Editable allocation</span>';
             const canRemove = !allocation.locked && gcashAllocationRows.filter((row) => !row.locked).length > 1;
             return `<div class="gcash-allocation-row" data-allocation-row="${index}">
@@ -1297,11 +1337,18 @@
         updateGcashAllocationTotals();
     }
 
-    function openGcashAllocation(reference) {
+    function openGcashAllocation(reference, pendingReservationId = '') {
         const transaction = state.gcash.transactions.find((item) => item.reference === reference);
         if (!transaction || transaction.state === 'posted') return;
         if (transaction.state === 'conflict') {
             showToast('This reference already exists in Main Payment History and cannot be posted to Temp.', 'error');
+            return;
+        }
+        const pendingReservation = pendingReservationId
+            ? state.gcash.pending.find((item) => item.id === pendingReservationId)
+            : null;
+        if (pendingReservationId && (!pendingReservation || pendingReservation.matchState !== 'ready')) {
+            showToast('This pending payment is not ready for official verification.', 'error');
             return;
         }
         if (!state.customers.length) {
@@ -1309,13 +1356,22 @@
             return;
         }
         gcashAllocationTransaction = transaction;
+        gcashPendingReservationId = pendingReservation?.id || '';
         const assignmentAllocations = Array.isArray(transaction.assignment?.allocations)
             ? transaction.assignment.allocations
             : [];
         const legacyPayments = Array.isArray(transaction.legacyPayments) ? transaction.legacyPayments : [];
         const mainPayments = Array.isArray(transaction.mainPayments) ? transaction.mainPayments : [];
         const mainPaymentIds = new Set(mainPayments.map((payment) => String(payment.paymentEntryId || payment.id || '')).filter(Boolean));
-        const lockedSource = assignmentAllocations.length
+        const lockedSource = pendingReservation
+            ? [{
+                accountNumber: pendingReservation.accountNumber,
+                customerName: pendingReservation.customerName,
+                amount: pendingReservation.amount,
+                workspace: 'temp',
+                source: 'pending'
+            }]
+            : assignmentAllocations.length
             ? assignmentAllocations
             : [
                 ...mainPayments.map((payment) => ({ ...payment, workspace: 'main' })),
@@ -1330,7 +1386,7 @@
             customerName: String(allocation.customerName || '').replace(/^Main - /, ''),
             amount: roundMoney(allocation.amount),
             locked: true,
-            source: isMain ? 'main' : (assignmentAllocations.length ? 'claimed' : 'legacy'),
+            source: isMain ? 'main' : (pendingReservation ? 'pending' : (assignmentAllocations.length ? 'claimed' : 'legacy')),
             workspace: isMain ? 'main' : 'temp',
             receiptNumber: allocation.receiptNumber || ''
         };
@@ -1346,8 +1402,12 @@
         byId('gcashProofDate').textContent = formatDate(transaction.transactionDate);
         byId('gcashProofAmount').textContent = formatMoney(officialAmount);
         const mixedPosting = gcashAllocationRows.some((allocation) => allocation.workspace === 'main');
-        byId('gcashAllocationTitle').textContent = mixedPosting ? 'Complete Main + Temp GCash split' : 'Post GCash to Temp customers';
-        byId('gcashAssignmentConfirmationLabel').textContent = mixedPosting
+        byId('gcashAllocationTitle').textContent = pendingReservation
+            ? 'Verify pending GCash payment'
+            : (mixedPosting ? 'Complete Main + Temp GCash split' : 'Post GCash to Temp customers');
+        byId('gcashAssignmentConfirmationLabel').textContent = pendingReservation
+            ? 'I verified that the official PDF reference, amount, date, and Temp customer match. Convert this pending record into one posted payment.'
+            : mixedPosting
             ? 'I verified the existing Main payment, Temp customers, amounts, and official reference. Link them as one locked payment group without duplicating Main.'
             : 'I verified the Temp customers, amounts, and official GCash reference. Post this allocation once.';
         byId('gcashAssignmentConfirmed').checked = false;
@@ -1412,9 +1472,14 @@
         try {
             const result = await api(`/gcash/${encodeURIComponent(gcashAllocationTransaction.reference)}/post`, {
                 method: 'POST',
-                body: { allocations, assignmentConfirmed: true }
+                body: {
+                    allocations,
+                    assignmentConfirmed: true,
+                    pendingReservationId: gcashPendingReservationId || undefined
+                }
             });
             byId('gcashAllocationDialog').close();
+            gcashPendingReservationId = '';
             await loadWorkspace();
             await loadGcash();
             showToast(result.message || (result.idempotent ? 'This official GCash allocation was already posted.' : 'Official GCash payment posted to Temp.'));
@@ -1510,23 +1575,27 @@
         event.preventDefault();
         const form = event.currentTarget;
         if (!form.reportValidity()) return;
-        if (normalizedPaymentMethod(byId('paymentMethod').value) === 'gcash') {
-            showToast('Use GCash Posting to verify an imported official credit and prevent duplicates.', 'error');
-            return;
-        }
         const paymentId = byId('paymentEditId').value;
         const payload = Object.fromEntries(new FormData(form).entries());
         payload.amount = Number(payload.amount);
+        const pendingGcash = normalizedPaymentMethod(byId('paymentMethod').value) === 'gcash';
+        if (pendingGcash) payload.kind = 'payment';
         const button = byId('savePaymentBtn');
         button.disabled = true;
         try {
-            await api(paymentId ? `/payments/${encodeURIComponent(paymentId)}` : '/payments', {
-                method: paymentId ? 'PUT' : 'POST',
+            const result = await api(pendingGcash ? '/gcash/pending' : (paymentId ? `/payments/${encodeURIComponent(paymentId)}` : '/payments'), {
+                method: pendingGcash ? 'POST' : (paymentId ? 'PUT' : 'POST'),
                 body: payload
             });
             byId('paymentDialog').close();
             await loadWorkspace();
-            showToast(paymentId ? 'Temp transaction updated.' : 'Temp transaction recorded.');
+            if (pendingGcash) {
+                activatePanel('gcash');
+                await loadGcash();
+            }
+            showToast(result.message || (pendingGcash
+                ? 'GCash saved as Pending Verification.'
+                : (paymentId ? 'Temp transaction updated.' : 'Temp transaction recorded.')));
         } catch (error) {
             showToast(error.message, 'error');
         } finally {
@@ -1692,6 +1761,29 @@
         openGcashAllocation(button.dataset.gcashReference);
     }
 
+    async function handlePendingGcashAction(event) {
+        const button = event.target.closest('[data-gcash-pending-action]');
+        if (!button) return;
+        const pendingId = button.dataset.pendingId;
+        const reservation = state.gcash.pending.find((item) => item.id === pendingId);
+        if (!reservation) return;
+        if (button.dataset.gcashPendingAction === 'verify') {
+            openGcashAllocation(button.dataset.officialReference, pendingId);
+            return;
+        }
+        if (button.dataset.gcashPendingAction !== 'cancel') return;
+        if (!window.confirm(`Cancel pending GCash ${reservation.reference} for ${reservation.customerName}? No ledger payment has been posted.`)) return;
+        button.disabled = true;
+        try {
+            const result = await api(`/gcash/pending/${encodeURIComponent(pendingId)}`, { method: 'DELETE' });
+            await loadGcash();
+            showToast(result.message || 'Pending Temp GCash payment cancelled.');
+        } catch (error) {
+            showToast(error.message, 'error');
+            button.disabled = false;
+        }
+    }
+
     async function importWorkspace(file) {
         if (!file) return;
         const extension = file.name.toLowerCase().match(/\.(json|xlsx|xls)$/)?.[1];
@@ -1808,6 +1900,7 @@
     byId('paymentTableBody').addEventListener('click', handlePaymentAction);
     byId('historyTableBody').addEventListener('click', handlePaymentAction);
     byId('gcashTableBody').addEventListener('click', handleGcashTableAction);
+    byId('gcashPendingTableBody').addEventListener('click', handlePendingGcashAction);
     byId('addCustomerBtn').addEventListener('click', () => openCustomerDialog());
     byId('addPaymentBtn').addEventListener('click', () => openPaymentDialog());
     byId('customerForm').addEventListener('submit', saveCustomer);

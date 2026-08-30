@@ -155,8 +155,8 @@ async function main() {
   });
 
   const customer = await isolatedStore.createCustomer({
-    firstName: 'Other',
-    lastName: 'Location',
+    firstName: 'oTHER',
+    lastName: "o'BRIEN jr",
     planName: 'Temp Plan',
     monthlyRate: 1000,
     openingBalance: 500,
@@ -168,6 +168,8 @@ async function main() {
     napPort: 3
   });
   assert.strictEqual(customer.accountNumber, 'TMP000001');
+  assert.strictEqual(customer.firstName, 'Other');
+  assert.strictEqual(customer.lastName, "O'Brien Jr.");
   assert.strictEqual(customer.planType, 'postpaid');
   assert.strictEqual(customer.billingScheduleMode, 'day');
   assert.strictEqual(customer.billingScheduleConfigured, true);
@@ -952,8 +954,9 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=2.7'));
-  assert(tempHtml.includes('/temp.css?v=2.5'));
+  assert(tempHtml.includes('/temp.js?v=2.8'));
+  assert(tempHtml.includes('/js/customer-name-case.js?v=1.0'));
+  assert(tempHtml.includes('/temp.css?v=2.6'));
   assert(tempHtml.includes('id="customerMapPin"'));
   assert(tempHtml.includes('id="customerNap"'));
   assert(tempHtml.includes('id="customerNapPort"'));
@@ -972,7 +975,10 @@ async function main() {
   assert(tempHtml.includes('id="gcashAllocationDialog"'));
   assert(tempHtml.includes('id="gcashConflictCount"'));
   assert(tempHtml.includes('id="gcashMixedCount"'));
-  assert(tempHtml.includes('partial Main payment can be linked'));
+  assert(tempHtml.includes('id="gcashPendingCount"'));
+  assert(tempHtml.includes('id="gcashPendingTableBody"'));
+  assert(tempHtml.includes('Pending GCash does not reduce a balance'));
+  assert(tempHtml.includes('This will be saved as Pending Verification.'));
   assert(tempHtml.includes('id="gcashAllocationTitle"'));
   ['customerPageSize', 'paymentPageSize', 'historyPageSize'].forEach((id) => {
     assert(tempHtml.includes(`id="${id}"`));
@@ -1119,7 +1125,9 @@ async function main() {
   assert(tempCss.includes('.export-format-grid'));
   assert(tempCss.includes('.export-format-option'));
   assert(tempCss.includes('.gcash-state--mixed'));
-  assert(tempCss.includes('grid-template-columns: repeat(6, minmax(0, 1fr))'));
+  assert(tempCss.includes('grid-template-columns: repeat(7, minmax(0, 1fr))'));
+  assert(tempCss.includes('.gcash-state--pending'));
+  assert(tempCss.includes('.gcash-pending-section'));
   assert(tempCss.includes('.gcash-allocation-main'));
   assert(tempCss.includes('.temp-dialog--map[open]'));
   assert(tempCss.includes('.coordinate-picker-map'));
@@ -1134,6 +1142,9 @@ async function main() {
   assert(tempJs.includes("fetch(`${API_ROOT}/payment-history-export?month="));
   assert(tempJs.includes('`/gcash?month=${encodeURIComponent(month)}`'));
   assert(tempJs.includes('assignmentConfirmed: true'));
+  assert(tempJs.includes("api(pendingGcash ? '/gcash/pending'"));
+  assert(tempJs.includes('pendingReservationId: gcashPendingReservationId || undefined'));
+  assert(tempJs.includes('async function handlePendingGcashAction(event)'));
   assert(tempJs.includes("mixed: 'Main + Temp split'"));
   assert(tempJs.includes("allocation.workspace !== 'main'"));
   assert(tempJs.includes('without duplicating Main'));
@@ -1161,6 +1172,10 @@ async function main() {
   assert(routerSource.includes('buildCollectorExcelBuffer(payload, { reportDate })'));
   assert(routerSource.includes("router.get('/payment-history-export'"));
   assert(routerSource.includes("router.get('/gcash'"));
+  assert(routerSource.includes("router.post('/gcash/pending'"));
+  assert(routerSource.includes("router.delete('/gcash/pending/:pendingId'"));
+  assert(routerSource.includes('reservePendingGcashReference'));
+  assert(routerSource.includes('releasePendingGcashReference'));
   assert(routerSource.includes("router.post('/gcash/:reference/post'"));
   assert(routerSource.includes('claimGcashTransactionAllocations'));
   assert(routerSource.includes('finalizeGcashTransactionAllocations'));
@@ -1179,6 +1194,7 @@ async function main() {
   assert(routerSource.includes('This reference belongs to an imported GCash credit.'));
   assert(routerSource.includes('officialTransactions: history.transactions'));
   assert(routerSource.includes('officialTransactions: [transaction]'));
+  assert(routerSource.includes("'TEMP_PENDING_GCASH_MATCH_REQUIRED'"));
   assert(routerSource.includes("gcash-payment-reference-lookup"));
   assert(routerSource.includes("'TEMP_GCASH_MAIN_PAYMENT_CONFLICT'"));
   assert(routerSource.includes("accountHasRole(req.user, 'Admin')"));

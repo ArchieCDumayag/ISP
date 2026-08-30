@@ -4,6 +4,10 @@ const { getPool, query } = require('../../../../core/data/db');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const {
+    normalizeCustomerName,
+    normalizeCustomerNameRecord
+} = require('../../../../core/data/customer-name-normalizer');
+const {
     readCustomers,
     resolveStoredAccountPrefixId,
     reserveNextAccountNumber
@@ -12,7 +16,7 @@ const {
 const CUSTOMER_DRAFT_SUBMISSIONS_TABLE = 'customer_draft_submissions';
 const STORE_KEY = 'customer_draft_submissions';
 const PUBLIC_STATUS = new Set(['pending', 'approved', 'rejected']);
-const INTERNAL_STATUS = new Set(['processing']);
+const INTERNAL_STATUS = new Set(['in-progress', 'processing']);
 const ALLOWED_STATUS = new Set([...PUBLIC_STATUS, ...INTERNAL_STATUS]);
 let ensureTablePromise = null;
 let backfillDraftAccountNumbersPromise = null;
@@ -99,12 +103,17 @@ const resolveInstallationCompletionCas = (existingCompletion, proposedCompletion
     throw createInstallationCompletionConflict();
 };
 
+const normalizeDraftCustomerNames = (draft = {}) => normalizeCustomerNameRecord(
+    draft && typeof draft === 'object' && !Array.isArray(draft) ? draft : {}
+);
+
 const buildCustomerName = (draft = {}) => {
-    const explicit = toSafeText(draft.name, 200);
+    const normalizedDraft = normalizeDraftCustomerNames(draft);
+    const explicit = normalizeCustomerName(normalizedDraft.name, 200);
     if (explicit) return explicit;
-    const firstName = toSafeText(draft.firstName, 100);
-    const middleName = toSafeText(draft.middleName, 100);
-    const lastName = toSafeText(draft.lastName, 100);
+    const firstName = normalizeCustomerName(normalizedDraft.firstName, 100);
+    const middleName = normalizeCustomerName(normalizedDraft.middleName, 100);
+    const lastName = normalizeCustomerName(normalizedDraft.lastName, 100);
     return [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
 };
 
@@ -130,9 +139,10 @@ const toJsonDateTime = (value, fallback = '') => {
 };
 
 const normalizeJsonSubmissionRow = (row = {}) => {
-    const draftData = row.draftData && typeof row.draftData === 'object' && !Array.isArray(row.draftData)
+    const rawDraftData = row.draftData && typeof row.draftData === 'object' && !Array.isArray(row.draftData)
         ? row.draftData
         : parseDraftJson(row.draft_json);
+    const draftData = normalizeDraftCustomerNames(rawDraftData);
     const submittedBy = row.submittedBy && typeof row.submittedBy === 'object' ? row.submittedBy : {};
     const reviewedBy = row.reviewedBy && typeof row.reviewedBy === 'object' ? row.reviewedBy : {};
     const now = new Date().toISOString();
@@ -145,13 +155,13 @@ const normalizeJsonSubmissionRow = (row = {}) => {
         submitted_by_user_id: toSafeText(row.submitted_by_user_id ?? row.submittedByUserId ?? submittedBy.id, 32),
         submitted_by_username: toSafeText(row.submitted_by_username ?? row.submittedByUsername ?? submittedBy.username, 100) || null,
         submitted_by_name: toSafeText(row.submitted_by_name ?? row.submittedByName ?? submittedBy.name, 120) || null,
-        customer_name: toSafeText(row.customer_name ?? row.customerName, 200) || buildCustomerName(draftData) || null,
+        customer_name: normalizeCustomerName(row.customer_name ?? row.customerName, 200) || buildCustomerName(draftData) || null,
         contact_number: toSafeText(row.contact_number ?? row.contactNumber, 50) || toSafeText(draftData.mobile || draftData.contactNumber, 50) || null,
         plan_name: toSafeText(row.plan_name ?? row.planName, 120) || toSafeText(draftData.planName, 120) || null,
         area_name: toSafeText(row.area_name ?? row.areaName, 150) || toSafeText(draftData.area, 150) || null,
         address_text: toSafeText(row.address_text ?? row.addressText, 255) || buildAddressText(draftData) || null,
         draft_account_number: normalizeAccountNumber(row.draft_account_number ?? row.draftAccountNumber ?? row.approved_customer_account_number ?? row.approvedCustomerAccountNumber) || null,
-        draft_json: typeof row.draft_json === 'string' ? row.draft_json : JSON.stringify(draftData || {}),
+        draft_json: JSON.stringify(draftData || {}),
         status: normalizeStatus(row.status ?? row.rawStatus, 'pending'),
         submitted_at: submittedAt,
         reviewed_at: reviewedAt || null,
@@ -287,10 +297,11 @@ const backfillMissingDraftAccountNumbers = async () => {
 const mapCustomerDraftSubmissionRow = (row) => {
     if (!row) return null;
     const status = normalizeStatus(row.status, 'pending');
+    const draftData = normalizeDraftCustomerNames(parseDraftJson(row.draft_json));
     return {
         id: String(row.id || ''),
         branchId: Number(row.branch_id) || null,
-        customerName: row.customer_name || '',
+        customerName: normalizeCustomerName(row.customer_name, 200) || buildCustomerName(draftData),
         contactNumber: row.contact_number || '',
         planName: row.plan_name || '',
         areaName: row.area_name || '',
@@ -298,7 +309,7 @@ const mapCustomerDraftSubmissionRow = (row) => {
         draftAccountNumber: normalizeAccountNumber(row.draft_account_number || row.approved_customer_account_number),
         status: PUBLIC_STATUS.has(status) ? status : 'pending',
         rawStatus: status,
-        draftData: parseDraftJson(row.draft_json),
+        draftData,
         submittedAt: row.submitted_at || null,
         submittedBy: {
             id: row.submitted_by_user_id || null,
@@ -395,9 +406,7 @@ const createCustomerDraftSubmission = async ({
         throw createError(400, 'Technician ID is required.');
     }
 
-    const normalizedDraft = draftData && typeof draftData === 'object' && !Array.isArray(draftData)
-        ? draftData
-        : {};
+    const normalizedDraft = normalizeDraftCustomerNames(draftData);
     const customerName = buildCustomerName(normalizedDraft);
     if (!customerName) {
         throw createError(400, 'Customer name is required.');
@@ -423,7 +432,7 @@ const createCustomerDraftSubmission = async ({
             address_text: buildAddressText(normalizedDraft) || null,
             draft_account_number: draftAccountNumber,
             draft_json: serializedDraft,
-            status: 'pending',
+            status: 'in-progress',
             submitted_at: now,
             created_at: now,
             updated_at: now
@@ -437,7 +446,7 @@ const createCustomerDraftSubmission = async ({
         `INSERT INTO ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE} (
             id, branch_id, submitted_by_user_id, submitted_by_username, submitted_by_name,
             customer_name, contact_number, plan_name, area_name, address_text, draft_account_number, draft_json, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-progress')`,
         [
             id,
             safeBranchId,
@@ -651,7 +660,7 @@ const compareAndSetCustomerDraftInstallationCompletion = async (
     accountNumber,
     branchId,
     completionRecord,
-    { statuses = ['pending'] } = {}
+    { statuses = ['pending'], transitionToPending = false } = {}
 ) => {
     await ensureCustomerDraftSubmissionsTable();
 
@@ -682,7 +691,9 @@ const compareAndSetCustomerDraftInstallationCompletion = async (
                 currentDraft.installationCompletion,
                 completionRecord
             );
-            if (decision.action === 'replay') {
+            const shouldTransition = transitionToPending
+                && normalizeStatus(rows[index].status) === 'in-progress';
+            if (decision.action === 'replay' && !shouldTransition) {
                 return {
                     item: mapCustomerDraftSubmissionRow(rows[index]),
                     installationCompletion: decision.completion,
@@ -697,6 +708,7 @@ const compareAndSetCustomerDraftInstallationCompletion = async (
             rows[index] = normalizeJsonSubmissionRow({
                 ...rows[index],
                 draft_json: JSON.stringify(nextDraft),
+                ...(shouldTransition ? { status: 'pending' } : {}),
                 updated_at: new Date().toISOString()
             });
             await writeJsonSubmissionRows(rows);
@@ -739,7 +751,9 @@ const compareAndSetCustomerDraftInstallationCompletion = async (
             currentDraft.installationCompletion,
             completionRecord
         );
-        if (decision.action === 'replay') {
+        const shouldTransition = transitionToPending
+            && normalizeStatus(row.status) === 'in-progress';
+        if (decision.action === 'replay' && !shouldTransition) {
             await connection.commit();
             return {
                 item: mapCustomerDraftSubmissionRow(row),
@@ -754,18 +768,28 @@ const compareAndSetCustomerDraftInstallationCompletion = async (
         };
         const [result] = await connection.query(
             `UPDATE ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
-             SET draft_json = ?, updated_at = CURRENT_TIMESTAMP
+             SET draft_json = ?, status = ?, updated_at = CURRENT_TIMESTAMP
              WHERE id = ?
                AND branch_id = ?
                AND status IN (${statusSql})`,
-            [JSON.stringify(nextDraft), row.id, safeBranchId, ...normalizedStatuses]
+            [
+                JSON.stringify(nextDraft),
+                shouldTransition ? 'pending' : normalizeStatus(row.status),
+                row.id,
+                safeBranchId,
+                ...normalizedStatuses
+            ]
         );
         if (!result?.affectedRows) {
             throw createError(409, 'Customer draft changed before installation completion could be stored.');
         }
         await connection.commit();
         return {
-            item: mapCustomerDraftSubmissionRow({ ...row, draft_json: JSON.stringify(nextDraft) }),
+            item: mapCustomerDraftSubmissionRow({
+                ...row,
+                draft_json: JSON.stringify(nextDraft),
+                status: shouldTransition ? 'pending' : row.status
+            }),
             installationCompletion: decision.completion,
             replayed: false
         };

@@ -2,9 +2,12 @@ const express = require('express');
 const { accountHasRole } = require('../../../../core/security/role-utils');
 const {
   listGcashTransactionHistory,
+  reservePendingGcashReference,
+  releasePendingGcashReference,
   claimGcashTransactionAllocations,
   finalizeGcashTransactionAllocations,
-  normalizeReference
+  normalizeReference,
+  referencesMatch
 } = require('../../billing/backend/gcash-transaction-history-store');
 const {
   findMainGcashPaymentsByReference,
@@ -47,6 +50,7 @@ const currentManilaMonth = () => {
   return `${parts.year}-${parts.month}`;
 };
 const isMonth = (value) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || ''));
+const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 const money = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? Number(amount.toFixed(2)) : Number.NaN;
@@ -409,6 +413,19 @@ router.put('/customers/:accountNumber', async (req, res) => {
 
 router.delete('/customers/:accountNumber', async (req, res) => {
   try {
+    const branchId = resolveBranchId(req);
+    const history = await listGcashTransactionHistory({ branchId, all: true });
+    const pendingReservation = (history.pendingReservations || []).find((reservation) => (
+      reservation.workspace === 'temp'
+      && String(reservation.accountNumber || '') === String(req.params.accountNumber || '').trim().toUpperCase()
+    ));
+    if (pendingReservation) {
+      throw createRouterError(
+        'Cancel or verify this customer\'s pending GCash payment before deleting the Temp customer.',
+        409,
+        'TEMP_PENDING_GCASH_CUSTOMER_DELETE_BLOCKED'
+      );
+    }
     return res.json(await workspaceStore.deleteCustomer(req.params.accountNumber));
   } catch (error) {
     return sendError(res, error);
@@ -455,10 +472,104 @@ router.delete('/payments/:paymentId', async (req, res) => {
   }
 });
 
-router.delete('/workspace', async (_req, res) => {
+router.delete('/workspace', async (req, res) => {
   try {
+    const branchId = resolveBranchId(req);
+    const history = await listGcashTransactionHistory({ branchId, all: true });
+    if ((history.pendingReservations || []).some((reservation) => reservation.workspace === 'temp')) {
+      throw createRouterError(
+        'Cancel or verify every pending Temp GCash payment before clearing the workspace.',
+        409,
+        'TEMP_PENDING_GCASH_WORKSPACE_CLEAR_BLOCKED'
+      );
+    }
     const snapshot = await workspaceStore.clearAllData();
     return res.json({ ...snapshot, message: 'All Temp customers and transactions were cleared.' });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.post('/gcash/pending', async (req, res) => {
+  try {
+    const branchId = resolveBranchId(req);
+    const accountNumber = String(req.body?.accountNumber || '').trim().toUpperCase();
+    const rawReference = String(req.body?.reference || '').trim();
+    if (rawReference.length > 64) throw createRouterError('GCash reference must be at most 64 characters.');
+    const reference = normalizeReference(rawReference);
+    const amount = money(req.body?.amount);
+    const paymentDate = String(req.body?.date || '').trim();
+    const description = String(req.body?.description || '').trim().slice(0, 500);
+    if (!accountNumber) throw createRouterError('Select a Temp customer.');
+    if (!reference) throw createRouterError('GCash reference number is required.');
+    if (!Number.isFinite(amount) || amount <= 0) throw createRouterError('Pending GCash amount must be greater than zero.');
+    if (!isDate(paymentDate)) throw createRouterError('Pending GCash payment date must use YYYY-MM-DD.');
+
+    const [snapshot, history] = await Promise.all([
+      workspaceStore.getSnapshot(),
+      listGcashTransactionHistory({ branchId, all: true })
+    ]);
+    const customer = snapshot.customers.find((item) => item.accountNumber === accountNumber);
+    if (!customer) throw createRouterError('Temp customer was not found.', 404, 'TEMP_GCASH_CUSTOMER_NOT_FOUND');
+    const tempReferenceConflict = snapshot.payments.find((payment) => (
+      payment.kind === 'payment' && paymentReferencesMatch(payment.reference, reference)
+    ));
+    if (tempReferenceConflict) {
+      throw createRouterError(
+        'This GCash reference already exists in the Temp payment ledger.',
+        409,
+        'TEMP_GCASH_REFERENCE_ALREADY_USED'
+      );
+    }
+    const mainPayments = await findMainGcashPaymentsByReference({
+      branchId,
+      reference,
+      includePending: true,
+      includeAnyPaymentMethod: true,
+      officialTransactions: history.transactions
+    });
+    if (mainPayments.length) {
+      throw createRouterError(
+        'This GCash reference already exists in Main Payment History or a Main pending payment.',
+        409,
+        'TEMP_GCASH_MAIN_REFERENCE_ALREADY_USED'
+      );
+    }
+
+    const result = await reservePendingGcashReference({
+      branchId,
+      reference,
+      accountNumber,
+      customerName: `Temp - ${customer.fullName}`,
+      amount,
+      paymentDate,
+      description,
+      reservedBy: auditActor(req.user)
+    });
+    return res.status(result.idempotent ? 200 : 201).json({
+      ok: true,
+      message: result.idempotent
+        ? 'This pending Temp GCash payment is already saved.'
+        : 'GCash payment saved as Pending Verification. No balance or receipt was changed.',
+      ...result
+    });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.delete('/gcash/pending/:pendingId', async (req, res) => {
+  try {
+    const branchId = resolveBranchId(req);
+    const result = await releasePendingGcashReference({
+      branchId,
+      pendingId: req.params.pendingId
+    });
+    return res.json({
+      ok: true,
+      message: result.released ? 'Pending Temp GCash payment cancelled.' : 'Pending Temp GCash payment is already cleared.',
+      ...result
+    });
   } catch (error) {
     return sendError(res, error);
   }
@@ -497,8 +608,11 @@ router.get('/gcash', async (req, res) => {
       && !transaction.postingLock
       && (!transaction.assignment || isTempGcashAssignment(transaction.assignment))
     ));
+    const tempPendingReservations = (history.pendingReservations || [])
+      .filter((reservation) => reservation.workspace === 'temp');
     const availableMonths = Array.from(new Set([
       selectedMonth,
+      ...tempPendingReservations.map((reservation) => String(reservation.paymentDate || '').slice(0, 7)).filter(isMonth),
       ...incoming.map((transaction) => String(
         transaction.transactionDate || transaction.transactionAt || ''
       ).slice(0, 7)).filter(isMonth)
@@ -525,6 +639,9 @@ router.get('/gcash', async (req, res) => {
             date: payment.date
           }));
         const assignment = transaction.assignment || null;
+        const pendingReservation = tempPendingReservations.find((reservation) => (
+          referencesMatch(reservation.reference, transaction.reference)
+        )) || null;
         const officialAmount = money(transaction.credit);
         const transactionDate = String(transaction.transactionDate || transaction.transactionAt || '').slice(0, 10);
         const mainPlan = buildMainGcashAllocationPlan({
@@ -534,11 +651,13 @@ router.get('/gcash', async (req, res) => {
         });
         const state = assignment
           ? (assignment.status === 'posted' ? 'posted' : 'claimed')
-          : (mainPlan.status === 'partial'
+          : (pendingReservation
+            ? 'pending'
+            : (mainPlan.status === 'partial'
             ? 'mixed'
             : (mainPlan.status === 'complete' || mainPlan.status === 'conflict'
               ? 'conflict'
-              : (legacyPayments.length ? 'reconcile' : 'available')));
+              : (legacyPayments.length ? 'reconcile' : 'available'))));
         return {
           reference: transaction.reference,
           transactionAt: transaction.transactionAt,
@@ -550,12 +669,69 @@ router.get('/gcash', async (req, res) => {
           amount: officialAmount,
           state,
           assignment,
+          pendingReservation,
           legacyPayments,
           mainPayments: matchingMainPayments,
           mainAmount: mainPlan.mainAmount,
           remainingAmount: mainPlan.remainingAmount,
           mainPlanStatus: mainPlan.status,
           mainPlanReason: mainPlan.reason
+        };
+      });
+    const pending = tempPendingReservations
+      .filter((reservation) => String(reservation.paymentDate || '').slice(0, 7) === selectedMonth)
+      .map((reservation) => {
+        const resolved = workspaceStore.resolveOfficialIncomingGcashReference(
+          history.transactions,
+          reservation.reference
+        );
+        const transaction = resolved?.transaction || null;
+        const officialAmount = money(transaction?.credit);
+        const transactionDate = String(transaction?.transactionDate || transaction?.transactionAt || '').slice(0, 10);
+        let matchState = 'awaiting_pdf';
+        let matchMessage = 'Waiting for an official GCash Transaction History PDF containing this reference.';
+        if (resolved?.ambiguous) {
+          matchState = 'ambiguous';
+          matchMessage = 'Multiple official numeric references match this pending payment. Review the PDF history.';
+        } else if (transaction?.postingLock) {
+          matchState = 'locked';
+          matchMessage = 'The matching official credit is marked Not for Posting.';
+        } else if (transaction?.assignment) {
+          matchState = 'assigned';
+          matchMessage = 'The matching official credit is already assigned.';
+        } else if (transaction && (
+          String(transaction.status || '').toLowerCase() !== 'received'
+          || !Number.isFinite(officialAmount)
+          || officialAmount <= 0
+        )) {
+          matchState = 'mismatch';
+          matchMessage = 'The matching official row is not an incoming credit.';
+        } else if (transaction && officialAmount !== money(reservation.amount)) {
+          matchState = 'mismatch';
+          matchMessage = 'The official credit amount does not match the pending amount.';
+        } else if (transaction && transactionDate !== reservation.paymentDate) {
+          matchState = 'mismatch';
+          matchMessage = 'The official transaction date does not match the pending payment date.';
+        } else if (transaction) {
+          matchState = 'ready';
+          matchMessage = 'Reference, amount, and date match the official PDF. Ready for Admin verification.';
+        }
+        const customer = snapshot.customers.find((item) => item.accountNumber === reservation.accountNumber);
+        return {
+          ...reservation,
+          customerName: customer?.fullName || String(reservation.customerName || '').replace(/^Temp - /, '') || reservation.accountNumber,
+          matchState,
+          matchMessage,
+          officialTransaction: transaction ? {
+            reference: transaction.reference,
+            transactionAt: transaction.transactionAt,
+            transactionDate: transaction.transactionDate,
+            description: transaction.description,
+            sender: transaction.sender,
+            recipient: transaction.recipient,
+            recipientLabel: transaction.recipientLabel,
+            amount: officialAmount
+          } : null
         };
       });
     const availableRows = transactions.filter((transaction) => (
@@ -572,10 +748,13 @@ router.get('/gcash', async (req, res) => {
         conflictCount: transactions.filter((transaction) => transaction.state === 'conflict').length,
         postedCount: transactions.filter((transaction) => transaction.state === 'posted').length,
         claimedCount: transactions.filter((transaction) => transaction.state === 'claimed').length,
+        pendingCount: pending.length,
+        readyPendingCount: pending.filter((reservation) => reservation.matchState === 'ready').length,
         availableAmount: money(availableRows.reduce((total, transaction) => (
           total + (transaction.state === 'mixed' ? transaction.remainingAmount : transaction.amount)
         ), 0))
       },
+      pending,
       transactions
     });
   } catch (error) {
@@ -589,6 +768,7 @@ router.post('/gcash/:reference/post', async (req, res) => {
   let branchId = null;
   let submissionId = '';
   let reference = '';
+  let pendingReservationId = '';
   try {
     if (req.body?.assignmentConfirmed !== true) {
       throw createRouterError(
@@ -599,6 +779,7 @@ router.post('/gcash/:reference/post', async (req, res) => {
     }
     branchId = resolveBranchId(req);
     reference = normalizeReference(req.params.reference);
+    pendingReservationId = String(req.body?.pendingReservationId || '').trim();
     if (!reference) throw new workspaceStore.WorkspaceValidationError('GCash reference number is required.');
     const [history, snapshot] = await Promise.all([
       listGcashTransactionHistory({ branchId, all: true }),
@@ -617,6 +798,17 @@ router.post('/gcash/:reference/post', async (req, res) => {
         'This imported GCash credit is marked Not for Posting.',
         409,
         'GCASH_TRANSACTION_POSTING_LOCKED'
+      );
+    }
+    const pendingReservation = (history.pendingReservations || []).find((reservation) => (
+      reservation.workspace === 'temp'
+      && referencesMatch(reservation.reference, reference)
+    )) || null;
+    if (pendingReservationId && (!pendingReservation || pendingReservation.id !== pendingReservationId)) {
+      throw createRouterError(
+        'The pending Temp GCash reservation is no longer active.',
+        409,
+        'TEMP_PENDING_GCASH_RESERVATION_MISSING'
       );
     }
     const officialAmount = money(transaction.credit);
@@ -645,6 +837,13 @@ router.post('/gcash/:reference/post', async (req, res) => {
       officialAmount,
       transactionDate
     });
+    if (pendingReservation && mainPayments.length) {
+      throw createRouterError(
+        'The pending Temp payment cannot be posted because this reference also exists in Main Payment History.',
+        409,
+        'TEMP_PENDING_GCASH_MAIN_CONFLICT'
+      );
+    }
     if (mainPlan.status === 'complete' || mainPlan.status === 'conflict') {
       const conflict = createRouterError(
         mainPlan.reason || 'This GCash reference cannot be split because its Main payment records conflict with the official credit.',
@@ -714,6 +913,20 @@ router.post('/gcash/:reference/post', async (req, res) => {
         billingMonth
       };
     });
+    if (pendingReservation && (
+      !pendingReservationId
+      || allocations.length !== 1
+      || allocations[0].accountNumber !== pendingReservation.accountNumber
+      || allocations[0].amount !== money(pendingReservation.amount)
+      || officialAmount !== money(pendingReservation.amount)
+      || transactionDate !== pendingReservation.paymentDate
+    )) {
+      throw createRouterError(
+        'The official reference, amount, date, and Temp customer must exactly match the pending payment.',
+        409,
+        'TEMP_PENDING_GCASH_MATCH_REQUIRED'
+      );
+    }
     if (new Set(allocations.map((allocation) => allocation.accountNumber)).size !== allocations.length) {
       throw new workspaceStore.WorkspaceValidationError('Each allocation must use a different Temp customer.');
     }
@@ -773,6 +986,7 @@ router.post('/gcash/:reference/post', async (req, res) => {
       branchId,
       reference,
       submissionId,
+      pendingReservationId: pendingReservation?.id || '',
       allocations: combinedAllocations,
       amount: officialAmount,
       paymentDate: transactionDate,

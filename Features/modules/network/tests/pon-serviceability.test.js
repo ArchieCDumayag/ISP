@@ -1,10 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   parseCoordinate,
   haversineMeters,
   buildNearbyCandidates,
+  mergeTempNetworkAssignments,
+  findTempNetworkAssignment,
   assertReservationCustomer,
   assertFinalizeEventReplay,
   withPonBranchLock
@@ -130,6 +134,88 @@ test('coverage-map mode returns every NAP within 600 meters and excludes farther
   assert.equal(result.candidates[1].availablePorts, 0);
   assert.ok(result.candidates[1].ports.every((port) => port.status === 'unavailable'));
   assert.equal(result.radiusMeters, 600);
+});
+
+test('submitted draft holds remain reserved without an expiration timestamp', () => {
+  const result = buildNearbyCandidates({
+    latitude: 17.9667,
+    longitude: 121.7583,
+    includeUnavailable: true,
+    state: {
+      olts: [{ name: 'OLT-A', status: 'online' }],
+      naps: [{
+        id: 'nap-held', code: 'NAP-HELD', linkedOlt: 'OLT-A',
+        coordinate: '17.966700, 121.758300', splitter: '1:8', connections: []
+      }],
+      reservations: [{
+        reservationId: 'hold-1',
+        napId: 'nap-held',
+        port: 4,
+        status: 'draft-held',
+        expiresAt: ''
+      }]
+    }
+  });
+
+  assert.equal(result.candidates[0].reservedPorts, 1);
+  assert.equal(result.candidates[0].ports[3].status, 'reserved');
+  assert.equal(result.candidates[0].ports[3].available, false);
+});
+
+test('relational reservation schema migrates durable hold lifecycle fields safely', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../backend/pon-serviceability.js'),
+    'utf8'
+  );
+  assert.match(source, /hold_event_id VARCHAR\(100\) NULL/);
+  assert.match(source, /held_at DATETIME NULL/);
+  assert.match(source, /reassigned_by_user_id VARCHAR\(64\) NULL/);
+  assert.match(source, /MODIFY COLUMN expires_at DATETIME NULL/);
+  assert.match(source, /status = 'draft-held', expires_at = NULL/);
+});
+
+test('mapped Temp assignments are occupied in technician coverage without mutating PON state', () => {
+  const state = {
+    olts: [{ name: 'OLT-A', status: 'online' }],
+    naps: [{
+      id: 'nap-1', code: 'POB:LP02:NP03', linkedOlt: 'OLT-A',
+      coordinate: '17.966700, 121.758300', splitter: '1:8', connections: []
+    }],
+    reservations: []
+  };
+  const tempCustomers = [{
+    accountNumber: 'TMP000010',
+    name: 'Shahien Gamata',
+    napId: 'nap-1',
+    napCode: 'POB:LP02:NP03',
+    napPort: 3
+  }];
+  const merged = mergeTempNetworkAssignments(state, tempCustomers);
+  const result = buildNearbyCandidates({
+    state: merged,
+    latitude: 17.9667,
+    longitude: 121.7583,
+    limit: 500,
+    maxDistanceMeters: 600,
+    allowExpandedLimit: true,
+    includeOffline: true,
+    includeUnavailable: true
+  });
+
+  assert.equal(state.naps[0].connections.length, 0);
+  assert.equal(result.candidates[0].availablePorts, 7);
+  assert.deepEqual(result.candidates[0].availablePortNumbers, [1, 2, 4, 5, 6, 7, 8]);
+  assert.deepEqual(result.candidates[0].ports[2], {
+    port: 3,
+    status: 'occupied',
+    available: false,
+    customerAccountNumber: 'TMP000010',
+    customerName: 'Shahien Gamata'
+  });
+  assert.equal(findTempNetworkAssignment(tempCustomers, {
+    napCode: 'pob:lp02:np03',
+    port: 3
+  })?.accountNumber, 'TMP000010');
 });
 
 test('haversine distance is stable for nearby field coordinates', () => {

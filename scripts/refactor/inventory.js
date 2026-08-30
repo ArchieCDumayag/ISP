@@ -39,6 +39,7 @@ const sharedDomainPatterns = [
   'public/css/tabler-app.css',
   'public/js/account-view-shared.js',
   'public/js/confirm-dialog.js',
+  'public/js/customer-name-case.js',
   'public/js/public-branding.js',
   'public/js/tabler-enhance.js',
   'public/vendor/**'

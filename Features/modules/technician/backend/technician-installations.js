@@ -32,6 +32,7 @@ const {
     parseCoordinate,
     findNearbyPonNaps,
     reservePonPort,
+    submitPonReservationForAdmin,
     releasePonPortReservation,
     finalizePonAssignment
 } = require('../../network/backend/pon-serviceability');
@@ -722,7 +723,9 @@ const resolveJobCustomerAccountNumber = (job = {}) => toSafeText(
 );
 
 const technicianOwnsPendingDraft = (submission = {}, technician = {}) => (
-    toSafeText(submission?.status, 20).toLowerCase() === 'pending'
+    ['in-progress', 'pending'].includes(
+        toSafeText(submission?.status, 20).toLowerCase()
+    )
     && toSafeText(submission?.submittedBy?.id, 64) === toSafeText(technician?.id, 64)
 );
 
@@ -732,10 +735,7 @@ const technicianOwnsApprovedDraft = (submission = {}, technician = {}) => (
 );
 
 const jobGrantsCustomerAccess = (job = {}, branchId, accountNumber = '') => {
-    if (
-        (isJsonStorageMode() || job?.branchId != null)
-        && Number(job?.branchId) !== Number(branchId)
-    ) return false;
+    if (Number(job?.branchId) !== Number(branchId)) return false;
     return resolveJobCustomerAccountNumber(job) === toSafeText(accountNumber, 20);
 };
 
@@ -748,10 +748,7 @@ const loadTechnicianOpenJobs = async (branchId, technician = {}) => {
         includeUnassigned: false
     });
     return (Array.isArray(jobs) ? jobs : []).filter((job) => {
-        if (
-            (isJsonStorageMode() || job?.branchId != null)
-            && Number(job?.branchId) !== Number(branchId)
-        ) return false;
+        if (Number(job?.branchId) !== Number(branchId)) return false;
         if (typeof jobsRouter.isOpenJobStatus !== 'function') return true;
         return jobsRouter.isOpenJobStatus(job?.workflowStatus || job?.status);
     });
@@ -788,7 +785,7 @@ const resolveTechnicianAccessibleCustomer = async (
     const ownDraft = await findCustomerDraftSubmissionByAccountNumber(
         targetAccount,
         branchId,
-        { statuses: ['pending'] }
+        { statuses: ['in-progress', 'pending'] }
     );
     if (ownDraft && technicianOwnsPendingDraft(ownDraft, technician)) {
         const customer = buildDraftCustomerRecordFromSubmission(ownDraft);
@@ -1433,7 +1430,17 @@ router.get('/pon/nearby', async (req, res, next) => {
     try {
         const branchId = req.technician.branchId;
         const customerAccountNumber = requestedCustomerAccountNumber(req);
-        const access = await resolveTechnicianAccessibleCustomer(branchId, req.technician, customerAccountNumber);
+        const coverageMap = normalizeBoolean(req.query?.coverageMap, false);
+        if (!customerAccountNumber && !coverageMap) {
+            throw createError(400, 'Customer account number is required outside draft-selection mode.');
+        }
+        const access = customerAccountNumber
+            ? await resolveTechnicianAccessibleCustomer(
+                branchId,
+                req.technician,
+                customerAccountNumber
+            )
+            : { accessType: 'new-draft-selection', customer: null };
         const fallbackCoordinates = parseCoordinate(
             access.customer?.mapPin || access.customer?.coordinates
         );
@@ -1442,7 +1449,6 @@ router.get('/pon/nearby', async (req, res, next) => {
         if (latitude == null || longitude == null) {
             throw createError(400, 'Valid customer latitude and longitude are required.');
         }
-        const coverageMap = normalizeBoolean(req.query?.coverageMap, false);
         const result = await findNearbyPonNaps({
             branchId,
             latitude,
@@ -1458,7 +1464,7 @@ router.get('/pon/nearby', async (req, res, next) => {
         return res.json({
             ok: true,
             accessType: access.accessType,
-            customer: normalizeCustomerSummary(access.customer, null),
+            customer: access.customer ? normalizeCustomerSummary(access.customer, null) : null,
             origin: {
                 latitude: Number(latitude),
                 longitude: Number(longitude)
@@ -1528,6 +1534,105 @@ const releasePonReservationHandler = async (req, res, next) => {
 router.delete('/pon/reservations/:reservationId', releasePonReservationHandler);
 router.post('/pon/reservations/:reservationId/release', releasePonReservationHandler);
 router.post('/pon/release', releasePonReservationHandler);
+
+const submitPonDraftHoldHandler = async (req, res, next) => {
+    try {
+        assertPonOverrideFlagsDenied(req.body || {});
+        const branchId = req.technician.branchId;
+        const customerAccountNumber = requestedCustomerAccountNumber(req);
+        const access = await resolveTechnicianAccessibleCustomer(
+            branchId,
+            req.technician,
+            customerAccountNumber,
+            { allowApprovedDraftReplay: true }
+        );
+        if (!['own-pending-draft', 'own-approved-draft'].includes(access.accessType)) {
+            throw createError(409, 'Only the technician\'s own customer draft can be submitted for Admin review.');
+        }
+        const completion = normalizeInstallationCompletion(req.body?.installationCompletion);
+        if (!completion) {
+            throw createError(400, 'Installation completion with the ONU serial number is required.');
+        }
+        const existingCompletion = access.draft?.draftData?.installationCompletion;
+        if (existingCompletion) {
+            assertInstallationCompletionReplay(existingCompletion, completion);
+        }
+        const customers = await readCustomers(branchId);
+        const onuDuplicate = findCustomerOnuSerialDuplicate(
+            completion.onuSerialNumber,
+            customers,
+            branchId,
+            customerAccountNumber
+        );
+        if (onuDuplicate) {
+            const error = createError(409, onuDuplicate.message);
+            error.code = 'CUSTOMER_ONU_SERIAL_DUPLICATE';
+            error.duplicate = onuDuplicate;
+            throw error;
+        }
+        const reservationId = toSafeText(
+            req.params?.reservationId || req.body?.reservationId,
+            64
+        );
+        const result = await submitPonReservationForAdmin({
+            branchId,
+            technicianUserId: req.technician.id,
+            reservationId,
+            clientEventId: req.body?.clientEventId,
+            customerAccountNumber,
+            opticalInfo: req.body?.opticalInfo || req.body?.signal || req.body?.rxPower
+        });
+        const selection = result?.selection || {};
+        const completionRecord = existingCompletion || {
+            ...completion,
+            fingerprint: installationCompletionFingerprint(completion),
+            submittedAt: new Date().toISOString(),
+            submittedBy: {
+                id: toSafeText(req.technician?.id, 64),
+                username: toSafeText(req.technician?.username || req.technician?.name, 120)
+            },
+            ponAssignment: {
+                reservationId: toSafeText(result?.reservationId || reservationId, 64),
+                napId: toSafeText(selection?.napId, 100),
+                napCode: toSafeText(selection?.napCode, 100),
+                linkedOlt: toSafeText(selection?.linkedOlt, 120),
+                ponRef: toSafeText(selection?.ponRef, 80),
+                location: toSafeText(selection?.location, 150),
+                port: toPositiveInt(selection?.port),
+                opticalInfo: toSafeText(selection?.opticalInfo, 120),
+                status: 'draft-held'
+            }
+        };
+        const completionUpdate = await compareAndSetCustomerDraftInstallationCompletion(
+            customerAccountNumber,
+            branchId,
+            completionRecord,
+            {
+                statuses: ['in-progress', 'pending', 'approved'],
+                transitionToPending: true
+            }
+        );
+        if (!completionUpdate) {
+            throw createError(503, 'The port is held, but the customer draft could not be submitted for Admin review. Retry the same submission event.');
+        }
+        return res.json({
+            ok: true,
+            reservationId: result.reservationId,
+            duplicate: Boolean(result.duplicate),
+            hold: result.hold,
+            selection,
+            customer: normalizeCustomerSummary(access.customer, selection),
+            installationCompletion: completionUpdate.installationCompletion || completionRecord,
+            draftStatus: completionUpdate.item?.status || 'pending'
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+router.post('/pon/reservations/:reservationId/submit', submitPonDraftHoldHandler);
+router.post('/pon/submissions', submitPonDraftHoldHandler);
+router.post('/pon/assignments', submitPonDraftHoldHandler);
 
 const finalizePonAssignmentHandler = async (req, res, next) => {
     try {
@@ -1640,7 +1745,6 @@ const finalizePonAssignmentHandler = async (req, res, next) => {
 };
 
 router.post('/pon/reservations/:reservationId/finalize', finalizePonAssignmentHandler);
-router.post('/pon/assignments', finalizePonAssignmentHandler);
 router.post('/pon/assign', finalizePonAssignmentHandler);
 
 router.post('/pppoe/generate', serializePaymentMutationRequest, async (req, res, next) => {

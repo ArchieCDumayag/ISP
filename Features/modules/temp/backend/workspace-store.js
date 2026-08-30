@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const { normalizeCustomerName } = require('../../../../core/data/customer-name-normalizer');
 const {
   PLAN_TYPES,
   BILLING_SCHEDULE_MODES,
@@ -198,8 +199,8 @@ function normalizeCustomer(raw = {}) {
   const createdAt = cleanText(raw.createdAt, 40) || new Date(0).toISOString();
   return {
     accountNumber: normalizeAccountNumber(raw.accountNumber),
-    firstName: cleanText(raw.firstName, 80),
-    lastName: cleanText(raw.lastName, 80),
+    firstName: normalizeCustomerName(raw.firstName, 80),
+    lastName: normalizeCustomerName(raw.lastName, 80),
     contactNumber: cleanText(raw.contactNumber, 40),
     email: cleanText(raw.email, 160),
     address: cleanText(raw.address, 300),

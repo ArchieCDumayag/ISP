@@ -136,6 +136,27 @@ test('installation completion compare-and-set ignores disallowed draft states', 
   );
 });
 
+test('final technician submission atomically promotes an in-progress draft to the Admin queue', async () => {
+  seedDraft();
+  const rows = stores.get('customer_draft_submissions');
+  rows[0].status = 'in-progress';
+  stores.set('customer_draft_submissions', rows);
+  const submitted = await draftStore.compareAndSetCustomerDraftInstallationCompletion(
+    'TEMP-1001',
+    1,
+    completion('e'.repeat(64), 'submitted with durable port hold'),
+    { statuses: ['in-progress', 'pending'], transitionToPending: true }
+  );
+
+  assert.equal(submitted.item.rawStatus, 'pending');
+  assert.equal(stores.get('customer_draft_submissions')[0].status, 'pending');
+  assert.equal(
+    JSON.parse(stores.get('customer_draft_submissions')[0].draft_json)
+      .installationCompletion.fingerprint,
+    'e'.repeat(64)
+  );
+});
+
 test('PPPoE draft patch locks and status-guards the MySQL row while preserving completion evidence', async () => {
   const originalDbCache = require.cache[dbPath];
   const originalRelationalCache = require.cache[relationalPath];

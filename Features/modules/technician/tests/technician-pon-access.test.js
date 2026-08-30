@@ -134,6 +134,10 @@ test('case normalization keeps legacy mixed-case completion retries compatible',
 
 test('technician customer access predicates require draft ownership or matching branch job', () => {
   assert.equal(installationsRouter.technicianOwnsPendingDraft({
+    status: 'in-progress',
+    submittedBy: { id: 'tech-1' }
+  }, { id: 'tech-1' }), true);
+  assert.equal(installationsRouter.technicianOwnsPendingDraft({
     status: 'pending',
     submittedBy: { id: 'tech-1' }
   }, { id: 'tech-1' }), true);
@@ -227,6 +231,23 @@ test('finalize contract preflights ONU duplicates and supports approval-first co
   assert.match(finalizeSource, /promoteApprovedDraftOnuSerial\(/);
 });
 
+test('new-installation submission creates a durable Admin hold instead of a canonical assignment', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../backend/technician-installations.js'),
+    'utf8'
+  );
+  const submitSource = source.slice(
+    source.indexOf('const submitPonDraftHoldHandler = async'),
+    source.indexOf('const finalizePonAssignmentHandler = async')
+  );
+  assert.match(submitSource, /submitPonReservationForAdmin/);
+  assert.match(submitSource, /transitionToPending:\s*true/);
+  assert.match(submitSource, /statuses:\s*\['in-progress', 'pending', 'approved'\]/);
+  assert.match(submitSource, /status:\s*'draft-held'/);
+  assert.doesNotMatch(submitSource, /finalizePonAssignment\(/);
+  assert.match(source, /statuses:\s*\['in-progress', 'pending'\]/);
+});
+
 test('technician PON overview redacts every other subscriber identity', () => {
   const safe = installationsRouter.sanitizeTechnicianPonOverview({
     olts: [{ id: 'olt-1', name: 'OLT-A', status: 'online', ponPorts: 1 }],
@@ -312,13 +333,30 @@ test('technician PON assignment rejects replace, move, force, and override flags
   }));
 });
 
-test('technician PON router exposes nearby, reservation, release, and finalize contracts', () => {
+test('technician PON router exposes nearby, reservation, Admin submission, release, and legacy finalize contracts', () => {
   const paths = installationsRouter.stack
     .map((layer) => layer?.route?.path)
     .filter(Boolean);
   assert.ok(paths.includes('/pon/nearby'));
   assert.ok(paths.includes('/pon/reservations'));
   assert.ok(paths.includes('/pon/reservations/:reservationId/release'));
+  assert.ok(paths.includes('/pon/reservations/:reservationId/submit'));
+  assert.ok(paths.includes('/pon/submissions'));
+  assert.ok(paths.includes('/pon/assignments'));
   assert.ok(paths.includes('/pon/reservations/:reservationId/finalize'));
   assert.ok(paths.includes('/pon/assign'));
+});
+
+test('coverage map permits a new local draft before any server account exists', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../backend/technician-installations.js'),
+    'utf8'
+  );
+  const nearby = source.slice(
+    source.indexOf("router.get('/pon/nearby'"),
+    source.indexOf("router.post('/pon/reservations'")
+  );
+  assert.match(nearby, /accessType:\s*'new-draft-selection'/);
+  assert.match(nearby, /const access = customerAccountNumber/);
+  assert.match(nearby, /customer:\s*access\.customer\s*\?/);
 });

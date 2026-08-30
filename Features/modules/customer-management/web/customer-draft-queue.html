@@ -36,6 +36,10 @@
                                     <div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span><input class="form-control form-control-sm" type="search" id="draftQueueSearch" placeholder="Search by account, name, plan, contact, or address" autocomplete="off" aria-label="Search customer drafts"></div>
                                 </div>
                                 <div class="col-auto">
+                                    <label class="form-label" for="draftQueueStatus">Queue</label>
+                                    <select class="form-select form-select-sm" id="draftQueueStatus" name="draftQueueStatus"><option value="pending" selected>Pending review</option><option value="in-progress">Incomplete drafts</option></select>
+                                </div>
+                                <div class="col-auto">
                                     <label class="form-label" for="draftQueuePageSize">Show</label>
                                     <select class="form-select form-select-sm" id="draftQueuePageSize" name="draftQueuePageSize"><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select>
                                 </div>
@@ -82,10 +86,16 @@
                                 <div class="col-md-6 col-lg-4" id="draftReviewPrepaidExpirationField" hidden><label class="form-label" for="draftReviewPrepaidExpirationAt">Expiration Date &amp; Time</label><input class="form-control form-control-sm" type="datetime-local" id="draftReviewPrepaidExpirationAt" name="prepaidExpirationAt"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewPlanSelect">Plan</label><select class="form-select form-select-sm" name="planName" id="draftReviewPlanSelect" required><option value="">Select plan</option></select></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewFirstName">First Name</label><input class="form-control form-control-sm" type="text" id="draftReviewFirstName" name="firstName" maxlength="100" required></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMiddleName">Middle Name</label><input class="form-control form-control-sm" type="text" id="draftReviewMiddleName" name="middleName" maxlength="100"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewLastName">Last Name</label><input class="form-control form-control-sm" type="text" id="draftReviewLastName" name="lastName" maxlength="100" required></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewStatus">Status</label><select class="form-select form-select-sm" id="draftReviewStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="disabled">Disabled</option></select></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewContactNumber">Mobile Number</label><input class="form-control form-control-sm" type="tel" id="draftReviewContactNumber" name="contactNumber" maxlength="16" inputmode="tel"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewEmail">Email</label><input class="form-control form-control-sm" type="email" id="draftReviewEmail" name="email" maxlength="150"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFacebookAccount">Facebook Account</label><input class="form-control form-control-sm" type="text" id="draftReviewFacebookAccount" name="facebookAccount" maxlength="200"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFacebookConfirmedAt">Facebook Confirmed At</label><input class="form-control form-control-sm" type="text" id="draftReviewFacebookConfirmedAt" name="facebookConfirmedAt" maxlength="80"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFacebookConfirmedBy">Facebook Confirmed By</label><input class="form-control form-control-sm" type="text" id="draftReviewFacebookConfirmedBy" name="facebookConfirmedBy" maxlength="120"></div>
+                                <div class="col-md-6 col-lg-4 d-flex align-items-end"><label class="form-check mb-2"><input class="form-check-input" type="checkbox" id="draftReviewFacebookConfirmed" name="facebookConfirmed" value="true"><span class="form-check-label">Facebook identity confirmed</span></label></div>
+                                <div class="col-md-6 col-lg-8"><label class="form-label" for="draftReviewClientEventId">App Submission Event ID</label><input class="form-control form-control-sm font-monospace" type="text" id="draftReviewClientEventId" name="clientEventId" readonly></div>
                             </div><input type="hidden" name="planAmount" id="draftReviewPlanAmount"><div class="alert alert-warning py-2 mt-3 mb-0" id="draftReviewStatusMeta" hidden></div></div>
                         </div>
 
@@ -101,11 +111,38 @@
                             <div class="card-header py-2"><h3 class="card-title mb-0">Service address</h3></div>
                             <div class="card-body"><div class="row g-3">
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewStreet">Street/House No.</label><input class="form-control form-control-sm" type="text" id="draftReviewStreet" name="street" maxlength="150"></div>
+                                <div class="col-md-6 col-lg-8"><label class="form-label" for="draftReviewServiceAddress">Submitted Service Address</label><input class="form-control form-control-sm" type="text" id="draftReviewServiceAddress" name="serviceAddress" maxlength="255"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewBarangay">Barangay</label><input class="form-control form-control-sm" type="text" id="draftReviewBarangay" name="barangay" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMunicipality">Municipality/City</label><input class="form-control form-control-sm" type="text" id="draftReviewMunicipality" name="municipality" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewProvince">Province</label><input class="form-control form-control-sm" type="text" id="draftReviewProvince" name="province" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewArea">Area / Cluster</label><select class="form-select form-select-sm" id="draftReviewArea" name="area"><option value="">Select area</option></select></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMapPin">Coordinates</label><input class="form-control form-control-sm" type="text" id="draftReviewMapPin" name="mapPin" maxlength="120" placeholder="e.g. 14.599500, 120.984200"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewProvinceCode">Province Code</label><input class="form-control form-control-sm" type="text" id="draftReviewProvinceCode" name="provinceCode" maxlength="20"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMunicipalityCode">Municipality Code</label><input class="form-control form-control-sm" type="text" id="draftReviewMunicipalityCode" name="municipalityCode" maxlength="20"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewBarangayCode">Barangay Code</label><input class="form-control form-control-sm" type="text" id="draftReviewBarangayCode" name="barangayCode" maxlength="20"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewGpsAccuracy">GPS Accuracy (meters)</label><input class="form-control form-control-sm" type="number" id="draftReviewGpsAccuracy" name="gpsAccuracyMeters" min="0" max="10000" step="0.01"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewGpsCapturedAt">GPS Captured At</label><input class="form-control form-control-sm" type="text" id="draftReviewGpsCapturedAt" name="gpsCapturedAt" maxlength="80"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewLocationSource">Location Source</label><input class="form-control form-control-sm" type="text" id="draftReviewLocationSource" name="locationSource" maxlength="20"></div>
+                            </div></div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header py-2"><div><h3 class="card-title mb-0">NAP, port &amp; ONU</h3><div class="text-secondary small">The technician submitted a requested NAP and port. Nothing is reserved; Admin may select another available port before finalizing.</div></div></div>
+                            <div class="card-body"><div class="row g-3">
+                                <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewNap">NAP</label><select class="form-select form-select-sm" id="draftReviewNap" name="selectedNapId" required><option value="">Loading NAP options...</option></select></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewNapPort">Port</label><select class="form-select form-select-sm" id="draftReviewNapPort" name="selectedNapPort" required><option value="">Select NAP first</option></select></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewPonSelectionStatus">Selection Status</label><input class="form-control form-control-sm" type="text" id="draftReviewPonSelectionStatus" readonly></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewOnuSerial">ONU Serial Number</label><input class="form-control form-control-sm font-monospace" type="text" id="draftReviewOnuSerial" readonly></div>
+                            </div><div class="alert alert-info py-2 mt-3 mb-0" id="draftReviewPonHelp" role="status">Loading the latest branch port availability...</div></div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header py-2"><h3 class="card-title mb-0">PPPoE setup</h3></div>
+                            <div class="card-body"><div class="row g-3">
+                                <div class="col-md-6 col-lg-3"><label class="form-label" for="draftReviewPppoeMode">Mode</label><input class="form-control form-control-sm" type="text" id="draftReviewPppoeMode" name="pppoeMode" maxlength="30"></div>
+                                <div class="col-md-6 col-lg-3"><label class="form-label" for="draftReviewPppoeUsername">Username</label><input class="form-control form-control-sm" type="text" id="draftReviewPppoeUsername" name="pppoeUsername" maxlength="120"></div>
+                                <div class="col-md-6 col-lg-3"><label class="form-label" for="draftReviewPppoePassword">Password</label><input class="form-control form-control-sm" type="text" id="draftReviewPppoePassword" name="pppoePassword" maxlength="120"></div>
+                                <div class="col-md-6 col-lg-3"><label class="form-label" for="draftReviewPppoeProfile">Profile</label><input class="form-control form-control-sm" type="text" id="draftReviewPppoeProfile" name="pppoeProfile" maxlength="120"></div>
                             </div></div>
                         </div>
 
@@ -117,6 +154,14 @@
                                 <div class="col-md-6 col-lg-4" id="draftReviewDueOffsetField"><label class="form-label" for="draftReviewDueOffset">Due after (days)</label><input class="form-control form-control-sm" type="number" id="draftReviewDueOffset" name="dueOffset" min="0" step="1"><div class="form-hint" id="draftReviewDueOffsetHelp"></div></div>
                                 <div class="col-md-6 col-lg-4" id="draftReviewDueDateField"><label class="form-label" for="draftReviewDueDateDisplay">Computed Due Date</label><input class="form-control form-control-sm" type="text" id="draftReviewDueDateDisplay" readonly><input type="hidden" id="draftReviewDueDate" name="dueDate"></div>
                                 <div class="col-md-6 col-lg-4" id="draftReviewCreditLimitField"><label class="form-label" for="draftReviewCreditLimit">Credit Limit (amount)</label><input class="form-control form-control-sm" type="number" id="draftReviewCreditLimit" name="creditLimit" min="0" step="1"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillProrated">Prorated First Bill</label><input class="form-control form-control-sm" type="number" id="draftReviewFirstBillProrated" name="firstBillProratedAmount" min="0" step="0.01" readonly></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillReceived">Amount Received by Technician</label><input class="form-control form-control-sm" type="number" id="draftReviewFirstBillReceived" name="firstBillAmountReceived" min="0" max="10000000" step="0.01"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillPeriodStart">First Bill Period Start</label><input class="form-control form-control-sm" type="date" id="draftReviewFirstBillPeriodStart" name="firstBillPeriodStart"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillPeriodEnd">First Bill Period End</label><input class="form-control form-control-sm" type="date" id="draftReviewFirstBillPeriodEnd" name="firstBillPeriodEnd"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferralAccount">Referral Account</label><input class="form-control form-control-sm" type="text" id="draftReviewReferralAccount" name="referralCustomerAccountNumber" maxlength="20"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferralName">Referral Customer</label><input class="form-control form-control-sm" type="text" id="draftReviewReferralName" name="referralCustomerName" maxlength="200"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferralSource">Referral Source</label><input class="form-control form-control-sm" type="text" id="draftReviewReferralSource" name="referralSourceType" maxlength="40"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferredBy">Referred By</label><input class="form-control form-control-sm" type="text" id="draftReviewReferredBy" name="referredBy" maxlength="200"></div>
                             </div></div>
                         </div>
 
@@ -132,7 +177,8 @@
 
     <script src="layout.js?v=3.9"></script>
     <script src="js/confirm-dialog.js?v=1.1"></script>
-    <script src="js/customer-draft-queue.js?v=3.2"></script>
+    <script src="/js/customer-name-case.js?v=1.0"></script>
+    <script src="js/customer-draft-queue.js?v=3.4"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

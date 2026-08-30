@@ -23,6 +23,17 @@ const toSafeText = (value, maxLength = 0) => {
 };
 
 const normalizeReference = (value) => toSafeText(value, 64).toUpperCase().replace(/[\s-]+/g, '');
+const normalizeReferenceIdentity = (value) => {
+    const exact = normalizeReference(value);
+    return /^\d+$/.test(exact) ? exact.replace(/^0+(?=\d)/, '') : exact;
+};
+const referencesMatch = (left, right) => {
+    const leftExact = normalizeReference(left);
+    const rightExact = normalizeReference(right);
+    if (!leftExact || !rightExact) return false;
+    return leftExact === rightExact
+        || normalizeReferenceIdentity(leftExact) === normalizeReferenceIdentity(rightExact);
+};
 const normalizePhone = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
     if (digits.startsWith('63') && digits.length === 12) return `0${digits.slice(2)}`;
@@ -77,6 +88,40 @@ const sanitizeAuditActor = (value) => ({
     username: toSafeText(value?.username, 100) || null,
     name: toSafeText(value?.name, 120) || null
 });
+
+const sanitizePendingReservation = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const id = toSafeText(value.id, 64);
+    const reference = normalizeReference(value.reference);
+    const accountNumber = toSafeText(value.accountNumber, 20);
+    const amount = normalizeMoney(value.amount);
+    const paymentDate = normalizeDateOnly(value.paymentDate);
+    if (!id || !reference || !accountNumber || amount == null || amount <= 0 || !paymentDate) return null;
+    return {
+        id,
+        workspace: 'temp',
+        reference,
+        accountNumber,
+        customerName: toSafeText(value.customerName, 200),
+        amount,
+        paymentDate,
+        description: toSafeText(value.description, 500),
+        reservedAt: toSafeText(value.reservedAt, 40) || null,
+        reservedBy: sanitizeAuditActor(value.reservedBy)
+    };
+};
+
+const pendingReservationSignature = (value) => {
+    const reservation = sanitizePendingReservation(value);
+    return reservation ? [
+        reservation.workspace,
+        normalizeReferenceIdentity(reservation.reference),
+        reservation.accountNumber,
+        reservation.amount,
+        reservation.paymentDate,
+        reservation.description
+    ].join('|') : '';
+};
 
 const sanitizePostingLock = (value) => {
     if (!value || typeof value !== 'object') return null;
@@ -162,11 +207,13 @@ const getBranchBucket = (store, branchId) => {
     const key = String(branchId);
     const existing = store.branches[key];
     if (!existing || typeof existing !== 'object') {
-        store.branches[key] = { batches: [], transactions: [], updatedAt: null };
+        store.branches[key] = { batches: [], transactions: [], pendingReservations: [], updatedAt: null };
     }
     const bucket = store.branches[key];
     if (!Array.isArray(bucket.batches)) bucket.batches = [];
     if (!Array.isArray(bucket.transactions)) bucket.transactions = [];
+    if (!Array.isArray(bucket.pendingReservations)) bucket.pendingReservations = [];
+    bucket.pendingReservations = bucket.pendingReservations.map(sanitizePendingReservation).filter(Boolean);
     return bucket;
 };
 
@@ -415,12 +462,112 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false,
     return {
         batches: bucket.batches.slice().sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt))),
         transactions: all ? filteredTransactions : filteredTransactions.slice(0, safeLimit),
+        pendingReservations: bucket.pendingReservations.map(sanitizePendingReservation).filter(Boolean)
+            .sort((a, b) => String(b.reservedAt).localeCompare(String(a.reservedAt))),
         totalTransactions: bucket.transactions.length,
         filteredTotalTransactions: filteredTransactions.length,
         selectedMonth: safeMonth || null,
         availableMonths,
         updatedAt: bucket.updatedAt || null
     };
+};
+
+const createPendingReservationConflictError = (reservation) => {
+    const safeReservation = sanitizePendingReservation(reservation);
+    const error = createError(
+        409,
+        safeReservation?.customerName
+            ? `This GCash reference is pending verification for ${safeReservation.customerName}.`
+            : 'This GCash reference is reserved by a pending Temp payment.'
+    );
+    error.code = 'GCASH_REFERENCE_PENDING_RESERVED';
+    error.pendingReservation = safeReservation;
+    return error;
+};
+
+const findPendingReservation = (bucket, reference) => (
+    bucket.pendingReservations.find((reservation) => referencesMatch(reservation?.reference, reference)) || null
+);
+
+const reservePendingGcashReference = async ({
+    branchId,
+    reference,
+    accountNumber,
+    customerName,
+    amount,
+    paymentDate,
+    description,
+    reservedBy
+} = {}) => {
+    const safeBranchId = Number(branchId);
+    const safeReference = normalizeReference(reference);
+    const safeAccountNumber = toSafeText(accountNumber, 20);
+    const safeAmount = normalizeMoney(amount);
+    const safePaymentDate = normalizeDateOnly(paymentDate);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safeReference) throw createError(400, 'GCash reference number is required.');
+    if (!safeAccountNumber) throw createError(400, 'Temp customer account is required.');
+    if (safeAmount == null || safeAmount <= 0) throw createError(400, 'Pending GCash amount must be greater than zero.');
+    if (!safePaymentDate) throw createError(400, 'Pending GCash payment date must use YYYY-MM-DD.');
+
+    const pendingId = `temp-pending-gcash-${crypto.createHash('sha256')
+        .update(`${safeBranchId}:${normalizeReferenceIdentity(safeReference)}`)
+        .digest('hex')
+        .slice(0, 40)}`;
+    const requested = sanitizePendingReservation({
+        id: pendingId,
+        reference: safeReference,
+        accountNumber: safeAccountNumber,
+        customerName,
+        amount: safeAmount,
+        paymentDate: safePaymentDate,
+        description,
+        reservedAt: new Date().toISOString(),
+        reservedBy
+    });
+
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const existing = findPendingReservation(bucket, safeReference);
+        if (existing) {
+            if (pendingReservationSignature(existing) === pendingReservationSignature(requested)) {
+                return { pendingReservation: sanitizePendingReservation(existing), idempotent: true };
+            }
+            throw createPendingReservationConflictError(existing);
+        }
+        const transaction = bucket.transactions.find((row) => referencesMatch(row?.reference, safeReference));
+        if (transaction && (
+            String(transaction.status || '').toLowerCase() !== 'received'
+            || normalizeMoney(transaction.credit) !== safeAmount
+            || normalizeDateOnly(transaction.transactionDate || transaction.transactionAt) !== safePaymentDate
+        )) {
+            const error = createError(409, 'This reference exists in the official GCash history but its direction, amount, or date does not match the pending Temp payment.');
+            error.code = 'TEMP_PENDING_GCASH_MATCH_REQUIRED';
+            throw error;
+        }
+        const assignment = sanitizeAssignment(transaction?.assignment);
+        if (assignment) throw createAssignmentConflictError(assignment);
+        const postingLock = sanitizePostingLock(transaction?.postingLock);
+        if (postingLock) throw createPostingLockConflictError(postingLock);
+        bucket.pendingReservations.push(requested);
+        bucket.updatedAt = requested.reservedAt;
+        return { pendingReservation: requested, idempotent: false };
+    });
+};
+
+const releasePendingGcashReference = async ({ branchId, pendingId } = {}) => {
+    const safeBranchId = Number(branchId);
+    const safePendingId = toSafeText(pendingId, 64);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) throw createError(400, 'Branch assignment is required.');
+    if (!safePendingId) throw createError(400, 'Pending GCash reservation ID is required.');
+    return mutateHistoryStore(async (store) => {
+        const bucket = getBranchBucket(store, safeBranchId);
+        const index = bucket.pendingReservations.findIndex((reservation) => reservation.id === safePendingId);
+        if (index < 0) return { released: false, idempotent: true };
+        const [pendingReservation] = bucket.pendingReservations.splice(index, 1);
+        bucket.updatedAt = new Date().toISOString();
+        return { pendingReservation: sanitizePendingReservation(pendingReservation), released: true, idempotent: false };
+    });
 };
 
 const lockGcashTransactionPosting = async ({ branchId, reference, remark, lockedBy } = {}) => {
@@ -435,6 +582,8 @@ const lockGcashTransactionPosting = async ({ branchId, reference, remark, locked
         const bucket = getBranchBucket(store, safeBranchId);
         const transaction = bucket.transactions.find((row) => normalizeReference(row?.reference) === safeReference);
         if (!transaction) throw createError(404, 'Reference is not in the imported GCash history.');
+        const pendingReservation = findPendingReservation(bucket, safeReference);
+        if (pendingReservation) throw createPendingReservationConflictError(pendingReservation);
         if (String(transaction.status || '').toLowerCase() !== 'received' || Number(transaction.credit) <= 0) {
             const error = createError(409, 'Only an incoming GCash credit can be marked Not for Posting.');
             error.code = 'GCASH_INCOMING_CREDIT_REQUIRED';
@@ -678,6 +827,7 @@ const claimGcashTransactionAllocations = async ({
     branchId,
     reference,
     submissionId,
+    pendingReservationId,
     allocations,
     amount,
     paymentDate,
@@ -686,6 +836,7 @@ const claimGcashTransactionAllocations = async ({
     const safeBranchId = Number(branchId);
     const safeReference = normalizeReference(reference);
     const safeSubmissionId = toSafeText(submissionId, 64);
+    const safePendingReservationId = toSafeText(pendingReservationId, 64);
     const sourceAllocations = Array.isArray(allocations) ? allocations : [];
     const safeAllocations = sourceAllocations.map(sanitizeAssignmentAllocation).filter(Boolean);
     const accountKeys = safeAllocations.map((allocation) => allocation.accountNumber);
@@ -713,10 +864,37 @@ const claimGcashTransactionAllocations = async ({
         const postingLock = sanitizePostingLock(transaction.postingLock);
         if (postingLock) throw createPostingLockConflictError(postingLock);
         const currentAssignment = sanitizeAssignment(transaction.assignment);
+        const pendingReservation = findPendingReservation(bucket, safeReference);
+        if (pendingReservation) {
+            if (!safePendingReservationId || pendingReservation.id !== safePendingReservationId) {
+                throw createPendingReservationConflictError(pendingReservation);
+            }
+            const reservationAllocation = safeAllocations.length === 1 ? safeAllocations[0] : null;
+            if (
+                !reservationAllocation
+                || reservationAllocation.accountNumber !== pendingReservation.accountNumber
+                || normalizeMoney(reservationAllocation.amount) !== pendingReservation.amount
+                || normalizeMoney(amount) !== pendingReservation.amount
+                || normalizeDateOnly(paymentDate) !== pendingReservation.paymentDate
+            ) {
+                const error = createError(409, 'The official GCash credit does not exactly match the pending Temp payment.');
+                error.code = 'TEMP_PENDING_GCASH_MATCH_REQUIRED';
+                error.pendingReservation = sanitizePendingReservation(pendingReservation);
+                throw error;
+            }
+        } else if (safePendingReservationId && !currentAssignment) {
+            const error = createError(409, 'The pending Temp GCash reservation is no longer active.');
+            error.code = 'TEMP_PENDING_GCASH_RESERVATION_MISSING';
+            throw error;
+        }
         if (currentAssignment) {
             const sameAllocation = currentAssignment.submissionId === safeSubmissionId
                 && assignmentAllocationSignature(currentAssignment.allocations) === assignmentAllocationSignature(safeAllocations);
             if (sameAllocation) {
+                if (pendingReservation) {
+                    bucket.pendingReservations = bucket.pendingReservations
+                        .filter((reservation) => reservation.id !== pendingReservation.id);
+                }
                 return {
                     transaction: { ...transaction, assignment: currentAssignment },
                     assignment: currentAssignment,
@@ -737,6 +915,10 @@ const claimGcashTransactionAllocations = async ({
             claimedBy
         });
         transaction.assignment = assignment;
+        if (pendingReservation) {
+            bucket.pendingReservations = bucket.pendingReservations
+                .filter((reservation) => reservation.id !== pendingReservation.id);
+        }
         bucket.updatedAt = claimedAt;
         return { transaction: { ...transaction, assignment }, assignment, idempotent: false };
     });
@@ -768,6 +950,8 @@ const claimGcashTransaction = async ({
         if (!transaction) throw createError(409, 'Reference is not in the imported GCash history.');
         const postingLock = sanitizePostingLock(transaction.postingLock);
         if (postingLock) throw createPostingLockConflictError(postingLock);
+        const pendingReservation = findPendingReservation(bucket, safeReference);
+        if (pendingReservation) throw createPendingReservationConflictError(pendingReservation);
         const currentAssignment = sanitizeAssignment(transaction.assignment);
         if (currentAssignment) {
             if (
@@ -1039,6 +1223,8 @@ module.exports = {
     GCASH_TRANSACTION_REMARKS,
     importGcashTransactionBatch,
     listGcashTransactionHistory,
+    reservePendingGcashReference,
+    releasePendingGcashReference,
     evaluateGcashTransactionMatch,
     claimGcashTransaction,
     claimGcashTransactionAllocations,
@@ -1054,8 +1240,10 @@ module.exports = {
     sanitizeRemark,
     sanitizePostingLock,
     sanitizePostingLockAudit,
+    sanitizePendingReservation,
     normalizeRemarkCategory,
     normalizeReference,
+    referencesMatch,
     normalizePhone,
     getGcashRecipientLabel,
     phoneMatches,

@@ -12,7 +12,9 @@ const {
   preserveInstallationCompletion,
   listAllCustomerDraftSubmissions,
   withDraftSubmissionLock,
-  draftSubmissionFingerprint
+  draftSubmissionFingerprint,
+  selectRecoverableOwnedInProgressDraft,
+  buildDraftDuplicateConflict
 } = require('../backend/customer-draft-submissions');
 
 test('technician onboarding keeps structured identity, address, payment, and referral input', () => {
@@ -27,6 +29,9 @@ test('technician onboarding keeps structured identity, address, payment, and ref
     municipalityCode: '01506',
     barangay: 'San Jose',
     barangayCode: '01506001',
+    serviceAddress: 'House 12, San Jose, Baggao, Cagayan',
+    facebookAccount: 'ana.santos',
+    facebookConfirmed: true,
     firstBillPaid: true,
     firstBillAmountReceived: 500,
     referralCustomerAccountNumber: '100000001',
@@ -37,6 +42,9 @@ test('technician onboarding keeps structured identity, address, payment, and ref
   assert.equal(draft.provinceCode, '015');
   assert.equal(draft.municipalityCode, '01506');
   assert.equal(draft.barangayCode, '01506001');
+  assert.equal(draft.serviceAddress, 'House 12, San Jose, Baggao, Cagayan');
+  assert.equal(draft.facebookAccount, 'ana.santos');
+  assert.equal(draft.facebookConfirmed, true);
   assert.equal(draft.firstBillPaid, true);
   assert.equal(draft.firstBillAmountReceived, 500);
   assert.equal(draft.referralCustomerAccountNumber, '100000001');
@@ -154,6 +162,8 @@ test('technician draft normalizes paired GPS coordinates and metadata', () => {
     planName: 'Plan 999'
   });
   assert.equal(draft.mapPin, '17.966712, 121.758346');
+  assert.equal(draft.latitude, 17.966712);
+  assert.equal(draft.longitude, 121.758346);
   assert.equal(draft.gpsAccuracyMeters, 4.26);
   assert.equal(draft.gpsCapturedAt, '2026-08-16T04:00:00.000Z');
   assert.equal(draft.locationSource, 'gps');
@@ -296,6 +306,29 @@ test('draft event and duplicate scans paginate beyond 200 rows', async () => {
   assert.deepEqual(calls, [{ limit: 200, offset: 0 }, { limit: 200, offset: 200 }]);
 });
 
+test('same technician can recover one matching incomplete draft without bypassing real duplicates', () => {
+  const ownedIncomplete = {
+    type: 'pending-draft',
+    id: 'cds-incomplete-1',
+    accountNumber: '100000321',
+    status: 'in-progress',
+    submittedByUserId: 'tech-7'
+  };
+  assert.deepEqual(
+    selectRecoverableOwnedInProgressDraft([ownedIncomplete], 'tech-7'),
+    ownedIncomplete
+  );
+  assert.equal(selectRecoverableOwnedInProgressDraft([ownedIncomplete], 'tech-8'), null);
+  assert.equal(selectRecoverableOwnedInProgressDraft([
+    ownedIncomplete,
+    { type: 'customer', accountNumber: '100000001', status: 'active' }
+  ], 'tech-7'), null);
+  assert.equal(selectRecoverableOwnedInProgressDraft([
+    { ...ownedIncomplete, status: 'pending' }
+  ], 'tech-7'), null);
+  assert.match(buildDraftDuplicateConflict([ownedIncomplete]), /Incomplete drafts/i);
+});
+
 test('draft decisions serialize JSON and claim MySQL state before destructive cleanup', () => {
   const source = fs.readFileSync(
     path.resolve(__dirname, '../backend/customer-draft-submissions.js'),
@@ -323,6 +356,7 @@ test('draft decisions serialize JSON and claim MySQL state before destructive cl
   assert.ok(reject.indexOf('await connection.commit()')
     < reject.lastIndexOf('cleanupRejectedOrDeletedDraftResources'));
   assert.match(deletion, /branchLockHeld/);
+  assert.match(deletion, /\['in-progress', 'pending'\]\.includes\(deletableStatus\)/);
   assert.ok(deletion.indexOf('deleteCustomerDraftSubmissionRow')
     < deletion.indexOf('cleanupRejectedOrDeletedDraftResources'));
   assert.ok(deletion.indexOf('await connection.commit()')
@@ -337,4 +371,52 @@ test('Admin draft review explains partial payments and advance credit', () => {
   assert.match(source, /firstBillAmountReceived/);
   assert.match(source, /partial first-bill payment/);
   assert.match(source, /becomes advance credit on approval/);
+  assert.match(source, /loadReviewPonOptions/);
+  assert.match(source, /selectedNapId/);
+  assert.match(source, /technician request is available now but is not reserved/i);
+});
+
+test('Admin approval atomically finalizes the reviewed requested NAP port', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../backend/customer-draft-submissions.js'),
+    'utf8'
+  );
+  const approve = source.slice(
+    source.indexOf("adminRouter.post('/:id/approve'"),
+    source.indexOf("adminRouter.post('/:id/reject'")
+  );
+  assert.match(approve, /prepareDraftPonHoldForAdmin/);
+  assert.match(approve, /finalizeDraftPonSelectionForAdmin/);
+  assert.ok(approve.indexOf('prepareDraftPonHoldForAdmin')
+    < approve.indexOf('createCustomerRecord'));
+  assert.ok(approve.indexOf('finalizeDraftPonSelectionForAdmin')
+    < approve.indexOf("status: 'approved'"));
+  assert.match(source, /finalizeRequestedPonAssignment/);
+  assert.match(source, /releasePonDraftHold/);
+  assert.match(source, /adminRouter\.get\('\/:id\/pon-options'/);
+});
+
+test('technician submits customer, billing, GPS, requested port, and ONU in one draft request', () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../backend/customer-draft-submissions.js'),
+    'utf8'
+  );
+  const technicianPost = source.slice(
+    source.indexOf("technicianRouter.post('/'"),
+    source.indexOf("adminRouter.get('/'")
+  );
+  assert.match(source, /const buildTechnicianCompletedDraft = async/);
+  assert.match(source, /status:\s*'requested'/);
+  assert.match(source, /availableAtSubmission/);
+  assert.doesNotMatch(source.slice(
+    source.indexOf('const buildTechnicianCompletedDraft = async'),
+    source.indexOf('const listAllCustomerDraftSubmissions')
+  ), /reservePonPort|submitPonReservationForAdmin/);
+  assert.match(technicianPost, /buildTechnicianCompletedDraft/);
+  assert.match(technicianPost, /selectRecoverableOwnedInProgressDraft/);
+  assert.match(technicianPost, /updateCustomerDraftSubmissionDraftDataByAccountNumber/);
+  assert.match(technicianPost, /recovered:\s*true/);
+  assert.ok(technicianPost.indexOf("replay.rawStatus")
+    < technicianPost.indexOf('clientEventId was already used for a different customer draft'));
+  assert.match(technicianPost, /transitionToPending:\s*true/);
 });

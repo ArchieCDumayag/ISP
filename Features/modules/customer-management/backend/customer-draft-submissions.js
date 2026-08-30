@@ -1,9 +1,11 @@
 const express = require('express');
 const createError = require('http-errors');
+const crypto = require('crypto');
 const { getPool, query } = require('../../../../core/data/db');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
 const { isJsonStorageMode } = require('../../../../core/config/storage-mode');
+const { normalizeCustomerName } = require('../../../../core/data/customer-name-normalizer');
 const { loadAccounts, saveAccounts } = require('../../admin/backend/accounts-store');
 const { verifyPassword, isHashedPassword, hashPassword } = require('../../../../core/security/passwords');
 const { issueToken, verifyTokenDetailed, isEphemeralSessionSecret } = require('../../../../core/security/session-cache');
@@ -15,7 +17,9 @@ const {
     CUSTOMER_DRAFT_SUBMISSIONS_TABLE,
     updateCustomerDraftSubmissionRow,
     deleteCustomerDraftSubmissionRow,
+    compareAndSetCustomerDraftInstallationCompletion,
     withCustomerDraftStoreMutationLock,
+    updateCustomerDraftSubmissionDraftDataByAccountNumber,
     buildCustomerName,
     buildAddressText,
     toSafeText
@@ -30,7 +34,8 @@ const {
     readCustomers,
     recordCustomerOpeningAdjustment,
     normalizeCustomerMapPin,
-    normalizeOnuSerialNumber
+    normalizeOnuSerialNumber,
+    findCustomerOnuSerialDuplicate
 } = require('./customers');
 const {
     mutateReferralRegistry,
@@ -42,7 +47,15 @@ const {
 const {
     hasPonTables
 } = require('../../network/backend/pon-management-api');
-const { withPonBranchLock } = require('../../network/backend/pon-serviceability');
+const {
+    parseCoordinate,
+    findNearbyPonNaps,
+    withPonBranchLock,
+    reassignPonDraftHold,
+    finalizePonDraftHold,
+    finalizeRequestedPonAssignment,
+    releasePonDraftHold
+} = require('../../network/backend/pon-serviceability');
 const {
     loadIntegrationSettings,
     hasUsableMikrotikRouter
@@ -243,10 +256,10 @@ const normalizePhilippineMobile = (value, { fallbackToRaw = true } = {}) => {
 
 const normalizeDraftPayload = (payload = {}) => {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
-    const firstName = toSafeText(source.firstName, 100);
-    const middleName = toSafeText(source.middleName, 100);
-    const lastName = toSafeText(source.lastName, 100);
-    const explicitName = toSafeText(source.name, 200);
+    const firstName = normalizeCustomerName(source.firstName, 100);
+    const middleName = normalizeCustomerName(source.middleName, 100);
+    const lastName = normalizeCustomerName(source.lastName, 100);
+    const explicitName = normalizeCustomerName(source.name, 200);
     const mobile = normalizePhilippineMobile(source.mobile || source.contactNumber || source.contact);
     const hasLatitude = Object.prototype.hasOwnProperty.call(source, 'latitude')
         && source.latitude !== null
@@ -267,6 +280,7 @@ const normalizeDraftPayload = (payload = {}) => {
         coordinateInput = `${latitude}, ${longitude}`;
     }
     const mapPin = coordinateInput ? normalizeCustomerMapPin(coordinateInput) : '';
+    const parsedMapPin = mapPin ? parseCoordinate(mapPin) : null;
     const rawAccuracy = source.gpsAccuracyMeters ?? source.gps_accuracy_meters;
     let gpsAccuracyMeters = null;
     if (rawAccuracy !== undefined && rawAccuracy !== null && String(rawAccuracy).trim() !== '') {
@@ -286,7 +300,7 @@ const normalizeDraftPayload = (payload = {}) => {
         gpsCapturedAt = capturedDate.toISOString();
     }
     const locationSourceInput = toSafeText(source.locationSource || source.location_source, 20).toLowerCase();
-    const locationSource = ['gps', 'map', 'manual'].includes(locationSourceInput)
+    const locationSource = ['gps', 'map', 'manual', 'map_picker', 'current_location'].includes(locationSourceInput)
         ? locationSourceInput
         : (mapPin ? (hasLatitude ? 'gps' : 'manual') : '');
     const normalized = {
@@ -297,7 +311,18 @@ const normalizeDraftPayload = (payload = {}) => {
         lastName,
         mobile,
         email: toSafeText(source.email, 150),
+        facebookAccount: toSafeText(source.facebookAccount || source.facebook_account, 200),
+        facebookConfirmed: normalizeBoolean(source.facebookConfirmed || source.facebook_confirmed),
+        facebookConfirmedAt: toSafeText(
+            source.facebookConfirmedAt || source.facebook_confirmed_at,
+            80
+        ),
+        facebookConfirmedBy: toSafeText(
+            source.facebookConfirmedBy || source.facebook_confirmed_by,
+            120
+        ),
         street: toSafeText(source.street, 150),
+        serviceAddress: toSafeText(source.serviceAddress || source.service_address, 255),
         barangay: toSafeText(source.barangay, 150),
         municipality: toSafeText(source.municipality, 150),
         province: toSafeText(source.province, 150),
@@ -306,6 +331,10 @@ const normalizeDraftPayload = (payload = {}) => {
         barangayCode: toSafeText(source.barangayCode || source.barangay_code, 20),
         area: toSafeText(source.area, 150),
         mapPin,
+        ...(parsedMapPin ? {
+            latitude: Number(parsedMapPin.latitude.toFixed(6)),
+            longitude: Number(parsedMapPin.longitude.toFixed(6))
+        } : {}),
         gpsAccuracyMeters,
         gpsCapturedAt,
         locationSource,
@@ -349,7 +378,11 @@ const normalizeDraftPayload = (payload = {}) => {
         pppoeMode: toSafeText(source.pppoeMode, 30),
         pppoeUsername: toSafeText(source.pppoeUsername, 120),
         pppoePassword: toSafeText(source.pppoePassword, 120),
-        pppoeProfile: toSafeText(source.pppoeProfile, 120)
+        pppoeProfile: toSafeText(source.pppoeProfile, 120),
+        selectedNapId: toSafeText(source.selectedNapId || source.selected_nap_id, 100),
+        selectedNapPort: Number.isFinite(Number(source.selectedNapPort ?? source.selected_nap_port))
+            ? Math.max(0, Math.floor(Number(source.selectedNapPort ?? source.selected_nap_port)))
+            : null
     };
 
     if (normalized.planAmount == null) delete normalized.planAmount;
@@ -368,6 +401,12 @@ const normalizeDraftPayload = (payload = {}) => {
     if (!normalized.referralCustomerAccountNumber) delete normalized.referralCustomerAccountNumber;
     if (!normalized.referralCustomerName) delete normalized.referralCustomerName;
     if (!normalized.referredBy) delete normalized.referredBy;
+    if (!normalized.facebookAccount) delete normalized.facebookAccount;
+    if (!normalized.facebookConfirmedAt) delete normalized.facebookConfirmedAt;
+    if (!normalized.facebookConfirmedBy) delete normalized.facebookConfirmedBy;
+    if (!normalized.serviceAddress) delete normalized.serviceAddress;
+    if (!normalized.selectedNapId) delete normalized.selectedNapId;
+    if (!normalized.selectedNapPort) delete normalized.selectedNapPort;
     return normalized;
 };
 
@@ -859,6 +898,116 @@ const promotePonAssignmentsForAccount = async (branchId, accountNumber) => {
     return Boolean(result?.affectedRows);
 };
 
+const getDraftPonSelection = (draft = {}) => {
+    const completion = draft?.installationCompletion;
+    const assignment = completion?.ponAssignment;
+    if (!completion || typeof completion !== 'object' || Array.isArray(completion)) return null;
+    if (!assignment || typeof assignment !== 'object' || Array.isArray(assignment)) return null;
+    const status = toSafeText(assignment.status, 30).toLowerCase();
+    const reservationId = toSafeText(assignment.reservationId, 64);
+    const napId = toSafeText(draft.selectedNapId || assignment.napId, 100);
+    const port = Number(draft.selectedNapPort || assignment.port);
+    if (!napId || !Number.isInteger(port) || port <= 0) {
+        return null;
+    }
+    return { completion, assignment, reservationId, napId, port, status };
+};
+
+const getDraftPonHold = (draft = {}) => {
+    const selection = getDraftPonSelection(draft);
+    if (!selection || selection.status !== 'draft-held' || !selection.reservationId) return null;
+    return selection;
+};
+
+const prepareDraftPonHoldForAdmin = async ({ branchId, accountNumber, draft, actor } = {}) => {
+    const hold = getDraftPonHold(draft);
+    if (!hold) return null;
+    const reassigned = await reassignPonDraftHold({
+        branchId,
+        reservationId: hold.reservationId,
+        customerAccountNumber: accountNumber,
+        napId: hold.napId,
+        port: hold.port,
+        reassignedByUserId: toSafeText(actor?.id || actor?.username, 64)
+    });
+    return { ...hold, selection: reassigned.selection || hold.assignment };
+};
+
+const finalizeDraftPonHoldForAdmin = async ({
+    branchId,
+    accountNumber,
+    customerName,
+    submissionId,
+    hold
+} = {}) => {
+    if (!hold) return null;
+    return finalizePonDraftHold({
+        branchId,
+        reservationId: hold.reservationId,
+        customerAccountNumber: accountNumber,
+        customerName,
+        clientEventId: `admin-draft-${toSafeText(submissionId, 64)}`,
+        opticalInfo: hold.assignment?.opticalInfo
+    });
+};
+
+const finalizeDraftPonSelectionForAdmin = async ({
+    branchId,
+    accountNumber,
+    customerName,
+    submissionId,
+    selection
+} = {}) => {
+    if (!selection) return null;
+    if (selection.status === 'draft-held' && selection.reservationId) {
+        return finalizeDraftPonHoldForAdmin({
+            branchId,
+            accountNumber,
+            customerName,
+            submissionId,
+            hold: selection
+        });
+    }
+    return finalizeRequestedPonAssignment({
+        branchId,
+        napId: selection.napId,
+        port: selection.port,
+        customerAccountNumber: accountNumber,
+        customerName,
+        clientEventId: `admin-draft-${toSafeText(submissionId, 64)}`,
+        opticalInfo: selection.assignment?.opticalInfo
+    });
+};
+
+const applyFinalizedPonAssignment = (draft = {}, finalizedResult = null) => {
+    if (!finalizedResult?.assignment) return draft;
+    const completion = draft?.installationCompletion;
+    if (!completion || typeof completion !== 'object' || Array.isArray(completion)) return draft;
+    const assignment = finalizedResult.assignment;
+    return {
+        ...draft,
+        selectedNapId: toSafeText(assignment.napId, 100),
+        selectedNapPort: Number(assignment.port) || null,
+        installationCompletion: {
+            ...completion,
+            ponAssignment: {
+                ...(completion.ponAssignment || {}),
+                ...(toSafeText(finalizedResult.reservationId, 64)
+                    ? { reservationId: toSafeText(finalizedResult.reservationId, 64) }
+                    : {}),
+                napId: toSafeText(assignment.napId, 100),
+                napCode: toSafeText(assignment.napCode, 100),
+                linkedOlt: toSafeText(assignment.linkedOlt, 120),
+                ponRef: toSafeText(assignment.ponRef, 80),
+                location: toSafeText(assignment.location, 150),
+                port: Number(assignment.port) || null,
+                opticalInfo: toSafeText(assignment.opticalInfo, 120),
+                status: 'finalized'
+            }
+        }
+    };
+};
+
 const normalizeSubmissionIds = (values = []) => Array.from(
     new Set(
         (Array.isArray(values) ? values : [values])
@@ -980,6 +1129,18 @@ const cleanupRejectedOrDeletedDraftResources = async ({
     deleteCustomer = true
 } = {}) => {
     const warnings = [];
+    const hold = getDraftPonHold(draftData);
+    if (hold) {
+        try {
+            await releasePonDraftHold({
+                branchId,
+                reservationId: hold.reservationId,
+                customerAccountNumber: linkedCustomerAccountNumber
+            });
+        } catch (error) {
+            warnings.push(`PON hold cleanup: ${error?.message || error}`);
+        }
+    }
     try {
         await removePonAssignmentsForAccount(branchId, linkedCustomerAccountNumber);
     } catch (error) {
@@ -1053,8 +1214,9 @@ const deletePendingDraftSubmission = async ({
     if (safeSubmittedByUserId && toSafeText(existing?.submittedBy?.id, 32) !== safeSubmittedByUserId) {
         throw createError(404, 'Customer draft not found.');
     }
-    if (existing.rawStatus !== 'pending') {
-        throw createError(409, 'Only pending customer drafts can be deleted here.');
+    const deletableStatus = toSafeText(existing.rawStatus, 20).toLowerCase();
+    if (!['in-progress', 'pending'].includes(deletableStatus)) {
+        throw createError(409, 'Only pending or incomplete customer drafts can be deleted here.');
     }
 
     const linkedCustomerAccountNumber = toSafeText(
@@ -1069,7 +1231,7 @@ const deletePendingDraftSubmission = async ({
             id: safeSubmissionId,
             branchId: safeBranchId,
             submittedByUserId: safeSubmittedByUserId,
-            status: 'pending'
+            status: deletableStatus
         });
         if (!deleted) {
             throw createError(409, 'Unable to delete customer draft. It may have been updated already.');
@@ -1084,7 +1246,7 @@ const deletePendingDraftSubmission = async ({
         return existing;
     }
 
-    const params = [safeSubmissionId, safeBranchId];
+    const params = [safeSubmissionId, safeBranchId, deletableStatus];
     const submittedBySql = safeSubmittedByUserId ? ' AND submitted_by_user_id = ?' : '';
     if (safeSubmittedByUserId) {
         params.push(safeSubmittedByUserId);
@@ -1117,7 +1279,7 @@ const deletePendingDraftSubmission = async ({
             `DELETE FROM ${CUSTOMER_DRAFT_SUBMISSIONS_TABLE}
              WHERE id = ?
                AND branch_id = ?
-               AND status = 'pending'
+               AND status = ?
                ${submittedBySql}`,
             params
         );
@@ -1175,7 +1337,12 @@ const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     middleName: duplicateNameKey(draft.middleName),
     mobile: normalizePhilippineMobile(draft.mobile, { fallbackToRaw: false }),
     email: toSafeText(draft.email, 150).toLowerCase(),
+    facebookAccount: toSafeText(draft.facebookAccount, 200),
+    facebookConfirmed: draft.facebookConfirmed === true,
+    facebookConfirmedAt: toSafeText(draft.facebookConfirmedAt, 80),
+    facebookConfirmedBy: toSafeText(draft.facebookConfirmedBy, 120),
     street: duplicateNameKey(draft.street),
+    serviceAddress: duplicateNameKey(draft.serviceAddress),
     barangay: duplicateNameKey(draft.barangay),
     municipality: duplicateNameKey(draft.municipality),
     province: duplicateNameKey(draft.province),
@@ -1184,6 +1351,8 @@ const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     barangayCode: toSafeText(draft.barangayCode, 20),
     area: duplicateNameKey(draft.area),
     mapPin: toSafeText(draft.mapPin, 120),
+    gpsAccuracyMeters: toOptionalNumber(draft.gpsAccuracyMeters),
+    gpsCapturedAt: toSafeText(draft.gpsCapturedAt, 80),
     planId: toSafeText(draft.planId, 80),
     planName: duplicateNameKey(draft.planName),
     planCategory: toSafeText(draft.planCategory, 20).toLowerCase(),
@@ -1194,8 +1363,6 @@ const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     prepaidExpirationAt: normalizeDateTimeInput(draft.prepaidExpirationAt),
     dueOffset: Number.isFinite(Number(draft.dueOffset)) ? Math.max(0, Math.floor(Number(draft.dueOffset))) : null,
     creditLimit: Number.isFinite(Number(draft.creditLimit)) ? Math.max(0, Math.floor(Number(draft.creditLimit))) : null,
-    gpsAccuracyMeters: toOptionalNumber(draft.gpsAccuracyMeters),
-    gpsCapturedAt: toSafeText(draft.gpsCapturedAt, 80),
     firstBillPaid: draft.firstBillPaid === true,
     firstBillProratedAmount: toOptionalNumber(draft.firstBillProratedAmount),
     firstBillAmountReceived: toOptionalNumber(draft.firstBillAmountReceived)
@@ -1212,8 +1379,118 @@ const draftSubmissionFingerprint = (draft = {}) => JSON.stringify({
     pppoeMode: toSafeText(draft.pppoeMode, 30).toLowerCase(),
     pppoeUsername: toSafeText(draft.pppoeUsername, 120),
     pppoePassword: toSafeText(draft.pppoePassword, 120),
-    pppoeProfile: toSafeText(draft.pppoeProfile, 120)
+    pppoeProfile: toSafeText(draft.pppoeProfile, 120),
+    selectedNapId: toSafeText(draft.selectedNapId, 100),
+    selectedNapPort: Number.isInteger(Number(draft.selectedNapPort))
+        ? Number(draft.selectedNapPort)
+        : null,
+    onuSerialNumber: normalizeOnuSerialNumber(
+        draft.onuSerialNumber || draft.installationCompletion?.onuSerialNumber
+    ),
+    installationEventId: toSafeText(draft.installationCompletion?.clientEventId, 100)
 });
+
+const buildTechnicianCompletedDraft = async ({
+    draft,
+    source,
+    branchId,
+    technician,
+    customers
+} = {}) => {
+    const rawCompletion = source?.installationCompletion;
+    const hasCompletion = rawCompletion && typeof rawCompletion === 'object'
+        && !Array.isArray(rawCompletion);
+    const hasSelection = Boolean(draft?.selectedNapId || draft?.selectedNapPort);
+    const rawOnuSerial = rawCompletion?.onuSerialNumber
+        ?? source?.onuSerialNumber
+        ?? source?.onuSerial;
+    if (!hasCompletion && !hasSelection && !toSafeText(rawOnuSerial, 160)) {
+        return { draft, completed: false };
+    }
+
+    const selectedNapId = toSafeText(draft?.selectedNapId, 100);
+    const selectedNapPort = Number(draft?.selectedNapPort);
+    if (!selectedNapId || !Number.isInteger(selectedNapPort) || selectedNapPort <= 0) {
+        throw createError(400, 'Select a requested NAP and port before submitting for Admin review.');
+    }
+    const onuSerialNumber = normalizeOnuSerialNumber(rawOnuSerial);
+    if (!onuSerialNumber) throw createError(400, 'ONU serial number is required.');
+    const completionEventId = toSafeText(
+        rawCompletion?.clientEventId || draft?.clientEventId,
+        100
+    );
+    if (!completionEventId) throw createError(400, 'Installation clientEventId is required.');
+    const onuDuplicate = findCustomerOnuSerialDuplicate(
+        onuSerialNumber,
+        customers,
+        branchId
+    );
+    if (onuDuplicate) {
+        throw createError(409, onuDuplicate.message, { duplicate: onuDuplicate });
+    }
+    const coordinates = parseCoordinate(draft?.mapPin)
+        || parseCoordinate(`${draft?.latitude || ''}, ${draft?.longitude || ''}`);
+    if (!coordinates) {
+        throw createError(400, 'Valid customer coordinates are required to submit the requested NAP port.');
+    }
+    const nearby = await findNearbyPonNaps({
+        branchId,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        limit: 500,
+        maxDistanceMeters: 600,
+        includeOffline: true,
+        includeUnavailable: true,
+        allowExpandedLimit: true
+    });
+    const candidate = nearby.candidates.find((entry) => entry.napId === selectedNapId);
+    if (!candidate) {
+        throw createError(400, 'The requested NAP is outside the 600-meter installation area.');
+    }
+    const portEntry = (Array.isArray(candidate.ports) ? candidate.ports : [])
+        .find((entry) => Number(entry?.port) === selectedNapPort);
+    if (!portEntry) {
+        throw createError(400, 'The requested port is outside the selected NAP capacity.');
+    }
+    const requestedAt = new Date().toISOString();
+    const completionFingerprint = crypto.createHash('sha256').update(JSON.stringify({
+        completionEventId,
+        onuSerialNumber,
+        selectedNapId,
+        selectedNapPort
+    })).digest('hex');
+    const installationCompletion = {
+        clientEventId: completionEventId,
+        onuSerialNumber,
+        fingerprint: completionFingerprint,
+        submittedAt: requestedAt,
+        submittedBy: {
+            id: toSafeText(technician?.id, 64),
+            username: toSafeText(technician?.username || technician?.name, 120)
+        },
+        ponAssignment: {
+            napId: selectedNapId,
+            napCode: toSafeText(candidate.napCode, 100),
+            linkedOlt: toSafeText(candidate.linkedOlt, 120),
+            ponRef: toSafeText(candidate.ponRef, 80),
+            location: toSafeText(candidate.location, 150),
+            port: selectedNapPort,
+            status: 'requested',
+            requestedAt,
+            availableAtSubmission: portEntry.available === true
+        }
+    };
+    return {
+        completed: true,
+        draft: {
+            ...draft,
+            selectedNapId,
+            selectedNapPort,
+            onuSerialNumber,
+            installationCompletion
+        }
+    };
+};
 
 const listAllCustomerDraftSubmissions = async (options = {}, listPage = listCustomerDraftSubmissions) => {
     const items = [];
@@ -1250,7 +1527,7 @@ const findDraftDuplicateCandidates = async (branchId, draft = {}) => {
 
     const [customers, pendingDrafts] = await Promise.all([
         readCustomers(branchId),
-        listAllCustomerDraftSubmissions({ branchId, status: 'pending' })
+        listAllCustomerDraftSubmissions({ branchId, status: 'all' })
     ]);
     const candidates = [];
     (Array.isArray(customers) ? customers : []).forEach((customer) => {
@@ -1273,28 +1550,66 @@ const findDraftDuplicateCandidates = async (branchId, draft = {}) => {
             matchedBy: sameMobile ? 'name-and-mobile' : 'name-and-location'
         });
     });
-    pendingDrafts.forEach((submission) => {
-        const pendingDraft = submission?.draftData || {};
-        const name = submission?.customerName || buildCustomerName(pendingDraft);
-        const mobile = normalizePhilippineMobile(
-            pendingDraft?.mobile || submission?.contactNumber || '',
-            { fallbackToRaw: false }
-        );
-        const mapPin = toSafeText(pendingDraft?.mapPin, 120);
-        const sameName = duplicateNameKey(name) === targetName;
-        const sameMobile = Boolean(targetMobile && mobile && targetMobile === mobile);
-        const sameLocation = Boolean(targetMapPin && mapPin && targetMapPin === mapPin);
-        if (!sameName || (!sameMobile && !sameLocation)) return;
-        candidates.push({
-            type: 'pending-draft',
-            accountNumber: toSafeText(submission?.draftAccountNumber, 20),
-            name,
-            mobile,
-            status: 'pending',
-            matchedBy: sameMobile ? 'name-and-mobile' : 'name-and-location'
+    pendingDrafts
+        .filter((submission) => ['in-progress', 'pending'].includes(
+            toSafeText(submission?.rawStatus || submission?.status, 20).toLowerCase()
+        ))
+        .forEach((submission) => {
+            const pendingDraft = submission?.draftData || {};
+            const rawStatus = toSafeText(
+                submission?.rawStatus || submission?.status,
+                20
+            ).toLowerCase();
+            const name = submission?.customerName || buildCustomerName(pendingDraft);
+            const mobile = normalizePhilippineMobile(
+                pendingDraft?.mobile || submission?.contactNumber || '',
+                { fallbackToRaw: false }
+            );
+            const mapPin = toSafeText(pendingDraft?.mapPin, 120);
+            const sameName = duplicateNameKey(name) === targetName;
+            const sameMobile = Boolean(targetMobile && mobile && targetMobile === mobile);
+            const sameLocation = Boolean(targetMapPin && mapPin && targetMapPin === mapPin);
+            if (!sameName || (!sameMobile && !sameLocation)) return;
+            candidates.push({
+                type: 'pending-draft',
+                id: toSafeText(submission?.id, 64),
+                accountNumber: toSafeText(submission?.draftAccountNumber, 20),
+                name,
+                mobile,
+                status: rawStatus || 'pending',
+                submittedByUserId: toSafeText(submission?.submittedBy?.id, 32),
+                matchedBy: sameMobile ? 'name-and-mobile' : 'name-and-location'
+            });
         });
-    });
     return candidates.slice(0, 10);
+};
+
+const selectRecoverableOwnedInProgressDraft = (candidates = [], technicianId = '') => {
+    const safeTechnicianId = toSafeText(technicianId, 32);
+    const list = Array.isArray(candidates) ? candidates : [];
+    if (!safeTechnicianId || !list.length) return null;
+    const recoverable = list.filter((candidate) => (
+        candidate?.type === 'pending-draft'
+        && toSafeText(candidate?.status, 20).toLowerCase() === 'in-progress'
+        && toSafeText(candidate?.submittedByUserId, 32) === safeTechnicianId
+        && toSafeText(candidate?.accountNumber, 20)
+    ));
+    return recoverable.length === 1 && list.length === 1 ? recoverable[0] : null;
+};
+
+const buildDraftDuplicateConflict = (duplicates = []) => {
+    const list = Array.isArray(duplicates) ? duplicates : [];
+    const first = list[0] || {};
+    const reference = toSafeText(first.accountNumber || first.id, 64);
+    const suffix = reference ? ` (${reference})` : '';
+    const status = toSafeText(first.status, 20).toLowerCase();
+    if (first.type === 'customer') {
+        return `A matching customer already exists${suffix}.`;
+    }
+    if (status === 'in-progress') {
+        return `A matching incomplete draft already exists${suffix}. Open Admin > Customer Draft Queue > Incomplete drafts to review or delete it.`;
+    }
+    return `A matching installation is already pending Admin review${suffix}.`;
 };
 
 const buildTechnicianProfile = (account = {}) => {
@@ -1511,7 +1826,7 @@ technicianRouter.post('/', async (req, res, next) => {
             readCoverageAreaNames(req.technician.branchId),
             readCustomers(req.technician.branchId)
         ]);
-        const draft = applyReferralDefaults(
+        let draft = applyReferralDefaults(
             applyFirstBillDefaults(
                 applyMonthlyBillingDefaults(
                     applyPlanDefaults(normalizeDraftPayload(req.body || {}), plans)
@@ -1520,6 +1835,14 @@ technicianRouter.post('/', async (req, res, next) => {
             customers
         );
         validateDraftPayload(draft, { coverageAreas });
+        const completedDraft = await buildTechnicianCompletedDraft({
+            draft,
+            source: req.body || {},
+            branchId: req.technician.branchId,
+            technician: req.technician,
+            customers
+        });
+        draft = completedDraft.draft;
 
         const submission = await withDraftSubmissionLock(req.technician.branchId, async () => {
             const replay = await findDraftSubmissionByClientEvent(
@@ -1529,13 +1852,41 @@ technicianRouter.post('/', async (req, res, next) => {
             );
             if (replay) {
                 if (draftSubmissionFingerprint(replay.draftData) !== draftSubmissionFingerprint(draft)) {
+                    if (toSafeText(replay.rawStatus, 20).toLowerCase() === 'in-progress') {
+                        const recoveredItem = await updateCustomerDraftSubmissionDraftDataByAccountNumber(
+                            replay.draftAccountNumber,
+                            req.technician.branchId,
+                            draft,
+                            { statuses: ['in-progress'] }
+                        );
+                        if (!recoveredItem) {
+                            throw createError(409, 'The incomplete draft changed while it was being recovered. Retry the same submission.');
+                        }
+                        return { item: recoveredItem, replayed: false, recovered: true };
+                    }
                     throw createError(409, 'clientEventId was already used for a different customer draft.');
                 }
-                return { item: replay, replayed: true };
+                return { item: replay, replayed: true, recovered: false };
             }
             const duplicates = await findDraftDuplicateCandidates(req.technician.branchId, draft);
             if (duplicates.length) {
-                throw createError(409, 'A matching customer or pending installation already exists.', {
+                const recoverable = selectRecoverableOwnedInProgressDraft(
+                    duplicates,
+                    req.technician.id
+                );
+                if (recoverable) {
+                    const recoveredItem = await updateCustomerDraftSubmissionDraftDataByAccountNumber(
+                        recoverable.accountNumber,
+                        req.technician.branchId,
+                        draft,
+                        { statuses: ['in-progress'] }
+                    );
+                    if (!recoveredItem) {
+                        throw createError(409, 'The incomplete draft changed while it was being recovered. Retry the same submission.');
+                    }
+                    return { item: recoveredItem, replayed: false, recovered: true };
+                }
+                throw createError(409, buildDraftDuplicateConflict(duplicates), {
                     duplicateCandidates: duplicates
                 });
             }
@@ -1545,16 +1896,42 @@ technicianRouter.post('/', async (req, res, next) => {
                     submittedBy: req.technician,
                     draftData: draft
                 }),
-                replayed: false
+                replayed: false,
+                recovered: false
             };
         });
+
+        if (completedDraft.completed) {
+            const completionUpdate = await compareAndSetCustomerDraftInstallationCompletion(
+                submission.item?.draftAccountNumber,
+                req.technician.branchId,
+                draft.installationCompletion,
+                {
+                    statuses: ['in-progress', 'pending', 'approved'],
+                    transitionToPending: true
+                }
+            );
+            if (!completionUpdate) {
+                throw createError(503, 'The complete installation draft could not be submitted for Admin review. Retry the same submission.');
+            }
+            submission.item = completionUpdate.item;
+        }
 
         res.status(submission.replayed ? 200 : 201).json({
             ok: true,
             replayed: submission.replayed,
-            message: submission.replayed
-                ? 'Customer draft was already submitted.'
-                : 'Customer draft submitted for admin finalization.',
+            recovered: submission.recovered === true,
+            message: completedDraft.completed
+                ? (submission.replayed
+                    ? 'The complete installation was already submitted for Admin review.'
+                    : (submission.recovered
+                        ? 'The incomplete customer draft was recovered, and the customer, billing, requested NAP/port, and ONU were submitted together for Admin review.'
+                        : 'Customer, billing, requested NAP/port, and ONU were submitted together for Admin review.'))
+                : (submission.replayed
+                    ? 'Customer intake was already saved.'
+                    : (submission.recovered
+                        ? 'The incomplete customer draft was recovered and updated.'
+                        : 'Customer intake saved. Select a NAP port and submit the installation for Admin review.')),
             item: submission.item
         });
     } catch (error) {
@@ -1578,6 +1955,56 @@ adminRouter.get('/', async (req, res, next) => {
             offset
         });
         res.json({ ok: true, ...result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+adminRouter.get('/:id/pon-options', async (req, res, next) => {
+    try {
+        const submissionId = toSafeText(req.params?.id, 64);
+        const submission = await getCustomerDraftSubmission(submissionId, req.branchId);
+        if (!submission) throw createError(404, 'Customer draft not found.');
+        if (toSafeText(submission.rawStatus, 20).toLowerCase() !== 'pending') {
+            throw createError(409, 'Only a pending customer draft can change its NAP port.');
+        }
+        const draft = submission.draftData || {};
+        const selection = getDraftPonSelection(draft);
+        const coordinates = parseCoordinate(draft.mapPin)
+            || parseCoordinate(`${draft.latitude || ''}, ${draft.longitude || ''}`);
+        if (!coordinates) {
+            throw createError(409, 'The submitted customer location is required to load NAP options.');
+        }
+        const result = await findNearbyPonNaps({
+            branchId: req.branchId,
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+            limit: 500,
+            maxDistanceMeters: 100000,
+            includeOffline: true,
+            includeUnavailable: true,
+            allowExpandedLimit: true
+        });
+        return res.json({
+            ok: true,
+            current: selection ? {
+                ...(selection.reservationId ? { reservationId: selection.reservationId } : {}),
+                napId: selection.napId,
+                port: selection.port,
+                status: selection.status || 'requested'
+            } : null,
+            candidates: result.candidates.map((candidate) => ({
+                napId: candidate.napId,
+                napCode: candidate.napCode,
+                location: candidate.location,
+                linkedOlt: candidate.linkedOlt,
+                ponRef: candidate.ponRef,
+                distanceMeters: candidate.distanceMeters,
+                capacity: candidate.capacity,
+                oltStatus: candidate.oltStatus,
+                ports: candidate.ports
+            }))
+        });
     } catch (error) {
         next(error);
     }
@@ -1663,6 +2090,17 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             );
             reviewedDraft = applyDraftPortalCredentialDefaults(reviewedDraft, linkedCustomerAccountNumber);
             validateDraftPayload(reviewedDraft, { coverageAreas });
+            const reviewedPonSelection = getDraftPonSelection(reviewedDraft);
+            if (reviewedDraft.installationCompletion && !reviewedPonSelection) {
+                throw createError(400, 'Select the NAP and port to finalize this installation.');
+            }
+            const preparedPonHold = await prepareDraftPonHoldForAdmin({
+                branchId: req.branchId,
+                accountNumber: linkedCustomerAccountNumber,
+                draft: reviewedDraft,
+                actor: req.user || null
+            });
+            const preparedPonSelection = preparedPonHold || reviewedPonSelection;
 
             let persistedCustomer = null;
             try {
@@ -1686,6 +2124,16 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                     trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
                 });
             }
+
+            const finalizedPonHold = await finalizeDraftPonSelectionForAdmin({
+                branchId: req.branchId,
+                accountNumber: toSafeText(persistedCustomer?.accountNumber, 20)
+                    || linkedCustomerAccountNumber,
+                customerName: buildCustomerName(reviewedDraft),
+                submissionId,
+                selection: preparedPonSelection
+            });
+            reviewedDraft = applyFinalizedPonAssignment(reviewedDraft, finalizedPonHold);
 
             const firstBillPayment = await recordDraftFirstBillPayment({
                 branchId: req.branchId,
@@ -1822,6 +2270,17 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
         );
         reviewedDraft = applyDraftPortalCredentialDefaults(reviewedDraft, linkedCustomerAccountNumber);
         validateDraftPayload(reviewedDraft, { coverageAreas });
+        const reviewedPonSelection = getDraftPonSelection(reviewedDraft);
+        if (reviewedDraft.installationCompletion && !reviewedPonSelection) {
+            throw createError(400, 'Select the NAP and port to finalize this installation.');
+        }
+        const preparedPonHold = await prepareDraftPonHoldForAdmin({
+            branchId: req.branchId,
+            accountNumber: linkedCustomerAccountNumber,
+            draft: reviewedDraft,
+            actor: req.user || null
+        });
+        const preparedPonSelection = preparedPonHold || reviewedPonSelection;
         let persistedCustomer = null;
         try {
             persistedCustomer = await updateCustomerRecord(linkedCustomerAccountNumber, reviewedDraft, {
@@ -1844,6 +2303,16 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
             });
         }
+
+        const finalizedPonHold = await finalizeDraftPonSelectionForAdmin({
+            branchId: req.branchId,
+            accountNumber: toSafeText(persistedCustomer?.accountNumber, 20)
+                || linkedCustomerAccountNumber,
+            customerName: buildCustomerName(reviewedDraft),
+            submissionId,
+            selection: preparedPonSelection
+        });
+        reviewedDraft = applyFinalizedPonAssignment(reviewedDraft, finalizedPonHold);
 
         const firstBillPayment = await recordDraftFirstBillPayment({
             branchId: req.branchId,
@@ -2111,6 +2580,8 @@ module.exports.applyReferralDefaults = applyReferralDefaults;
 module.exports.computeFirstBillProration = computeFirstBillProration;
 module.exports.preserveInstallationCompletion = preserveInstallationCompletion;
 module.exports.findDraftDuplicateCandidates = findDraftDuplicateCandidates;
+module.exports.selectRecoverableOwnedInProgressDraft = selectRecoverableOwnedInProgressDraft;
+module.exports.buildDraftDuplicateConflict = buildDraftDuplicateConflict;
 module.exports.withDraftSubmissionLock = withDraftSubmissionLock;
 module.exports.draftSubmissionFingerprint = draftSubmissionFingerprint;
 module.exports.listAllCustomerDraftSubmissions = listAllCustomerDraftSubmissions;

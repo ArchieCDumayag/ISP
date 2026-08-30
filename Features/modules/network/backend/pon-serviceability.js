@@ -8,8 +8,14 @@ const JSON_STORE_KEY = 'pon-state';
 const DEFAULT_RESERVATION_TTL_MS = 10 * 60 * 1000;
 const MAX_RESERVATION_TTL_MS = 30 * 60 * 1000;
 const MAX_JSON_RESERVATION_HISTORY = 1000;
+const DRAFT_HOLD_STATUS = 'draft-held';
 const branchMutationTails = new Map();
 let relationalSchemaPromise = null;
+let tempNetworkCustomersProvider = null;
+
+const configureTempNetworkCustomersProvider = (provider) => {
+  tempNetworkCustomersProvider = typeof provider === 'function' ? provider : null;
+};
 
 const text = (value) => String(value ?? '').trim();
 const keyOf = (value) => text(value).toLowerCase();
@@ -108,10 +114,78 @@ const napCapacity = (nap = {}) => {
   );
 };
 
-const activeReservation = (reservation, nowMs = Date.now()) => (
-  keyOf(reservation?.status || 'active') === 'active'
-  && new Date(reservation?.expiresAt || reservation?.expires_at || 0).getTime() > nowMs
-);
+const mergeTempNetworkAssignments = (state = {}, tempCustomers = []) => {
+  const naps = (Array.isArray(state?.naps) ? state.naps : []).map((nap) => ({
+    ...nap,
+    connections: Array.isArray(nap?.connections)
+      ? nap.connections.map((connection) => ({ ...connection }))
+      : []
+  }));
+  const napById = new Map(naps
+    .map((nap) => [text(nap?.id), nap])
+    .filter(([id]) => Boolean(id)));
+  const napByCode = new Map(naps
+    .map((nap) => [keyOf(nap?.code), nap])
+    .filter(([code]) => Boolean(code)));
+
+  (Array.isArray(tempCustomers) ? tempCustomers : []).forEach((customer) => {
+    const napId = text(customer?.napId);
+    const napCode = keyOf(customer?.napCode);
+    const nap = (napId ? napById.get(napId) : null)
+      || (napCode ? napByCode.get(napCode) : null);
+    const port = positiveInt(customer?.napPort);
+    if (!nap || !port) return;
+    if (nap.connections.some((connection) => positiveInt(connection?.port) === port)) return;
+    nap.connections.push({
+      port,
+      customerAccountNumber: text(customer?.accountNumber),
+      customerId: text(customer?.accountNumber),
+      customerRef: text(customer?.accountNumber) || text(customer?.name),
+      customerName: text(customer?.name),
+      workspace: 'temp',
+      readOnly: true
+    });
+  });
+
+  return { ...state, naps };
+};
+
+const findTempNetworkAssignment = (tempCustomers = [], { napId, napCode, port } = {}) => {
+  const safeNapId = text(napId);
+  const safeNapCode = keyOf(napCode);
+  const safePort = positiveInt(port);
+  if ((!safeNapId && !safeNapCode) || !safePort) return null;
+  return (Array.isArray(tempCustomers) ? tempCustomers : []).find((customer) => (
+    positiveInt(customer?.napPort) === safePort
+    && (
+      (safeNapId && text(customer?.napId) === safeNapId)
+      || (safeNapCode && keyOf(customer?.napCode) === safeNapCode)
+    )
+  )) || null;
+};
+
+const loadTempNetworkCustomers = async (branchId) => {
+  if (!tempNetworkCustomersProvider) return [];
+  const customers = await tempNetworkCustomersProvider(branchId);
+  return Array.isArray(customers) ? customers : [];
+};
+
+const assertTempPortAvailable = (tempCustomers, nap, port, message) => {
+  if (findTempNetworkAssignment(tempCustomers, {
+    napId: nap?.id || nap?.client_uid,
+    napCode: nap?.code,
+    port
+  })) {
+    throw createServiceError(409, message);
+  }
+};
+
+const activeReservation = (reservation, nowMs = Date.now()) => {
+  const status = keyOf(reservation?.status || 'active');
+  if (status === DRAFT_HOLD_STATUS) return true;
+  return status === 'active'
+    && new Date(reservation?.expiresAt || reservation?.expires_at || 0).getTime() > nowMs;
+};
 
 const isoDateOr = (value, fallback = Date.now()) => {
   const parsed = new Date(value ?? fallback);
@@ -119,20 +193,33 @@ const isoDateOr = (value, fallback = Date.now()) => {
   return new Date(fallback).toISOString();
 };
 
-const sanitizeReservation = (reservation = {}) => ({
-  reservationId: text(reservation.id || reservation.reservationId),
-  napId: text(reservation.napId),
-  port: positiveInt(reservation.port),
-  customerAccountNumber: text(reservation.customerAccountNumber || reservation.customerRef),
-  technicianUserId: text(reservation.technicianUserId),
-  clientEventId: text(reservation.clientEventId),
-  finalizeEventId: text(reservation.finalizeEventId),
-  status: keyOf(reservation.status || 'active'),
-  expiresAt: isoDateOr(reservation.expiresAt),
-  createdAt: isoDateOr(reservation.createdAt),
-  finalizedAt: reservation.finalizedAt ? isoDateOr(reservation.finalizedAt) : '',
-  opticalInfo: text(reservation.opticalInfo)
-});
+const sanitizeReservation = (reservation = {}) => {
+  const expiresAt = reservation.expiresAt || reservation.expires_at;
+  return {
+    reservationId: text(reservation.id || reservation.reservationId),
+    napId: text(reservation.napId),
+    port: positiveInt(reservation.port),
+    customerAccountNumber: text(reservation.customerAccountNumber || reservation.customerRef),
+    technicianUserId: text(reservation.technicianUserId),
+    clientEventId: text(reservation.clientEventId),
+    holdEventId: text(reservation.holdEventId || reservation.hold_event_id),
+    finalizeEventId: text(reservation.finalizeEventId),
+    status: keyOf(reservation.status || 'active'),
+    expiresAt: expiresAt ? isoDateOr(expiresAt) : '',
+    createdAt: isoDateOr(reservation.createdAt || reservation.created_at),
+    heldAt: reservation.heldAt || reservation.held_at
+      ? isoDateOr(reservation.heldAt || reservation.held_at)
+      : '',
+    reassignedAt: reservation.reassignedAt || reservation.reassigned_at
+      ? isoDateOr(reservation.reassignedAt || reservation.reassigned_at)
+      : '',
+    reassignedByUserId: text(
+      reservation.reassignedByUserId || reservation.reassigned_by_user_id
+    ),
+    finalizedAt: reservation.finalizedAt ? isoDateOr(reservation.finalizedAt) : '',
+    opticalInfo: text(reservation.opticalInfo)
+  };
+};
 
 const withPonBranchLock = async (branchId, task) => {
   const branchKey = String(positiveInt(branchId) || 'default');
@@ -192,9 +279,9 @@ const pruneJsonReservations = (branch, nowMs = Date.now()) => {
         ? { ...reservation, status: 'expired' }
         : reservation
     ));
-  const active = reservations.filter((reservation) => reservation.status === 'active');
+  const active = reservations.filter((reservation) => activeReservation(reservation, nowMs));
   const history = reservations
-    .filter((reservation) => reservation.status !== 'active')
+    .filter((reservation) => !activeReservation(reservation, nowMs))
     .sort((left, right) => new Date(right.finalizedAt || right.createdAt).getTime()
       - new Date(left.finalizedAt || left.createdAt).getTime())
     .slice(0, MAX_JSON_RESERVATION_HISTORY);
@@ -338,14 +425,6 @@ const ensureRelationalReservationSchema = async () => {
         if (error?.code !== 'ER_DUP_FIELDNAME') throw error;
       }
     }
-    const [tableRows] = await pool.query(
-      `SELECT 1
-         FROM information_schema.tables
-        WHERE table_schema = DATABASE()
-          AND table_name = 'pon_port_reservations'
-        LIMIT 1`
-    );
-    if (tableRows.length) return;
     await pool.query(
       `CREATE TABLE IF NOT EXISTS pon_port_reservations (
          id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -355,13 +434,17 @@ const ensureRelationalReservationSchema = async () => {
          customer_ref VARCHAR(200) NOT NULL,
          technician_user_id VARCHAR(64) NOT NULL,
          client_event_id VARCHAR(100) NOT NULL,
+         hold_event_id VARCHAR(100) NULL,
          finalize_event_id VARCHAR(100) NULL,
          status VARCHAR(20) NOT NULL DEFAULT 'active',
          active_flag TINYINT NULL DEFAULT 1,
          optical_info VARCHAR(120) NULL,
-         expires_at DATETIME NOT NULL,
+         expires_at DATETIME NULL,
          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+         held_at DATETIME NULL,
+         reassigned_at DATETIME NULL,
+         reassigned_by_user_id VARCHAR(64) NULL,
          finalized_at DATETIME NULL,
          UNIQUE KEY uniq_pon_reservation_active_port (nap_id, port, active_flag),
          UNIQUE KEY uniq_pon_reservation_event (branch_id, technician_user_id, client_event_id),
@@ -369,6 +452,20 @@ const ensureRelationalReservationSchema = async () => {
          KEY idx_pon_reservation_branch_status (branch_id, status, expires_at),
          CONSTRAINT fk_pon_reservation_nap FOREIGN KEY (nap_id) REFERENCES pon_naps(id) ON DELETE CASCADE
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+    const addColumn = async (definition) => {
+      try {
+        await pool.query(`ALTER TABLE pon_port_reservations ADD COLUMN ${definition}`);
+      } catch (error) {
+        if (error?.code !== 'ER_DUP_FIELDNAME') throw error;
+      }
+    };
+    await addColumn('hold_event_id VARCHAR(100) NULL AFTER client_event_id');
+    await addColumn('held_at DATETIME NULL AFTER updated_at');
+    await addColumn('reassigned_at DATETIME NULL AFTER held_at');
+    await addColumn('reassigned_by_user_id VARCHAR(64) NULL AFTER reassigned_at');
+    await pool.query(
+      'ALTER TABLE pon_port_reservations MODIFY COLUMN expires_at DATETIME NULL'
     );
   })().catch((error) => {
     relationalSchemaPromise = null;
@@ -421,7 +518,11 @@ const loadRelationalCandidateState = async (branchId) => {
             r.expires_at AS expiresAt, r.status
        FROM pon_port_reservations r
        INNER JOIN pon_naps n ON n.id = r.nap_id
-      WHERE r.branch_id = ? AND r.status = 'active' AND r.expires_at > CURRENT_TIMESTAMP`,
+      WHERE r.branch_id = ?
+        AND (
+          r.status = 'draft-held'
+          OR (r.status = 'active' AND r.expires_at > CURRENT_TIMESTAMP)
+        )`,
     [branchId]
   );
   const connectionsByNap = new Map();
@@ -470,6 +571,7 @@ const findNearbyPonNaps = async ({
   } else {
     state = await loadRelationalCandidateState(branchId);
   }
+  state = mergeTempNetworkAssignments(state, await loadTempNetworkCustomers(branchId));
   return buildNearbyCandidates({
     state,
     latitude,
@@ -517,7 +619,8 @@ const publicReservation = (reservation) => ({
   port: reservation.port,
   customerAccountNumber: reservation.customerAccountNumber,
   status: reservation.status,
-  expiresAt: reservation.expiresAt
+  expiresAt: reservation.expiresAt || null,
+  heldAt: reservation.heldAt || null
 });
 
 const assertReservationCustomer = (reservation = {}, customerAccountNumber = '') => {
@@ -538,7 +641,7 @@ const assertFinalizeEventReplay = (reservation = {}, clientEventId = '') => {
   }
 };
 
-const reservePonPortJson = async (input) => {
+const reservePonPortJson = async (input, tempCustomers = []) => {
   const allState = await readJson(JSON_STORE_KEY, {});
   const branch = jsonBranchState(allState, input.branchId, { create: true });
   const reservations = pruneJsonReservations(branch);
@@ -578,6 +681,12 @@ const reservePonPortJson = async (input) => {
   }
   const occupied = (Array.isArray(nap.connections) ? nap.connections : [])
     .some((entry) => positiveInt(entry?.port) === input.port);
+  assertTempPortAvailable(
+    tempCustomers,
+    nap,
+    input.port,
+    'The selected port is no longer available.'
+  );
   const held = reservations.some((reservation) => (
     activeReservation(reservation)
     && reservation.napId === input.napId
@@ -602,7 +711,7 @@ const reservePonPortJson = async (input) => {
   return publicReservation(reservation);
 };
 
-const reservePonPortMysql = async (input) => {
+const reservePonPortMysql = async (input, tempCustomers = []) => {
   await ensureRelationalReservationSchema();
   const pool = await getPool();
   const connection = await pool.getConnection();
@@ -645,7 +754,7 @@ const reservePonPortMysql = async (input) => {
       });
     }
     const [napRows] = await connection.query(
-      `SELECT n.id, n.client_uid, n.capacity, n.splitter, o.status
+      `SELECT n.id, n.client_uid, n.code, n.capacity, n.splitter, o.status
          FROM pon_naps n
          INNER JOIN pon_olts o ON o.id = n.olt_id
         WHERE n.branch_id = ? AND n.client_uid = ?
@@ -678,6 +787,12 @@ const reservePonPortMysql = async (input) => {
       [nap.id, input.port]
     );
     if (occupiedRows.length) throw createServiceError(409, 'The selected port is no longer available.');
+    assertTempPortAvailable(
+      tempCustomers,
+      { id: nap.client_uid, code: nap.code },
+      input.port,
+      'The selected port is no longer available.'
+    );
     const reservationId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + input.ttlMs);
     try {
@@ -722,9 +837,241 @@ const reservePonPortMysql = async (input) => {
 
 const reservePonPort = async (rawInput = {}) => {
   const input = validateReservationInput(rawInput);
-  return withPonBranchLock(input.branchId, () => (
-    isJsonStorageMode() ? reservePonPortJson(input) : reservePonPortMysql(input)
-  ));
+  return withPonBranchLock(input.branchId, async () => {
+    const tempCustomers = await loadTempNetworkCustomers(input.branchId);
+    return isJsonStorageMode()
+      ? reservePonPortJson(input, tempCustomers)
+      : reservePonPortMysql(input, tempCustomers);
+  });
+};
+
+const reservationSelectionPayload = (nap = {}, reservation = {}) => ({
+  reservationId: text(reservation.reservationId || reservation.id),
+  napId: text(nap?.id || nap?.client_uid || reservation?.napId),
+  napCode: text(nap?.code),
+  linkedOlt: text(nap?.linkedOlt),
+  ponRef: normalizePonRef(nap?.ponRef),
+  location: text(nap?.location || nap?.area),
+  port: positiveInt(reservation?.port),
+  customerAccountNumber: text(
+    reservation?.customerAccountNumber || reservation?.customer_ref
+  ),
+  opticalInfo: text(reservation?.opticalInfo || reservation?.optical_info),
+  status: keyOf(reservation?.status || DRAFT_HOLD_STATUS)
+});
+
+const validateDraftHoldInput = (rawInput = {}) => {
+  const branchId = positiveInt(rawInput.branchId);
+  const reservationId = text(rawInput.reservationId);
+  const technicianUserId = text(rawInput.technicianUserId).slice(0, 64);
+  const customerAccountNumber = text(rawInput.customerAccountNumber).slice(0, 200);
+  const clientEventId = text(rawInput.clientEventId).slice(0, 100);
+  if (!branchId || !reservationId || !technicianUserId || !customerAccountNumber || !clientEventId) {
+    throw createServiceError(
+      400,
+      'Branch, reservation, technician, customer account, and clientEventId are required.'
+    );
+  }
+  return {
+    branchId,
+    reservationId,
+    technicianUserId,
+    customerAccountNumber,
+    clientEventId,
+    opticalInfo: text(rawInput.opticalInfo).slice(0, 120)
+  };
+};
+
+const submitPonReservationForAdminJson = async (input, tempCustomers = []) => {
+  const allState = await readJson(JSON_STORE_KEY, {});
+  const branch = jsonBranchState(allState, input.branchId, { create: true });
+  const reservations = pruneJsonReservations(branch);
+  const reservation = reservations.find((entry) => entry.reservationId === input.reservationId);
+  if (!reservation || reservation.technicianUserId !== input.technicianUserId) {
+    throw createServiceError(404, 'Reservation was not found.');
+  }
+  assertReservationCustomer(reservation, input.customerAccountNumber);
+  const naps = Array.isArray(branch.naps) ? branch.naps : [];
+  const nap = naps.find((entry) => text(entry?.id) === reservation.napId);
+  if (!nap) throw createServiceError(404, 'NAP was not found.');
+  if (reservation.status === 'finalized') {
+    if (reservation.holdEventId && reservation.holdEventId !== input.clientEventId) {
+      throw createServiceError(409, 'Reservation was already submitted by a different clientEventId.');
+    }
+    return {
+      reservationId: reservation.reservationId,
+      duplicate: true,
+      hold: publicReservation(reservation),
+      selection: reservationSelectionPayload(nap, reservation)
+    };
+  }
+  if (reservation.status === DRAFT_HOLD_STATUS) {
+    if (reservation.holdEventId && reservation.holdEventId !== input.clientEventId) {
+      throw createServiceError(409, 'Reservation was already submitted by a different clientEventId.');
+    }
+    return {
+      reservationId: reservation.reservationId,
+      duplicate: true,
+      hold: publicReservation(reservation),
+      selection: reservationSelectionPayload(nap, reservation)
+    };
+  }
+  if (reservation.status !== 'active' || !activeReservation(reservation)) {
+    throw createServiceError(409, 'Reservation has expired or is no longer active.');
+  }
+  if ((Array.isArray(nap.connections) ? nap.connections : [])
+    .some((entry) => positiveInt(entry?.port) === reservation.port)) {
+    throw createServiceError(409, 'The reserved port is already assigned.');
+  }
+  assertTempPortAvailable(
+    tempCustomers,
+    nap,
+    reservation.port,
+    'The reserved port is already assigned.'
+  );
+  const heldAt = new Date().toISOString();
+  reservation.status = DRAFT_HOLD_STATUS;
+  reservation.expiresAt = '';
+  reservation.holdEventId = input.clientEventId;
+  reservation.heldAt = heldAt;
+  reservation.opticalInfo = input.opticalInfo;
+  branch.updatedAt = heldAt;
+  await writeJson(JSON_STORE_KEY, allState);
+  return {
+    reservationId: reservation.reservationId,
+    duplicate: false,
+    hold: publicReservation(reservation),
+    selection: reservationSelectionPayload(nap, reservation)
+  };
+};
+
+const submitPonReservationForAdminMysql = async (input, tempCustomers = []) => {
+  await ensureRelationalReservationSchema();
+  const pool = await getPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await lockRelationalPonBranch(connection, input.branchId);
+    const [rows] = await connection.query(
+      `SELECT r.*, n.client_uid AS napClientId, n.code AS napCode,
+              n.area AS location, n.pon_ref AS ponRef, o.name AS linkedOlt
+         FROM pon_port_reservations r
+         INNER JOIN pon_naps n ON n.id = r.nap_id
+         INNER JOIN pon_olts o ON o.id = n.olt_id
+        WHERE r.id = ? AND r.branch_id = ? AND r.technician_user_id = ?
+        LIMIT 1 FOR UPDATE`,
+      [input.reservationId, input.branchId, input.technicianUserId]
+    );
+    if (!rows.length) throw createServiceError(404, 'Reservation was not found.');
+    const reservation = rows[0];
+    assertReservationCustomer(reservation, input.customerAccountNumber);
+    const nap = {
+      id: text(reservation.napClientId),
+      code: text(reservation.napCode),
+      location: text(reservation.location),
+      ponRef: text(reservation.ponRef),
+      linkedOlt: text(reservation.linkedOlt)
+    };
+    if (keyOf(reservation.status) === 'finalized') {
+      if (text(reservation.hold_event_id) && text(reservation.hold_event_id) !== input.clientEventId) {
+        throw createServiceError(409, 'Reservation was already submitted by a different clientEventId.');
+      }
+      await connection.commit();
+      const finalizedReservation = sanitizeReservation({
+        ...reservation,
+        id: reservation.id,
+        napId: nap.id,
+        customerAccountNumber: reservation.customer_ref,
+        technicianUserId: reservation.technician_user_id,
+        clientEventId: reservation.client_event_id
+      });
+      return {
+        reservationId: input.reservationId,
+        duplicate: true,
+        hold: publicReservation(finalizedReservation),
+        selection: reservationSelectionPayload(nap, finalizedReservation)
+      };
+    }
+    if (keyOf(reservation.status) === DRAFT_HOLD_STATUS) {
+      if (text(reservation.hold_event_id) && text(reservation.hold_event_id) !== input.clientEventId) {
+        throw createServiceError(409, 'Reservation was already submitted by a different clientEventId.');
+      }
+      await connection.commit();
+      const heldReservation = sanitizeReservation({
+        ...reservation,
+        id: reservation.id,
+        napId: nap.id,
+        customerAccountNumber: reservation.customer_ref,
+        technicianUserId: reservation.technician_user_id,
+        clientEventId: reservation.client_event_id
+      });
+      return {
+        reservationId: input.reservationId,
+        duplicate: true,
+        hold: publicReservation(heldReservation),
+        selection: reservationSelectionPayload(nap, heldReservation)
+      };
+    }
+    if (
+      keyOf(reservation.status) !== 'active'
+      || new Date(reservation.expires_at).getTime() <= Date.now()
+    ) {
+      throw createServiceError(409, 'Reservation has expired or is no longer active.');
+    }
+    const [occupiedRows] = await connection.query(
+      'SELECT id FROM pon_nap_connections WHERE nap_id = ? AND port = ? LIMIT 1',
+      [reservation.nap_id, reservation.port]
+    );
+    if (occupiedRows.length) throw createServiceError(409, 'The reserved port is already assigned.');
+    assertTempPortAvailable(
+      tempCustomers,
+      nap,
+      reservation.port,
+      'The reserved port is already assigned.'
+    );
+    await connection.query(
+      `UPDATE pon_port_reservations
+          SET status = 'draft-held', expires_at = NULL, hold_event_id = ?,
+              held_at = CURRENT_TIMESTAMP, optical_info = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND branch_id = ?`,
+      [input.clientEventId, input.opticalInfo || null, input.reservationId, input.branchId]
+    );
+    await connection.commit();
+    const heldReservation = sanitizeReservation({
+      ...reservation,
+      id: reservation.id,
+      napId: nap.id,
+      customerAccountNumber: reservation.customer_ref,
+      technicianUserId: reservation.technician_user_id,
+      clientEventId: reservation.client_event_id,
+      holdEventId: input.clientEventId,
+      status: DRAFT_HOLD_STATUS,
+      expiresAt: '',
+      heldAt: new Date().toISOString(),
+      opticalInfo: input.opticalInfo
+    });
+    return {
+      reservationId: input.reservationId,
+      duplicate: false,
+      hold: publicReservation(heldReservation),
+      selection: reservationSelectionPayload(nap, heldReservation)
+    };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+const submitPonReservationForAdmin = async (rawInput = {}) => {
+  const input = validateDraftHoldInput(rawInput);
+  return withPonBranchLock(input.branchId, async () => {
+    const tempCustomers = await loadTempNetworkCustomers(input.branchId);
+    return isJsonStorageMode()
+      ? submitPonReservationForAdminJson(input, tempCustomers)
+      : submitPonReservationForAdminMysql(input, tempCustomers);
+  });
 };
 
 const releasePonPortReservationJson = async (input) => {
@@ -737,6 +1084,9 @@ const releasePonPortReservationJson = async (input) => {
   }
   assertReservationCustomer(reservation, input.customerAccountNumber);
   if (reservation.status === 'finalized') throw createServiceError(409, 'Finalized reservations cannot be released.');
+  if (reservation.status === DRAFT_HOLD_STATUS) {
+    throw createServiceError(409, 'Submitted port holds can only be changed by Admin.');
+  }
   if (reservation.status === 'released') return { reservationId: reservation.reservationId, released: true };
   reservation.status = 'released';
   branch.updatedAt = new Date().toISOString();
@@ -759,6 +1109,9 @@ const releasePonPortReservationMysql = async (input) => {
     if (!rows.length) throw createServiceError(404, 'Reservation was not found.');
     if (keyOf(rows[0].status) === 'finalized') {
       throw createServiceError(409, 'Finalized reservations cannot be released.');
+    }
+    if (keyOf(rows[0].status) === DRAFT_HOLD_STATUS) {
+      throw createServiceError(409, 'Submitted port holds can only be changed by Admin.');
     }
     assertReservationCustomer(rows[0], input.customerAccountNumber);
     await connection.query(
@@ -807,6 +1160,323 @@ const releasePonPortReservation = async ({
   ));
 };
 
+const releasePonDraftHoldJson = async (input) => {
+  const allState = await readJson(JSON_STORE_KEY, {});
+  const branch = jsonBranchState(allState, input.branchId, { create: true });
+  const reservations = pruneJsonReservations(branch);
+  const reservation = reservations.find((entry) => entry.reservationId === input.reservationId);
+  if (!reservation) throw createServiceError(404, 'Draft port hold was not found.');
+  assertReservationCustomer(reservation, input.customerAccountNumber);
+  if (reservation.status === 'released') {
+    return { reservationId: reservation.reservationId, released: true };
+  }
+  if (reservation.status !== DRAFT_HOLD_STATUS) {
+    throw createServiceError(409, 'Only a submitted draft port hold can be released by Admin.');
+  }
+  reservation.status = 'released';
+  branch.updatedAt = new Date().toISOString();
+  await writeJson(JSON_STORE_KEY, allState);
+  return { reservationId: reservation.reservationId, released: true };
+};
+
+const releasePonDraftHoldMysql = async (input) => {
+  await ensureRelationalReservationSchema();
+  const pool = await getPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await lockRelationalPonBranch(connection, input.branchId);
+    const [rows] = await connection.query(
+      `SELECT status, customer_ref
+         FROM pon_port_reservations
+        WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE`,
+      [input.reservationId, input.branchId]
+    );
+    if (!rows.length) throw createServiceError(404, 'Draft port hold was not found.');
+    assertReservationCustomer(rows[0], input.customerAccountNumber);
+    const status = keyOf(rows[0].status);
+    if (status === 'released') {
+      await connection.commit();
+      return { reservationId: input.reservationId, released: true };
+    }
+    if (status !== DRAFT_HOLD_STATUS) {
+      throw createServiceError(409, 'Only a submitted draft port hold can be released by Admin.');
+    }
+    await connection.query(
+      `UPDATE pon_port_reservations
+          SET status = 'released', active_flag = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND branch_id = ?`,
+      [input.reservationId, input.branchId]
+    );
+    await connection.commit();
+    return { reservationId: input.reservationId, released: true };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+const releasePonDraftHold = async ({ branchId, reservationId, customerAccountNumber } = {}) => {
+  const input = {
+    branchId: positiveInt(branchId),
+    reservationId: text(reservationId),
+    customerAccountNumber: text(customerAccountNumber).slice(0, 200)
+  };
+  if (!input.branchId || !input.reservationId || !input.customerAccountNumber) {
+    throw createServiceError(400, 'Branch, reservation, and customer account are required.');
+  }
+  return withPonBranchLock(input.branchId, () => (
+    isJsonStorageMode()
+      ? releasePonDraftHoldJson(input)
+      : releasePonDraftHoldMysql(input)
+  ));
+};
+
+const validateDraftHoldReassignmentInput = (rawInput = {}) => {
+  const input = {
+    branchId: positiveInt(rawInput.branchId),
+    reservationId: text(rawInput.reservationId),
+    customerAccountNumber: text(rawInput.customerAccountNumber).slice(0, 200),
+    napId: text(rawInput.napId),
+    port: positiveInt(rawInput.port),
+    reassignedByUserId: text(rawInput.reassignedByUserId).slice(0, 64)
+  };
+  if (
+    !input.branchId || !input.reservationId || !input.customerAccountNumber
+    || !input.napId || !input.port || !input.reassignedByUserId
+  ) {
+    throw createServiceError(
+      400,
+      'Branch, reservation, customer account, NAP, port, and Admin identity are required.'
+    );
+  }
+  return input;
+};
+
+const reassignPonDraftHoldJson = async (input, tempCustomers = []) => {
+  const allState = await readJson(JSON_STORE_KEY, {});
+  const branch = jsonBranchState(allState, input.branchId, { create: true });
+  const reservations = pruneJsonReservations(branch);
+  const reservation = reservations.find((entry) => entry.reservationId === input.reservationId);
+  if (!reservation) throw createServiceError(404, 'Draft port hold was not found.');
+  assertReservationCustomer(reservation, input.customerAccountNumber);
+  if (reservation.status === 'finalized') {
+    if (reservation.napId !== input.napId || reservation.port !== input.port) {
+      throw createServiceError(409, 'The PON assignment was already finalized and cannot be moved here.');
+    }
+    const finalizedNap = (Array.isArray(branch.naps) ? branch.naps : [])
+      .find((entry) => text(entry?.id) === reservation.napId);
+    return {
+      reservationId: reservation.reservationId,
+      duplicate: true,
+      hold: publicReservation(reservation),
+      selection: reservationSelectionPayload(finalizedNap, reservation)
+    };
+  }
+  if (reservation.status !== DRAFT_HOLD_STATUS) {
+    throw createServiceError(409, 'The port is no longer held for Admin review.');
+  }
+  const naps = Array.isArray(branch.naps) ? branch.naps : [];
+  const nap = naps.find((entry) => text(entry?.id) === input.napId);
+  if (!nap) throw createServiceError(404, 'NAP was not found.');
+  const olt = (Array.isArray(branch.olts) ? branch.olts : [])
+    .find((entry) => keyOf(entry?.name) === keyOf(nap?.linkedOlt));
+  if (normalizeOltStatus(olt?.status) !== 'online') {
+    throw createServiceError(409, 'The selected NAP is not currently serviceable.');
+  }
+  if (input.port > napCapacity(nap)) {
+    throw createServiceError(400, `Port ${input.port} is outside the NAP capacity.`);
+  }
+  if ((Array.isArray(nap.connections) ? nap.connections : [])
+    .some((entry) => positiveInt(entry?.port) === input.port)) {
+    throw createServiceError(409, 'The selected port is no longer available.');
+  }
+  assertTempPortAvailable(
+    tempCustomers,
+    nap,
+    input.port,
+    'The selected port is no longer available.'
+  );
+  const conflictingHold = reservations.some((entry) => (
+    entry.reservationId !== reservation.reservationId
+    && activeReservation(entry)
+    && entry.napId === input.napId
+    && entry.port === input.port
+  ));
+  if (conflictingHold) throw createServiceError(409, 'The selected port is no longer available.');
+  const duplicate = reservation.napId === input.napId && reservation.port === input.port;
+  if (!duplicate) {
+    reservation.napId = input.napId;
+    reservation.port = input.port;
+    reservation.reassignedAt = new Date().toISOString();
+    reservation.reassignedByUserId = input.reassignedByUserId;
+    branch.updatedAt = reservation.reassignedAt;
+    await writeJson(JSON_STORE_KEY, allState);
+  }
+  return {
+    reservationId: reservation.reservationId,
+    duplicate,
+    hold: publicReservation(reservation),
+    selection: reservationSelectionPayload(nap, reservation)
+  };
+};
+
+const reassignPonDraftHoldMysql = async (input, tempCustomers = []) => {
+  await ensureRelationalReservationSchema();
+  const pool = await getPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await lockRelationalPonBranch(connection, input.branchId);
+    await connection.query('SELECT id FROM pon_olts WHERE branch_id = ? FOR UPDATE', [input.branchId]);
+    const [reservationRows] = await connection.query(
+      `SELECT * FROM pon_port_reservations
+        WHERE id = ? AND branch_id = ? LIMIT 1 FOR UPDATE`,
+      [input.reservationId, input.branchId]
+    );
+    if (!reservationRows.length) throw createServiceError(404, 'Draft port hold was not found.');
+    const reservation = reservationRows[0];
+    assertReservationCustomer(reservation, input.customerAccountNumber);
+    if (keyOf(reservation.status) === 'finalized') {
+      const [currentNapRows] = await connection.query(
+        `SELECT client_uid, code, area, pon_ref FROM pon_naps WHERE id = ? LIMIT 1`,
+        [reservation.nap_id]
+      );
+      const currentNap = currentNapRows[0];
+      if (text(currentNap?.client_uid) !== input.napId || Number(reservation.port) !== input.port) {
+        throw createServiceError(409, 'The PON assignment was already finalized and cannot be moved here.');
+      }
+      await connection.commit();
+      const finalizedReservation = sanitizeReservation({
+        ...reservation,
+        id: reservation.id,
+        napId: currentNap.client_uid,
+        customerAccountNumber: reservation.customer_ref,
+        technicianUserId: reservation.technician_user_id,
+        clientEventId: reservation.client_event_id
+      });
+      return {
+        reservationId: input.reservationId,
+        duplicate: true,
+        hold: publicReservation(finalizedReservation),
+        selection: reservationSelectionPayload({
+          id: currentNap.client_uid,
+          code: currentNap.code,
+          location: currentNap.area,
+          ponRef: currentNap.pon_ref
+        }, finalizedReservation)
+      };
+    }
+    if (keyOf(reservation.status) !== DRAFT_HOLD_STATUS) {
+      throw createServiceError(409, 'The port is no longer held for Admin review.');
+    }
+    const [napRows] = await connection.query(
+      `SELECT n.id, n.client_uid, n.code, n.area, n.pon_ref, n.capacity, n.splitter,
+              o.name AS linkedOlt, o.status
+         FROM pon_naps n
+         INNER JOIN pon_olts o ON o.id = n.olt_id
+        WHERE n.branch_id = ? AND n.client_uid = ? LIMIT 1`,
+      [input.branchId, input.napId]
+    );
+    if (!napRows.length) throw createServiceError(404, 'NAP was not found.');
+    const napRow = napRows[0];
+    if (normalizeOltStatus(napRow.status) !== 'online') {
+      throw createServiceError(409, 'The selected NAP is not currently serviceable.');
+    }
+    const capacity = Math.max(
+      positiveInt(napRow.capacity, 0) || 0,
+      splitCapacity(napRow.splitter),
+      1
+    );
+    if (input.port > capacity) {
+      throw createServiceError(400, `Port ${input.port} is outside the NAP capacity.`);
+    }
+    const [occupiedRows] = await connection.query(
+      'SELECT id FROM pon_nap_connections WHERE nap_id = ? AND port = ? LIMIT 1',
+      [napRow.id, input.port]
+    );
+    if (occupiedRows.length) throw createServiceError(409, 'The selected port is no longer available.');
+    assertTempPortAvailable(
+      tempCustomers,
+      { id: napRow.client_uid, code: napRow.code },
+      input.port,
+      'The selected port is no longer available.'
+    );
+    const [heldRows] = await connection.query(
+      `SELECT id FROM pon_port_reservations
+        WHERE nap_id = ? AND port = ? AND active_flag = 1 AND id <> ? LIMIT 1`,
+      [napRow.id, input.port, input.reservationId]
+    );
+    if (heldRows.length) throw createServiceError(409, 'The selected port is no longer available.');
+    const duplicate = Number(reservation.nap_id) === Number(napRow.id)
+      && Number(reservation.port) === input.port;
+    if (!duplicate) {
+      try {
+        await connection.query(
+          `UPDATE pon_port_reservations
+              SET nap_id = ?, port = ?, reassigned_at = CURRENT_TIMESTAMP,
+                  reassigned_by_user_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND branch_id = ?`,
+          [napRow.id, input.port, input.reassignedByUserId, input.reservationId, input.branchId]
+        );
+      } catch (error) {
+        if (error?.code === 'ER_DUP_ENTRY') {
+          throw createServiceError(409, 'The selected port is no longer available.');
+        }
+        throw error;
+      }
+    }
+    await connection.commit();
+    const heldReservation = sanitizeReservation({
+      ...reservation,
+      id: reservation.id,
+      napId: napRow.client_uid,
+      port: input.port,
+      customerAccountNumber: reservation.customer_ref,
+      technicianUserId: reservation.technician_user_id,
+      clientEventId: reservation.client_event_id,
+      holdEventId: reservation.hold_event_id,
+      status: DRAFT_HOLD_STATUS,
+      expiresAt: '',
+      heldAt: reservation.held_at,
+      reassignedAt: duplicate ? reservation.reassigned_at : new Date().toISOString(),
+      reassignedByUserId: duplicate
+        ? reservation.reassigned_by_user_id
+        : input.reassignedByUserId
+    });
+    const nap = {
+      id: napRow.client_uid,
+      code: napRow.code,
+      location: napRow.area,
+      ponRef: napRow.pon_ref,
+      linkedOlt: napRow.linkedOlt
+    };
+    return {
+      reservationId: input.reservationId,
+      duplicate,
+      hold: publicReservation(heldReservation),
+      selection: reservationSelectionPayload(nap, heldReservation)
+    };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+const reassignPonDraftHold = async (rawInput = {}) => {
+  const input = validateDraftHoldReassignmentInput(rawInput);
+  return withPonBranchLock(input.branchId, async () => {
+    const tempCustomers = await loadTempNetworkCustomers(input.branchId);
+    return isJsonStorageMode()
+      ? reassignPonDraftHoldJson(input, tempCustomers)
+      : reassignPonDraftHoldMysql(input, tempCustomers);
+  });
+};
+
 const assignmentPayload = (nap, connection, reservation) => ({
   napId: text(nap?.id || reservation?.napId),
   napCode: text(nap?.code),
@@ -818,12 +1488,268 @@ const assignmentPayload = (nap, connection, reservation) => ({
   opticalInfo: text(connection?.opticalInfo || reservation?.opticalInfo)
 });
 
-const finalizePonAssignmentJson = async (input) => {
+const validateRequestedAssignmentInput = (rawInput = {}) => {
+  const branchId = positiveInt(rawInput.branchId);
+  const napId = text(rawInput.napId).slice(0, 100);
+  const port = positiveInt(rawInput.port);
+  const customerAccountNumber = text(rawInput.customerAccountNumber).slice(0, 200);
+  const clientEventId = text(rawInput.clientEventId).slice(0, 100);
+  if (!branchId || !napId || !port || !customerAccountNumber || !clientEventId) {
+    throw createServiceError(
+      400,
+      'Branch, requested NAP, port, customer account, and clientEventId are required.'
+    );
+  }
+  return {
+    branchId,
+    napId,
+    port,
+    customerAccountNumber,
+    clientEventId,
+    customerName: text(rawInput.customerName).slice(0, 200),
+    opticalInfo: text(rawInput.opticalInfo).slice(0, 120)
+  };
+};
+
+const finalizeRequestedPonAssignmentJson = async (input, tempCustomers = []) => {
+  const allState = await readJson(JSON_STORE_KEY, {});
+  const branch = jsonBranchState(allState, input.branchId, { create: true });
+  const naps = Array.isArray(branch.naps) ? branch.naps : [];
+  const nap = naps.find((entry) => text(entry?.id) === input.napId);
+  if (!nap) throw createServiceError(404, 'Requested NAP was not found.');
+  const olt = (Array.isArray(branch.olts) ? branch.olts : [])
+    .find((entry) => keyOf(entry?.name) === keyOf(nap?.linkedOlt));
+  if (normalizeOltStatus(olt?.status) !== 'online') {
+    throw createServiceError(409, 'The requested NAP is not currently serviceable. Choose another NAP.');
+  }
+  if (input.port > napCapacity(nap)) {
+    throw createServiceError(400, `Port ${input.port} is outside the requested NAP capacity.`);
+  }
+  const currentAssignment = findCustomerConnectionInJson(naps, input.customerAccountNumber);
+  if (currentAssignment) {
+    const sameSelection = text(currentAssignment.nap?.id) === input.napId
+      && positiveInt(currentAssignment.connection?.port) === input.port;
+    if (!sameSelection) {
+      throw createServiceError(409, 'Customer already has a different NAP assignment.', {
+        currentAssignment: assignmentPayload(
+          currentAssignment.nap,
+          currentAssignment.connection,
+          { customerAccountNumber: input.customerAccountNumber }
+        )
+      });
+    }
+    return {
+      duplicate: true,
+      assignment: assignmentPayload(
+        currentAssignment.nap,
+        currentAssignment.connection,
+        { customerAccountNumber: input.customerAccountNumber }
+      )
+    };
+  }
+  nap.connections = Array.isArray(nap.connections) ? nap.connections : [];
+  if (nap.connections.some((entry) => positiveInt(entry?.port) === input.port)) {
+    throw createServiceError(409, 'The requested NAP port is already assigned. Choose another port.');
+  }
+  const reservations = pruneJsonReservations(branch);
+  if (reservations.some((entry) => (
+    activeReservation(entry)
+    && entry.napId === input.napId
+    && positiveInt(entry.port) === input.port
+  ))) {
+    throw createServiceError(409, 'The requested NAP port is no longer available. Choose another port.');
+  }
+  assertTempPortAvailable(
+    tempCustomers,
+    nap,
+    input.port,
+    'The requested NAP port is already assigned. Choose another port.'
+  );
+  const connection = {
+    customerId: input.customerAccountNumber,
+    customerName: input.customerName,
+    customerRef: input.customerAccountNumber,
+    port: input.port,
+    opticalInfo: input.opticalInfo
+  };
+  nap.connections.push(connection);
+  nap.connections.sort((left, right) => Number(left.port) - Number(right.port));
+  nap.used = nap.connections.length;
+  branch.updatedAt = new Date().toISOString();
+  await writeJson(JSON_STORE_KEY, allState);
+  return {
+    duplicate: false,
+    assignment: assignmentPayload(nap, connection, {
+      napId: input.napId,
+      port: input.port,
+      customerAccountNumber: input.customerAccountNumber,
+      opticalInfo: input.opticalInfo
+    })
+  };
+};
+
+const finalizeRequestedPonAssignmentMysql = async (input, tempCustomers = []) => {
+  await ensureRelationalReservationSchema();
+  const pool = await getPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await lockRelationalPonBranch(connection, input.branchId);
+    const [napRows] = await connection.query(
+      `SELECT n.id, n.client_uid, n.code, n.area, n.pon_ref, n.capacity, n.splitter,
+              o.name AS linkedOlt, o.status
+         FROM pon_naps n
+         INNER JOIN pon_olts o ON o.id = n.olt_id
+        WHERE n.branch_id = ? AND n.client_uid = ?
+        LIMIT 1 FOR UPDATE`,
+      [input.branchId, input.napId]
+    );
+    if (!napRows.length) throw createServiceError(404, 'Requested NAP was not found.');
+    const napRow = napRows[0];
+    const nap = {
+      id: text(napRow.client_uid),
+      code: text(napRow.code),
+      location: text(napRow.area),
+      ponRef: text(napRow.pon_ref),
+      linkedOlt: text(napRow.linkedOlt)
+    };
+    if (normalizeOltStatus(napRow.status) !== 'online') {
+      throw createServiceError(409, 'The requested NAP is not currently serviceable. Choose another NAP.');
+    }
+    const capacity = Math.max(
+      positiveInt(napRow.capacity, 0) || 0,
+      splitCapacity(napRow.splitter),
+      1
+    );
+    if (input.port > capacity) {
+      throw createServiceError(400, `Port ${input.port} is outside the requested NAP capacity.`);
+    }
+    const accountKey = keyOf(input.customerAccountNumber);
+    const [customerAssignmentRows] = await connection.query(
+      `SELECT n.client_uid AS napId, n.code AS napCode, n.area AS location,
+              n.pon_ref AS ponRef, o.name AS linkedOlt, c.port,
+              c.customer_account_number AS customerId, c.customer_ref AS customerRef,
+              c.customer_name AS customerName, c.optical_info AS opticalInfo
+         FROM pon_nap_connections c
+         INNER JOIN pon_naps n ON n.id = c.nap_id
+         INNER JOIN pon_olts o ON o.id = n.olt_id
+        WHERE n.branch_id = ?
+          AND (LOWER(COALESCE(c.customer_account_number, '')) = ? OR LOWER(COALESCE(c.customer_ref, '')) = ?)
+        LIMIT 1 FOR UPDATE`,
+      [input.branchId, accountKey, accountKey]
+    );
+    if (customerAssignmentRows.length) {
+      const current = customerAssignmentRows[0];
+      if (text(current.napId) !== input.napId || positiveInt(current.port) !== input.port) {
+        throw createServiceError(409, 'Customer already has a different NAP assignment.', {
+          currentAssignment: current
+        });
+      }
+      await connection.commit();
+      return {
+        duplicate: true,
+        assignment: assignmentPayload({
+          id: current.napId,
+          code: current.napCode,
+          location: current.location,
+          ponRef: current.ponRef,
+          linkedOlt: current.linkedOlt
+        }, current, { customerAccountNumber: input.customerAccountNumber })
+      };
+    }
+    const [occupiedRows] = await connection.query(
+      'SELECT id FROM pon_nap_connections WHERE nap_id = ? AND port = ? LIMIT 1 FOR UPDATE',
+      [napRow.id, input.port]
+    );
+    if (occupiedRows.length) {
+      throw createServiceError(409, 'The requested NAP port is already assigned. Choose another port.');
+    }
+    const [reservationRows] = await connection.query(
+      `SELECT id FROM pon_port_reservations
+        WHERE nap_id = ? AND port = ?
+          AND (status = 'draft-held' OR (status = 'active' AND expires_at > CURRENT_TIMESTAMP))
+        LIMIT 1 FOR UPDATE`,
+      [napRow.id, input.port]
+    );
+    if (reservationRows.length) {
+      throw createServiceError(409, 'The requested NAP port is no longer available. Choose another port.');
+    }
+    assertTempPortAvailable(
+      tempCustomers,
+      nap,
+      input.port,
+      'The requested NAP port is already assigned. Choose another port.'
+    );
+    try {
+      await connection.query(
+        `INSERT INTO pon_nap_connections (
+           nap_id, customer_account_number, customer_name, customer_ref, port, optical_info
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          napRow.id,
+          input.customerAccountNumber,
+          input.customerName || null,
+          input.customerAccountNumber,
+          input.port,
+          input.opticalInfo || null
+        ]
+      );
+    } catch (error) {
+      if (error?.code === 'ER_DUP_ENTRY') {
+        throw createServiceError(409, 'The requested NAP port is no longer available. Choose another port.');
+      }
+      throw error;
+    }
+    await connection.query(
+      `UPDATE pon_naps
+          SET used = (SELECT COUNT(*) FROM pon_nap_connections WHERE nap_id = ?),
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+      [napRow.id, napRow.id]
+    );
+    await connection.commit();
+    return {
+      duplicate: false,
+      assignment: assignmentPayload(nap, {
+        port: input.port,
+        customerId: input.customerAccountNumber,
+        customerRef: input.customerAccountNumber,
+        customerName: input.customerName,
+        opticalInfo: input.opticalInfo
+      }, {
+        napId: input.napId,
+        port: input.port,
+        customerAccountNumber: input.customerAccountNumber,
+        opticalInfo: input.opticalInfo
+      })
+    };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+const finalizeRequestedPonAssignment = async (rawInput = {}) => {
+  const input = validateRequestedAssignmentInput(rawInput);
+  return withPonBranchLock(input.branchId, async () => {
+    const tempCustomers = await loadTempNetworkCustomers(input.branchId);
+    return isJsonStorageMode()
+      ? finalizeRequestedPonAssignmentJson(input, tempCustomers)
+      : finalizeRequestedPonAssignmentMysql(input, tempCustomers);
+  });
+};
+
+const finalizePonAssignmentJson = async (input, tempCustomers = []) => {
   const allState = await readJson(JSON_STORE_KEY, {});
   const branch = jsonBranchState(allState, input.branchId, { create: true });
   const reservations = pruneJsonReservations(branch);
   const reservation = reservations.find((entry) => entry.reservationId === input.reservationId);
-  if (!reservation || reservation.technicianUserId !== input.technicianUserId) {
+  if (
+    !reservation
+    || (!input.adminDraftHold && reservation.technicianUserId !== input.technicianUserId)
+  ) {
     throw createServiceError(404, 'Reservation was not found.');
   }
   assertReservationCustomer(reservation, input.customerAccountNumber);
@@ -831,7 +1757,7 @@ const finalizePonAssignmentJson = async (input) => {
   const nap = naps.find((entry) => text(entry?.id) === reservation.napId);
   if (!nap) throw createServiceError(404, 'NAP was not found.');
   if (reservation.status === 'finalized') {
-    assertFinalizeEventReplay(reservation, input.clientEventId);
+    if (!input.adminDraftHold) assertFinalizeEventReplay(reservation, input.clientEventId);
     const existing = (Array.isArray(nap.connections) ? nap.connections : [])
       .find((entry) => positiveInt(entry?.port) === reservation.port);
     return {
@@ -840,7 +1766,11 @@ const finalizePonAssignmentJson = async (input) => {
       assignment: assignmentPayload(nap, existing, reservation)
     };
   }
-  if (reservation.status !== 'active' || !activeReservation(reservation)) {
+  if (input.adminDraftHold) {
+    if (reservation.status !== DRAFT_HOLD_STATUS) {
+      throw createServiceError(409, 'The submitted port is no longer held for Admin review.');
+    }
+  } else if (reservation.status !== 'active' || !activeReservation(reservation)) {
     throw createServiceError(409, 'Reservation has expired or is no longer active.');
   }
   const currentCustomerAssignment = findCustomerConnectionInJson(naps, reservation.customerAccountNumber);
@@ -857,6 +1787,12 @@ const finalizePonAssignmentJson = async (input) => {
   if (nap.connections.some((entry) => positiveInt(entry?.port) === reservation.port)) {
     throw createServiceError(409, 'The reserved port is already assigned.');
   }
+  assertTempPortAvailable(
+    tempCustomers,
+    nap,
+    reservation.port,
+    'The reserved port is already assigned.'
+  );
   const connection = {
     customerId: reservation.customerAccountNumber,
     customerName: text(input.customerName).slice(0, 200),
@@ -880,7 +1816,7 @@ const finalizePonAssignmentJson = async (input) => {
   };
 };
 
-const finalizePonAssignmentMysql = async (input) => {
+const finalizePonAssignmentMysql = async (input, tempCustomers = []) => {
   await ensureRelationalReservationSchema();
   const pool = await getPool();
   const connection = await pool.getConnection();
@@ -888,15 +1824,20 @@ const finalizePonAssignmentMysql = async (input) => {
     await connection.beginTransaction();
     await lockRelationalPonBranch(connection, input.branchId);
     await connection.query('SELECT id FROM pon_olts WHERE branch_id = ? FOR UPDATE', [input.branchId]);
+    const ownerSql = input.adminDraftHold ? '' : 'AND r.technician_user_id = ?';
     const [reservationRows] = await connection.query(
       `SELECT r.*, n.client_uid AS napClientId, n.code AS napCode, n.area AS location,
               n.pon_ref AS ponRef, o.name AS linkedOlt
          FROM pon_port_reservations r
          INNER JOIN pon_naps n ON n.id = r.nap_id
          INNER JOIN pon_olts o ON o.id = n.olt_id
-        WHERE r.id = ? AND r.branch_id = ? AND r.technician_user_id = ?
+        WHERE r.id = ? AND r.branch_id = ? ${ownerSql}
         LIMIT 1 FOR UPDATE`,
-      [input.reservationId, input.branchId, input.technicianUserId]
+      [
+        input.reservationId,
+        input.branchId,
+        ...(input.adminDraftHold ? [] : [input.technicianUserId])
+      ]
     );
     if (!reservationRows.length) throw createServiceError(404, 'Reservation was not found.');
     const reservation = reservationRows[0];
@@ -909,7 +1850,7 @@ const finalizePonAssignmentMysql = async (input) => {
       linkedOlt: text(reservation.linkedOlt)
     };
     if (keyOf(reservation.status) === 'finalized') {
-      assertFinalizeEventReplay(reservation, input.clientEventId);
+      if (!input.adminDraftHold) assertFinalizeEventReplay(reservation, input.clientEventId);
       const [existingRows] = await connection.query(
         `SELECT port, customer_account_number AS customerId, customer_ref AS customerRef,
                 customer_name AS customerName, optical_info AS opticalInfo
@@ -928,7 +1869,11 @@ const finalizePonAssignmentMysql = async (input) => {
         })
       };
     }
-    if (
+    if (input.adminDraftHold) {
+      if (keyOf(reservation.status) !== DRAFT_HOLD_STATUS) {
+        throw createServiceError(409, 'The submitted port is no longer held for Admin review.');
+      }
+    } else if (
       keyOf(reservation.status) !== 'active'
       || new Date(reservation.expires_at).getTime() <= Date.now()
     ) {
@@ -954,6 +1899,12 @@ const finalizePonAssignmentMysql = async (input) => {
       [reservation.nap_id, reservation.port]
     );
     if (occupiedRows.length) throw createServiceError(409, 'The reserved port is already assigned.');
+    assertTempPortAvailable(
+      tempCustomers,
+      nap,
+      reservation.port,
+      'The reserved port is already assigned.'
+    );
     const [customerRows] = await connection.query(
       'SELECT account_number FROM customers WHERE branch_id = ? AND account_number = ? LIMIT 1',
       [input.branchId, reservation.customer_ref]
@@ -1040,24 +1991,65 @@ const finalizePonAssignment = async (rawInput = {}) => {
     customerName: text(rawInput.customerName),
     opticalInfo: text(rawInput.opticalInfo)
   };
-  return withPonBranchLock(branchId, () => (
-    isJsonStorageMode() ? finalizePonAssignmentJson(input) : finalizePonAssignmentMysql(input)
-  ));
+  return withPonBranchLock(branchId, async () => {
+    const tempCustomers = await loadTempNetworkCustomers(branchId);
+    return isJsonStorageMode()
+      ? finalizePonAssignmentJson(input, tempCustomers)
+      : finalizePonAssignmentMysql(input, tempCustomers);
+  });
+};
+
+const finalizePonDraftHold = async (rawInput = {}) => {
+  const branchId = positiveInt(rawInput.branchId);
+  const reservationId = text(rawInput.reservationId);
+  const clientEventId = text(rawInput.clientEventId).slice(0, 100);
+  const customerAccountNumber = text(rawInput.customerAccountNumber).slice(0, 200);
+  if (!branchId || !reservationId || !clientEventId || !customerAccountNumber) {
+    throw createServiceError(
+      400,
+      'Branch, reservation, customer account, and clientEventId are required.'
+    );
+  }
+  const input = {
+    branchId,
+    reservationId,
+    technicianUserId: '',
+    clientEventId,
+    customerAccountNumber,
+    customerName: text(rawInput.customerName),
+    opticalInfo: text(rawInput.opticalInfo),
+    adminDraftHold: true
+  };
+  return withPonBranchLock(branchId, async () => {
+    const tempCustomers = await loadTempNetworkCustomers(branchId);
+    return isJsonStorageMode()
+      ? finalizePonAssignmentJson(input, tempCustomers)
+      : finalizePonAssignmentMysql(input, tempCustomers);
+  });
 };
 
 module.exports = {
   DEFAULT_RESERVATION_TTL_MS,
+  DRAFT_HOLD_STATUS,
   createServiceError,
   parseCoordinate,
   haversineMeters,
   buildNearbyCandidates,
+  mergeTempNetworkAssignments,
+  findTempNetworkAssignment,
   assertReservationCustomer,
   assertFinalizeEventReplay,
   withPonBranchLock,
   lockRelationalPonBranch,
   ensureRelationalReservationSchema,
+  configureTempNetworkCustomersProvider,
   findNearbyPonNaps,
   reservePonPort,
+  submitPonReservationForAdmin,
   releasePonPortReservation,
-  finalizePonAssignment
+  releasePonDraftHold,
+  reassignPonDraftHold,
+  finalizeRequestedPonAssignment,
+  finalizePonAssignment,
+  finalizePonDraftHold
 };

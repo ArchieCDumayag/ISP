@@ -5,7 +5,7 @@
 ```text
 core/
   config/    environment, storage mode, and feature configuration
-  data/      JSON/MySQL persistence and protected database configuration
+  data/      JSON/MySQL persistence, shared record normalization, and protected database configuration
   runtime/   canonical paths, module registry, and module loader
   security/  passwords, roles, rate limits, and session primitives
 ```

@@ -166,6 +166,7 @@ const findMainGcashPaymentsByReference = async ({
   customers = null,
   includePending = false,
   includeCustomerNames = false,
+  includeAnyPaymentMethod = false,
   officialTransactions = []
 } = {}) => {
   const requestedKeys = new Set(
@@ -200,7 +201,11 @@ const findMainGcashPaymentsByReference = async ({
         .map((value) => normalizeNumericPaymentReferenceKey(value) || normalizeManualPaymentReferenceKey(value))
         .find((candidate) => requestedKeys.has(candidate));
       if (!referenceKey) return;
-      if (paymentMethod !== 'gcash' && !resolveMislabeledOfficialCredit(entry, officialTransactions)) return;
+      if (
+        !includeAnyPaymentMethod
+        && paymentMethod !== 'gcash'
+        && !resolveMislabeledOfficialCredit(entry, officialTransactions)
+      ) return;
       const resolvedAccountNumber = String(accountNumber || entry?.accountNumber || '').trim();
       matches.push({
         id: String(entry?.id || '').trim(),
@@ -211,6 +216,7 @@ const findMainGcashPaymentsByReference = async ({
         date: String(entry?.date || entry?.recordedAt || '').slice(0, 10),
         reference: String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim(),
         referenceKey,
+        paymentMethod,
         pending
       });
     });

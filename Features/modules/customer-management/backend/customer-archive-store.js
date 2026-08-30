@@ -4,6 +4,7 @@ const fs = require('fs');
 const { query } = require('../../../../core/data/db');
 const { readJson, writeJson } = require('../../../../core/data/data-store');
 const { isRelationalReady } = require('../../../../core/data/db-relational');
+const { normalizeCustomerName } = require('../../../../core/data/customer-name-normalizer');
 
 const CUSTOMER_ARCHIVES_TABLE = 'customer_archives';
 const STORE_KEY = 'customer_archives';
@@ -111,7 +112,7 @@ const mapCustomerArchiveRow = (row, { includePayload = false } = {}) => {
         id: String(row.id || ''),
         branchId: Number(row.branch_id || row.branchId) || null,
         accountNumber: toSafeText(row.account_number || row.accountNumber, 20),
-        customerName: toSafeText(row.customer_name || row.customerName, 200),
+        customerName: normalizeCustomerName(row.customer_name || row.customerName, 200),
         contactNumber: toSafeText(row.contact_number || row.contactNumber, 50),
         planName: toSafeText(row.plan_name || row.planName, 120),
         areaName: toSafeText(row.area_name || row.areaName, 150),
@@ -151,7 +152,7 @@ const normalizeJsonArchiveRow = (row = {}) => {
         id: toSafeText(row.id, 64),
         branch_id: branchId,
         account_number: toSafeText(row.account_number ?? row.accountNumber, 20),
-        customer_name: toNullableText(row.customer_name ?? row.customerName, 200),
+        customer_name: normalizeCustomerName(row.customer_name ?? row.customerName, 200) || null,
         contact_number: toNullableText(row.contact_number ?? row.contactNumber, 50),
         plan_name: toNullableText(row.plan_name ?? row.planName, 120),
         area_name: toNullableText(row.area_name ?? row.areaName, 150),
@@ -280,7 +281,7 @@ const createCustomerArchive = async ({
             id: archiveId,
             branch_id: safeBranchId,
             account_number: safeAccountNumber,
-            customer_name: toNullableText(customerName, 200),
+            customer_name: normalizeCustomerName(customerName, 200) || null,
             contact_number: toNullableText(contactNumber, 50),
             plan_name: toNullableText(planName, 120),
             area_name: toNullableText(areaName, 150),
@@ -337,7 +338,7 @@ const createCustomerArchive = async ({
             archiveId,
             safeBranchId,
             safeAccountNumber,
-            toNullableText(customerName, 200),
+            normalizeCustomerName(customerName, 200) || null,
             toNullableText(contactNumber, 50),
             toNullableText(planName, 120),
             toNullableText(areaName, 150),

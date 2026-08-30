@@ -72,6 +72,7 @@ const disconnectionsRouter = billingBackend.load('disconnections');
 const referralsRouter = customerManagementBackend.load('referrals');
 const coverageRouter = customerManagementBackend.load('coverage');
 const ponManagementRouter = networkBackend.load('ponManagement');
+const ponServiceability = networkBackend.load('ponServiceability');
 const smsRouter = customerAppBackend.load('sms');
 const collectorsRouter = collectorBackend.load('collectors');
 const expensesRouter = financeBackend.load('expenses');
@@ -99,6 +100,9 @@ if (typeof tempWorkspaceRouter.configureNetworkStateProvider === 'function') {
 }
 if (typeof ponManagementRouter.configureTempNetworkCustomersProvider === 'function') {
     ponManagementRouter.configureTempNetworkCustomersProvider(tempWorkspaceRouter.loadTempNetworkCustomers);
+}
+if (typeof ponServiceability.configureTempNetworkCustomersProvider === 'function') {
+    ponServiceability.configureTempNetworkCustomersProvider(tempWorkspaceRouter.loadTempNetworkCustomers);
 }
 const philippinesAddresses = customerManagementBackend.load('philippinesAddresses');
 const customerDraftSubmissionsModule = customerManagementBackend.load('customerDraftSubmissions');
@@ -8598,9 +8602,16 @@ app.use((err, req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    const statusCode = err.status || err.statusCode || 500;
+    const requestedStatusCode = Number(err?.status || err?.statusCode || 500);
+    const statusCode = Number.isInteger(requestedStatusCode)
+        && requestedStatusCode >= 400
+        && requestedStatusCode <= 599
+        ? requestedStatusCode
+        : 500;
     const isServerError = statusCode >= 500;
+    if (isServerError) {
+        console.error(err?.stack || err);
+    }
     const message = (IS_PRODUCTION && isServerError)
         ? 'Internal Server Error'
         : (err.message || 'Internal Server Error');

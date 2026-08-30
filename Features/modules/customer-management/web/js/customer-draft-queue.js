@@ -4,6 +4,7 @@
     const selectPageCheckbox = document.getElementById('draftQueueSelectPage');
     const selectedCountLabel = document.getElementById('draftQueueSelectedCount');
     const deleteSelectedBtn = document.getElementById('draftQueueDeleteSelected');
+    const statusSelect = document.getElementById('draftQueueStatus');
     const pageSizeSelect = document.getElementById('draftQueuePageSize');
     const tableBody = document.getElementById('draftQueueTableBody');
     const footerSummary = document.getElementById('draftQueueSummary');
@@ -37,6 +38,11 @@
     const reviewDueDateField = document.getElementById('draftReviewDueDateField');
     const reviewCreditLimitField = document.getElementById('draftReviewCreditLimitField');
     const reviewOnboardingSummary = document.getElementById('draftReviewOnboardingSummary');
+    const reviewNapSelect = document.getElementById('draftReviewNap');
+    const reviewNapPortSelect = document.getElementById('draftReviewNapPort');
+    const reviewPonSelectionStatus = document.getElementById('draftReviewPonSelectionStatus');
+    const reviewPonHelp = document.getElementById('draftReviewPonHelp');
+    const reviewOnuSerial = document.getElementById('draftReviewOnuSerial');
 
     const savedPageSize = Number(localStorage.getItem('draftQueuePageSize'));
     const initialPageSize = Array.from(pageSizeSelect?.options || []).some((option) => Number(option.value) === savedPageSize)
@@ -48,7 +54,10 @@
         itemsById: new Map(),
         plans: [],
         coverageAreas: [],
+        ponCandidates: [],
+        ponOptionsLoading: false,
         activeId: '',
+        queueStatus: String(statusSelect?.value || 'pending').trim().toLowerCase() || 'pending',
         searchTerm: '',
         selectedIds: new Set(),
         pagination: {
@@ -233,6 +242,21 @@
         return { className: 'bg-secondary-lt text-secondary', label: 'Inactive' };
     };
 
+    const getQueueStatus = (item = {}) =>
+        String(item.rawStatus || item.status || '').trim().toLowerCase() || 'pending';
+
+    const getQueueStatusUi = (item = {}) => {
+        const status = getQueueStatus(item);
+        if (status === 'in-progress') {
+            return { className: 'bg-warning-lt text-warning', label: 'Incomplete' };
+        }
+        return { className: 'bg-blue-lt text-blue', label: 'Pending review' };
+    };
+
+    const getQueueLabel = () => state.queueStatus === 'in-progress'
+        ? 'incomplete drafts'
+        : 'pending drafts';
+
     const getDraftAccountNumber = (item) =>
         String(item?.draftAccountNumber || item?.approvedCustomerAccountNumber || '').trim();
 
@@ -243,6 +267,7 @@
         if (explicitName) return explicitName;
         return [
             String(draft?.firstName || '').trim(),
+            String(draft?.middleName || '').trim(),
             String(draft?.lastName || '').trim()
         ].filter(Boolean).join(' ');
     };
@@ -283,6 +308,7 @@
             item?.customerName,
             draft?.name,
             draft?.firstName,
+            draft?.middleName,
             draft?.lastName,
             item?.planName,
             draft?.planName,
@@ -290,6 +316,7 @@
             draft?.mobile,
             draft?.contactNumber,
             draft?.email,
+            draft?.facebookAccount,
             item?.addressText,
             item?.areaName,
             draft?.area,
@@ -297,7 +324,11 @@
             draft?.barangay,
             draft?.municipality,
             draft?.province,
-            draft?.remarks
+            draft?.remarks,
+            draft?.installationCompletion?.onuSerialNumber,
+            draft?.installationCompletion?.ponAssignment?.napCode,
+            draft?.installationCompletion?.ponAssignment?.napId,
+            draft?.installationCompletion?.ponAssignment?.port
         ]
             .map((value) => String(value || '').trim().toLowerCase())
             .filter(Boolean)
@@ -566,6 +597,121 @@
         }
     };
 
+    const getDraftPonAssignment = (draft = {}) => {
+        const assignment = draft?.installationCompletion?.ponAssignment;
+        return assignment && typeof assignment === 'object' ? assignment : {};
+    };
+
+    const getCandidatePort = (napId, port) => {
+        const safeNapId = String(napId || '').trim();
+        const safePort = String(port || '').trim();
+        const candidate = state.ponCandidates.find((entry) => String(entry?.napId || '').trim() === safeNapId);
+        return (Array.isArray(candidate?.ports) ? candidate.ports : [])
+            .find((entry) => String(entry?.port || '').trim() === safePort) || null;
+    };
+
+    const candidatePortIsAvailable = (napId, port) => {
+        const entry = getCandidatePort(napId, port);
+        return entry?.available === true || String(entry?.status || '').toLowerCase() === 'available';
+    };
+
+    const populateReviewPortOptions = (napId, selectedPort = '') => {
+        if (!reviewNapPortSelect) return;
+        const safeNapId = String(napId || '').trim();
+        const safeSelectedPort = String(selectedPort || '').trim();
+        const candidate = state.ponCandidates.find((entry) => String(entry?.napId || '').trim() === safeNapId);
+        reviewNapPortSelect.innerHTML = '';
+        reviewNapPortSelect.add(new Option(candidate ? 'Select available port' : 'No port data', ''));
+        const ports = Array.isArray(candidate?.ports) ? candidate.ports : [];
+        ports.forEach((portEntry) => {
+            const port = String(portEntry?.port || '').trim();
+            if (!port) return;
+            const isCurrent = safeNapId === String(reviewNapSelect?.dataset?.currentNapId || '')
+                && port === String(reviewNapPortSelect.dataset.currentPort || '');
+            const available = portEntry?.available === true || String(portEntry?.status || '') === 'available';
+            if (!available && !isCurrent) return;
+            const statusLabel = isCurrent
+                ? (available ? 'technician request, available now' : 'technician request, unavailable now')
+                : 'available';
+            reviewNapPortSelect.add(new Option(`Port ${port} — ${statusLabel}`, port));
+        });
+        if (safeSelectedPort && !Array.from(reviewNapPortSelect.options)
+            .some((option) => option.value === safeSelectedPort)) {
+            reviewNapPortSelect.add(new Option(`Port ${safeSelectedPort} — technician request, availability unknown`, safeSelectedPort));
+        }
+        reviewNapPortSelect.value = safeSelectedPort;
+    };
+
+    const populateReviewNapOptions = (current = {}) => {
+        if (!reviewNapSelect) return;
+        const currentNapId = String(current?.napId || '').trim();
+        const currentPort = String(current?.port || '').trim();
+        reviewNapSelect.dataset.currentNapId = currentNapId;
+        if (reviewNapPortSelect) reviewNapPortSelect.dataset.currentPort = currentPort;
+        reviewNapSelect.innerHTML = '';
+        reviewNapSelect.add(new Option('Select NAP', ''));
+        state.ponCandidates.forEach((candidate) => {
+            const napId = String(candidate?.napId || '').trim();
+            if (!napId) return;
+            const label = [candidate.napCode || napId, candidate.location, candidate.linkedOlt]
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+                .join(' — ');
+            reviewNapSelect.add(new Option(label || napId, napId));
+        });
+        if (currentNapId && !Array.from(reviewNapSelect.options)
+            .some((option) => option.value === currentNapId)) {
+            reviewNapSelect.add(new Option(currentNapId, currentNapId));
+        }
+        reviewNapSelect.value = currentNapId;
+        populateReviewPortOptions(currentNapId, currentPort);
+    };
+
+    const loadReviewPonOptions = async (item, draft = {}) => {
+        const assignment = getDraftPonAssignment(draft);
+        const fallbackCurrent = {
+            napId: draft.selectedNapId || assignment.napId || '',
+            port: draft.selectedNapPort || assignment.port || ''
+        };
+        state.ponOptionsLoading = true;
+        if (approveBtn) approveBtn.disabled = true;
+        if (reviewPonHelp) {
+            reviewPonHelp.className = 'alert alert-info py-2 mt-3 mb-0';
+            reviewPonHelp.textContent = 'Loading the latest branch port availability...';
+        }
+        try {
+            const data = await apiFetch(`/api/customer-drafts/${encodeURIComponent(item.id)}/pon-options`);
+            if (state.activeId !== String(item.id || '').trim()) return;
+            state.ponCandidates = Array.isArray(data.candidates) ? data.candidates : [];
+            populateReviewNapOptions(data.current || fallbackCurrent);
+            if (reviewPonHelp) {
+                const requestedAvailable = candidatePortIsAvailable(
+                    reviewNapSelect?.dataset?.currentNapId,
+                    reviewNapPortSelect?.dataset?.currentPort
+                );
+                reviewPonHelp.className = requestedAvailable
+                    ? 'alert alert-info py-2 mt-3 mb-0'
+                    : 'alert alert-warning py-2 mt-3 mb-0';
+                reviewPonHelp.textContent = requestedAvailable
+                    ? 'The technician request is available now but is not reserved. Approval performs a final atomic check and assigns it.'
+                    : 'The technician request is no longer available. Select another available NAP port before finalizing.';
+            }
+        } catch (error) {
+            if (state.activeId !== String(item.id || '').trim()) return;
+            state.ponCandidates = [];
+            populateReviewNapOptions(fallbackCurrent);
+            if (reviewPonHelp) {
+                reviewPonHelp.className = 'alert alert-danger py-2 mt-3 mb-0';
+                reviewPonHelp.textContent = error.message || 'Unable to load current NAP availability.';
+            }
+        } finally {
+            state.ponOptionsLoading = false;
+            if (approveBtn && getQueueStatus(item) === 'pending') {
+                approveBtn.disabled = false;
+            }
+        }
+    };
+
     const readReviewFormPayload = () => {
         const formData = new FormData(reviewForm);
         const payload = Object.fromEntries(formData.entries());
@@ -601,6 +747,7 @@
         payload.loginPassword = portalCredentials.loginPassword;
         if (reviewLoginUsernameInput) reviewLoginUsernameInput.value = payload.loginUsername;
         if (reviewLoginPasswordInput) reviewLoginPasswordInput.value = payload.loginPassword;
+        payload.facebookConfirmed = Boolean(reviewForm.elements.facebookConfirmed?.checked);
         return payload;
     };
 
@@ -676,17 +823,18 @@
         renderBulkToolbar(pageItems);
 
         if (!pageItems.length) {
+            const queueLabel = getQueueLabel();
             tableBody.innerHTML = state.searchTerm
-                ? '<tr><td colspan="9" class="draft-empty text-secondary text-center">No pending drafts match your search.</td></tr>'
-                : '<tr><td colspan="9" class="draft-empty text-secondary text-center">No pending drafts found.</td></tr>';
+                ? `<tr><td colspan="9" class="draft-empty text-secondary text-center">No ${escapeHtml(queueLabel)} match your search.</td></tr>`
+                : `<tr><td colspan="9" class="draft-empty text-secondary text-center">No ${escapeHtml(queueLabel)} found.</td></tr>`;
             return;
         }
 
         tableBody.innerHTML = pageItems.map((item) => {
             const itemId = String(item.id || '').trim();
             const draft = item.draftData || {};
-            const statusUi = getCustomerStatusUi(draft.status || 'active');
-            const displayName = String(item.customerName || draft.name || `${draft.firstName || ''} ${draft.lastName || ''}`.trim() || '-').trim() || '-';
+            const statusUi = getQueueStatusUi(item);
+            const displayName = String(item.customerName || buildDraftCustomerName(draft) || '-').trim() || '-';
             const subscriberMetaParts = [];
             const submittedAtLabel = formatDateTime(item.submittedAt);
             if (submittedAtLabel && submittedAtLabel !== '-') subscriberMetaParts.push(`Submitted ${submittedAtLabel}`);
@@ -694,10 +842,15 @@
             const contactMobile = String(item.contactNumber || draft.mobile || '').trim() || 'No mobile number';
             const contactEmail = String(draft.email || '').trim() || 'No email address';
             const remarksText = String(draft.remarks || '').trim() || 'No remarks';
+            const ponAssignment = getDraftPonAssignment(draft);
+            const ponText = ponAssignment.napCode || ponAssignment.napId
+                ? `${ponAssignment.napCode || ponAssignment.napId} / Port ${ponAssignment.port || '-'}`
+                : 'No NAP submitted';
             const billingCycle = getBillingCycleDetails(draft);
             const plan = getPlanPresentation(item, draft);
-            const actionLabel = item.status === 'pending' ? 'Finalize customer' : 'View draft';
-            const actionIcon = item.status === 'pending' ? 'ti-pencil' : 'ti-eye';
+            const isPending = getQueueStatus(item) === 'pending';
+            const actionLabel = isPending ? 'Finalize customer' : 'View incomplete draft';
+            const actionIcon = isPending ? 'ti-pencil' : 'ti-eye';
             const isSelected = state.selectedIds.has(itemId);
             return `
                 <tr data-draft-id="${escapeHtml(itemId)}">
@@ -742,6 +895,7 @@
                     </td>
                     <td>
                         <span class="note">${escapeHtml(remarksText)}</span>
+                        <p class="text-secondary small mb-0 mt-1">${escapeHtml(ponText)}</p>
                     </td>
                     <td class="actions-col">
                         <div class="draft-row-actions row-actions">
@@ -754,17 +908,15 @@
                             >
                                 <i class="ti ${escapeHtml(actionIcon)}" aria-hidden="true"></i>
                             </button>
-                            ${item.status === 'pending' ? `
-                                <button
-                                    type="button"
-                                    class="btn btn-icon btn-outline-danger btn-sm"
-                                    data-draft-delete="${escapeHtml(item.id)}"
-                                    aria-label="Delete customer draft"
-                                    title="Delete customer draft"
-                                >
-                                    <i class="ti ti-trash" aria-hidden="true"></i>
-                                </button>
-                            ` : ''}
+                            <button
+                                type="button"
+                                class="btn btn-icon btn-outline-danger btn-sm"
+                                data-draft-delete="${escapeHtml(item.id)}"
+                                aria-label="Delete customer draft"
+                                title="Delete customer draft"
+                            >
+                                <i class="ti ti-trash" aria-hidden="true"></i>
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -789,7 +941,8 @@
     };
 
     const loadQueue = async () => {
-        const data = await apiFetch('/api/customer-drafts?status=pending&limit=100&offset=0');
+        const status = state.queueStatus === 'in-progress' ? 'in-progress' : 'pending';
+        const data = await apiFetch(`/api/customer-drafts?status=${encodeURIComponent(status)}&limit=100&offset=0`);
         state.items = Array.isArray(data.items) ? data.items : [];
         state.itemsById = new Map(state.items.map((item) => [String(item.id || ''), item]));
         syncSelectedIdsWithItems();
@@ -817,7 +970,7 @@
     });
 
     const setReviewMode = (item) => {
-        const isPending = String(item?.status || '').trim().toLowerCase() === 'pending';
+        const isPending = getQueueStatus(item) === 'pending';
         Array.from(reviewForm?.elements || []).forEach((element) => {
             if (!('disabled' in element)) return;
             if (element === approveBtn) return;
@@ -833,11 +986,18 @@
         populatePlanOptions(draft.planName || '');
         reviewForm.elements.accountNumber.value = getDraftAccountNumber(item) || '';
         reviewForm.elements.firstName.value = draft.firstName || '';
+        reviewForm.elements.middleName.value = draft.middleName || '';
         reviewForm.elements.lastName.value = draft.lastName || '';
         reviewForm.elements.status.value = String(draft.status || 'active').trim().toLowerCase() || 'active';
         reviewForm.elements.contactNumber.value = normalizePhilippineMobile(draft.mobile || draft.contactNumber || '');
         reviewForm.elements.email.value = draft.email || '';
+        reviewForm.elements.facebookAccount.value = draft.facebookAccount || '';
+        reviewForm.elements.facebookConfirmed.checked = draft.facebookConfirmed === true;
+        reviewForm.elements.facebookConfirmedAt.value = draft.facebookConfirmedAt || '';
+        reviewForm.elements.facebookConfirmedBy.value = draft.facebookConfirmedBy || '';
+        reviewForm.elements.clientEventId.value = draft.clientEventId || '';
         reviewForm.elements.street.value = draft.street || '';
+        reviewForm.elements.serviceAddress.value = draft.serviceAddress || '';
         reviewForm.elements.barangay.value = draft.barangay || '';
         reviewForm.elements.municipality.value = draft.municipality || '';
         reviewForm.elements.province.value = draft.province || '';
@@ -846,6 +1006,12 @@
             populateCoverageAreaOptions();
         }
         reviewForm.elements.mapPin.value = draft.mapPin || '';
+        reviewForm.elements.provinceCode.value = draft.provinceCode || '';
+        reviewForm.elements.municipalityCode.value = draft.municipalityCode || '';
+        reviewForm.elements.barangayCode.value = draft.barangayCode || '';
+        reviewForm.elements.gpsAccuracyMeters.value = draft.gpsAccuracyMeters ?? '';
+        reviewForm.elements.gpsCapturedAt.value = draft.gpsCapturedAt || '';
+        reviewForm.elements.locationSource.value = draft.locationSource || '';
         reviewForm.elements.planName.value = draft.planName || '';
         reviewForm.elements.planCategory.value = normalizePlanCategory(draft.planCategory || 'postpaid');
         reviewForm.elements.planAmount.value = draft.planAmount != null ? draft.planAmount : '';
@@ -865,12 +1031,39 @@
         reviewForm.elements.dueDate.value = nextDueDate || '';
         if (reviewDueDateDisplay) reviewDueDateDisplay.value = nextDueDate || '';
         reviewForm.elements.creditLimit.value = draft.creditLimit != null ? draft.creditLimit : '';
+        reviewForm.elements.firstBillProratedAmount.value = draft.firstBillProratedAmount ?? '';
+        reviewForm.elements.firstBillAmountReceived.value = draft.firstBillAmountReceived ?? '';
+        reviewForm.elements.firstBillPeriodStart.value = draft.firstBillPeriodStart || '';
+        reviewForm.elements.firstBillPeriodEnd.value = draft.firstBillPeriodEnd || '';
+        reviewForm.elements.referralCustomerAccountNumber.value = draft.referralCustomerAccountNumber || '';
+        reviewForm.elements.referralCustomerName.value = draft.referralCustomerName || '';
+        reviewForm.elements.referralSourceType.value = draft.referralSourceType || '';
+        reviewForm.elements.referredBy.value = draft.referredBy || '';
         reviewForm.elements.prepaidExpirationAt.value = toDateTimeLocalInputValue(draft.prepaidExpirationAt || '');
         const draftAccountNumber = getDraftAccountNumber(item) || '';
         const portalCredentials = resolveDraftPortalCredentials(draft, draftAccountNumber);
         reviewForm.elements.loginUsername.value = portalCredentials.loginUsername;
         reviewForm.elements.loginPassword.value = portalCredentials.loginPassword;
+        reviewForm.elements.pppoeMode.value = draft.pppoeMode || '';
+        reviewForm.elements.pppoeUsername.value = draft.pppoeUsername || '';
+        reviewForm.elements.pppoePassword.value = draft.pppoePassword || '';
+        reviewForm.elements.pppoeProfile.value = draft.pppoeProfile || '';
         reviewForm.elements.remarks.value = draft.remarks || '';
+        const ponAssignment = getDraftPonAssignment(draft);
+        const currentPonSelection = {
+            napId: draft.selectedNapId || ponAssignment.napId || '',
+            port: draft.selectedNapPort || ponAssignment.port || ''
+        };
+        state.ponCandidates = [];
+        populateReviewNapOptions(currentPonSelection);
+        if (reviewPonSelectionStatus) reviewPonSelectionStatus.value = ponAssignment.status === 'requested'
+            ? 'Requested — not reserved'
+            : (ponAssignment.status === 'draft-held'
+                ? 'Legacy held selection'
+                : (ponAssignment.status || 'No submitted selection'));
+        if (reviewOnuSerial) reviewOnuSerial.value = draft.onuSerialNumber
+            || draft.installationCompletion?.onuSerialNumber
+            || '';
         if (reviewOnboardingSummary) {
             const onboardingNotes = [];
             const amountDue = Number(draft.firstBillProratedAmount);
@@ -905,29 +1098,55 @@
         setReviewPasswordVisibility(false);
 
         reviewMeta.textContent = 'Generate a customer profile, assign a plan, and set the first billing cycle.';
-        if (String(item.status || '').trim().toLowerCase() === 'pending') {
+        if (getQueueStatus(item) === 'pending') {
             reviewStatusMeta.hidden = true;
             reviewStatusMeta.textContent = '';
         } else {
             reviewStatusMeta.hidden = false;
-            reviewStatusMeta.textContent = item.status === 'approved'
-                ? `Finalized for account ${item.approvedCustomerAccountNumber || '-'} on ${formatDateTime(item.reviewedAt || item.updatedAt || item.submittedAt)}.`
-                : `Finalization not completed. ${item.decisionReason ? `Reason: ${item.decisionReason}` : 'No reason provided.'}`;
+            reviewStatusMeta.textContent = 'Incomplete intake. The technician can retry the submission to recover this draft, or Admin can delete it.';
         }
         setReviewMode(item);
         setModalState(reviewModal, true);
+        if (getQueueStatus(item) === 'pending') {
+            loadReviewPonOptions(item, draft);
+        } else {
+            populateReviewNapOptions(getDraftPonAssignment(draft));
+            if (reviewPonHelp) {
+                reviewPonHelp.className = 'alert alert-warning py-2 mt-3 mb-0';
+                reviewPonHelp.textContent = 'This intake is incomplete and cannot be finalized. Ask the technician to retry, or delete it and submit again.';
+            }
+        }
     };
 
     const handleApprove = async (event) => {
         event.preventDefault();
         const item = state.itemsById.get(state.activeId);
         if (!item) return;
+        if (state.ponOptionsLoading) {
+            notify('Wait for the latest NAP port availability to finish loading.', 'error');
+            return;
+        }
         if (!String(reviewForm.elements.firstName.value || '').trim() || !String(reviewForm.elements.lastName.value || '').trim()) {
             notify('First name and last name are required.', 'error');
             return;
         }
         if (!String(reviewForm.elements.planName.value || '').trim()) {
             notify('Plan is required.', 'error');
+            return;
+        }
+        const draftPonAssignment = getDraftPonAssignment(item.draftData || {});
+        if (item.draftData?.installationCompletion && (
+            !String(reviewForm.elements.selectedNapId?.value || '').trim()
+            || !String(reviewForm.elements.selectedNapPort?.value || '').trim()
+        )) {
+            notify('Select the NAP and available port to finalize this installation.', 'error');
+            return;
+        }
+        if (item.draftData?.installationCompletion && state.ponCandidates.length && !candidatePortIsAvailable(
+            reviewForm.elements.selectedNapId?.value,
+            reviewForm.elements.selectedNapPort?.value
+        ) && draftPonAssignment.status !== 'draft-held') {
+            notify('That NAP port is unavailable. Select another available port.', 'error');
             return;
         }
         if (reviewForm.elements.area?.dataset.hasInvalidValue === 'true') {
@@ -985,11 +1204,12 @@
 
     const handleDelete = async (item) => {
         if (!item) return;
+        const draftKind = getQueueStatus(item) === 'in-progress' ? 'incomplete draft' : 'pending draft';
         const accountNumber = getDraftAccountNumber(item);
         const displayName = String(item.customerName || item.draftData?.name || '').trim() || 'this customer';
         const confirmed = window.appConfirm
             ? await window.appConfirm(
-                `Delete ${displayName}${accountNumber ? ` (Account ${accountNumber})` : ''}? This will remove the pending draft.`,
+                `Delete ${displayName}${accountNumber ? ` (Account ${accountNumber})` : ''}? This will remove the ${draftKind}.`,
                 {
                     title: 'Delete Customer Draft',
                     okText: 'Delete',
@@ -997,7 +1217,7 @@
                 }
             )
             : window.confirm(
-                `Delete ${displayName}${accountNumber ? ` (Account ${accountNumber})` : ''}? This will remove the pending draft.`
+                `Delete ${displayName}${accountNumber ? ` (Account ${accountNumber})` : ''}? This will remove the ${draftKind}.`
             );
         if (!confirmed) return;
 
@@ -1010,24 +1230,25 @@
                 closeReviewModal();
             }
             await loadQueue();
-            notify('Pending customer deleted.', 'success');
+            notify(`${draftKind === 'incomplete draft' ? 'Incomplete' : 'Pending'} customer draft deleted.`, 'success');
         } catch (error) {
-            notify(error.message || 'Unable to delete pending customer.', 'error');
+            notify(error.message || `Unable to delete the ${draftKind}.`, 'error');
         }
     };
 
     const handleDeleteSelected = async () => {
         if (bulkDeleteInProgress) return;
         const submissionIds = [...state.selectedIds].filter((itemId) => state.itemsById.has(itemId));
+        const queueLabel = getQueueLabel();
         if (!submissionIds.length) {
-            notify('Select at least one pending draft to delete.', 'warning');
+            notify(`Select at least one ${state.queueStatus === 'in-progress' ? 'incomplete' : 'pending'} draft to delete.`, 'warning');
             renderTable();
             return;
         }
 
         const confirmed = window.appConfirm
             ? await window.appConfirm(
-                `Delete ${submissionIds.length} selected pending draft${submissionIds.length === 1 ? '' : 's'}? This will remove the selected customer drafts.`,
+                `Delete ${submissionIds.length} selected ${queueLabel}? This will remove the selected customer drafts.`,
                 {
                     title: 'Delete Selected Drafts',
                     okText: 'Delete',
@@ -1035,7 +1256,7 @@
                 }
             )
             : window.confirm(
-                `Delete ${submissionIds.length} selected pending draft${submissionIds.length === 1 ? '' : 's'}? This will remove the selected customer drafts.`
+                `Delete ${submissionIds.length} selected ${queueLabel}? This will remove the selected customer drafts.`
             );
         if (!confirmed) return;
 
@@ -1054,8 +1275,8 @@
             await loadQueue();
             notify(
                 response.deletedCount === 1
-                    ? '1 pending customer draft deleted.'
-                    : `${response.deletedCount || submissionIds.length} pending customer drafts deleted.`,
+                    ? `1 ${state.queueStatus === 'in-progress' ? 'incomplete' : 'pending'} customer draft deleted.`
+                    : `${response.deletedCount || submissionIds.length} ${state.queueStatus === 'in-progress' ? 'incomplete' : 'pending'} customer drafts deleted.`,
                 'success'
             );
         } catch (error) {
@@ -1143,6 +1364,19 @@
         state.pagination.page = 1;
         renderTable();
     });
+    statusSelect?.addEventListener('change', () => {
+        state.queueStatus = String(statusSelect.value || 'pending').trim().toLowerCase() === 'in-progress'
+            ? 'in-progress'
+            : 'pending';
+        state.selectedIds.clear();
+        state.pagination.page = 1;
+        if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="9" class="draft-empty text-secondary text-center">Loading drafts...</td></tr>';
+        }
+        loadQueue().catch((error) => {
+            notify(error.message || 'Unable to load draft queue.', 'error');
+        });
+    });
     pageSizeSelect?.addEventListener('change', () => {
         const nextSize = Number(pageSizeSelect.value) || 10;
         state.pagination.pageSize = nextSize;
@@ -1193,6 +1427,12 @@
     reviewPrepaidExpirationInput?.addEventListener('change', recomputeReviewDueDate);
     reviewLoginPasswordToggleBtn?.addEventListener('click', () => {
         setReviewPasswordVisibility(reviewLoginPasswordInput?.type === 'password');
+    });
+    reviewNapSelect?.addEventListener('change', () => {
+        const currentPort = reviewNapSelect.value === reviewNapSelect.dataset.currentNapId
+            ? reviewNapPortSelect?.dataset?.currentPort || ''
+            : '';
+        populateReviewPortOptions(reviewNapSelect.value, currentPort);
     });
 
     Promise.all([loadPlans(), loadCoverageAreas(), loadQueue()]).catch((error) => {

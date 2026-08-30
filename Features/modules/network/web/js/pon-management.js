@@ -1175,10 +1175,10 @@
     }
   };
 
-  const refreshPonStateFromBackend = async ({ silent = false } = {}) => {
+  const refreshPonOverviewFromBackend = async ({ silent = false } = {}) => {
     if (!syncState.loadedFromBackend || hasPendingBackendPersist()) return false;
     try {
-      await hydratePonStateFromBackend();
+      await hydratePonOverviewFromBackend();
       renderPonWorkspace();
       return true;
     } catch (error) {
@@ -1856,8 +1856,14 @@
       .map((portNo) => {
         const entries = portMap.get(portNo) || [];
         const subscriberStatus = resolvePortSubscriberStatus(entries);
-        const customerText = entries.length
-          ? entries.map((entry) => formatConnectionCustomerLabel(entry)).filter(Boolean).join(', ')
+        const customerHtml = entries.length
+          ? entries.map((entry) => {
+            const label = escapeHtml(formatConnectionCustomerLabel(entry));
+            const tempBadge = toText(entry?.workspace).toLowerCase() === 'temp'
+              ? '<span class="badge bg-orange-lt text-orange ms-1">TEMP</span>'
+              : '';
+            return `<span class="d-inline-flex align-items-center gap-1">${label}${tempBadge}</span>`;
+          }).filter(Boolean).join('<br>')
           : '-';
         const opticalText = entries.length
           ? entries.map((entry) => toText(entry.opticalInfo)).filter(Boolean).join(' | ')
@@ -1880,7 +1886,7 @@
             <td class="pon-subscriber-status-cell"><div class="pon-subs-cell-center">${renderPortSubscriberStatus(subscriberStatus)}</div></td>
             <td>
               <div class="pon-cell-with-action">
-                <span>${escapeHtml(customerText)}</span>
+                <span>${customerHtml}</span>
                 <span class="pon-action-group">
                   <button
                     type="button"
@@ -2346,7 +2352,7 @@
     state.selectedNapId = toText(napId);
     renderNapSubscribersModal();
     openModal(napSubscribersModal);
-    refreshPonStateFromBackend({ silent: true }).catch(() => {});
+    refreshPonOverviewFromBackend({ silent: true }).catch(() => {});
   };
 
   const openNapConfig = (napId) => {

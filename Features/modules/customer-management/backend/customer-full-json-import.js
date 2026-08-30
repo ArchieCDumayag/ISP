@@ -1,4 +1,5 @@
 const { readJson, writeJson } = require('../../../../core/data/data-store');
+const { normalizeCustomerName } = require('../../../../core/data/customer-name-normalizer');
 const {
     mergeFirstBillAdjustmentRows
 } = require('../../billing/backend/first-bill-adjustment-transfer');
@@ -754,13 +755,13 @@ const customerBranchId = (customer = {}) => {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
 
-const customerDisplayName = (customer = {}) => String(
+const customerDisplayName = (customer = {}) => normalizeCustomerName(
     customer.name
     || customer.customerName
     || customer.customer_name
     || [customer.firstName || customer.first_name, customer.lastName || customer.last_name].filter(Boolean).join(' ')
     || ''
-).trim();
+);
 
 const normalizePlan = (row, nowIso) => {
     const id = textValue(row, ['plan_id', 'planId', 'id']);
@@ -789,9 +790,9 @@ const normalizePlan = (row, nowIso) => {
 const normalizeCustomer = (row, branchId, nowIso) => {
     const accountNumber = textValue(row, ['account_number', 'accountNumber']);
     if (!accountNumber) return null;
-    const firstName = textValue(row, ['first_name', 'firstName']);
-    const lastName = textValue(row, ['last_name', 'lastName']);
-    const explicitName = textValue(row, ['name', 'customer_name', 'customerName']);
+    const firstName = normalizeCustomerName(textValue(row, ['first_name', 'firstName']), 100);
+    const lastName = normalizeCustomerName(textValue(row, ['last_name', 'lastName']), 100);
+    const explicitName = normalizeCustomerName(textValue(row, ['name', 'customer_name', 'customerName']), 240);
     const derivedName = explicitName || [firstName, lastName].filter(Boolean).join(' ').trim();
     const createdAt = dateTimeValue(row, ['created_at', 'createdAt']) || nowIso;
     return definedFields({
@@ -907,7 +908,7 @@ const normalizeTicket = (row, branchId, nowIso) => {
         category: textValue(row, ['category']) || subject,
         subject,
         description: textValue(row, ['description']),
-        customerName: textValue(row, ['customer_name', 'customerName']),
+        customerName: normalizeCustomerName(textValue(row, ['customer_name', 'customerName']), 240),
         accountNumber: textValue(row, ['account_number', 'accountNumber']),
         contact: textValue(row, ['contact']),
         status: textValue(row, ['status']),
@@ -1311,7 +1312,10 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
             }
             payments[accountNumber] = {
                 ...payments[accountNumber],
-                customerName: payments[accountNumber].customerName || customerDisplayName(customer),
+                customerName: normalizeCustomerName(
+                    payments[accountNumber].customerName || customerDisplayName(customer),
+                    240
+                ),
                 area: payments[accountNumber].area || String(customer.area || '').trim(),
                 history: sortPaymentHistory([...(payments[accountNumber].history || []), entry])
             };
@@ -1402,7 +1406,7 @@ const buildCustomerFullJsonImport = ({ branchId, tables = {}, stores = {}, now =
         const connection = definedFields({
             id: connectionId,
             customerId: accountNumber,
-            customerName: textValue(row, ['customer_name', 'customerName']),
+            customerName: normalizeCustomerName(textValue(row, ['customer_name', 'customerName']), 240),
             customerRef: textValue(row, ['customer_ref', 'customerRef']),
             port,
             opticalInfo: textValue(row, ['optical_info', 'opticalInfo']),

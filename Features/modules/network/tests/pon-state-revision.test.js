@@ -168,6 +168,66 @@ const run = async () => {
   assert.notStrictEqual(saved.revision, freshLoad.revision);
   assert.strictEqual(stores.get('pon-state').branches[1].olts[0].site, 'Updated Site');
 
+  const tempCustomers = [{
+    accountNumber: 'TMP000010',
+    name: 'Shahien Gamata',
+    napId: 'nap-1',
+    napCode: 'NAP-01',
+    napPort: 3
+  }];
+  stores.set('pon-state', { branches: { 1: clone(baseBranch()) } });
+  ponServiceability.configureTempNetworkCustomersProvider(async () => tempCustomers);
+  const tempAwareCoverage = await ponServiceability.findNearbyPonNaps({
+    branchId: 1,
+    latitude: 17.92663,
+    longitude: 121.78047,
+    limit: 500,
+    maxDistanceMeters: 600,
+    includeOffline: true,
+    includeUnavailable: true,
+    allowExpandedLimit: true
+  });
+  assert.strictEqual(tempAwareCoverage.candidates[0].availablePorts, 7);
+  assert.strictEqual(tempAwareCoverage.candidates[0].ports[2].status, 'occupied');
+  assert.strictEqual(tempAwareCoverage.candidates[0].ports[2].customerAccountNumber, 'TMP000010');
+  await assert.rejects(
+    ponServiceability.reservePonPort({
+      branchId: 1,
+      technicianUserId: 'tech-temp-guard',
+      customerAccountNumber: 'TEMP-TECH-1',
+      napId: 'nap-1',
+      port: 3,
+      clientEventId: 'reserve-temp-occupied'
+    }),
+    (error) => error.statusCode === 409 && /no longer available/.test(error.message)
+  );
+
+  ponServiceability.configureTempNetworkCustomersProvider(null);
+  const reservationBlockedAtFinalize = await ponServiceability.reservePonPort({
+    branchId: 1,
+    technicianUserId: 'tech-temp-guard',
+    customerAccountNumber: 'TEMP-TECH-2',
+    napId: 'nap-1',
+    port: 2,
+    clientEventId: 'reserve-before-temp-assignment'
+  });
+  ponServiceability.configureTempNetworkCustomersProvider(async () => [{
+    ...tempCustomers[0],
+    napPort: 2
+  }]);
+  await assert.rejects(
+    ponServiceability.finalizePonAssignment({
+      branchId: 1,
+      reservationId: reservationBlockedAtFinalize.reservationId,
+      technicianUserId: 'tech-temp-guard',
+      customerAccountNumber: 'TEMP-TECH-2',
+      clientEventId: 'finalize-after-temp-assignment',
+      customerName: 'Technician Draft'
+    }),
+    (error) => error.statusCode === 409 && /already assigned/.test(error.message)
+  );
+  ponServiceability.configureTempNetworkCustomersProvider(null);
+
   stores.set('pon-state', { branches: { 1: clone(baseBranch()) } });
   const beforeReservation = await pon.loadPonStateForBranch(1);
   const reservation = await ponServiceability.reservePonPort({
@@ -212,9 +272,155 @@ const run = async () => {
   assert.match(unrelatedSave.revision, /^pon-v1-[a-f0-9]{64}$/);
   assert.equal(stores.get('pon-state').branches[1].reservations[0].reservationId, reservation.reservationId);
 
+  stores.set('pon-state', { branches: { 1: clone(baseBranch()) } });
+  ponServiceability.configureTempNetworkCustomersProvider(async () => []);
+  const requestedAssignment = await ponServiceability.finalizeRequestedPonAssignment({
+    branchId: 1,
+    customerAccountNumber: '30010200',
+    customerName: 'Requested Draft Customer',
+    napId: 'nap-1',
+    port: 4,
+    clientEventId: 'admin-requested-draft-1'
+  });
+  assert.equal(requestedAssignment.duplicate, false);
+  assert.equal(requestedAssignment.assignment.port, 4);
+  assert.equal(stores.get('pon-state').branches[1].naps[0].connections[0].customerId, '30010200');
+  assert.equal((stores.get('pon-state').branches[1].reservations || []).length, 0);
+  const requestedReplay = await ponServiceability.finalizeRequestedPonAssignment({
+    branchId: 1,
+    customerAccountNumber: '30010200',
+    customerName: 'Requested Draft Customer',
+    napId: 'nap-1',
+    port: 4,
+    clientEventId: 'admin-requested-draft-1'
+  });
+  assert.equal(requestedReplay.duplicate, true);
+  await assert.rejects(
+    ponServiceability.finalizeRequestedPonAssignment({
+      branchId: 1,
+      customerAccountNumber: '30010201',
+      customerName: 'Conflicting Draft Customer',
+      napId: 'nap-1',
+      port: 4,
+      clientEventId: 'admin-requested-draft-2'
+    }),
+    (error) => error.statusCode === 409 && /already assigned/.test(error.message)
+  );
+
+  stores.set('pon-state', { branches: { 1: clone(baseBranch()) } });
+  const submittedReservation = await ponServiceability.reservePonPort({
+    branchId: 1,
+    technicianUserId: 'tech-draft-hold',
+    customerAccountNumber: 'TEMP-2001',
+    napId: 'nap-1',
+    port: 1,
+    clientEventId: 'reserve-draft-hold'
+  });
+  const submittedHold = await ponServiceability.submitPonReservationForAdmin({
+    branchId: 1,
+    reservationId: submittedReservation.reservationId,
+    technicianUserId: 'tech-draft-hold',
+    customerAccountNumber: 'TEMP-2001',
+    clientEventId: 'submit-draft-hold'
+  });
+  assert.equal(submittedHold.hold.status, 'draft-held');
+  assert.equal(submittedHold.hold.expiresAt, null);
+  assert.equal(stores.get('pon-state').branches[1].reservations[0].expiresAt, '');
+  const heldAdminLoad = await pon.loadPonStateForBranch(1);
+  const heldConflictNaps = clone(heldAdminLoad.naps);
+  heldConflictNaps[0].connections = [{
+    customerId: '30010100',
+    customerName: 'Conflicting Admin Customer',
+    customerRef: '30010100',
+    port: 1,
+    opticalInfo: ''
+  }];
+  await assert.rejects(
+    pon.savePonStateForBranch(1, {
+      expectedRevision: heldAdminLoad.revision,
+      olts: heldAdminLoad.olts,
+      naps: heldConflictNaps
+    }),
+    (error) => error.statusCode === 409 && error.code === 'PON_ACTIVE_RESERVATION_CONFLICT'
+  );
+  await assert.rejects(
+    ponServiceability.releasePonPortReservation({
+      branchId: 1,
+      reservationId: submittedReservation.reservationId,
+      technicianUserId: 'tech-draft-hold',
+      customerAccountNumber: 'TEMP-2001'
+    }),
+    (error) => error.statusCode === 409 && /only be changed by Admin/.test(error.message)
+  );
+  const reassignedHold = await ponServiceability.reassignPonDraftHold({
+    branchId: 1,
+    reservationId: submittedReservation.reservationId,
+    customerAccountNumber: 'TEMP-2001',
+    napId: 'nap-1',
+    port: 2,
+    reassignedByUserId: 'admin-1'
+  });
+  assert.equal(reassignedHold.selection.port, 2);
+  const heldCoverage = await ponServiceability.findNearbyPonNaps({
+    branchId: 1,
+    latitude: 17.92663,
+    longitude: 121.78047,
+    limit: 10,
+    maxDistanceMeters: 600,
+    includeUnavailable: true
+  });
+  assert.equal(heldCoverage.candidates[0].ports[0].status, 'available');
+  assert.equal(heldCoverage.candidates[0].ports[1].status, 'reserved');
+  const finalizedHold = await ponServiceability.finalizePonDraftHold({
+    branchId: 1,
+    reservationId: submittedReservation.reservationId,
+    customerAccountNumber: 'TEMP-2001',
+    customerName: 'Durable Draft Customer',
+    clientEventId: 'admin-draft-finalize'
+  });
+  assert.equal(finalizedHold.assignment.port, 2);
+  assert.equal(stores.get('pon-state').branches[1].naps[0].connections[0].port, 2);
+  const finalizedReplay = await ponServiceability.finalizePonDraftHold({
+    branchId: 1,
+    reservationId: submittedReservation.reservationId,
+    customerAccountNumber: 'TEMP-2001',
+    customerName: 'Durable Draft Customer',
+    clientEventId: 'admin-draft-finalize'
+  });
+  assert.equal(finalizedReplay.duplicate, true);
+
+  const rejectedReservation = await ponServiceability.reservePonPort({
+    branchId: 1,
+    technicianUserId: 'tech-draft-reject',
+    customerAccountNumber: 'TEMP-2002',
+    napId: 'nap-1',
+    port: 3,
+    clientEventId: 'reserve-draft-reject'
+  });
+  await ponServiceability.submitPonReservationForAdmin({
+    branchId: 1,
+    reservationId: rejectedReservation.reservationId,
+    technicianUserId: 'tech-draft-reject',
+    customerAccountNumber: 'TEMP-2002',
+    clientEventId: 'submit-draft-reject'
+  });
+  await ponServiceability.releasePonDraftHold({
+    branchId: 1,
+    reservationId: rejectedReservation.reservationId,
+    customerAccountNumber: 'TEMP-2002'
+  });
+  assert.equal(
+    stores.get('pon-state').branches[1].reservations
+      .find((entry) => entry.reservationId === rejectedReservation.reservationId).status,
+    'released'
+  );
+
   console.log('PASS PON revision hashes are deterministic and assignment-sensitive');
   console.log('PASS stale JSON admin snapshots cannot erase technician assignments');
   console.log('PASS active technician reservations block conflicting Admin port assignments');
+  console.log('PASS technician coverage and mutations treat mapped Temp ports as occupied');
+  console.log('PASS submitted technician ports become non-expiring Admin-held drafts with atomic reassignment');
+  console.log('PASS Admin atomically assigns requested draft ports without creating reservations');
 };
 
 run().catch((error) => {

@@ -467,7 +467,7 @@ const createActiveReservationConflict = (reservation = {}, reason = '') => {
     .filter(Boolean)
     .join(' ');
   const error = makeError(
-    reason || `${location} is temporarily reserved by a technician. Wait for release or expiry before changing it.`,
+    reason || `${location} is held for a submitted technician draft. Finalize, reassign, reject, or delete that draft before changing it.`,
     409
   );
   error.code = 'PON_ACTIVE_RESERVATION_CONFLICT';
@@ -483,6 +483,7 @@ const createActiveReservationConflict = (reservation = {}, reason = '') => {
 const activeReservationRows = (reservations = [], nowMs = Date.now()) => (
   (Array.isArray(reservations) ? reservations : []).filter((reservation) => {
     const status = toText(reservation?.status || 'active').toLowerCase();
+    if (status === 'draft-held') return true;
     const expiresAtMs = new Date(reservation?.expiresAt ?? reservation?.expires_at ?? 0).getTime();
     return status === 'active' && Number.isFinite(expiresAtMs) && expiresAtMs > nowMs;
   })
@@ -1021,8 +1022,10 @@ const saveStateUnlocked = async (branchId, payload) => {
          FROM pon_port_reservations r
          INNER JOIN pon_naps n ON n.id = r.nap_id
         WHERE r.branch_id = ?
-          AND r.status = 'active'
-          AND r.expires_at > CURRENT_TIMESTAMP
+          AND (
+            r.status = 'draft-held'
+            OR (r.status = 'active' AND r.expires_at > CURRENT_TIMESTAMP)
+          )
         FOR UPDATE`,
       [branchId]
     );

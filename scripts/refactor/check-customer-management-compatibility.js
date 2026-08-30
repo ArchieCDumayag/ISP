@@ -141,8 +141,9 @@ assert.throws(() => customerRouter.normalizeCustomerMapPin('not a coordinate'), 
 const normalizedImportCorrection = customerRouter.normalizeImportedClientCorrectionRecord({
   rowNumber: 360,
   accountNumber: 100000360,
-  firstName: 'Import',
-  lastName: 'Warning',
+  firstName: 'iMPORT',
+  middleName: 'dE la',
+  lastName: 'wARNING jr',
   planType: 'postpaid',
   planName: 'Standard',
   monthlyRate: '1,000',
@@ -153,9 +154,28 @@ assert.strictEqual(normalizedImportCorrection.accountNumber, '100000360');
 assert.strictEqual(normalizedImportCorrection.planCategory, 'postpaid');
 assert.strictEqual(normalizedImportCorrection.planValue, 'Standard');
 assert.strictEqual(normalizedImportCorrection.planAmount, 1000);
+assert.strictEqual(normalizedImportCorrection.firstName, 'Import');
+assert.strictEqual(normalizedImportCorrection.middleName, 'De La');
+assert.strictEqual(normalizedImportCorrection.lastName, 'Warning Jr.');
+
+const customerDraftRouter = backend.load('customerDraftSubmissions');
+const normalizedDraftName = customerDraftRouter.normalizeDraftPayload({
+  firstName: 'jUAN',
+  middleName: 'dELA',
+  lastName: "o'BRIEN iii"
+});
+assert.strictEqual(normalizedDraftName.firstName, 'Juan');
+assert.strictEqual(normalizedDraftName.middleName, 'Dela');
+assert.strictEqual(normalizedDraftName.lastName, "O'Brien III");
+assert.strictEqual(normalizedDraftName.name, "Juan Dela O'Brien III");
 
 const customersPageSource = fs.readFileSync(path.join(webRoot, 'customers.html'), 'utf8');
+const applyNowPageSource = fs.readFileSync(path.join(webRoot, 'apply-now.html'), 'utf8');
+const draftQueuePageSource = fs.readFileSync(path.join(webRoot, 'customer-draft-queue.html'), 'utf8');
 const customersCssSource = fs.readFileSync(path.join(webRoot, 'css/customers.css'), 'utf8');
+assert(customersPageSource.includes('/js/customer-name-case.js?v=1.0'));
+assert(applyNowPageSource.includes('/js/customer-name-case.js?v=1.0'));
+assert(draftQueuePageSource.includes('/js/customer-name-case.js?v=1.0'));
 assert(customersPageSource.includes('id="importWarningReviewBtn"'));
 assert(customersPageSource.includes('id="importWarningModal"'));
 assert(customersPageSource.includes("fetch('/api/customers/import-client-corrections'"));

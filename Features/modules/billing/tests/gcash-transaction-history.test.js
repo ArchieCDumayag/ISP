@@ -42,6 +42,8 @@ const {
     evaluateGcashTransactionMatch,
     phoneMatches,
     importGcashTransactionBatch,
+    reservePendingGcashReference,
+    releasePendingGcashReference,
     claimGcashTransaction,
     claimGcashTransactionAllocations,
     finalizeGcashTransactionAssignment,
@@ -546,6 +548,89 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     assert.strictEqual(julyBranchHistory.totalTransactions, 2);
     assert.strictEqual(julyBranchHistory.filteredTotalTransactions, 0);
     assert.deepStrictEqual(julyBranchHistory.availableMonths, ['2026-08']);
+
+    const tempPending = await reservePendingGcashReference({
+        branchId: 13,
+        reference: '0001234500678',
+        accountNumber: 'TMP000013',
+        customerName: 'Temp - Pending Customer',
+        amount: 850,
+        paymentDate: '2026-08-21',
+        description: 'Counter GCash receipt',
+        reservedBy: { id: 'admin-13', username: 'admin13', name: 'Admin 13' }
+    });
+    assert.strictEqual(tempPending.idempotent, false);
+    const tempPendingRetry = await reservePendingGcashReference({
+        branchId: 13,
+        reference: '1234500678',
+        accountNumber: 'TMP000013',
+        customerName: 'Temp - Pending Customer',
+        amount: 850,
+        paymentDate: '2026-08-21',
+        description: 'Counter GCash receipt',
+        reservedBy: { id: 'admin-13', username: 'admin13', name: 'Admin 13' }
+    });
+    assert.strictEqual(tempPendingRetry.idempotent, true);
+    assert.strictEqual(tempPendingRetry.pendingReservation.id, tempPending.pendingReservation.id);
+    assert.strictEqual((await listGcashTransactionHistory({ branchId: 13, all: true })).pendingReservations.length, 1);
+    await importGcashTransactionBatch({
+        branchId: 13,
+        fileName: 'temp-pending.pdf',
+        pdfSha256: 'd'.repeat(64),
+        parsed: {
+            statementFrom: '2026-08-21',
+            statementTo: '2026-08-21',
+            transactions: [{
+                reference: '0001234500678',
+                transactionAt: '2026-08-21T10:15:00+08:00',
+                transactionDate: '2026-08-21',
+                description: 'Transfer from 09170000000',
+                sender: '09170000000',
+                recipient: '09361565251',
+                debit: null,
+                credit: 850,
+                balance: 850,
+                status: 'received'
+            }]
+        },
+        importedBy: { id: 'admin-13', username: 'admin13', name: 'Admin 13' }
+    });
+    await assert.rejects(
+        () => claimGcashTransactionAllocations({
+            branchId: 13,
+            reference: '0001234500678',
+            submissionId: 'main-cannot-use-temp-pending',
+            allocations: [{ accountNumber: 'ACC-OTHER', amount: 850, billingMonth: '2026-08' }],
+            amount: 850,
+            paymentDate: '2026-08-21'
+        }),
+        (error) => error?.code === 'GCASH_REFERENCE_PENDING_RESERVED'
+    );
+    const tempPendingClaim = await claimGcashTransactionAllocations({
+        branchId: 13,
+        reference: '0001234500678',
+        submissionId: 'temp-gcash-pending-test',
+        pendingReservationId: tempPending.pendingReservation.id,
+        allocations: [{ accountNumber: 'TMP000013', amount: 850, billingMonth: '2026-08' }],
+        amount: 850,
+        paymentDate: '2026-08-21',
+        claimedBy: { id: 'admin-13', username: 'admin13', name: 'Admin 13' }
+    });
+    assert.strictEqual(tempPendingClaim.idempotent, false);
+    assert.strictEqual((await listGcashTransactionHistory({ branchId: 13, all: true })).pendingReservations.length, 0);
+    const releasablePending = await reservePendingGcashReference({
+        branchId: 13,
+        reference: 'TEMP-CANCEL-13',
+        accountNumber: 'TMP000014',
+        customerName: 'Temp - Cancel Customer',
+        amount: 500,
+        paymentDate: '2026-08-22'
+    });
+    assert.strictEqual((await releasePendingGcashReference({
+        branchId: 13,
+        pendingId: releasablePending.pendingReservation.id
+    })).released, true);
+    assert.strictEqual((await listGcashTransactionHistory({ branchId: 13, all: true })).pendingReservations.length, 0);
     await assert.rejects(
         () => listGcashTransactionHistory({ branchId: 1, month: 'August 2026' }),
         (error) => error?.status === 400
@@ -1026,6 +1111,19 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         reference: 'gcash used 1001',
         message: 'This reference already exists in Imported GCash Transactions. Use it from GCash Transactions instead.'
     });
+    assert.deepStrictEqual(actualPaymentsRouter.findManualPaymentReferenceConflict({
+        reference: '0001234500678',
+        gcashPendingReservations: [{
+            id: 'temp-pending-reservation-13',
+            reference: '1234500678',
+            accountNumber: 'TMP000013'
+        }]
+    }), {
+        source: 'temp_pending_gcash',
+        accountNumber: 'TMP000013',
+        pendingReservationId: 'temp-pending-reservation-13',
+        message: 'This reference is reserved by a pending Temp GCash payment.'
+    });
     assert.strictEqual(actualPaymentsRouter.findManualPaymentReferenceConflict({
         reference: 'AVAILABLE-REFERENCE-1001',
         payments: paymentStoreMemory,
@@ -1071,6 +1169,26 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     assert.strictEqual(collectedMainMatches[0].accountNumber, 'ACC-MAIN-GCASH');
     assert.strictEqual(collectedMainMatches[0].paymentEntryId, 'main-gcash-payment-1');
     assert.strictEqual(collectedMainMatches[0].customerName, 'Janice A. Juanang');
+    const anyMethodMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
+        reference: '0043891500420',
+        includeAnyPaymentMethod: true,
+        payments: {
+            'ACC-MAIN-CASH': {
+                history: [{
+                    id: 'main-cash-reference-guard',
+                    reference: '43891500420',
+                    amount: 800,
+                    date: '2026-08-08',
+                    kind: 'payment',
+                    direction: 'credit',
+                    paymentMethod: 'Cash',
+                    status: 'Approved'
+                }]
+            }
+        }
+    });
+    assert.strictEqual(anyMethodMainMatches.length, 1);
+    assert.strictEqual(anyMethodMainMatches[0].paymentMethod, 'cash');
     const mislabeledMainMatches = await gcashReferenceLookup.findMainGcashPaymentsByReference({
         reference: '0043891500420',
         officialTransactions: [{

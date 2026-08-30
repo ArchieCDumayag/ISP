@@ -59,6 +59,12 @@ webFiles.forEach((relativePath) => {
   );
 });
 console.log(`PASS Technician web root (${webFiles.length} files)`);
+const technicianDraftPageSource = fs.readFileSync(
+  path.join(webRoot, 'technician-customer-drafts.html'),
+  'utf8'
+);
+assert(technicianDraftPageSource.includes('/js/customer-name-case.js?v=1.0'));
+console.log('PASS Technician customer draft name auto-formatting asset');
 
 const dispatchWorkflow = require(path.join(
   projectRoot,
@@ -362,16 +368,23 @@ const installationRoutes = routeContracts(technicianInstallations);
   'GET /pon/nearby',
   'POST /pon/reservations',
   'DELETE /pon/reservations/:reservationId',
+  'POST /pon/reservations/:reservationId/submit',
+  'POST /pon/submissions',
   'POST /pon/reservations/:reservationId/finalize',
   'POST /pon/assignments'
 ].forEach((contract) => {
   assert(installationRoutes.includes(contract), `Technician installation API must include ${contract}`);
 });
 execFileSync(process.execPath, [
+  '--test',
+  '--test-force-exit',
   path.join(projectRoot, 'Features/modules/technician/tests/technician-pon-access.test.js')
 ], { stdio: 'inherit' });
 execFileSync(process.execPath, [
+  '--test',
+  '--test-force-exit',
   path.join(projectRoot, 'Features/modules/technician/tests/technician-inventory.test.js')
 ], { stdio: 'inherit' });
 console.log('PASS job-numbering, jobs, tickets, assignments, and installations contracts');
 console.log('TECHNICIAN COMPATIBILITY PASSED');
+process.exit(0);

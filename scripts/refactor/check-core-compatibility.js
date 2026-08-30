@@ -34,6 +34,24 @@ assert.strictEqual(storageMode.normalizeStorageDriver('MYSQL'), 'mysql');
 assert.throws(() => storageMode.normalizeStorageDriver('unsupported'), /Unsupported storage driver/);
 console.log('PASS JSON default and explicit MySQL storage selection');
 
+const customerNames = require(path.join(projectRoot, 'core/data/customer-name-normalizer'));
+assert.strictEqual(customerNames.normalizeCustomerName('  juan   dela cruz  '), 'Juan Dela Cruz');
+assert.strictEqual(customerNames.normalizeCustomerName("maria o'brien jr"), "Maria O'Brien Jr.");
+assert.strictEqual(customerNames.normalizeCustomerName('anne-marie mcdonald iii'), 'Anne-Marie McDonald III');
+assert.strictEqual(customerNames.normalizeCustomerName('John McDonald'), 'John McDonald');
+assert.deepStrictEqual(
+  customerNames.normalizeCustomerNameRecord({ firstName: 'mARIA', middleName: 'dE la', lastName: 'sANTOS' }),
+  { firstName: 'Maria', middleName: 'De La', lastName: 'Santos', name: 'Maria De La Santos' }
+);
+const customerNameBrowserSource = fs.readFileSync(
+  path.join(projectRoot, 'public/js/customer-name-case.js'),
+  'utf8'
+);
+assert(customerNameBrowserSource.includes("document.addEventListener('focusout'"));
+assert(customerNameBrowserSource.includes("document.addEventListener('submit'"));
+assert(customerNameBrowserSource.includes("field.setAttribute('autocapitalize', 'words')"));
+console.log('PASS shared customer Title Case normalization and browser auto-formatting');
+
 const core = require(path.join(projectRoot, 'core'));
 assert.strictEqual(core.paths.PROJECT_ROOT, projectRoot);
 assert.strictEqual(core.paths.DATA_DIR, path.join(projectRoot, 'data'));

@@ -1345,6 +1345,7 @@
             const viewHistoryExpandedYears = new Set();
             const VIEW_MODAL_LIVE_REFRESH_MS = 4000;
             const VIEW_PPPOE_LIVE_REFRESH_MS = 1000;
+            const CUSTOMER_SAVE_TIMEOUT_MS = 25000;
             const normalizeEntryId = (value) => String(value ?? '').trim();
             const normalizeEntryIds = (values = []) => Array.from(new Set(
                 (Array.isArray(values) ? values : [])
@@ -8432,12 +8433,15 @@
                     ? `/api/customers/${encodeURIComponent(targetId)}`
                     : '/api/customers';
                 const method = isEditing ? 'PUT' : 'POST';
+                const saveController = new AbortController();
+                const saveTimeoutId = setTimeout(() => saveController.abort(), CUSTOMER_SAVE_TIMEOUT_MS);
 
                 try {
                     const response = await fetch(url, {
                         method: method,
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify(payload),
+                        signal: saveController.signal
                     });
                     const responseBody = await response.json().catch(() => null);
 
@@ -8500,8 +8504,13 @@
                         showCustomerValidationErrors(error.customerValidationErrors);
                         return;
                     }
+                    if (error?.name === 'AbortError') {
+                        showToast('Customer save timed out. It may still have completed; refresh the list before retrying.', 'warning');
+                        return;
+                    }
                     showToast(`Error: Could not save customer. ${error.message}`);
                 } finally {
+                    clearTimeout(saveTimeoutId);
                     setCustomerSubmitState(false);
                 }
             });

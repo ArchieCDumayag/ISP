@@ -874,7 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const unableToVerify = Boolean(comparison.unableToVerify);
         const hasDiverged = Boolean(comparison.diverged);
         const hasLocalChanges = Boolean(payload.workingTree?.dirty);
-        systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasDiverged || hasLocalChanges || !hasUpdate;
+        systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasDiverged || !hasUpdate;
         if (isRunning) {
             systemUpdateCheckBtn.title = updateRun.currentStep || 'System update is running.';
         } else if (!isEnabled) {
@@ -884,7 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (hasDiverged) {
             systemUpdateCheckBtn.title = 'The local and remote branches have diverged. Resolve the Git history manually.';
         } else if (hasLocalChanges) {
-            systemUpdateCheckBtn.title = 'Commit or stash local changes before applying an update.';
+            systemUpdateCheckBtn.title = 'Apply the latest update; local changes will be preserved and restored automatically.';
         } else if (!hasUpdate) {
             systemUpdateCheckBtn.title = 'No new update available. Refresh status to check GitHub again.';
         } else {
@@ -1017,7 +1017,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
         const changedCount = Math.max(0, Number(payload.workingTree?.changedFileCount) || 0);
         if (changedCount > 0) {
-            warnings.unshift(`Working tree has ${changedCount} local file change${changedCount === 1 ? '' : 's'}; commit or stash them before applying an update.`);
+            warnings.unshift(`Working tree has ${changedCount} local file change${changedCount === 1 ? '' : 's'}; the updater will preserve, compatibility-check, and restore them automatically.`);
         }
         if (autoUpdate.enabled === false) {
             warnings.push(autoUpdate.message || 'Automatic update is not supported on this install.');

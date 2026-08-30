@@ -12,7 +12,8 @@ const entries = Object.freeze({
   integrationSettings: './integration-settings',
   setupInstaller: './setup-installer',
   systemBackupService: './system-backup-service',
-  systemBackup: './system-backup'
+  systemBackup: './system-backup',
+  systemUpdateLocalChanges: './system-update-local-changes'
 });
 
 function load(entryName) {

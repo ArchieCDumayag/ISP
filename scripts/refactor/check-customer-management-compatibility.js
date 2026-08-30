@@ -2,11 +2,38 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
+process.env.ISOLATED_RUNTIME_CONFIG = '1';
+process.env.STORAGE_DRIVER = 'json';
 require(path.join(projectRoot, 'core/config/env-loader'));
+
+const runNodeTest = (relativePath) => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'isp-customer-test-'));
+  const outputPath = path.join(outputDir, 'output.log');
+  const outputFd = fs.openSync(outputPath, 'w');
+  try {
+    execFileSync(process.execPath, [
+      '--test',
+      path.join(projectRoot, relativePath)
+    ], {
+      stdio: ['ignore', outputFd, outputFd],
+      env: {
+        ...process.env,
+        ISOLATED_RUNTIME_CONFIG: '1',
+        STORAGE_DRIVER: 'json'
+      }
+    });
+  } finally {
+    fs.closeSync(outputFd);
+    const output = fs.readFileSync(outputPath, 'utf8');
+    if (output) process.stdout.write(output);
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  }
+};
 
 const { loadModuleBackend, getModuleWebRoot } = require(path.join(
   projectRoot,
@@ -98,18 +125,10 @@ assert(referralsBackendSource.includes("router.post('/',"));
 assert(referralsBackendSource.includes("router.patch('/:referralId/status'"));
 assert(referralsBackendSource.includes("router.patch('/:referralId/schedule'"));
 assert(referralsBackendSource.includes("router.patch('/:referralId'"));
-execFileSync(process.execPath, [
-  path.join(projectRoot, 'Features/modules/customer-management/tests/referral-workflow.test.js')
-], { stdio: 'inherit' });
-execFileSync(process.execPath, [
-  path.join(projectRoot, 'Features/modules/customer-management/tests/referral-queue.test.js')
-], { stdio: 'inherit' });
-execFileSync(process.execPath, [
-  path.join(projectRoot, 'Features/modules/customer-management/tests/technician-draft-location.test.js')
-], { stdio: 'inherit' });
-execFileSync(process.execPath, [
-  path.join(projectRoot, 'Features/modules/customer-management/tests/admin-add-customer-hardening.test.js')
-], { stdio: 'inherit' });
+runNodeTest('Features/modules/customer-management/tests/referral-workflow.test.js');
+runNodeTest('Features/modules/customer-management/tests/referral-queue.test.js');
+runNodeTest('Features/modules/customer-management/tests/technician-draft-location.test.js');
+runNodeTest('Features/modules/customer-management/tests/admin-add-customer-hardening.test.js');
 console.log('PASS Customer Management centralized referral workflow contract');
 
 const customerRouter = backend.load('customers');

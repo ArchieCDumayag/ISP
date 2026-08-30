@@ -85,6 +85,7 @@ const collectorPaymentsRouter = collectorBackend.load('collectorPayments');
 const businessProfileRouter = adminBackend.load('businessProfile');
 const factoryResetRouter = adminBackend.load('factoryReset');
 const systemBackupRouter = adminBackend.load('systemBackup');
+const { createSystemUpdateLocalChangesManager } = adminBackend.load('systemUpdateLocalChanges');
 const appDownloadsRouter = adminBackend.load('appDownloads');
 const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
 const integrationSettingsRouter = adminBackend.load('integrationSettings');
@@ -2065,6 +2066,12 @@ const runSystemUpdateStep = (label, command, args = [], options = {}) => new Pro
     });
 });
 
+const systemUpdateLocalChanges = createSystemUpdateLocalChangesManager({
+    runGitStep: (label, args, options = {}) => runSystemUpdateStep(label, 'git', args, options),
+    runGitCommand,
+    appendLog: appendSystemUpdateLog
+});
+
 const getSystemUpdateNpmCommand = () => (process.platform === 'win32' ? 'npm.cmd' : 'npm');
 
 const scheduleWindowsSystemUpdateRestart = () => {
@@ -2162,13 +2169,6 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
         throw makeSystemUpdateError('The remote update changed. Refresh status, review the new version, and confirm again.', 409);
     }
 
-    if (status.workingTree?.dirty) {
-        throw makeSystemUpdateError(
-            `Working tree has ${status.workingTree.changedFileCount || 0} local file change(s). Commit or stash them before automatic update.`,
-            409
-        );
-    }
-
     systemUpdateRunState = {
         running: true,
         status: 'running',
@@ -2187,6 +2187,7 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
     let originalHead = '';
     let originalHasPackageLock = false;
     let sourceChanged = false;
+    let preservedLocalChanges = null;
 
     try {
         const remoteName = status.branch?.remote || 'origin';
@@ -2204,15 +2205,6 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
         if (!fetchedRemoteHash || fetchedRemoteHash !== confirmedRemoteHash) {
             throw makeSystemUpdateError(
                 'The remote update changed while validation was running. Refresh status, review it, and confirm again.',
-                409
-            );
-        }
-
-        const pendingChanges = await runGitCommandOrEmpty(['status', '--porcelain']);
-        if (pendingChanges) {
-            const changedFileCount = pendingChanges.split(/\r?\n/).filter((line) => line.trim()).length;
-            throw makeSystemUpdateError(
-                `Working tree changed during validation (${changedFileCount} local file change${changedFileCount === 1 ? '' : 's'}). Commit or stash them before automatic update.`,
                 409
             );
         }
@@ -2243,6 +2235,20 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
         systemUpdateRunState.backupRef = backupRef;
         appendSystemUpdateLog(`\n[${new Date().toISOString()}] Recovery point: ${backupRef}\n`);
 
+        preservedLocalChanges = await systemUpdateLocalChanges.prepare({
+            targetRef: fetchedRemoteHash,
+            changedFileCount: status.workingTree?.changedFileCount || 0
+        });
+
+        const pendingChanges = await runGitCommandOrEmpty(['status', '--porcelain']);
+        if (pendingChanges) {
+            const changedFileCount = pendingChanges.split(/\r?\n/).filter((line) => line.trim()).length;
+            throw makeSystemUpdateError(
+                `Working tree changed during validation (${changedFileCount} local file change${changedFileCount === 1 ? '' : 's'}). Retry after the other file operation finishes.`,
+                409
+            );
+        }
+
         await runSystemUpdateStep('Fast-forward tracked branch', 'git', ['merge', '--ff-only', fetchedRemoteHash], {
             timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
         });
@@ -2259,6 +2265,8 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
             timeout: SYSTEM_UPDATE_INSTALL_TIMEOUT_MS,
             maxBuffer: 4 * 1024 * 1024
         });
+
+        await systemUpdateLocalChanges.restore(preservedLocalChanges);
 
         systemUpdateRunState.running = false;
         systemUpdateRunState.status = 'restart-pending';
@@ -2277,7 +2285,9 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
         };
     } catch (error) {
         const primaryMessage = summarizeGitError(error, 'Automatic update failed.');
-        const failureStatusCode = Number(error?.statusCode || 500);
+        const failureStatusCode = error?.code === 'SYSTEM_UPDATE_LOCAL_CHANGES_CONFLICT'
+            ? 409
+            : Number(error?.statusCode || 500);
         const currentHead = normalizeSystemUpdateHash(await runGitCommandOrEmpty(['rev-parse', 'HEAD']));
         sourceChanged = Boolean(originalHead && currentHead && currentHead !== originalHead);
 
@@ -2287,6 +2297,9 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
                 await runSystemUpdateStep('Rolling back source', 'git', ['reset', '--hard', originalHead], {
                     timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
                 });
+                if (preservedLocalChanges) {
+                    await systemUpdateLocalChanges.restore(preservedLocalChanges, { force: true });
+                }
                 const rollbackNpmArgs = originalHasPackageLock
                     ? ['ci', '--omit=dev']
                     : ['install', '--omit=dev', '--no-package-lock'];
@@ -2300,6 +2313,13 @@ const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) =>
             } catch (rollbackError) {
                 const rollbackFailure = summarizeGitError(rollbackError, 'Automatic rollback failed.');
                 systemUpdateRunState.rollbackMessage = `Automatic rollback failed: ${rollbackFailure}`;
+                appendSystemUpdateLog(`\n[${new Date().toISOString()}] ${systemUpdateRunState.rollbackMessage}\n`);
+            }
+        } else if (preservedLocalChanges && !preservedLocalChanges.restored) {
+            try {
+                await systemUpdateLocalChanges.restore(preservedLocalChanges);
+            } catch (restoreError) {
+                systemUpdateRunState.rollbackMessage = `Local changes remain saved in Git stash ${preservedLocalChanges.stashCommit.slice(0, 12)}: ${restoreError.message || restoreError}`;
                 appendSystemUpdateLog(`\n[${new Date().toISOString()}] ${systemUpdateRunState.rollbackMessage}\n`);
             }
         }

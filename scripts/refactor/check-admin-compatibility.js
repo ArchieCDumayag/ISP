@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const assert = require('assert');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -28,7 +29,8 @@ const backendPairs = [
   ['integration-settings.js', 'integration-settings'],
   ['setup-installer.js', 'setup-installer'],
   ['system-backup-service.js', 'system-backup-service'],
-  ['system-backup.js', 'system-backup']
+  ['system-backup.js', 'system-backup'],
+  ['system-update-local-changes.js', 'system-update-local-changes']
 ];
 
 const backend = loadModuleBackend('admin', { required: true, fresh: true });
@@ -170,6 +172,10 @@ assert(systemUpdateServerSource.includes("['update-ref', backupRef, safeHead]"))
 assert(systemUpdateServerSource.includes("['reset', '--hard', originalHead]"));
 assert(systemUpdateServerSource.includes("['install', '--omit=dev', '--no-package-lock']"));
 console.log('PASS Admin system update confirmation, progress, fast-forward, recovery, and rollback safeguards');
+assert(accountsHtml.includes('id="system-update-check"'));
+assert(accountsJs.includes('systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasDiverged || !hasUpdate;'));
+assert(accountsJs.includes('the updater will preserve, compatibility-check, and restore them automatically.'));
+console.log('PASS System Update action remains available with preservable local changes');
 
 const factoryReset = require(path.join(
   projectRoot,
@@ -368,6 +374,94 @@ async function verifyJsonToMysqlConversionContract() {
   console.log('PASS Admin JSON-to-MySQL full-backup conversion contract');
 }
 
+const execGit = (cwd, args) => new Promise((resolve, reject) => {
+  execFile('git', args, { cwd, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    if (error) {
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+      return;
+    }
+    resolve(String(stdout || '').trim());
+  });
+});
+
+async function createSystemUpdateFixture(rootPath, { conflicting = false } = {}) {
+  fs.mkdirSync(rootPath, { recursive: true });
+  await execGit(rootPath, ['init', '--initial-branch=main']);
+  await execGit(rootPath, ['config', 'user.email', 'system-update-test@example.invalid']);
+  await execGit(rootPath, ['config', 'user.name', 'System Update Test']);
+  fs.writeFileSync(path.join(rootPath, 'app.txt'), 'base\n');
+  await execGit(rootPath, ['add', 'app.txt']);
+  await execGit(rootPath, ['commit', '-m', 'base']);
+  const baseCommit = await execGit(rootPath, ['rev-parse', 'HEAD']);
+  await execGit(rootPath, ['checkout', '-b', 'incoming-update']);
+  if (conflicting) {
+    fs.writeFileSync(path.join(rootPath, 'app.txt'), 'incoming\n');
+  } else {
+    fs.writeFileSync(path.join(rootPath, 'release.txt'), 'incoming\n');
+  }
+  await execGit(rootPath, ['add', '.']);
+  await execGit(rootPath, ['commit', '-m', 'incoming update']);
+  const updateCommit = await execGit(rootPath, ['rev-parse', 'HEAD']);
+  await execGit(rootPath, ['checkout', 'main']);
+  fs.writeFileSync(path.join(rootPath, 'app.txt'), 'local hotfix\n');
+  if (!conflicting) {
+    fs.writeFileSync(path.join(rootPath, 'local-note.txt'), 'untracked local file\n');
+  }
+  return { baseCommit, updateCommit };
+}
+
+async function verifySystemUpdateLocalChangesContract() {
+  const systemUpdateModule = require(path.join(
+    projectRoot,
+    'Features/modules/admin/backend/system-update-local-changes'
+  ));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'isp-update-contract-'));
+  const readFixtureText = (rootPath, fileName) => fs
+    .readFileSync(path.join(rootPath, fileName), 'utf8')
+    .replace(/\r\n/g, '\n');
+  try {
+    const compatibleRoot = path.join(tempRoot, 'compatible');
+    const compatible = await createSystemUpdateFixture(compatibleRoot);
+    const compatibleManager = systemUpdateModule.createSystemUpdateLocalChangesManager({
+      runGitStep: (_label, args) => execGit(compatibleRoot, args),
+      runGitCommand: (args) => execGit(compatibleRoot, args),
+      tempRoot
+    });
+    const preservation = await compatibleManager.prepare({
+      targetRef: compatible.updateCommit,
+      changedFileCount: 2
+    });
+    assert.strictEqual(readFixtureText(compatibleRoot, 'app.txt'), 'base\n');
+    assert(!fs.existsSync(path.join(compatibleRoot, 'local-note.txt')));
+    await execGit(compatibleRoot, ['merge', '--ff-only', compatible.updateCommit]);
+    await compatibleManager.restore(preservation);
+    assert.strictEqual(readFixtureText(compatibleRoot, 'app.txt'), 'local hotfix\n');
+    assert.strictEqual(readFixtureText(compatibleRoot, 'release.txt'), 'incoming\n');
+    assert.strictEqual(readFixtureText(compatibleRoot, 'local-note.txt'), 'untracked local file\n');
+    assert.strictEqual(await execGit(compatibleRoot, ['stash', 'list']), '');
+
+    const conflictingRoot = path.join(tempRoot, 'conflicting');
+    const conflicting = await createSystemUpdateFixture(conflictingRoot, { conflicting: true });
+    const conflictingManager = systemUpdateModule.createSystemUpdateLocalChangesManager({
+      runGitStep: (_label, args) => execGit(conflictingRoot, args),
+      runGitCommand: (args) => execGit(conflictingRoot, args),
+      tempRoot
+    });
+    await assert.rejects(
+      conflictingManager.prepare({ targetRef: conflicting.updateCommit, changedFileCount: 1 }),
+      (error) => error?.code === 'SYSTEM_UPDATE_LOCAL_CHANGES_CONFLICT'
+    );
+    assert.strictEqual(await execGit(conflictingRoot, ['rev-parse', 'HEAD']), conflicting.baseCommit);
+    assert.strictEqual(readFixtureText(conflictingRoot, 'app.txt'), 'local hotfix\n');
+    assert.strictEqual(await execGit(conflictingRoot, ['stash', 'list']), '');
+    console.log('PASS System Update preserves compatible changes and restores conflicts without moving HEAD');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 async function verifyFullSystemBackupContract() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'isp-system-backup-test-'));
   const dataDir = path.join(tempRoot, 'data');
@@ -515,6 +609,7 @@ console.log('PASS Admin installer root and package paths');
 verifyFactoryResetContract()
   .then(verifyFullSystemBackupContract)
   .then(verifyJsonToMysqlConversionContract)
+  .then(verifySystemUpdateLocalChangesContract)
   .then(async () => {
     console.log('ADMIN COMPATIBILITY PASSED');
     await resetPool();

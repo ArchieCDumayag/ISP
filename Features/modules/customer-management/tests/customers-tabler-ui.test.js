@@ -148,6 +148,11 @@ assert.match(customersPage, /\$\{pppoeBoundIcon\}[\s\S]*data-copy-account-number
 assert.match(customersPage, /pppoeAccountsAll = accounts;[\s\S]*if \(allCustomers\.length\) renderCustomersPage\(\);/);
 assert.doesNotMatch(customersTablerCss, /\.modal-backdrop\s*\{|\.modal\.account-closure-modal\s*\{/);
 assert.match(customersPage, /bodyElement\.classList\.toggle\('modal-open', hasOpenModal\)/);
+assert.match(customersPage, /const CUSTOMER_SAVE_TIMEOUT_MS = 25000;/);
+assert.match(customersPage, /const saveController = new AbortController\(\);/);
+assert.match(customersPage, /signal: saveController\.signal/);
+assert.match(customersPage, /Customer save timed out\. It may still have completed; refresh the list before retrying\./);
+assert.match(customersPage, /clearTimeout\(saveTimeoutId\);/);
 
 for (const match of customersPage.matchAll(/<button\b[\s\S]*?>/g)) {
   assert.match(match[0], /class="[^"]*\bbtn\b[^"]*"/);

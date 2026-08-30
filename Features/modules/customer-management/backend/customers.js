@@ -154,6 +154,8 @@ const PAYMENT_CONFIRMATION_QUEUE_TABLE = 'payment_confirmation_queue';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ARCHIVE_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CUSTOMER_CREATE_MAX_RETRIES = 5;
+const CUSTOMER_PPPOE_OPERATION_TIMEOUT_MS = 8000;
+const CUSTOMER_PPPOE_CLOSE_TIMEOUT_MS = 1500;
 const CUSTOMER_FIELD_LIMITS = Object.freeze({
     firstName: 100,
     lastName: 100,
@@ -174,6 +176,20 @@ let archiveCleanupInterval = null;
 let customerImportXlsxModule = null;
 let customerCreateMutationQueue = Promise.resolve();
 let accountNumberSequenceMutationQueue = Promise.resolve();
+
+const withCustomerOperationTimeout = (operation, timeoutMs, message) => {
+    let timeoutId = null;
+    const timeout = new Promise((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+            const error = new Error(message || 'Customer operation timed out.');
+            error.code = 'CUSTOMER_OPERATION_TIMEOUT';
+            reject(error);
+        }, timeoutMs);
+        timeoutId.unref?.();
+    });
+    return Promise.race([Promise.resolve(operation), timeout])
+        .finally(() => clearTimeout(timeoutId));
+};
 
 const normalizeCustomerStatus = (value, fallback = STATUS_ACTIVE) => {
     const raw = String(value || '').trim().toLowerCase();
@@ -1201,7 +1217,11 @@ const syncCustomerPppoeProfileForPlan = async ({
         client = connection.client;
         const api = connection.api;
         const secretMenu = api.menu('/ppp secret');
-        const secrets = await secretMenu.get().catch(() => []);
+        const secrets = await withCustomerOperationTimeout(
+            secretMenu.get().catch(() => []),
+            CUSTOMER_PPPOE_OPERATION_TIMEOUT_MS,
+            `Reading MikroTik PPPoE account "${username}" timed out.`
+        );
         const matchedSecret = findRouterSecretByIdentity(secrets, { secretId, username });
         if (!matchedSecret) {
             return {
@@ -1216,16 +1236,20 @@ const syncCustomerPppoeProfileForPlan = async ({
         const shouldEnableActiveSecret = customerStatus === STATUS_ACTIVE
             && String(matchedSecret?.disabled || '').trim().toLowerCase() === 'true';
         if (currentProfile !== desiredProfile || shouldEnableActiveSecret) {
-            await updateRouterSecretProfile(secretMenu, {
-                username,
-                secretId: nextSecretId,
-                profile: desiredProfile,
-                disabled: customerStatus === STATUS_ACTIVE ? false : undefined,
-                branchId,
-                routerId: String(resolvedRouter?.id || resolvedRouterId || '').trim(),
-                source,
-                reason
-            });
+            await withCustomerOperationTimeout(
+                updateRouterSecretProfile(secretMenu, {
+                    username,
+                    secretId: nextSecretId,
+                    profile: desiredProfile,
+                    disabled: customerStatus === STATUS_ACTIVE ? false : undefined,
+                    branchId,
+                    routerId: String(resolvedRouter?.id || resolvedRouterId || '').trim(),
+                    source,
+                    reason
+                }),
+                CUSTOMER_PPPOE_OPERATION_TIMEOUT_MS,
+                `Updating MikroTik PPPoE account "${username}" timed out.`
+            );
         }
 
         if (matchedEntry) {
@@ -1262,7 +1286,11 @@ const syncCustomerPppoeProfileForPlan = async ({
         };
     } finally {
         if (typeof client?.close === 'function') {
-            await client.close().catch(() => {});
+            await withCustomerOperationTimeout(
+                client.close().catch(() => {}),
+                CUSTOMER_PPPOE_CLOSE_TIMEOUT_MS,
+                'Closing the MikroTik connection timed out.'
+            ).catch(() => {});
         }
     }
 };
@@ -6524,9 +6552,22 @@ const updateCustomerRecordUnlocked = async (
         throw error;
     }
 
+    const existingPlanProfile = String(existing?.pppoeProfile || '').trim();
+    const existingRouterId = resolveCustomerRouterId(existing);
+    const customerPppoeSyncChanged = Boolean(
+        normalizePlanId(activePlanId) !== normalizePlanId(existing?.planId)
+        || normalizePlanName(activePlanName) !== normalizePlanName(existing?.planName)
+        || normalizePlanCategory(activePlanCategory) !== normalizePlanCategory(existing?.planCategory)
+        || normalizePppoeRouterId(nextRouterId) !== normalizePppoeRouterId(existingRouterId)
+        || normalizeCustomerStatus(customers[index]?.status, existingStatusState.status)
+            !== normalizeCustomerStatus(existing?.status, existingStatusState.status)
+        || (existingPlanProfile && String(nextPlanProfile || '').trim() !== existingPlanProfile)
+    );
+
     if (
         refreshSource !== 'mikrotik-pppoe-save'
         && hasIncomingPlanSelection
+        && customerPppoeSyncChanged
         && !shouldQueuePrepaidPlanChange
         && nextPlanProfile
         && String(customers[index]?.pppoeUsername || '').trim()

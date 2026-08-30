@@ -566,6 +566,28 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
   assert.match(writeCustomerSource, /INSERT INTO customers/);
 });
 
+test('customer edits bound MikroTik waits and skip unchanged PPPoE synchronization', () => {
+  const backendSource = fs.readFileSync(
+    path.resolve(__dirname, '../backend/customers.js'),
+    'utf8'
+  );
+  const updateStart = backendSource.indexOf('const updateCustomerRecordUnlocked = async');
+  const updateEnd = backendSource.indexOf('const assertCustomerDeletionHasNoClosedAccountHistory', updateStart);
+  const updateSource = backendSource.slice(updateStart, updateEnd);
+
+  assert.ok(updateStart >= 0 && updateEnd > updateStart);
+  assert.match(backendSource, /const CUSTOMER_PPPOE_OPERATION_TIMEOUT_MS = 8000;/);
+  assert.match(backendSource, /const CUSTOMER_PPPOE_CLOSE_TIMEOUT_MS = 1500;/);
+  assert.match(backendSource, /const withCustomerOperationTimeout =/);
+  assert.match(backendSource, /secretMenu\.get\(\)\.catch\(\(\) => \[\]\)[\s\S]*CUSTOMER_PPPOE_OPERATION_TIMEOUT_MS/);
+  assert.match(backendSource, /updateRouterSecretProfile\(secretMenu,[\s\S]*CUSTOMER_PPPOE_OPERATION_TIMEOUT_MS/);
+  assert.match(backendSource, /client\.close\(\)\.catch\(\(\) => \{\}\)[\s\S]*CUSTOMER_PPPOE_CLOSE_TIMEOUT_MS/);
+  assert.match(updateSource, /const customerPppoeSyncChanged = Boolean\(/);
+  assert.match(updateSource, /normalizePlanId\(activePlanId\) !== normalizePlanId\(existing\?\.planId\)/);
+  assert.match(updateSource, /normalizePppoeRouterId\(nextRouterId\) !== normalizePppoeRouterId\(existingRouterId\)/);
+  assert.match(updateSource, /&& customerPppoeSyncChanged\s*&& !shouldQueuePrepaidPlanChange/);
+});
+
 test('Add Customer uses a Tabler horizontal wizard, inline errors, network review, and one atomic create request', () => {
   const page = fs.readFileSync(
     path.resolve(__dirname, '../web/customers.html'),

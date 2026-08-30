@@ -316,8 +316,8 @@ async function run() {
   assert.match(archivePage, /Records are preserved permanently/);
   assert.match(archivePage, /id="reopenAccountModal"/);
   assert.match(archivePage, /id="reopenAccountBalanceLabel"/);
-  assert.match(archivePage, /customer-archive\.js\?v=2\.3/);
-  assert.match(archivePage, /Collect first — keep service stopped/);
+  assert.match(archivePage, /customer-archive\.js\?v=2\.6/);
+  assert.match(archivePage, /Collect first &mdash; keep service stopped/);
   assert.match(customersPage, /id="closeAccountFinalBalance"/);
   assert.match(customersPage, /id="closeAccountFinalBalanceHint"/);
   assert.match(customersPage, /Final Closed Customer Balance/);
@@ -410,7 +410,7 @@ async function run() {
   const closedAccountHtml = await renderClosedAccountFixture(archiveFixture);
   assert.match(
     closedAccountHtml,
-    /archive-date">[^<]*2,398\.00/,
+    /<p class="fw-semibold mb-0">[^<]*2,398\.00/,
     'Final Balance must render the saved Admin closure snapshot'
   );
   assert.match(
@@ -429,7 +429,7 @@ async function run() {
   });
   assert.match(
     advanceCreditHtml,
-    /archive-date">[^<]*2,398\.00/,
+    /<p class="fw-semibold mb-0">[^<]*2,398\.00/,
     'a later advance credit must not replace the closure Final Balance'
   );
   assert.match(

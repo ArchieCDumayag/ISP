@@ -7,279 +7,132 @@
     <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
-    <link rel="stylesheet" href="css/customer-draft-queue.css?v=2.7">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
+    <link rel="stylesheet" href="css/customer-draft-queue.css?v=3.0">
     <script src="theme-init.js?v=2.6"></script>
 </head>
-<body>
-    <div class="app-shell">
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
         <div id="sidebar"></div>
-        <div class="app-main">
+        <div class="app-main page-wrapper">
             <div id="topbar"></div>
-            <main class="page draft-queue-page">
-                <section class="page-header">
-                    <div class="page-title">
-                        <p class="eyebrow">Customer Intake</p>
-                        <h1>Customer Draft Queue</h1>
-                        <p class="subtitle">Finalize technician-created customers before their information is considered complete.</p>
-                    </div>
-                </section>
-
-                <section class="section-frame draft-queue-panel">
-                    <div class="draft-toolbar">
-                        <label class="draft-search-field" for="draftQueueSearch">
-                            <i class="ti ti-search" aria-hidden="true"></i>
-                            <input
-                                type="search"
-                                id="draftQueueSearch"
-                                placeholder="Search by account, name, plan, contact, or address"
-                                autocomplete="off"
-                                aria-label="Search customer drafts"
-                            >
-                        </label>
-                        <div class="page-size-control">
-                            <label for="draftQueuePageSize">Show</label>
-                            <div class="select-wrapper">
-                                <select id="draftQueuePageSize" name="draftQueuePageSize">
-                                    <option value="10" selected>10</option>
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
+            <main class="page-body draft-queue-page">
+                <div class="container-xl py-3">
+                    <div class="page-header d-print-none mb-3">
+                        <div class="row g-2 align-items-center w-100">
+                            <div class="col">
+                                <div class="page-pretitle">Customer Intake</div>
+                                <h1 class="page-title">Customer Draft Queue</h1>
+                                <div class="text-secondary mt-1">Finalize technician-created customers before their information is considered complete.</div>
                             </div>
                         </div>
-                        <div class="draft-bulk-toolbar" id="draftQueueBulkToolbar" hidden>
-                            <label class="draft-bulk-toolbar__select" for="draftQueueSelectPage">
-                                <input type="checkbox" id="draftQueueSelectPage">
-                                <span>Select page</span>
-                            </label>
-                            <span class="draft-bulk-toolbar__count" id="draftQueueSelectedCount">0 selected</span>
-                            <button type="button" class="ghost-btn ghost-btn--danger draft-bulk-toolbar__delete" id="draftQueueDeleteSelected" disabled>
-                                <i class="ti ti-trash" aria-hidden="true"></i> Delete selected
-                            </button>
-                        </div>
                     </div>
 
-                    <div class="table-wrapper draft-table-wrap">
-                        <table class="draft-table">
-                            <colgroup>
-                                <col class="col-select">
-                                <col class="col-account">
-                                <col class="col-subscriber">
-                                <col class="col-plan">
-                                <col class="col-billing">
-                                <col class="col-contact">
-                                <col class="col-address">
-                                <col class="col-remarks">
-                                <col class="col-actions">
-                            </colgroup>
-                            <thead>
-                                <tr>
-                                    <th class="select-col">Select</th>
-                                    <th class="account-col">Account #</th>
-                                    <th>Subscriber</th>
-                                    <th class="plan-col">Plan</th>
-                                    <th>Billing Cycle</th>
-                                    <th>Contact</th>
-                                    <th>Address</th>
-                                    <th>Remarks</th>
-                                    <th class="actions-col">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="draftQueueTableBody">
-                                <tr>
-                                    <td colspan="9" class="draft-empty">Loading drafts...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="table-footer" id="draftQueueFooter">
-                        <div class="footer-summary" id="draftQueueSummary">Showing 0 of 0 customers</div>
-                        <div class="footer-controls">
-                            <button type="button" class="footer-btn" id="draftQueuePrev" aria-label="Previous page" disabled>&#8249;</button>
-                            <span class="footer-page-info" id="draftQueuePageInfo">Page 1 of 1</span>
-                            <button type="button" class="footer-btn" id="draftQueueNext" aria-label="Next page" disabled>&#8250;</button>
+                    <div class="card draft-queue-panel">
+                        <div class="card-body p-3">
+                            <div class="row g-2 align-items-end draft-toolbar">
+                                <div class="col-12 col-lg">
+                                    <label class="form-label" for="draftQueueSearch">Search drafts</label>
+                                    <div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span><input class="form-control form-control-sm" type="search" id="draftQueueSearch" placeholder="Search by account, name, plan, contact, or address" autocomplete="off" aria-label="Search customer drafts"></div>
+                                </div>
+                                <div class="col-auto">
+                                    <label class="form-label" for="draftQueuePageSize">Show</label>
+                                    <select class="form-select form-select-sm" id="draftQueuePageSize" name="draftQueuePageSize"><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select>
+                                </div>
+                            </div>
+                            <div class="alert alert-warning d-flex flex-wrap align-items-center gap-3 py-2 px-3 mt-3 mb-0 draft-bulk-toolbar" id="draftQueueBulkToolbar" role="status" hidden>
+                                <label class="form-check mb-0" for="draftQueueSelectPage"><input class="form-check-input" type="checkbox" id="draftQueueSelectPage"><span class="form-check-label">Select page</span></label>
+                                <span class="small fw-semibold" id="draftQueueSelectedCount">0 selected</span>
+                                <button type="button" class="btn btn-outline-danger btn-sm ms-auto" id="draftQueueDeleteSelected" disabled><i class="ti ti-trash" aria-hidden="true"></i> Delete selected</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive draft-table-wrap">
+                            <table class="table table-vcenter table-hover card-table mb-0 draft-table">
+                                <colgroup><col class="col-select"><col class="col-account"><col class="col-subscriber"><col class="col-plan"><col class="col-billing"><col class="col-contact"><col class="col-address"><col class="col-remarks"><col class="col-actions"></colgroup>
+                                <thead><tr><th class="select-col">Select</th><th class="account-col">Account #</th><th>Subscriber</th><th class="plan-col">Plan</th><th>Billing Cycle</th><th>Contact</th><th>Address</th><th>Remarks</th><th class="actions-col">Actions</th></tr></thead>
+                                <tbody id="draftQueueTableBody"><tr><td colspan="9" class="draft-empty text-secondary text-center">Loading drafts...</td></tr></tbody>
+                            </table>
+                        </div>
+                        <div class="card-footer d-flex flex-wrap align-items-center justify-content-between gap-2" id="draftQueueFooter">
+                            <div class="text-secondary small" id="draftQueueSummary">Showing 0 of 0 customers</div>
+                            <div class="d-flex align-items-center gap-2"><button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="draftQueuePrev" aria-label="Previous page" disabled><i class="ti ti-chevron-left" aria-hidden="true"></i></button><span class="text-secondary small" id="draftQueuePageInfo">Page 1 of 1</span><button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="draftQueueNext" aria-label="Next page" disabled><i class="ti ti-chevron-right" aria-hidden="true"></i></button></div>
                         </div>
                     </div>
-                </section>
-
+                </div>
             </main>
         </div>
     </div>
 
-    <div class="modal draft-modal" id="draftReviewModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="draftReviewTitle">
-        <div class="modal-content draft-modal__content">
-            <div class="modal-header">
-                <div>
-                    <h2 id="draftReviewTitle">Edit customer</h2>
-                    <p class="modal-subtitle" id="draftReviewMeta">Generate a customer profile, assign a plan, and set the first billing cycle.</p>
-                </div>
-                <button type="button" class="btn btn-icon btn-outline-secondary close-modal" id="draftReviewCloseBtn" aria-label="Close">
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                </button>
+    <div class="modal modal-blur fade draft-modal" id="draftReviewModal" tabindex="-1" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="draftReviewTitle">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <form id="draftReviewForm" class="draft-review-form" novalidate>
+                    <div class="modal-header">
+                        <div><h2 class="modal-title" id="draftReviewTitle">Edit customer</h2><div class="text-secondary small mt-1" id="draftReviewMeta">Generate a customer profile, assign a plan, and set the first billing cycle.</div></div>
+                        <button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="draftReviewCloseBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+                    </div>
+
+                    <div class="modal-body bg-body-tertiary">
+                        <div class="card mb-3">
+                            <div class="card-header py-2"><div><h3 class="card-title mb-0">Account &amp; plan</h3><div class="text-secondary small">Confirm the customer identity, contact, service state, and selected plan.</div></div></div>
+                            <div class="card-body"><div class="row g-3">
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewAccountNumber">Account Number</label><input class="form-control form-control-sm" type="text" id="draftReviewAccountNumber" name="accountNumber" readonly maxlength="20"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewPlanCategory">Plan Type</label><select class="form-select form-select-sm" name="planCategory" id="draftReviewPlanCategory"><option value="postpaid">Postpaid</option><option value="prepaid">Prepaid</option></select></div>
+                                <div class="col-md-6 col-lg-4" id="draftReviewPrepaidExpirationField" hidden><label class="form-label" for="draftReviewPrepaidExpirationAt">Expiration Date &amp; Time</label><input class="form-control form-control-sm" type="datetime-local" id="draftReviewPrepaidExpirationAt" name="prepaidExpirationAt"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewPlanSelect">Plan</label><select class="form-select form-select-sm" name="planName" id="draftReviewPlanSelect" required><option value="">Select plan</option></select></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewFirstName">First Name</label><input class="form-control form-control-sm" type="text" id="draftReviewFirstName" name="firstName" maxlength="100" required></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewLastName">Last Name</label><input class="form-control form-control-sm" type="text" id="draftReviewLastName" name="lastName" maxlength="100" required></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewStatus">Status</label><select class="form-select form-select-sm" id="draftReviewStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="disabled">Disabled</option></select></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewContactNumber">Mobile Number</label><input class="form-control form-control-sm" type="tel" id="draftReviewContactNumber" name="contactNumber" maxlength="16" inputmode="tel"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewEmail">Email</label><input class="form-control form-control-sm" type="email" id="draftReviewEmail" name="email" maxlength="150"></div>
+                            </div><input type="hidden" name="planAmount" id="draftReviewPlanAmount"><div class="alert alert-warning py-2 mt-3 mb-0" id="draftReviewStatusMeta" hidden></div></div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header py-2"><div><h3 class="card-title mb-0">Portal credentials</h3><div class="text-secondary small">Username defaults to the customer name and password defaults to the account number.</div></div></div>
+                            <div class="card-body"><div class="row g-3">
+                                <div class="col-md-6"><label class="form-label" for="draftReviewLoginUsername">Login Username</label><input class="form-control form-control-sm" type="text" id="draftReviewLoginUsername" name="loginUsername" autocomplete="off"></div>
+                                <div class="col-md-6"><label class="form-label" for="draftReviewLoginPassword">Login Password</label><div class="input-group input-group-sm"><input class="form-control form-control-sm" type="password" id="draftReviewLoginPassword" name="loginPassword" autocomplete="off"><button type="button" class="btn btn-icon btn-outline-secondary btn-sm" id="draftReviewLoginPasswordToggleBtn" aria-label="Show password" title="Show password"><i class="ti ti-eye" aria-hidden="true"></i></button></div></div>
+                            </div></div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header py-2"><h3 class="card-title mb-0">Service address</h3></div>
+                            <div class="card-body"><div class="row g-3">
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewStreet">Street/House No.</label><input class="form-control form-control-sm" type="text" id="draftReviewStreet" name="street" maxlength="150"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewBarangay">Barangay</label><input class="form-control form-control-sm" type="text" id="draftReviewBarangay" name="barangay" maxlength="150"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMunicipality">Municipality/City</label><input class="form-control form-control-sm" type="text" id="draftReviewMunicipality" name="municipality" maxlength="150"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewProvince">Province</label><input class="form-control form-control-sm" type="text" id="draftReviewProvince" name="province" maxlength="150"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewArea">Area / Cluster</label><select class="form-select form-select-sm" id="draftReviewArea" name="area"><option value="">Select area</option></select></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMapPin">Coordinates</label><input class="form-control form-control-sm" type="text" id="draftReviewMapPin" name="mapPin" maxlength="120" placeholder="e.g. 14.599500, 120.984200"></div>
+                            </div></div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header py-2"><h3 class="card-title mb-0">Billing schedule</h3></div>
+                            <div class="card-body"><div class="row g-3">
+                                <div class="col-md-6 col-lg-4" id="draftReviewActivationDateField"><label class="form-label" for="draftReviewActivationDate">Activation Date</label><input class="form-control form-control-sm" type="date" id="draftReviewActivationDate" name="activationDate"></div>
+                                <div class="col-md-6 col-lg-4" id="draftReviewBillDateField"><label class="form-label" for="draftReviewBillDate">Next Bill Date</label><input class="form-control form-control-sm" type="date" id="draftReviewBillDate" name="billDate"></div>
+                                <div class="col-md-6 col-lg-4" id="draftReviewDueOffsetField"><label class="form-label" for="draftReviewDueOffset">Due after (days)</label><input class="form-control form-control-sm" type="number" id="draftReviewDueOffset" name="dueOffset" min="0" step="1"><div class="form-hint" id="draftReviewDueOffsetHelp"></div></div>
+                                <div class="col-md-6 col-lg-4" id="draftReviewDueDateField"><label class="form-label" for="draftReviewDueDateDisplay">Computed Due Date</label><input class="form-control form-control-sm" type="text" id="draftReviewDueDateDisplay" readonly><input type="hidden" id="draftReviewDueDate" name="dueDate"></div>
+                                <div class="col-md-6 col-lg-4" id="draftReviewCreditLimitField"><label class="form-label" for="draftReviewCreditLimit">Credit Limit (amount)</label><input class="form-control form-control-sm" type="number" id="draftReviewCreditLimit" name="creditLimit" min="0" step="1"></div>
+                            </div></div>
+                        </div>
+
+                        <div class="alert alert-info" id="draftReviewOnboardingSummary" role="status" hidden></div>
+                        <div><label class="form-label" for="draftReviewRemarks">Remarks</label><textarea class="form-control form-control-sm" id="draftReviewRemarks" name="remarks" rows="4" maxlength="2000"></textarea></div>
+                    </div>
+
+                    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary btn-sm" id="draftReviewCancelBtn">Close</button><button type="submit" class="btn btn-primary btn-sm" id="draftApproveBtn"><i class="ti ti-check" aria-hidden="true"></i> Finalize Customer</button></div>
+                </form>
             </div>
-            <form id="draftReviewForm" class="customer-form draft-review-form" novalidate>
-                <div class="form-card form-card--primary">
-                    <div class="form-card__header">
-                        <p class="form-card__eyebrow">Account &amp; plan</p>
-                        <p class="form-card__subhead">Group the basic identifiers for this customer.</p>
-                    </div>
-                    <div class="form-card__grid">
-                        <div class="form-field">
-                            <label for="draftReviewAccountNumber">Account Number</label>
-                            <input type="text" id="draftReviewAccountNumber" name="accountNumber" readonly maxlength="20">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewPlanCategory">Plan Type</label>
-                            <select name="planCategory" id="draftReviewPlanCategory">
-                                <option value="postpaid">Postpaid</option>
-                                <option value="prepaid">Prepaid</option>
-                            </select>
-                        </div>
-                        <div class="form-field" id="draftReviewPrepaidExpirationField" style="display:none;">
-                            <label for="draftReviewPrepaidExpirationAt">Expiration Date &amp; Time</label>
-                            <input type="datetime-local" id="draftReviewPrepaidExpirationAt" name="prepaidExpirationAt">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewPlanSelect">Plan</label>
-                            <select name="planName" id="draftReviewPlanSelect" required>
-                                <option value="">Select plan</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewFirstName">First Name</label>
-                            <input type="text" id="draftReviewFirstName" name="firstName" maxlength="100" required>
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewLastName">Last Name</label>
-                            <input type="text" id="draftReviewLastName" name="lastName" maxlength="100" required>
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewStatus">Status</label>
-                            <select id="draftReviewStatus" name="status">
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                                <option value="disabled">Disabled</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewContactNumber">Mobile Number</label>
-                            <input type="tel" id="draftReviewContactNumber" name="contactNumber" maxlength="16" inputmode="tel">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewEmail">Email</label>
-                            <input type="email" id="draftReviewEmail" name="email" maxlength="150">
-                        </div>
-                    </div>
-                    <input type="hidden" name="planAmount" id="draftReviewPlanAmount">
-                    <p class="form-card__note" id="draftReviewStatusMeta" hidden></p>
-                </div>
-
-                <div class="form-card form-card--soft">
-                    <div class="form-card__header">
-                        <p class="form-card__eyebrow">Portal credentials</p>
-                        <p class="form-card__subhead">Auto-fills username from the customer full name and password from the account number.</p>
-                    </div>
-                    <div class="form-card__grid">
-                        <div class="form-field">
-                            <label for="draftReviewLoginUsername">Login Username</label>
-                            <input type="text" id="draftReviewLoginUsername" name="loginUsername" autocomplete="off">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewLoginPassword">Login Password</label>
-                            <div class="secure-input-row">
-                                <input type="password" id="draftReviewLoginPassword" name="loginPassword" autocomplete="off">
-                                <button type="button" class="ghost-btn ghost-btn--icon secure-input-toggle" id="draftReviewLoginPasswordToggleBtn" aria-label="Show password" title="Show password">
-                                    <i class="ti ti-eye" aria-hidden="true"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <fieldset class="form-section form-section--address">
-                    <legend>Service address</legend>
-                    <div class="form-grid">
-                        <div class="form-field">
-                            <label for="draftReviewStreet">Street/House No.</label>
-                            <input type="text" id="draftReviewStreet" name="street" maxlength="150">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewBarangay">Barangay</label>
-                            <input type="text" id="draftReviewBarangay" name="barangay" maxlength="150">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewMunicipality">Municipality/City</label>
-                            <input type="text" id="draftReviewMunicipality" name="municipality" maxlength="150">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewProvince">Province</label>
-                            <input type="text" id="draftReviewProvince" name="province" maxlength="150">
-                        </div>
-                        <div class="form-field">
-                            <label for="draftReviewArea">Area / Cluster</label>
-                            <select id="draftReviewArea" name="area">
-                                <option value="">Select area</option>
-                            </select>
-                        </div>
-                        <div class="form-field map-pin-field">
-                            <label for="draftReviewMapPin">Coordinates</label>
-                            <div class="map-pin-card">
-                                <div class="map-pin-input-row">
-                                    <input type="text" id="draftReviewMapPin" name="mapPin" maxlength="120" placeholder="e.g. 14.599500, 120.984200">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </fieldset>
-
-                <fieldset class="form-section form-section--billing">
-                    <div class="form-grid">
-                        <div class="form-field" id="draftReviewActivationDateField">
-                            <label for="draftReviewActivationDate">Activation Date</label>
-                            <input type="date" id="draftReviewActivationDate" name="activationDate">
-                        </div>
-                        <div class="form-field" id="draftReviewBillDateField">
-                            <label for="draftReviewBillDate">Next Bill Date</label>
-                            <input type="date" id="draftReviewBillDate" name="billDate">
-                        </div>
-                        <div class="form-field" id="draftReviewDueOffsetField">
-                            <label for="draftReviewDueOffset">Due after (days)</label>
-                            <input type="number" id="draftReviewDueOffset" name="dueOffset" min="0" step="1">
-                            <small class="muted" id="draftReviewDueOffsetHelp"></small>
-                        </div>
-                        <div class="form-field" id="draftReviewDueDateField">
-                            <label for="draftReviewDueDateDisplay">Computed Due Date</label>
-                            <input type="text" id="draftReviewDueDateDisplay" readonly>
-                            <input type="hidden" id="draftReviewDueDate" name="dueDate">
-                        </div>
-                        <div class="form-field" id="draftReviewCreditLimitField">
-                            <label for="draftReviewCreditLimit">Credit Limit (amount)</label>
-                            <input type="number" id="draftReviewCreditLimit" name="creditLimit" min="0" step="1">
-                        </div>
-                    </div>
-                </fieldset>
-
-                <div class="alert alert-info" id="draftReviewOnboardingSummary" role="status" hidden></div>
-
-                <div class="form-field">
-                    <label for="draftReviewRemarks">Remarks</label>
-                    <textarea id="draftReviewRemarks" name="remarks" rows="4" maxlength="2000"></textarea>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="ghost-btn" id="draftReviewCancelBtn">Close</button>
-                    <button type="submit" class="primary-btn" id="draftApproveBtn">
-                        <i class="ti ti-check" aria-hidden="true"></i> Finalize Customer
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 
     <script src="layout.js?v=3.9"></script>
     <script src="js/confirm-dialog.js?v=1.1"></script>
-    <script src="js/customer-draft-queue.js?v=3.1"></script>
+    <script src="js/customer-draft-queue.js?v=3.2"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

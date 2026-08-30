@@ -225,12 +225,12 @@
     const getCustomerStatusUi = (value) => {
         const normalized = normalizeCustomerStatusValue(value, 'active');
         if (normalized === 'active') {
-            return { className: 'success', label: 'Active' };
+            return { className: 'bg-success-lt text-success', label: 'Active' };
         }
         if (normalized === 'disabled') {
-            return { className: 'warning', label: 'Disabled' };
+            return { className: 'bg-warning-lt text-warning', label: 'Disabled' };
         }
-        return { className: 'inactive', label: 'Inactive' };
+        return { className: 'bg-secondary-lt text-secondary', label: 'Inactive' };
     };
 
     const getDraftAccountNumber = (item) =>
@@ -350,8 +350,8 @@
         selectedCountLabel.textContent = `${selectedCount} selected`;
         deleteSelectedBtn.disabled = selectedCount === 0 || bulkDeleteInProgress;
         deleteSelectedBtn.innerHTML = bulkDeleteInProgress
-            ? '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...'
-            : '<i class="fa-solid fa-trash-can"></i> Delete selected';
+            ? '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Deleting...'
+            : '<i class="ti ti-trash" aria-hidden="true"></i> Delete selected';
     };
 
     const renderFooter = (total, pageCount, startIndex, pageItemsLength) => {
@@ -533,7 +533,7 @@
     const applyReviewPlanCategoryUI = (category) => {
         const normalized = normalizePlanCategory(category);
         if (reviewPlanCategory) reviewPlanCategory.value = normalized;
-        if (reviewPrepaidExpirationField) reviewPrepaidExpirationField.style.display = 'none';
+        if (reviewPrepaidExpirationField) reviewPrepaidExpirationField.hidden = true;
         if (reviewActivationDateField) reviewActivationDateField.style.display = '';
         if (reviewBillDateField) reviewBillDateField.style.display = '';
         if (reviewDueOffsetField) reviewDueOffsetField.style.display = '';
@@ -561,8 +561,8 @@
             reviewLoginPasswordToggleBtn.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
             reviewLoginPasswordToggleBtn.setAttribute('title', visible ? 'Hide password' : 'Show password');
             reviewLoginPasswordToggleBtn.innerHTML = visible
-                ? '<i class="fa-solid fa-eye-slash"></i>'
-                : '<i class="fa-solid fa-eye"></i>';
+                ? '<i class="ti ti-eye-off" aria-hidden="true"></i>'
+                : '<i class="ti ti-eye" aria-hidden="true"></i>';
         }
     };
 
@@ -608,16 +608,16 @@
         const accountNumber = getDraftAccountNumber(item);
         return `
             <span class="account-tag-wrap">
-                <span class="account-tag">${escapeHtml(accountNumber || '---------')}</span>
+                <span class="badge bg-blue-lt text-blue font-monospace">${escapeHtml(accountNumber || '---------')}</span>
                 ${accountNumber ? `
                     <button
                         type="button"
-                        class="copy-btn account-copy-btn"
+                        class="btn btn-icon btn-ghost-secondary btn-sm account-copy-btn"
                         data-copy-account-number="${escapeHtml(accountNumber)}"
                         aria-label="Copy account number ${escapeHtml(accountNumber)}"
                         title="Copy account number"
                     >
-                        <i class="fa-regular fa-copy"></i>
+                        <i class="ti ti-copy" aria-hidden="true"></i>
                     </button>
                 ` : ''}
             </span>
@@ -656,7 +656,9 @@
         if (priceSuffix) metaParts.push(priceSuffix);
         return {
             name: planName,
-            pillClass: normalizedCategory === 'prepaid' ? 'plan-pill premium' : 'plan-pill neutral',
+            pillClass: normalizedCategory === 'prepaid'
+                ? 'badge bg-purple-lt text-purple'
+                : 'badge bg-green-lt text-green',
             meta: metaParts.join(' · ') || 'Plan details unavailable'
         };
     };
@@ -675,8 +677,8 @@
 
         if (!pageItems.length) {
             tableBody.innerHTML = state.searchTerm
-                ? '<tr><td colspan="9" class="draft-empty">No pending drafts match your search.</td></tr>'
-                : '<tr><td colspan="9" class="draft-empty">No pending drafts found.</td></tr>';
+                ? '<tr><td colspan="9" class="draft-empty text-secondary text-center">No pending drafts match your search.</td></tr>'
+                : '<tr><td colspan="9" class="draft-empty text-secondary text-center">No pending drafts found.</td></tr>';
             return;
         }
 
@@ -695,13 +697,13 @@
             const billingCycle = getBillingCycleDetails(draft);
             const plan = getPlanPresentation(item, draft);
             const actionLabel = item.status === 'pending' ? 'Finalize customer' : 'View draft';
-            const actionIcon = item.status === 'pending' ? 'fa-pen-to-square' : 'fa-eye';
+            const actionIcon = item.status === 'pending' ? 'ti-pencil' : 'ti-eye';
             const isSelected = state.selectedIds.has(itemId);
             return `
                 <tr data-draft-id="${escapeHtml(itemId)}">
                     <td class="select-col">
                         <label class="draft-select-cell" aria-label="Select customer draft">
-                            <input type="checkbox" data-draft-select="${escapeHtml(itemId)}" ${isSelected ? 'checked' : ''}>
+                            <input class="form-check-input" type="checkbox" data-draft-select="${escapeHtml(itemId)}" ${isSelected ? 'checked' : ''}>
                         </label>
                     </td>
                     <td class="account-col">
@@ -709,31 +711,31 @@
                     </td>
                     <td>
                         <div class="subscriber">
-                            <span class="avatar">${escapeHtml(getInitials(displayName))}</span>
+                            <span class="avatar avatar-sm bg-primary-lt text-primary">${escapeHtml(getInitials(displayName))}</span>
                             <div>
                                 <p class="subscriber-name">${escapeHtml(displayName)}</p>
                                 <p class="subscriber-meta">
                                     ${escapeHtml(subscriberMetaParts.join(' · ') || 'Draft submission')} ·
                                     <span
-                                        class="status-pill status-pill--indicator ${escapeHtml(statusUi.className)}"
+                                        class="badge ${escapeHtml(statusUi.className)}"
                                         title="${escapeHtml(statusUi.label)}"
                                         aria-label="${escapeHtml(statusUi.label)}"
-                                    ></span>
+                                    >${escapeHtml(statusUi.label)}</span>
                                 </p>
                             </div>
                         </div>
                     </td>
                     <td class="plan-col">
-                        <div class="${escapeHtml(plan.pillClass)}">${escapeHtml(plan.name)}</div>
+                        <span class="${escapeHtml(plan.pillClass)}">${escapeHtml(plan.name)}</span>
                         <p class="plan-meta">${escapeHtml(plan.meta)}</p>
                     </td>
                     <td>
                         <p class="cycle">${escapeHtml(billingCycle.display)}</p>
-                        <p class="cycle muted">${escapeHtml(billingCycle.meta)}</p>
+                        <p class="cycle">${escapeHtml(billingCycle.meta)}</p>
                     </td>
                     <td>
-                        <p class="contact-line"><i class="fa-solid fa-mobile-screen"></i> ${escapeHtml(contactMobile)}</p>
-                        <p class="contact-line"><i class="fa-solid fa-envelope"></i> ${escapeHtml(contactEmail)}</p>
+                        <p class="contact-line"><i class="ti ti-device-mobile" aria-hidden="true"></i> ${escapeHtml(contactMobile)}</p>
+                        <p class="contact-line"><i class="ti ti-mail" aria-hidden="true"></i> ${escapeHtml(contactEmail)}</p>
                     </td>
                     <td>
                         <p class="address">${escapeHtml(addressText || item.areaName || 'No address')}</p>
@@ -745,22 +747,22 @@
                         <div class="draft-row-actions row-actions">
                             <button
                                 type="button"
-                                class="ghost-icon"
+                                class="btn btn-icon btn-outline-primary btn-sm"
                                 data-draft-open="${escapeHtml(item.id)}"
                                 aria-label="${escapeHtml(actionLabel)}"
                                 title="${escapeHtml(actionLabel)}"
                             >
-                                <i class="fa-solid ${escapeHtml(actionIcon)}"></i>
+                                <i class="ti ${escapeHtml(actionIcon)}" aria-hidden="true"></i>
                             </button>
                             ${item.status === 'pending' ? `
                                 <button
                                     type="button"
-                                    class="ghost-icon ghost-icon--danger"
+                                    class="btn btn-icon btn-outline-danger btn-sm"
                                     data-draft-delete="${escapeHtml(item.id)}"
                                     aria-label="Delete customer draft"
                                     title="Delete customer draft"
                                 >
-                                    <i class="fa-solid fa-trash"></i>
+                                    <i class="ti ti-trash" aria-hidden="true"></i>
                                 </button>
                             ` : ''}
                         </div>
@@ -958,7 +960,7 @@
         if (!confirmed) return;
 
         approveBtn.disabled = true;
-        approveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Finalizing...';
+        approveBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> Finalizing...';
         try {
             const payload = readReviewFormPayload();
             if (!String(payload.planId || '').trim()) {
@@ -977,7 +979,7 @@
             notify(error.message || 'Unable to finalize customer.', 'error');
         } finally {
             approveBtn.disabled = false;
-            approveBtn.innerHTML = '<i class="fa-solid fa-check"></i> Finalize Customer';
+            approveBtn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i> Finalize Customer';
         }
     };
 

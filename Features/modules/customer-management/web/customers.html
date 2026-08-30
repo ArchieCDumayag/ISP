@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.2">
     <link rel="stylesheet" href="css/account-view-shared.css?v=2.4">
-    <link rel="stylesheet" href="css/customers-tabler.css?v=1.2">
+    <link rel="stylesheet" href="css/customers-tabler.css?v=2.1">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -122,7 +122,7 @@
                                     <span class="filter-checklist__panel-count">0 selected</span>
                                 </div>
                                 <label class="filter-checklist__option filter-checklist__option--select-all" for="customerFilterAreaSelectAll">
-                                    <input type="checkbox" id="customerFilterAreaSelectAll">
+                                    <input class="form-check-input" type="checkbox" id="customerFilterAreaSelectAll">
                                     <span>Select all areas</span>
                                 </label>
                                 <div class="filter-checklist__options" id="customerFilterAreaOptions" role="group" aria-label="Customer filter areas"></div>
@@ -176,7 +176,7 @@
                         <col class="col-status">
                         <col class="col-actions">
                     </colgroup>
-                    <thead>
+                    <thead class="text-nowrap">
                         <tr>
                             <th class="select-col">
                                 <input class="form-check-input" type="checkbox" id="selectAllCustomers" aria-label="Select all customers on this page">
@@ -209,7 +209,7 @@
 </div>
 </div>
 
-    <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+    <div id="modalBackdrop" class="modal-backdrop fade d-none" aria-hidden="true"></div>
     <div id="closeAccountModal" class="modal modal-blur account-closure-modal" role="dialog" aria-modal="true" aria-labelledby="closeAccountModalTitle" aria-hidden="true" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" role="document">
             <div class="modal-content">
@@ -275,7 +275,8 @@
         </div>
     </div>
     <div id="customerModal" class="modal modal-blur customer-modal" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle" aria-hidden="true" tabindex="-1">
-        <div class="modal-content">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
             <div class="modal-header">
                 <div>
                     <h2 class="modal-title" id="customerModalTitle">Add customer</h2>
@@ -700,16 +701,18 @@
                     </div>
                 </div>
             </form>
+            </div>
         </div>
     </div>
 
-    <div id="portalSetupModal" class="modal customer-modal portal-setup-modal" role="dialog" aria-modal="true" aria-labelledby="portalSetupTitle" aria-hidden="true">
-        <div class="modal-content">
+    <div id="portalSetupModal" class="modal modal-blur customer-modal portal-setup-modal" role="dialog" aria-modal="true" aria-labelledby="portalSetupTitle" aria-hidden="true" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <p class="modal-eyebrow"><i class="ti ti-shield-lock" aria-hidden="true"></i> Customer created</p>
-                    <h2 id="portalSetupTitle">Save the portal setup details</h2>
-                    <p class="modal-subtitle">The temporary password is shown once and will not appear on the customer record later.</p>
+                    <p class="text-uppercase text-secondary small fw-bold mb-1"><i class="ti ti-shield-lock" aria-hidden="true"></i> Customer created</p>
+                    <h2 class="modal-title" id="portalSetupTitle">Save the portal setup details</h2>
+                    <p class="text-secondary small mb-0 mt-1">The temporary password is shown once and will not appear on the customer record later.</p>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closePortalSetupBtn" type="button" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
@@ -718,22 +721,22 @@
                     <i class="ti ti-alert-triangle" aria-hidden="true"></i>
                     <span>Copy these details now and ask the customer to change the temporary password after signing in.</span>
                 </div>
-                <dl class="portal-setup-details">
-                    <div>
-                        <dt>Final account number</dt>
-                        <dd><code data-portal-setup="accountNumber">--</code></dd>
+                <dl class="list-group list-group-flush border rounded mb-0 portal-setup-details">
+                    <div class="list-group-item">
+                        <dt class="text-uppercase text-secondary small">Final account number</dt>
+                        <dd class="mb-0 d-flex align-items-center justify-content-between gap-2 fw-semibold"><code class="text-reset user-select-all" data-portal-setup="accountNumber">--</code></dd>
                     </div>
-                    <div>
-                        <dt>Portal username</dt>
-                        <dd>
-                            <code data-portal-setup="username">--</code>
+                    <div class="list-group-item">
+                        <dt class="text-uppercase text-secondary small">Portal username</dt>
+                        <dd class="mb-0 d-flex align-items-center justify-content-between gap-2 fw-semibold">
+                            <code class="text-reset user-select-all" data-portal-setup="username">--</code>
                             <button class="btn btn-icon btn-outline-secondary btn-sm" type="button" data-copy-portal-setup="username" aria-label="Copy portal username" title="Copy portal username"><i class="ti ti-copy" aria-hidden="true"></i></button>
                         </dd>
                     </div>
-                    <div>
-                        <dt>Temporary password</dt>
-                        <dd>
-                            <code data-portal-setup="temporaryPassword">--</code>
+                    <div class="list-group-item">
+                        <dt class="text-uppercase text-secondary small">Temporary password</dt>
+                        <dd class="mb-0 d-flex align-items-center justify-content-between gap-2 fw-semibold">
+                            <code class="text-reset user-select-all" data-portal-setup="temporaryPassword">--</code>
                             <button class="btn btn-icon btn-outline-secondary btn-sm" type="button" data-copy-portal-setup="temporaryPassword" aria-label="Copy temporary password" title="Copy temporary password"><i class="ti ti-copy" aria-hidden="true"></i></button>
                         </dd>
                     </div>
@@ -743,23 +746,25 @@
                 <button class="btn btn-outline-primary btn-sm" id="copyPortalSetupBtn" type="button"><i class="ti ti-copy" aria-hidden="true"></i> Copy all details</button>
                 <button class="btn btn-primary btn-sm" id="donePortalSetupBtn" type="button">Done</button>
             </div>
+            </div>
         </div>
     </div>
 
     <div id="mapPinPickerModal" class="modal customer-modal map-picker-modal map-pin-picker-modal" role="dialog" aria-modal="true" aria-labelledby="mapPinPickerTitle" aria-hidden="true">
-        <div class="modal-content">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable coordinate-picker-dialog" role="document">
+            <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <p class="modal-eyebrow"><i class="ti ti-map-pin" aria-hidden="true"></i> Coordinates Picker</p>
-                    <h2 id="mapPinPickerTitle">Pin Customer Location</h2>
+                    <p class="text-uppercase text-secondary small fw-bold mb-1"><i class="ti ti-map-pin" aria-hidden="true"></i> Coordinates Picker</p>
+                    <h2 class="modal-title" id="mapPinPickerTitle">Pin Customer Location</h2>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeMapPinPickerBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
                 <div class="map-picker-toolbar">
-                    <div class="map-picker-search">
-                        <i class="ti ti-search" aria-hidden="true"></i>
-                        <input type="search" id="mapPinSearchInput" placeholder="Search place or coordinates">
+                    <div class="input-icon map-picker-search">
+                        <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                        <input class="form-control form-control-sm" type="search" id="mapPinSearchInput" placeholder="Search place or coordinates">
                     </div>
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="mapPinSearchBtn"><i class="ti ti-search" aria-hidden="true"></i> Search</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" id="useCurrentMapPinLocationBtn" aria-busy="false">
@@ -767,7 +772,7 @@
                         <span data-current-location-label>Use Current Location</span>
                     </button>
                     <div class="map-picker-layer-switcher" role="group" aria-label="Map layer picker">
-                        <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn is-active" data-map-pin-layer="satellite" aria-pressed="true">
+                        <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn active" data-map-pin-layer="satellite" aria-pressed="true">
                             <i class="ti ti-satellite" aria-hidden="true"></i> Satellite
                         </button>
                         <button type="button" class="btn btn-outline-secondary btn-sm map-layer-btn" data-map-pin-layer="street" aria-pressed="false">
@@ -785,15 +790,17 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelMapPinPickerBtn">Cancel</button>
                 <button type="button" class="btn btn-primary btn-sm" id="applyMapPinPickerBtn"><i class="ti ti-check" aria-hidden="true"></i> Use Coordinates</button>
             </div>
+            </div>
         </div>
     </div>
 
-    <div id="napMapPreviewModal" class="modal customer-modal map-picker-modal" role="dialog" aria-modal="true" aria-labelledby="napMapPreviewTitle" aria-hidden="true">
-        <div class="modal-content">
+    <div id="napMapPreviewModal" class="modal modal-blur customer-modal map-picker-modal" role="dialog" aria-modal="true" aria-labelledby="napMapPreviewTitle" aria-hidden="true" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <p class="modal-eyebrow"><i class="ti ti-map-pin" aria-hidden="true"></i> NAP Map Picker</p>
-                    <h2 id="napMapPreviewTitle">Select NAP on Map</h2>
+                    <p class="text-uppercase text-secondary small fw-bold mb-1"><i class="ti ti-map-pin" aria-hidden="true"></i> NAP Map Picker</p>
+                    <h2 class="modal-title" id="napMapPreviewTitle">Select NAP on Map</h2>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeNapMapPreviewBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
@@ -804,44 +811,47 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="closeNapMapPreviewFooterBtn">Close</button>
             </div>
+            </div>
         </div>
     </div>
 
-    <div id="creditOverrideModal" class="modal customer-modal credit-override-modal" role="dialog" aria-modal="true" aria-labelledby="creditOverrideTitle" aria-hidden="true">
-        <div class="modal-content">
+    <div id="creditOverrideModal" class="modal modal-blur customer-modal credit-override-modal" role="dialog" aria-modal="true" aria-labelledby="creditOverrideTitle" aria-hidden="true" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <p class="modal-eyebrow"><i class="ti ti-scale" aria-hidden="true"></i> Add New Credit Limit</p>
-                    <h2 id="creditOverrideTitle">Add New Credit Limit</h2>
+                    <p class="text-uppercase text-secondary small fw-bold mb-1"><i class="ti ti-scale" aria-hidden="true"></i> Add New Credit Limit</p>
+                    <h2 class="modal-title" id="creditOverrideTitle">Add New Credit Limit</h2>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeCreditOverrideBtn" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
             <div class="modal-body">
-                <p class="credit-override-summary" id="creditOverrideSummary">
+                <p class="alert alert-info py-2 mb-3" id="creditOverrideSummary">
                     This account is over the credit limit. Add credit to continue with Active status.
                 </p>
-                <div class="form-field">
-                    <label for="creditOverrideAmount">Add to Credit Limit</label>
-                    <input type="number" id="creditOverrideAmount" min="1" step="1">
-                    <small class="muted" id="creditOverrideHint">Enter the amount to add before saving.</small>
+                <div class="mb-3">
+                    <label class="form-label" for="creditOverrideAmount">Add to Credit Limit</label>
+                    <input class="form-control form-control-sm" type="number" id="creditOverrideAmount" min="1" step="1">
+                    <div class="form-hint" id="creditOverrideHint">Enter the amount to add before saving.</div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="cancelCreditOverrideBtn">Cancel</button>
                 <button type="button" class="btn btn-primary btn-sm" id="confirmCreditOverrideBtn">Add New Credit Limit</button>
             </div>
+            </div>
         </div>
     </div>
 
     <div id="customerViewModal" class="modal modal-blur customer-modal customer-view-modal payments-view-modal tabler-customer-view" role="dialog" aria-modal="true" aria-labelledby="customerViewTitle" aria-hidden="true" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable customer-view-dialog" role="document">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable customer-view-dialog" role="document">
         <div class="modal-content">
-            <div class="modal-header customer-view-header">
+            <div class="modal-header p-2 customer-view-header">
                 <div class="d-flex align-items-center gap-3 min-w-0">
                     <span class="avatar avatar-sm bg-primary-lt text-primary flex-shrink-0"><i class="ti ti-user-circle" aria-hidden="true"></i></span>
                     <h2 id="customerViewTitle" class="modal-title text-truncate">View Customer Account</h2>
                 </div>
-                <div class="view-header-actions">
+                <div class="d-flex align-items-center gap-2 view-header-actions">
                     <button type="button" class="btn btn-icon btn-ghost-primary btn-sm" data-view-action="edit-account" aria-label="Edit account" title="Edit account">
                         <i class="ti ti-pencil" aria-hidden="true"></i>
                     </button>
@@ -850,14 +860,14 @@
                     </button>
                 </div>
             </div>
-            <div class="modal-body">
+            <div class="modal-body p-2">
                 <div class="customer-view">
                     <div class="view-layout">
                         <aside class="view-sidebar">
                             <div class="view-group">
-                                <div class="view-profile-card">
+                                <div class="card card-body p-3 view-profile-card">
                                     <div class="view-profile-header">
-                                        <span class="avatar gradient" data-view="initials">--</span>
+                                        <span class="avatar avatar-sm bg-primary-lt text-primary" data-view="initials">--</span>
                                         <div>
                                             <p class="view-name" data-view="fullName">Customer Name</p>
                                             <p class="view-subtle view-account-number">
@@ -878,15 +888,15 @@
                             <div class="view-group">
                                 <p class="view-group-label">Financial Status</p>
                                 <div class="view-key-stack">
-                                    <div class="view-key-card view-key-card--balance">
-                                        <span class="view-key-icon"><i class="ti ti-wallet" aria-hidden="true"></i></span>
+                                    <div class="card card-body p-2 view-key-card view-key-card--balance">
+                                        <span class="avatar avatar-sm bg-primary-lt text-primary view-key-icon"><i class="ti ti-wallet" aria-hidden="true"></i></span>
                                         <div class="view-key-body">
                                             <p class="view-summary-label">Current Balance</p>
                                             <div class="view-balance-row">
-                                                <p class="view-balance-value" data-view="currentBalance">&#8369;0.00</p>
-                                                <span class="view-balance-tag" data-view="balanceTag"></span>
+                                                <p class="h3 mb-0 view-balance-value" data-view="currentBalance">&#8369;0.00</p>
+                                                <span class="badge view-balance-tag" data-view="balanceTag"></span>
                                             </div>
-                                            <p class="view-balance-helper" data-view="balanceHelper"></p>
+                                            <p class="small mb-0 view-balance-helper" data-view="balanceHelper"></p>
                                             <div class="view-balance-actions">
                                                 <button type="button" class="btn btn-icon btn-primary btn-sm view-action-btn view-action-btn--icon-only" data-view-action="pay-now" aria-label="Pay Now" data-tooltip="Pay Now">
                                                     <i class="ti ti-wallet" aria-hidden="true"></i>
@@ -903,11 +913,11 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="view-key-card view-key-card--status">
-                                        <span class="view-key-icon"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
+                                    <div class="card card-body p-2 view-key-card view-key-card--status">
+                                        <span class="avatar avatar-sm bg-primary-lt text-primary view-key-icon"><i class="ti ti-circle-check" aria-hidden="true"></i></span>
                                         <div>
                                             <p class="view-summary-label">Status</p>
-                                            <span class="status-pill" data-view="statusPill" title="Status" aria-label="Status">Status</span>
+                                            <span class="badge bg-secondary-lt text-secondary" data-view="statusPill" title="Status" aria-label="Status">Status</span>
                                         </div>
                                     </div>
                                 </div>
@@ -915,11 +925,11 @@
                             <div class="view-group">
                                 <p class="view-group-label">Plan Info</p>
                                 <div class="view-key-stack view-key-stack--compact">
-                                    <div class="view-key-card">
-                                        <span class="view-key-icon"><i class="ti ti-layers-intersect" aria-hidden="true"></i></span>
+                                    <div class="card card-body p-2 view-key-card">
+                                        <span class="avatar avatar-sm bg-primary-lt text-primary view-key-icon"><i class="ti ti-layers-intersect" aria-hidden="true"></i></span>
                                         <div>
                                             <p class="view-summary-label">Plan</p>
-                                            <p class="view-plan-text" data-view="planName">Plan</p>
+                                            <p class="small fw-bold mb-0 view-plan-text" data-view="planName">Plan</p>
                                         </div>
                                     </div>
                                 </div>
@@ -960,8 +970,8 @@
 
                         <div class="view-content">
                             <div class="view-panels">
-                                <div class="view-panel view-panel--account">
-                                    <h3 class="view-panel-title"><i class="ti ti-id" aria-hidden="true"></i> Account Information</h3>
+                                <div class="card card-body p-3 view-panel view-panel--account">
+                                    <h3 class="card-title d-flex align-items-center gap-2 mb-2 view-panel-title"><i class="ti ti-id text-primary" aria-hidden="true"></i> Account Information</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">Plan Type</span>
@@ -1005,8 +1015,8 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel view-panel--billing">
-                                    <h3 class="view-panel-title"><i class="ti ti-calendar-dollar" aria-hidden="true"></i> Billing Schedule</h3>
+                                <div class="card card-body p-3 view-panel view-panel--billing">
+                                    <h3 class="card-title d-flex align-items-center gap-2 mb-2 view-panel-title"><i class="ti ti-calendar-dollar text-primary" aria-hidden="true"></i> Billing Schedule</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">Plan Price</span>
@@ -1039,8 +1049,8 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel view-panel--network view-panel--pppoe-grid" id="mikrotikPanel">
-                                    <h3 class="view-panel-title"><i class="ti ti-router" aria-hidden="true"></i> Network Details</h3>
+                                <div class="card card-body p-3 view-panel view-panel--network view-panel--pppoe-grid" id="mikrotikPanel">
+                                    <h3 class="card-title d-flex align-items-center gap-2 mb-2 view-panel-title"><i class="ti ti-router text-primary" aria-hidden="true"></i> Network Details</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">ONU Serial Number</span>
@@ -1106,8 +1116,8 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel view-panel--nap" id="napManagementPanel">
-                                    <h3 class="view-panel-title"><i class="ti ti-network" aria-hidden="true"></i> NAP Management</h3>
+                                <div class="card card-body p-3 view-panel view-panel--nap" id="napManagementPanel">
+                                    <h3 class="card-title d-flex align-items-center gap-2 mb-2 view-panel-title"><i class="ti ti-network text-primary" aria-hidden="true"></i> NAP Management</h3>
                                     <div class="view-rows">
                                         <div class="view-row">
                                             <span class="view-row-label">NAP Info</span>
@@ -1128,11 +1138,11 @@
                                     </div>
                                 </div>
 
-                                <div class="view-panel view-panel--wide view-panel--history">
-                                    <h3 class="view-panel-title"><i class="ti ti-history" aria-hidden="true"></i> Payment History</h3>
-                                    <div class="view-history-toolbar" data-view="historyToolbar" hidden>
+                                <div class="card card-body p-3 view-panel view-panel--wide view-panel--history">
+                                    <h3 class="card-title d-flex align-items-center gap-2 mb-2 view-panel-title"><i class="ti ti-history text-primary" aria-hidden="true"></i> Payment History</h3>
+                                    <div class="d-flex align-items-center flex-wrap gap-2 p-2 mb-2 bg-body-tertiary border rounded view-history-toolbar" data-view="historyToolbar" hidden>
                                         <label class="view-history-toolbar__select">
-                                            <input type="checkbox" data-view="historySelectAll" aria-label="Select all history entries">
+                                            <input class="form-check-input" type="checkbox" data-view="historySelectAll" aria-label="Select all history entries">
                                             <span>Select all</span>
                                         </label>
                                         <span class="view-history-toolbar__count" data-view="historySelectionCount">0 selected</span>
@@ -1140,12 +1150,12 @@
                                             <i class="ti ti-trash" aria-hidden="true"></i> Delete Selected
                                         </button>
                                     </div>
-                                    <div class="view-table">
+                                    <div class="table-responsive border rounded view-table">
                                         <table class="table table-vcenter table-hover view-table__table mb-0">
                                             <thead>
                                                 <tr>
                                                     <th class="view-history-select-col">
-                                                        <input type="checkbox" data-view="historyTableSelectAll" aria-label="Select all history entries">
+                                                    <input class="form-check-input" type="checkbox" data-view="historyTableSelectAll" aria-label="Select all history entries">
                                                     </th>
                                                     <th>Recorded By</th>
                                                     <th>Date</th>
@@ -1172,24 +1182,25 @@
         </div>
     </div>
 
-    <div id="importWarningModal" class="modal customer-modal import-warning-modal" role="dialog" aria-modal="true" aria-labelledby="importWarningModalTitle" aria-hidden="true">
-        <div class="modal-content">
+    <div id="importWarningModal" class="modal modal-blur customer-modal import-warning-modal" role="dialog" aria-modal="true" aria-labelledby="importWarningModalTitle" aria-hidden="true" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
+            <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <p class="modal-eyebrow">CLIENTS LIST import</p>
-                    <h2 id="importWarningModalTitle">Review import warnings</h2>
-                    <p class="modal-subtitle">Correct the skipped rows below, then retry only those records.</p>
+                    <p class="text-uppercase text-secondary small fw-bold mb-1">CLIENTS LIST import</p>
+                    <h2 class="modal-title" id="importWarningModalTitle">Review import warnings</h2>
+                    <p class="text-secondary small mb-0 mt-1">Correct the skipped rows below, then retry only those records.</p>
                 </div>
                 <button class="btn btn-icon btn-outline-secondary btn-sm close-modal" id="closeImportWarningModalBtn" type="button" aria-label="Close import warning review">
                     <i class="ti ti-x" aria-hidden="true"></i>
                 </button>
             </div>
             <div class="modal-body">
-                <div class="import-warning-summary" id="importWarningSummary" role="status"></div>
-                <div class="import-warning-error" id="importWarningError" role="alert" hidden></div>
-                <div class="import-warning-table-wrap">
-                    <table class="import-warning-table">
-                        <thead>
+                <div class="alert alert-warning py-2 mb-3" id="importWarningSummary" role="status"></div>
+                <div class="alert alert-danger py-2 mb-3" id="importWarningError" role="alert" hidden></div>
+                <div class="table-responsive border rounded import-warning-table-wrap">
+                    <table class="table table-vcenter table-sm card-table mb-0 import-warning-table">
+                        <thead class="table-light text-nowrap">
                             <tr>
                                 <th>Row</th>
                                 <th>Customer / warning</th>
@@ -1211,31 +1222,19 @@
                     Apply fixes
                 </button>
             </div>
+            </div>
         </div>
     </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="toast position-fixed bottom-0 end-0 m-3" id="toast" role="status" aria-live="polite" aria-atomic="true">
+        <div class="toast-body" id="toastMessage"></div>
+    </div>
 
     <script src="layout.js?v=3.9"></script>
     <script src="js/account-view-shared.js?v=3.4"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async function () {
-            document.querySelectorAll('.customer-modal input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])').forEach((input) => {
-                input.classList.add('form-control', 'form-control-sm');
-            });
-            document.querySelectorAll('.customer-modal select').forEach((select) => {
-                select.classList.add('form-select', 'form-select-sm');
-            });
-            document.querySelectorAll('.customer-modal textarea').forEach((textarea) => {
-                textarea.classList.add('form-control', 'form-control-sm');
-            });
-            document.querySelectorAll('.customer-modal input[type="checkbox"]').forEach((checkbox) => {
-                checkbox.classList.add('form-check-input');
-            });
-            document.querySelectorAll('.customer-modal .form-field > label:first-child').forEach((label) => {
-                label.classList.add('form-label');
-            });
             const modal = document.getElementById('customerModal');
             const viewModal = document.getElementById('customerViewModal');
             const creditOverrideModal = document.getElementById('creditOverrideModal');
@@ -1315,6 +1314,7 @@
             const customerFilterAreaOptions = document.getElementById('customerFilterAreaOptions');
             const customerFilterAreaSelectAll = document.getElementById('customerFilterAreaSelectAll');
             const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
             const accountViewShared = window.AccountViewShared || null;
             const syncDirectWifiVisibility = () => {
                 document.querySelectorAll('.wifi-customer, [data-view-action="change-wifi"]').forEach((button) => {
@@ -1466,9 +1466,9 @@
             function refreshModalBackdrop() {
                 const hasCustomerModal = document.querySelectorAll('.modal.customer-modal.show, #customerModal.show, #customerViewModal.show, #closeAccountModal.show').length > 0;
                 const hasOpenModal = Boolean(document.querySelector('.modal.show'));
-                bodyElement.classList.toggle('modal-active', hasOpenModal);
-                rootElement.classList.toggle('modal-active', hasOpenModal);
+                bodyElement.classList.toggle('modal-open', hasOpenModal);
                 if (modalBackdrop) {
+                    modalBackdrop.classList.toggle('d-none', !hasCustomerModal);
                     modalBackdrop.classList.toggle('show', hasCustomerModal);
                     modalBackdrop.setAttribute('aria-hidden', hasCustomerModal ? 'false' : 'true');
                 }
@@ -4201,6 +4201,28 @@
                 );
             };
 
+            const isCustomerPppoeBound = (customer = {}) => {
+                const accountNumber = String(customer?.accountNumber || '').trim();
+                const username = String(customer?.pppoeUsername || '').trim().toLowerCase();
+                if (!accountNumber && !username) return false;
+
+                const customerRouterId = normalizeRouterId(customer?.mikrotikId || customer?.routerId)
+                    || mikrotikDefaultId
+                    || '';
+                return pppoeAccountsAll.some((entry) => {
+                    const entryRouterId = normalizeRouterId(entry?.routerId) || mikrotikDefaultId || '';
+                    if (customerRouterId && entryRouterId && customerRouterId !== entryRouterId) return false;
+
+                    const assignedAccount = String(
+                        entry?.customerAccount || entry?.accountNumber || entry?.customerId || ''
+                    ).trim();
+                    if (assignedAccount) return assignedAccount === accountNumber;
+
+                    const entryUsername = String(entry?.username || entry?.name || '').trim().toLowerCase();
+                    return Boolean(username && entryUsername && username === entryUsername);
+                });
+            };
+
             function populatePppoeAccounts(accounts) {
                 const currentRouterId = getSelectedRouterId();
                 pppoeAccounts = (accounts || []).filter((acc) => {
@@ -4254,12 +4276,14 @@
                     populatePppoeAccounts(pppoeAccountsAll);
                     mikrotikEnabled = Boolean(resolveMikrotikEnabledState(settings).enabled);
                     setMikrotikVisibility(mikrotikEnabled);
+                    if (allCustomers.length) renderCustomersPage();
                 } catch (err) {
                     console.warn('Unable to load PPPoE accounts:', err?.message || err);
                     pppoeAccountsAll = [];
                     populatePppoeAccounts([]);
                     mikrotikEnabled = false;
                     setMikrotikVisibility(false);
+                    if (allCustomers.length) renderCustomersPage();
                 }
             }
 
@@ -4585,7 +4609,8 @@
 
             const getMapPinPickerLayerMaxZoom = (layerKey = mapPinPickerActiveLayer) => {
                 const normalized = normalizeMapPinPickerLayer(layerKey);
-                return MAP_PIN_PICKER_LAYER_MAX_ZOOM[normalized] || MAP_PIN_PICKER_LAYER_MAX_ZOOM[MAP_PIN_PICKER_DEFAULT_LAYER];
+                return MAP_PIN_PICKER_LAYER_MAX_ZOOM[normalized]
+                    || MAP_PIN_PICKER_LAYER_MAX_ZOOM[MAP_PIN_PICKER_DEFAULT_LAYER];
             };
 
             const updateMapPinPickerLayerButtons = (activeLayer = mapPinPickerActiveLayer) => {
@@ -4593,7 +4618,7 @@
                 mapPinLayerButtons.forEach((button) => {
                     const layerKey = normalizeMapPinPickerLayer(button.getAttribute('data-map-pin-layer'));
                     const isActive = layerKey === normalized;
-                    button.classList.toggle('is-active', isActive);
+                    button.classList.toggle('active', isActive);
                     button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
                 });
             };
@@ -4610,7 +4635,8 @@
                     }
                 });
 
-                const targetLayer = mapPinPickerTileLayers[layerKey] || mapPinPickerTileLayers[MAP_PIN_PICKER_DEFAULT_LAYER];
+                const targetLayer = mapPinPickerTileLayers[layerKey]
+                    || mapPinPickerTileLayers[MAP_PIN_PICKER_DEFAULT_LAYER];
                 if (targetLayer) {
                     targetLayer.addTo(mapPinPickerMap);
                 }
@@ -4628,18 +4654,10 @@
                 if (!window.L) return undefined;
                 const normalizedType = String(type || '').trim().toLowerCase();
                 const isNap = normalizedType === 'nap';
-                const color = isNap ? '#7c3aed' : '#2563eb';
-                const label = isNap ? 'N' : 'C';
-                const svg = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="34" height="42" viewBox="0 0 34 42" aria-hidden="true" focusable="false">
-                        <path d="M17 1.5C9.82 1.5 4 7.32 4 14.5C4 25.72 17 40.5 17 40.5C17 40.5 30 25.72 30 14.5C30 7.32 24.18 1.5 17 1.5Z" fill="${color}"/>
-                        <circle cx="17" cy="14.5" r="7.3" fill="#ffffff" fill-opacity="0.95"/>
-                        <text x="17" y="18.2" text-anchor="middle" font-size="10.5" font-weight="800" fill="${color}" font-family="Arial, sans-serif">${label}</text>
-                    </svg>
-                `.trim();
+                const variant = isNap ? 'nap' : 'customer';
                 return window.L.divIcon({
-                    html: svg,
-                    className: `map-picker-transparent-icon map-picker-transparent-icon--${isNap ? 'nap' : 'customer'}`,
+                    html: `<span class="map-picker-tabler-pin map-picker-tabler-pin--${variant}" aria-hidden="true"><i class="ti ti-map-pin"></i></span>`,
+                    className: `map-picker-transparent-icon map-picker-transparent-icon--${variant}`,
                     iconSize: MAP_PICKER_PIN_ICON_SIZE,
                     iconAnchor: [17, 40],
                     popupAnchor: [0, -36],
@@ -4701,7 +4719,9 @@
                 mapPinPickerMap = window.L.map('mapPinPickerMap', {
                     center: DEFAULT_MAP_PICKER_CENTER,
                     zoom: DEFAULT_MAP_PICKER_ZOOM,
-                    zoomControl: true
+                    zoomControl: true,
+                    zoomAnimation: false,
+                    markerZoomAnimation: false
                 });
                 mapPinPickerMap.attributionControl?.setPrefix(false);
 
@@ -4995,6 +5015,7 @@
                 mapPinPickerModal.classList.add('show');
                 mapPinPickerModal.setAttribute('aria-hidden', 'false');
                 refreshModalBackdrop();
+                mapPinPickerMap.invalidateSize({ pan: false });
 
                 const existingCoordinates = parseCoordinateValue(mapPinInput?.value);
                 if (existingCoordinates) {
@@ -5010,7 +5031,10 @@
                 }
 
                 setTimeout(() => {
-                    mapPinPickerMap?.invalidateSize();
+                    mapPinPickerMap?.invalidateSize({ pan: false });
+                    if (mapPinPickerMarker) {
+                        mapPinPickerMarker.setIcon(createMapPickerPinIcon('customer'));
+                    }
                 }, 80);
 
                 if (mapPinSearchInput) {
@@ -5260,8 +5284,8 @@
                 const balanceCard = viewModal.querySelector('.view-key-card--balance');
                 const balanceIcon = balanceCard?.querySelector('.view-key-icon i');
                 if (balanceCard) {
-                    balanceCard.classList.toggle('is-overdue', showOverdue);
-                    balanceCard.classList.toggle('is-advance', hasAdvance);
+                    balanceCard.classList.toggle('border-danger', showOverdue);
+                    balanceCard.classList.toggle('border-success', hasAdvance);
                 }
                 if (balanceIcon) {
                     if (hasAdvance) {
@@ -5274,12 +5298,15 @@
                 }
                 const balanceTagNode = viewModal.querySelector('[data-view="balanceTag"]');
                 if (balanceTagNode) {
-                    balanceTagNode.classList.toggle('is-overdue', !hasAdvance && showOverdue);
-                    balanceTagNode.classList.toggle('is-advance', hasAdvance);
+                    balanceTagNode.classList.remove('bg-red-lt', 'text-red', 'bg-green-lt', 'text-green');
+                    if (showOverdue) balanceTagNode.classList.add('bg-red-lt', 'text-red');
+                    if (hasAdvance) balanceTagNode.classList.add('bg-green-lt', 'text-green');
                 }
                 const balanceHelperNode = viewModal.querySelector('[data-view="balanceHelper"]');
                 if (balanceHelperNode) {
-                    balanceHelperNode.classList.toggle('is-advance', hasAdvance);
+                    balanceHelperNode.classList.remove('text-danger', 'text-success');
+                    if (showOverdue) balanceHelperNode.classList.add('text-danger');
+                    if (hasAdvance) balanceHelperNode.classList.add('text-success');
                 }
 
                 const dueBadgeNode = viewModal.querySelector('[data-view="dueBadge"]');
@@ -5322,6 +5349,14 @@
                     input.disabled = total === 0;
                 });
                 return { total, selectedCount };
+            };
+
+            const resolveTablerStatusBadgeClass = (statusClass = '') => {
+                const normalized = String(statusClass || '').trim().toLowerCase();
+                if (normalized === 'success') return 'bg-green-lt text-green';
+                if (normalized === 'warning') return 'bg-yellow-lt text-yellow';
+                if (normalized === 'info') return 'bg-azure-lt text-azure';
+                return 'bg-secondary-lt text-secondary';
             };
 
             const renderPaymentHistory = (history = []) => {
@@ -5399,7 +5434,7 @@
                                 <td>${row.escaped.orNumber || '&mdash;'}</td>
                                 <td><span class="view-type view-type--${row.typeClass}"><i class="fa-solid ${row.typeIcon}"></i>${row.escaped.typeLabel}</span></td>
                                 <td class="view-amount ${row.amountClass}">${row.escaped.signedAmount}</td>
-                                <td><span class="status-pill ${row.pillClass}">${row.escaped.directionLabel}</span></td>
+                                <td><span class="badge ${resolveTablerStatusBadgeClass(row.pillClass)}">${row.escaped.directionLabel}</span></td>
                                 <td class="view-history-actions-cell">
                                     ${row.entryId
                                         ? `<button type="button" class="btn btn-icon btn-outline-danger btn-sm view-history-delete-btn" data-entry-id="${row.escaped.entryId}" aria-label="Delete transaction" title="Delete transaction"><i class="ti ti-trash" aria-hidden="true"></i></button>`
@@ -5527,16 +5562,21 @@
 
                     const statusPill = viewModal.querySelector('[data-view="statusPill"]');
                     if (statusPill) {
-                        statusPill.classList.remove('success', 'inactive', 'warning', 'info', 'status-pill--indicator');
-                        if (viewState.accountStatusClass) statusPill.classList.add(viewState.accountStatusClass);
+                        statusPill.classList.remove(
+                            'bg-green-lt', 'text-green',
+                            'bg-yellow-lt', 'text-yellow',
+                            'bg-azure-lt', 'text-azure',
+                            'bg-secondary-lt', 'text-secondary'
+                        );
+                        statusPill.classList.add(...resolveTablerStatusBadgeClass(viewState.accountStatusClass).split(' '));
                         statusPill.textContent = viewState.accountStatusLabel;
                         statusPill.title = viewState.accountStatusLabel;
                         statusPill.setAttribute('aria-label', viewState.accountStatusLabel);
                     }
                     const balanceNode = viewModal.querySelector('[data-view="currentBalance"]');
                     if (balanceNode) {
-                        balanceNode.classList.toggle('is-negative', !viewState.hasAdvance && viewState.showOverdue);
-                        balanceNode.classList.toggle('is-advance', viewState.hasAdvance);
+                        balanceNode.classList.toggle('text-danger', !viewState.hasAdvance && viewState.showOverdue);
+                        balanceNode.classList.toggle('text-success', viewState.hasAdvance);
                     }
                     const statusIcon = viewModal.querySelector('.view-key-card--status .view-key-icon i');
                     if (statusIcon) {
@@ -5546,13 +5586,14 @@
                         } else if (viewState.accountStatusClass === 'inactive') {
                             statusIcon.className = 'fa-solid fa-circle-xmark';
                         }
-                    }
-                    const statusCard = viewModal.querySelector('.view-key-card--status');
-                    if (statusCard) {
-                        statusCard.classList.remove('is-success', 'is-warning', 'is-inactive');
-                        if (viewState.accountStatusClass === 'success') statusCard.classList.add('is-success');
-                        if (viewState.accountStatusClass === 'warning') statusCard.classList.add('is-warning');
-                        if (viewState.accountStatusClass === 'inactive') statusCard.classList.add('is-inactive');
+                        const statusIconHolder = statusIcon.closest('.view-key-icon');
+                        statusIconHolder?.classList.remove(
+                            'bg-green-lt', 'text-green',
+                            'bg-yellow-lt', 'text-yellow',
+                            'bg-secondary-lt', 'text-secondary',
+                            'bg-primary-lt', 'text-primary'
+                        );
+                        statusIconHolder?.classList.add(...resolveTablerStatusBadgeClass(viewState.accountStatusClass).split(' '));
                     }
                     const mapPinLink = viewModal.querySelector('[data-view="mapPinLink"]');
                     if (mapPinLink) {
@@ -6096,8 +6137,8 @@
                     window.appToast(message, { type: 'info' });
                     return;
                 }
-                if (!toast) return;
-                toast.textContent = message;
+                if (!toast || !toastMessage) return;
+                toastMessage.textContent = message;
                 toast.classList.add('show');
                 if (toastTimer) {
                     clearTimeout(toastTimer);
@@ -8517,6 +8558,9 @@
                         const displayInitials = initials || '??';
                         const canonicalFullName = fullName || [firstName, lastName].filter(Boolean).join(' ').trim() || 'No Name';
                         const accountNumber = String(customer.accountNumber || '').trim();
+                        const pppoeBoundIcon = isCustomerPppoeBound(customer)
+                            ? `<span class="text-green d-inline-flex align-items-center" title="PPPoE Bound" aria-label="PPPoE Bound for account ${escapeHtml(accountNumber)}"><i class="ti ti-plug-connected" aria-hidden="true"></i></span>`
+                            : '';
                         const paymentRecord = getPaymentRecord(accountNumber);
                         const complimentaryAccount = paymentRecord?.complimentaryAccount || paymentRecord?.billingSummary?.complimentaryAccount || {};
                         const complimentaryActive = complimentaryAccount.active === true;
@@ -8524,8 +8568,10 @@
                         
                         const normalizedStatus = resolveCustomerStatusValue(customer, 'active');
                         const statusClass = normalizedStatus === 'active'
-                            ? 'success'
-                            : (normalizedStatus === 'disabled' ? 'warning' : 'inactive');
+                            ? 'bg-green-lt text-green'
+                            : (normalizedStatus === 'disabled'
+                                ? 'bg-yellow-lt text-yellow'
+                                : 'bg-secondary-lt text-secondary');
                         const statusLabel = normalizedStatus === 'active'
                             ? 'Active'
                             : (normalizedStatus === 'disabled' ? 'Disabled' : 'Inactive');
@@ -8536,7 +8582,7 @@
                             ? formatCoordinatePair(customerCoordinates.lat, customerCoordinates.lng)
                             : '';
                         const locationBadge = customerCoordinates
-                            ? `<span class="badge bg-green-lt text-green customer-location-badge" title="Coordinates: ${escapeHtml(coordinateLabel)}" aria-label="Location set. Coordinates: ${escapeHtml(coordinateLabel)}"><i class="ti ti-map-pin-check" aria-hidden="true"></i><span>Location Set</span></span>`
+                            ? `<span class="badge bg-green-lt text-green customer-location-badge" title="Location Set · Coordinates: ${escapeHtml(coordinateLabel)}" aria-label="Location set. Coordinates: ${escapeHtml(coordinateLabel)}"><i class="ti ti-map-pin-check" aria-hidden="true"></i></span>`
                             : '';
                         const mobileNumber = String(customer?.mobileRaw || customer?.contactNumber || customer?.mobile || '').trim() || 'No phone';
                         const canonicalBalance = getCustomerCanonicalBalance(customer);
@@ -8558,9 +8604,11 @@
 
                     // If plan is not in catalog, visually mark as legacy/invalid
                     const isLegacyPlan = !matchedPlan;
-                    const planPillClass = isLegacyPlan ? 'plan-pill accent' : 'plan-pill neutral';
+                    const planPillClass = isLegacyPlan
+                        ? 'badge bg-yellow-lt text-yellow text-truncate d-block'
+                        : 'badge bg-secondary-lt text-secondary text-truncate d-block';
                     const planMetaText = isLegacyPlan
-                        ? '<span style="color:#b91c1c;font-weight:600;">Not in current plans</span>'
+                        ? '<span class="text-danger fw-semibold">Not in current plans</span>'
                         : `${amountDisplay}${priceSuffix ? ` &middot; ${priceSuffix}` : ''}`;
 
                     return `
@@ -8578,7 +8626,8 @@
                             </td>
                             <td class="account-col" data-label="Account">
                                 <span class="account-tag-wrap">
-                                    <span class="account-tag">${accountNumber}</span>
+                                    <span class="badge bg-primary-lt text-primary text-truncate">${accountNumber}</span>
+                                    ${pppoeBoundIcon}
                                     <button
                                         type="button"
                                         class="btn btn-icon btn-ghost-secondary btn-sm copy-btn account-copy-btn"
@@ -8593,7 +8642,7 @@
                             </td>
                             <td class="customer-col" data-label="Customer">
                                 <div class="subscriber">
-                                    <span class="avatar">${displayInitials}</span>
+                                    <span class="avatar avatar-sm bg-primary-lt text-primary">${displayInitials}</span>
                                     <div>
                                         <p class="subscriber-name" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</p>
                                         <p class="subscriber-meta" title="${escapeHtml(mobileNumber)}">${escapeHtml(mobileNumber)}${complimentaryActive ? ' <span class="badge bg-azure-lt text-azure">COMPLIMENTARY</span>' : ''}</p>
@@ -8620,7 +8669,7 @@
                                 </div>
                             </td>
                             <td class="status-col" data-label="Status">
-                                <span class="badge status-pill customer-status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+                                <span class="badge customer-status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
                             </td>
                             <td class="actions-col" data-label="Actions">
                                 <div class="row-actions">

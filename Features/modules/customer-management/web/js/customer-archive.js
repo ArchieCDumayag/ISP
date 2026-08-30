@@ -6,6 +6,7 @@
     const nextBtn = document.getElementById('archiveNext');
     const pageInfo = document.getElementById('archivePageInfo');
     const summary = document.getElementById('archiveSummary');
+    const countBadge = document.getElementById('deletedArchiveCount');
     const selectAllInput = document.getElementById('archiveSelectAll');
     const deleteSelectedBtn = document.getElementById('archiveDeleteSelectedBtn');
     const deleteAllBtn = document.getElementById('archiveDeleteAllBtn');
@@ -168,19 +169,19 @@
 
     const renderTable = () => {
         if (state.loading) {
-            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="archive-empty">Loading archived records...</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="py-5 text-secondary text-center">Loading archived records...</td></tr>`;
             renderSelectionUi();
             return;
         }
 
         if (state.errorMessage) {
-            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="archive-empty">${escapeHtml(state.errorMessage)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="py-5 text-danger text-center">${escapeHtml(state.errorMessage)}</td></tr>`;
             renderSelectionUi();
             return;
         }
 
         if (!state.items.length) {
-            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="archive-empty">${
+            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="py-5 text-secondary text-center">${
                 state.search ? 'No archived records matched your search.' : 'No archived records found.'
             }</td></tr>`;
             renderSelectionUi();
@@ -198,57 +199,59 @@
             const planName = String(item?.planName || 'No plan').trim() || 'No plan';
             const areaName = String(item?.areaName || 'No area').trim() || 'No area';
             const daysRemaining = Number(item?.daysRemaining || 0);
-            const countdownClass = daysRemaining <= 3 ? 'archive-pill archive-pill--danger' : 'archive-pill archive-pill--warn';
+            const countdownClass = daysRemaining <= 3
+                ? 'badge bg-danger-lt text-danger'
+                : 'badge bg-warning-lt text-warning';
             const restoreConfig = getArchiveRestoreConfig(recordType);
             const isSelected = state.selectedIds.has(archiveId);
             return `
                 <tr data-archive-id="${escapeHtml(archiveId)}">
-                    <td class="select-col">
+                    <td class="text-nowrap">
                         <input
                             type="checkbox"
-                            class="archive-row-select"
+                            class="form-check-input"
                             data-archive-select="${escapeHtml(archiveId)}"
                             aria-label="Select ${escapeHtml(customerName)}"
                             ${isSelected ? 'checked' : ''}
                         >
                     </td>
-                    <td class="account-col">
-                        <span class="account-tag">${escapeHtml(accountNumber)}</span>
+                    <td class="text-nowrap">
+                        <span class="badge bg-blue-lt text-blue font-monospace">${escapeHtml(accountNumber)}</span>
                     </td>
                     <td>
-                        <div class="archive-subscriber">
-                            <span class="avatar">${escapeHtml(getInitials(customerName))}</span>
-                            <div class="archive-subscriber__body">
-                                <p class="subscriber-name">${escapeHtml(customerName)}</p>
-                                <p class="subscriber-meta">
+                        <div class="d-flex align-items-center gap-2 min-w-0">
+                            <span class="avatar avatar-sm bg-primary-lt text-primary">${escapeHtml(getInitials(customerName))}</span>
+                            <div class="min-w-0">
+                                <p class="fw-semibold mb-0 text-truncate">${escapeHtml(customerName)}</p>
+                                <p class="d-flex flex-wrap align-items-center gap-1 text-secondary small mt-1 mb-0">
                                     <span>${escapeHtml(contact)}</span>
-                                    <span class="archive-status-pill">${escapeHtml(getArchiveStatusLabel(recordType))}</span>
+                                    <span class="badge bg-secondary-lt text-secondary">${escapeHtml(getArchiveStatusLabel(recordType))}</span>
                                 </p>
                             </div>
                         </div>
                     </td>
                     <td>
-                        <p class="archive-plan-name">${escapeHtml(planName)}</p>
-                        <p class="archive-plan-meta">${escapeHtml(areaName)}</p>
+                        <p class="fw-semibold mb-0">${escapeHtml(planName)}</p>
+                        <p class="text-secondary small mt-1 mb-0">${escapeHtml(areaName)}</p>
                     </td>
                     <td>
-                        <p class="archive-date">${escapeHtml(formatDate(item?.deletedAt))}</p>
-                        <p class="archive-time">${escapeHtml(formatTime(item?.deletedAt) || 'Time unavailable')}</p>
+                        <p class="fw-semibold mb-0">${escapeHtml(formatDate(item?.deletedAt))}</p>
+                        <p class="text-secondary small mt-1 mb-0">${escapeHtml(formatTime(item?.deletedAt) || 'Time unavailable')}</p>
                     </td>
                     <td>
                         <span class="${countdownClass}">
                             <i class="ti ti-clock" aria-hidden="true"></i>
                             ${escapeHtml(formatCountdown(daysRemaining))}
                         </span>
-                        <p class="archive-countdown-note">
+                        <p class="text-secondary small mt-1 mb-0">
                             Deletes on ${escapeHtml(formatDate(item?.purgeAfter))}${formatTime(item?.purgeAfter) ? `, ${escapeHtml(formatTime(item?.purgeAfter))}` : ''}
                         </p>
                     </td>
-                    <td class="actions-col">
-                        <div class="archive-actions">
+                    <td class="text-end text-nowrap">
+                        <div class="d-inline-flex gap-1">
                             <button
                                 type="button"
-                                class="archive-icon-btn archive-icon-btn--restore"
+                                class="btn btn-icon btn-outline-success btn-sm"
                                 data-action="restore"
                                 data-archive-id="${escapeHtml(archiveId)}"
                                 data-customer-name="${escapeHtml(customerName)}"
@@ -261,7 +264,7 @@
                             </button>
                             <button
                                 type="button"
-                                class="archive-icon-btn archive-icon-btn--delete"
+                                class="btn btn-icon btn-outline-danger btn-sm"
                                 data-action="delete"
                                 data-archive-id="${escapeHtml(archiveId)}"
                                 data-customer-name="${escapeHtml(customerName)}"
@@ -302,6 +305,9 @@
         if (nextBtn) {
             nextBtn.disabled = state.loading || state.bulkDeleteInProgress || (state.offset + state.limit >= total);
         }
+        if (countBadge) {
+            countBadge.textContent = String(total);
+        }
     };
 
     const render = () => {
@@ -312,7 +318,7 @@
             console.error('Failed to render archived records:', error);
             state.loading = false;
             state.errorMessage = error?.message || 'Failed to render archived records.';
-            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="archive-empty">${escapeHtml(state.errorMessage)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="${COLUMN_COUNT}" class="py-5 text-danger text-center">${escapeHtml(state.errorMessage)}</td></tr>`;
             renderPagination();
             renderSelectionUi();
         }
@@ -786,6 +792,13 @@
             const active = button.dataset.archiveTab === selected;
             button.classList.toggle('active', active);
             button.setAttribute('aria-selected', active ? 'true' : 'false');
+            const badge = button.querySelector('.badge');
+            if (badge) {
+                badge.classList.toggle('bg-primary-lt', active);
+                badge.classList.toggle('text-primary', active);
+                badge.classList.toggle('bg-secondary-lt', !active);
+                badge.classList.toggle('text-secondary', !active);
+            }
         });
         tabPanels.forEach((panel) => {
             panel.hidden = panel.dataset.archivePanel !== selected;
@@ -825,17 +838,17 @@
 
     const renderTable = () => {
         if (state.loading) {
-            tableBody.innerHTML = '<tr><td colspan="6" class="archive-empty">Loading closed accounts...</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="6" class="py-5 text-secondary text-center">Loading closed accounts...</td></tr>';
             renderPagination();
             return;
         }
         if (state.errorMessage) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="archive-empty text-danger">${escapeHtml(state.errorMessage)}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" class="py-5 text-danger text-center">${escapeHtml(state.errorMessage)}</td></tr>`;
             renderPagination();
             return;
         }
         if (!state.items.length) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="archive-empty">${state.search ? 'No closed accounts matched your search.' : 'No closed accounts found.'}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" class="py-5 text-secondary text-center">${state.search ? 'No closed accounts matched your search.' : 'No closed accounts found.'}</td></tr>`;
             renderPagination();
             return;
         }
@@ -850,8 +863,8 @@
                 ? 'Needs review'
                 : (item?.state === 'closing' ? 'Closing' : 'Closed');
             const stateClass = item?.state === 'failed'
-                ? 'archive-status-pill archive-status-pill--danger'
-                : 'archive-status-pill archive-status-pill--closed';
+                ? 'badge bg-danger-lt text-danger'
+                : 'badge bg-success-lt text-success';
             const legacyFinalBalance = readMoney(item?.finalBalance) ?? 0;
             const requestedFinalBalance = readMoney(item?.requestedFinalBalance);
             // Final Balance is the immutable closure audit snapshot. The live
@@ -886,41 +899,41 @@
             }
             const retryAction = item?.state === 'failed'
                 ? `
-                    <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-final-balance="${escapeHtml(retryFinalBalance.toFixed(2))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                    <button type="button" class="btn btn-icon btn-outline-warning btn-sm" data-action="retry-close" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-closure-date="${escapeHtml(item?.closureDate)}" data-reason="${escapeHtml(item?.reason)}" data-final-balance="${escapeHtml(retryFinalBalance.toFixed(2))}" title="Retry account closure" aria-label="Retry account closure for ${escapeHtml(customerName)}" ${state.retryingClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
                         <i class="ti ti-refresh" aria-hidden="true"></i>
                     </button>
                 `
                 : '';
             return `
                 <tr data-closure-id="${escapeHtml(item?.id)}">
-                    <td class="account-col"><span class="account-tag">${escapeHtml(accountNumber)}</span></td>
+                    <td class="text-nowrap"><span class="badge bg-blue-lt text-blue font-monospace">${escapeHtml(accountNumber)}</span></td>
                     <td>
-                        <div class="archive-subscriber">
-                            <span class="avatar">${escapeHtml(getInitials(customerName))}</span>
-                            <div class="archive-subscriber__body">
-                                <p class="subscriber-name">${escapeHtml(customerName)}</p>
-                                <p class="subscriber-meta"><span>${escapeHtml(contact)}</span><span class="${stateClass}">${escapeHtml(stateLabel)}</span></p>
+                        <div class="d-flex align-items-center gap-2 min-w-0">
+                            <span class="avatar avatar-sm bg-primary-lt text-primary">${escapeHtml(getInitials(customerName))}</span>
+                            <div class="min-w-0">
+                                <p class="fw-semibold mb-0 text-truncate">${escapeHtml(customerName)}</p>
+                                <p class="d-flex flex-wrap align-items-center gap-1 text-secondary small mt-1 mb-0"><span>${escapeHtml(contact)}</span><span class="${stateClass}">${escapeHtml(stateLabel)}</span></p>
                             </div>
                         </div>
                     </td>
-                    <td><p class="archive-plan-name">${escapeHtml(planName)}</p><p class="archive-plan-meta">${escapeHtml(areaName)}</p></td>
+                    <td><p class="fw-semibold mb-0">${escapeHtml(planName)}</p><p class="text-secondary small mt-1 mb-0">${escapeHtml(areaName)}</p></td>
                     <td>
-                        <p class="archive-date">${escapeHtml(formatDate(item?.closureDate || item?.closedAt))}</p>
-                        <p class="archive-time">${escapeHtml(item?.reason || 'No closure reason saved')}</p>
-                        ${item?.closedAt ? `<p class="archive-time">Saved ${escapeHtml(formatDateTime(item.closedAt))}</p>` : ''}
-                        ${item?.warning ? `<p class="archive-warning-text">${escapeHtml(item.warning)}</p>` : ''}
+                        <p class="fw-semibold mb-0">${escapeHtml(formatDate(item?.closureDate || item?.closedAt))}</p>
+                        <p class="text-secondary small mt-1 mb-0">${escapeHtml(item?.reason || 'No closure reason saved')}</p>
+                        ${item?.closedAt ? `<p class="text-secondary small mt-1 mb-0">Saved ${escapeHtml(formatDateTime(item.closedAt))}</p>` : ''}
+                        ${item?.warning ? `<p class="text-danger small mt-1 mb-0">${escapeHtml(item.warning)}</p>` : ''}
                     </td>
                     <td>
-                        <p class="archive-date">${escapeHtml(formatBalance(closureFinalBalance))}</p>
-                        ${liveBalanceMeta ? `<p class="archive-time">${escapeHtml(liveBalanceMeta)}</p>` : ''}
+                        <p class="fw-semibold mb-0">${escapeHtml(formatBalance(closureFinalBalance))}</p>
+                        ${liveBalanceMeta ? `<p class="text-secondary small mt-1 mb-0">${escapeHtml(liveBalanceMeta)}</p>` : ''}
                     </td>
-                    <td class="actions-col">
-                        <div class="archive-actions">
-                            <a class="archive-icon-btn" href="payment-breakdown.html?account=${encodeURIComponent(accountNumber)}" title="View preserved billing history" aria-label="View preserved billing history for ${escapeHtml(customerName)}">
+                    <td class="text-end text-nowrap">
+                        <div class="d-inline-flex gap-1">
+                            <a class="btn btn-icon btn-outline-secondary btn-sm" href="payment-breakdown.html?account=${encodeURIComponent(accountNumber)}" title="View preserved billing history" aria-label="View preserved billing history for ${escapeHtml(customerName)}">
                                 <i class="ti ti-receipt-2" aria-hidden="true"></i>
                             </a>
                             ${retryAction}
-                            <button type="button" class="archive-icon-btn archive-icon-btn--restore" data-action="reopen-closed" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-final-balance="${escapeHtml(remainingBalance)}" title="Reopen account" aria-label="Reopen ${escapeHtml(customerName)}" ${state.reopeningClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
+                            <button type="button" class="btn btn-icon btn-outline-success btn-sm" data-action="reopen-closed" data-closure-id="${escapeHtml(item?.id)}" data-account-number="${escapeHtml(accountNumber)}" data-customer-name="${escapeHtml(customerName)}" data-final-balance="${escapeHtml(remainingBalance)}" title="Reopen account" aria-label="Reopen ${escapeHtml(customerName)}" ${state.reopeningClosureId === String(item?.id || '').trim() ? 'disabled' : ''}>
                                 <i class="ti ti-user-check" aria-hidden="true"></i>
                             </button>
                         </div>

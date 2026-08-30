@@ -20,6 +20,11 @@ const ALLOWED_SPLITTERS = new Set(['1:8', '1:16', '1:24', '1:32']);
 const REQUIRED_PON_TABLES = ['pon_olts', 'pon_naps', 'pon_nap_connections'];
 const LIVE_PPPOE_LOOKUP_TIMEOUT_MS = 2500;
 const JSON_STORE_KEY = 'pon-state';
+let tempNetworkCustomersProvider = null;
+
+const configureTempNetworkCustomersProvider = (provider) => {
+  tempNetworkCustomersProvider = typeof provider === 'function' ? provider : null;
+};
 
 const toText = (value) => String(value || '').trim();
 const normalizeNameKey = (value) => toText(value).toLowerCase();
@@ -783,6 +788,8 @@ const buildNapPortEntries = (nap = {}) => {
       customerId: toText(entry?.customerId),
       customerName: toText(entry?.customerName),
       customerRef: toText(entry?.customerRef),
+      workspace: toText(entry?.workspace),
+      readOnly: entry?.readOnly === true,
       opticalInfo,
       opticalPower: opticalInfo,
       subscriberStatus: subscriberStatusAvailable ? (subscriberStatus || 'offline') : '',
@@ -791,6 +798,52 @@ const buildNapPortEntries = (nap = {}) => {
         : 'empty'
     };
   });
+};
+
+const mergeTempNetworkAssignments = (state = {}, tempCustomers = []) => {
+  const naps = (Array.isArray(state?.naps) ? state.naps : []).map((nap) => ({
+    ...nap,
+    connections: Array.isArray(nap?.connections) ? nap.connections.map((entry) => ({ ...entry })) : []
+  }));
+  const napById = new Map(naps.map((nap) => [toText(nap?.id), nap]));
+  const napByCode = new Map(naps.map((nap) => [normalizeNameKey(nap?.code), nap]));
+
+  (Array.isArray(tempCustomers) ? tempCustomers : []).forEach((customer) => {
+    const nap = napById.get(toText(customer?.napId))
+      || napByCode.get(normalizeNameKey(customer?.napCode));
+    const port = toPositiveInt(customer?.napPort);
+    if (!nap || !port) return;
+    const occupied = nap.connections.some((connection) => toPositiveInt(connection?.port) === port);
+    if (occupied) return;
+    nap.connections.push({
+      customerId: toText(customer?.accountNumber),
+      customerName: toText(customer?.name),
+      customerRef: toText(customer?.accountNumber) || toText(customer?.name),
+      port,
+      opticalInfo: '',
+      subscriberStatus: '',
+      workspace: 'temp',
+      readOnly: true
+    });
+    nap.connections.sort((left, right) => toPositiveInt(left?.port, 0) - toPositiveInt(right?.port, 0));
+  });
+
+  naps.forEach((nap) => {
+    const totalPorts = Math.max(
+      getSplitCapacity(nap?.splitter),
+      toNonNegativeInt(nap?.capacity, 0),
+      nap.connections.reduce((highest, connection) => (
+        Math.max(highest, toPositiveInt(connection?.port, 0) || 0)
+      ), 0),
+      1
+    );
+    const usedPorts = Math.max(toNonNegativeInt(nap?.used, 0), nap.connections.length);
+    nap.totalPorts = totalPorts;
+    nap.usedPorts = usedPorts;
+    nap.availablePorts = Math.max(totalPorts - usedPorts, 0);
+    nap.ports = buildNapPortEntries(nap);
+  });
+  return { ...state, naps };
 };
 
 const getPonRefOrder = (value) => {
@@ -900,16 +953,22 @@ const buildPortList = (olts = [], naps = []) => {
 
 const loadOverview = async (branchId) => {
   const state = await loadState(branchId);
-  const [customersResult, coverageAreasResult] = await Promise.allSettled([
+  const [customersResult, coverageAreasResult, tempCustomersResult] = await Promise.allSettled([
     readCustomers(branchId),
-    readCoverage(branchId)
+    readCoverage(branchId),
+    tempNetworkCustomersProvider ? tempNetworkCustomersProvider(branchId) : Promise.resolve([])
   ]);
   const customers = customersResult.status === 'fulfilled' ? customersResult.value : [];
   const coverageAreas = coverageAreasResult.status === 'fulfilled' ? coverageAreasResult.value : [];
+  const tempCustomers = tempCustomersResult.status === 'fulfilled' ? tempCustomersResult.value : [];
+  const mergedState = mergeTempNetworkAssignments(state, tempCustomers);
   return {
-    ...state,
-    ports: buildPortList(state?.olts, state?.naps),
-    customers: (Array.isArray(customers) ? customers : []).map((customer) => sanitizeCustomerForAdmin(customer)),
+    ...mergedState,
+    ports: buildPortList(mergedState?.olts, mergedState?.naps),
+    customers: [
+      ...(Array.isArray(customers) ? customers : []).map((customer) => sanitizeCustomerForAdmin(customer)),
+      ...(Array.isArray(tempCustomers) ? tempCustomers : [])
+    ],
     coverageAreas: Array.isArray(coverageAreas) ? coverageAreas : []
   };
 };
@@ -1272,3 +1331,5 @@ module.exports.createPonStateRevision = createPonStateRevision;
 module.exports.assertExpectedPonRevision = assertExpectedPonRevision;
 module.exports.loadRelationalRevisionSnapshot = loadRelationalRevisionSnapshot;
 module.exports.assertActiveReservationCompatibility = assertActiveReservationCompatibility;
+module.exports.configureTempNetworkCustomersProvider = configureTempNetworkCustomersProvider;
+module.exports.mergeTempNetworkAssignments = mergeTempNetworkAssignments;

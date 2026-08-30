@@ -1,6 +1,6 @@
 # Temp Workspace Module Context
 
-Last reviewed: 2026-08-25
+Last reviewed: 2026-08-30
 Status: Hidden auxiliary module with isolated secondary-location customer and billing storage.
 
 ## Purpose and current scope
@@ -12,17 +12,18 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - Customer entry uses synchronized fixed plan/rate selectors: Old plan/700, Basic/800, Standard/1000, and Premium/1200.
 - Service address entry is limited to the Poblacion and Masical dropdown choices, with Poblacion as the default for new customers and legacy unmatched values.
 - Customer entry includes Prepaid, Postpaid, and Prorate plan types plus an Activation date. Billing schedule can use an exact next-bill date or a monthly day number. Opening balance remains a direct manual starting value and is never recalculated by the cycle engine.
+- Customer entry accepts decimal or DMS coordinates, normalizes them to a six-decimal coordinate, and can store one branch-local NAP and port assignment. These fields make the isolated subscriber visible in PON Management and the administrative Coverage Map without moving its customer or billing record into the canonical stores.
 
 ## Canonical runtime layout
 
 - `backend/index.js` exposes the `workspace` router entry through the module runtime.
-- `backend/workspace-router.js` owns Admin-role-protected `/api/temp` request/response handling and orchestrates shared imported-GCash claim/finalize plus the read-only Main-ledger duplicate check.
+- `backend/workspace-router.js` owns Admin-role-protected `/api/temp` request/response handling, orchestrates shared imported-GCash claim/finalize plus the read-only Main-ledger duplicate check, and validates Temp NAP selections through a server-composed read-only PON state provider.
 - `backend/workspace-store.js` owns validation, account/receipt numbering, balance calculations, serialized mutations, persistence, and Temp export/import validation.
 - `backend/billing-cycle.js` owns pure Temp-only monthly date alignment and Billing-day proration calculations; it has no dependency on canonical Billing or Customer Management code.
-- `backend/workspace-excel.js` owns schema-v4 Metadata/Customers/Transactions backup workbooks, backward-compatible schema-v3 reads, and report-only Collector and Temp monthly Payment History workbooks.
+- `backend/workspace-excel.js` owns schema-v5 Metadata/Customers/Transactions backup workbooks, backward-compatible schema-v3/v4 reads, and report-only Collector and Temp monthly Payment History workbooks. Schema v5 adds `mapPin`, `networkBranchId`, `napId`, `napCode`, and `napPort` customer columns.
 - `web/temp.html` is the module's only browser entry point and contains Customers, Billing & Payments, Payment History, and GCash Posting panels plus their dialogs.
 - `web/temp.css` uses Tabler's default font variable and owns the responsive standalone layout.
-- `web/temp.js` calls only `/api/temp`, renders all four panels, and handles CRUD, paging, statements, receipts, payment-history reporting, official GCash allocation, backup, and restore with Asia/Manila date defaults.
+- `web/temp.js` calls only `/api/temp`, renders all four panels, and handles CRUD, paging, statements, receipts, payment-history reporting, official GCash allocation, backup, and restore with Asia/Manila date defaults. Its Coordinates Picker and dedicated NAP Map Picker use Esri World Imagery while retaining Leaflet customer and NAP overlays.
 - Native Temp dialogs ignore Escape and backdrop clicks. They close only through their explicit Close/Cancel controls or after a successful completed action.
 - The plan and monthly-rate dropdowns synchronize in both directions so the stored plan/rate pair cannot disagree through normal form entry.
 - The service-address dropdown stores only Poblacion or Masical through normal form entry.
@@ -38,7 +39,8 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - The exclusive storage key is `temp_workspace_isolated_v1`. JSON mode writes `data/temp_workspace_isolated_v1.json`; MySQL mode uses a separate `app_store` row with that key.
 - Temp never reads or writes the canonical `customers`, `payments`, or `plans` keys/tables.
 - `GET /api/temp/workspace` returns Temp customers, billing schedule mode/next date, ledger transactions, calculated balances, and summary totals.
-- `POST/PUT/DELETE /api/temp/customers` manages only Temp customers. Customers with ledger transactions cannot be deleted until those Temp transactions are removed.
+- `POST/PUT/DELETE /api/temp/customers` manages only Temp customers. Coordinate input may use decimal or DMS notation and is stored as six-decimal latitude/longitude. A coordinate is required when a NAP is assigned. The server confirms the selected branch-local NAP exists, the numbered port is within capacity and free of canonical assignments, and no other Temp customer owns the same branch/NAP/port. Customers with ledger transactions cannot be deleted until those Temp transactions are removed.
+- `GET /api/temp/network-options` returns branch-local NAP coordinates and numbered port availability merged with current Temp assignments for the Temp editor. `GET /api/temp/network-customers` returns only sanitized mapped Temp subscribers for the authenticated Admin's branch.
 - `POST/PUT/DELETE /api/temp/payments` manages only Temp ledger entries. Charges increase balances; payments, rebates, and discounts reduce balances.
 - Generic payment CRUD rejects new manual GCash entries and any non-charge credit that reuses an existing official/legacy GCash-owned reference. The router also blocks a Cash/blank-method manual credit when its exact or numeric-leading-zero reference identifies an incoming official history row. System-generated cycle charges and official imported-GCash payment rows are immutable. Unverified legacy GCash rows cannot be edited but may be deleted for correction; an exact account/amount/date/reference match can instead be adopted in place without creating another payment.
 - `GET /api/temp/payments/:paymentId/receipt` returns one Temp payment receipt. The UI also renders the same receipt from its current authenticated snapshot for printing.
@@ -48,7 +50,7 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - `GET /api/temp/export?format=json|xlsx` downloads the same complete `isp-temp-workspace-export` backup as JSON or Excel. Excel contains Metadata, Customers, and Transactions sheets.
 - `GET /api/temp/collector-export` downloads a report-only Collector workbook with Account, Customer, Service address, Plan, Plan type, Billing, current Balance, and Due. Due equals Balance before the next billing date; on/after that date it adds the monthly rate only if the automatic cycle charge is not already in Balance. The report date is resolved in Asia/Manila, matching the Temp cycle engine even while UTC is still on the prior calendar date.
 - `GET /api/temp/payment-history-export?month=YYYY-MM` downloads only received Temp payments for the selected month. Main customers, Main payments, charges, rebates, and discounts are never included.
-- `POST /api/temp/import` retains the JSON API contract. `POST /api/temp/import-file` accepts exported JSON, XLSX, or XLS bytes, validates version, row counts, unique accounts/payment IDs/receipts/cycle keys, and complete official-GCash group metadata, and replaces only the isolated Temp workspace. Schema-v3 JSON/Excel exports remain importable. Imports cannot add, remove, or change unverified legacy GCash rows; no field of an existing official row can change, every imported official group must still match the current branch's shared claim, and no official/legacy GCash-owned reference may coexist with an ordinary Cash/blank or other effective credit.
+- `POST /api/temp/import` retains the JSON API contract. `POST /api/temp/import-file` accepts exported JSON, XLSX, or XLS bytes, validates version, row counts, unique accounts/payment IDs/receipts/cycle keys, duplicate Temp NAP ports, and complete official-GCash group metadata, and replaces only the isolated Temp workspace. Schema-v3/v4 JSON/Excel exports remain importable. Imports cannot add, remove, or change unverified legacy GCash rows; no field of an existing official row can change, every imported official group must still match the current branch's shared claim, and no official/legacy GCash-owned reference may coexist with an ordinary Cash/blank or other effective credit.
 - Temp account numbers default to `TMP` plus six digits; receipt numbers default to `TMP-` plus seven digits.
 
 ## Access and integration contracts
@@ -58,19 +60,21 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - No Temp link exists in `public/sidebar.html`, `public/topbar.html`, `public/index.html`, or business-module pages.
 - The Temp UI contains no iframe, link, or API call to `/customers.html`, `/payments.html`, `/api/customers`, or `/api/payments`.
 - Customer Management pages and records remain unchanged. Billing exposes only a read-only canonical GCash-reference lookup for cross-store duplicate prevention, while its imported-history claim/finalize store remains the single assignment authority. Used rows with `TMP` accounts render as Temp badges rather than invalid Main Payment Breakdown links.
+- `server.js` composes two narrow provider contracts: Temp reads canonical PON state to validate selections, and Network reads sanitized mapped Temp customers for derived overview display. Temp assignments are never written to `pon_nap_connections`; PON Management shows them as read-only occupied ports and excludes them from every canonical full-state save. They must be edited or cleared in `/temp.html`.
+- The administrative Coverage Map fetches mapped Temp customers, renders orange `T` pins and Temp popup labels, and draws their customer-to-NAP links from the merged PON overview. The public coverage map remains canonical-only.
 
 ## Validation
 
-- `npm run refactor:temp` verifies the runtime descriptor, distinct storage key, in-memory isolation from canonical store sentinels, balance behavior, schema-v3/v4 JSON and Excel round trips, leading-zero legacy adoption, 64-character binding compatibility, exact official reference/method immutability, legacy audit-timestamp immutability, cross-method GCash-reference reuse rejection, receipt data, monthly Temp-only history export, system-charge immutability, standalone page assets, absence of canonical page/API calls, hidden navigation, and Admin guards.
+- `npm run refactor:temp` verifies the runtime descriptor, distinct storage key, in-memory isolation from canonical store sentinels, balance behavior, schema-v3/v4/v5 JSON and Excel round trips, coordinate normalization, duplicate Temp NAP-port rejection, network picker structure, leading-zero legacy adoption, 64-character binding compatibility, exact official reference/method immutability, legacy audit-timestamp immutability, cross-method GCash-reference reuse rejection, receipt data, monthly Temp-only history export, system-charge immutability, standalone page assets, absence of canonical page/API calls, hidden navigation, and Admin guards.
 - `node Features/modules/collector/tests/collector-payment-approvals.test.js` verifies that Collector GCash stays pending until official proof exists, a Temp claim blocks individual and batch approval, successful JSON/MySQL approvals finalize the existing entry ID, interrupted finalization is retryable without another payment/review, mislabeled official references are still gated, and concurrent retries remain single-entry.
 - The focused Temp check also verifies all four plan/rate dropdown pairs, their two-way synchronization hooks, the exact Poblacion/Masical service-address choices, all three plan types, Date/Number schedule behavior, automatic full-rate Prepaid/Postpaid charges, day-mode Prorate computation, legacy no-back-bill migration, idempotency, customer/transaction sortable headers, the arranged ledger/payment-history structure, and explicit-only native dialog dismissal.
-- `npm run refactor:smoke` verifies `/temp.html` redirects unauthenticated users, Temp CSS/JS assets resolve, and `/api/temp/workspace` denies unauthenticated requests.
+- `npm run refactor:smoke` verifies `/temp.html` redirects unauthenticated users, Temp CSS/JS assets resolve, and the workspace plus both network-read APIs deny unauthenticated requests.
 - `npm run refactor:phase12` is the complete cross-module, security, HTTP, package, and cutover gate.
 - On 2026-07-30, focused isolation checks, HTML/JavaScript structural checks, authenticated read-only API verification, HTTP smoke, and the complete `npm test` suite passed. Interactive browser inspection was unavailable in the session.
 
 ## Known risks and follow-up
 
-- Temp is intentionally a separate lightweight ledger. Its catch-up cycle runs on workspace access rather than a background timer, and it does not run the canonical monthly scheduler, MikroTik disconnection automation, tickets, SMS, collector, or customer-portal workflows.
+- Temp is intentionally a separate lightweight ledger. Its catch-up cycle runs on workspace access rather than a background timer, and it does not run the canonical monthly scheduler, MikroTik provisioning/disconnection automation, tickets, SMS, collector, or customer-portal workflows. Coordinates and NAP ports are inventory/map references only.
 - Import replaces the complete Temp workspace and requires an explicit browser confirmation; export a current backup first when retaining existing Temp records matters.
 - Excel import is intentionally strict: missing sheets, changed column headings, count mismatches, or files not produced by the Temp exporter are rejected before storage replacement.
 - The URL is unlisted rather than secret. Admin authentication is the security boundary.
@@ -78,6 +82,14 @@ Status: Hidden auxiliary module with isolated secondary-location customer and bi
 - A Temp-only backup containing official GCash rows is restorable only while the matching shared imported-history assignment exists. Use the full-system backup for disaster recovery of both sides of that contract.
 
 ## Latest meaningful changes
+
+- 2026-08-30: Added a dedicated Temp NAP Map Picker beside the NAP field. It centers on the pinned Temp customer, shows every coordinate-valid branch NAP, highlights the selected NAP, exposes available and occupied ports, selects the first usable port by default, and fills the customer NAP/port fields only after confirmation.
+
+- 2026-08-30: Changed the Temp Coordinates Picker base map from OpenStreetMap street tiles to Esri World Imagery while preserving customer-pin dragging, NAP markers, port availability, and coordinate selection.
+
+- 2026-08-30: Temp customer coordinate entry now accepts existing DMS values such as `17°55'24.84"N121°44'39.55"E` as well as decimal pairs, then normalizes either form to six-decimal latitude/longitude before saving and map use.
+
+- 2026-08-30: Added coordinate and branch-local NAP/port fields to Temp customers and schema-v5 backups. The Temp editor shows a Leaflet coordinate picker, mapped NAP pins, and server-confirmed available ports. PON Management merges assignments as read-only derived occupied ports, while the administrative Coverage Map displays orange Temp pins and customer-to-NAP links. Canonical customers, Billing, and `pon_nap_connections` remain unchanged.
 
 - 2026-08-25: Added duplicate-safe **Main + Temp split** reconciliation for an official credit whose valid same-date Main payment covers only part of the amount. The browser displays the locked Main customer/entry and only edits the Temp remainder; the server re-derives Main evidence, enforces an exact combined total and three-account cap, stores only Temp rows, then finalizes one shared mixed assignment with deterministic retry. Main and Temp exports remain isolated.
 

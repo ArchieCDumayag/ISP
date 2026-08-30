@@ -93,6 +93,12 @@ const paymentConfirmationsRouter = billingBackend.load('paymentConfirmations');
 const mikrotikRouter = networkBackend.load('mikrotik');
 const jobsRouter = technicianBackend.load('jobs');
 const tempWorkspaceRouter = tempBackend.load('workspace');
+if (typeof tempWorkspaceRouter.configureNetworkStateProvider === 'function') {
+    tempWorkspaceRouter.configureNetworkStateProvider(ponManagementRouter.loadPonStateForBranch);
+}
+if (typeof ponManagementRouter.configureTempNetworkCustomersProvider === 'function') {
+    ponManagementRouter.configureTempNetworkCustomersProvider(tempWorkspaceRouter.loadTempNetworkCustomers);
+}
 const philippinesAddresses = customerManagementBackend.load('philippinesAddresses');
 const customerDraftSubmissionsModule = customerManagementBackend.load('customerDraftSubmissions');
 const customerDraftAdminRouter = customerDraftSubmissionsModule.adminRouter || require('express').Router();

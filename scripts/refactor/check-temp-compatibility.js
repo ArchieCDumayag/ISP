@@ -27,11 +27,36 @@ async function main() {
   const cycleModule = require(path.join(projectRoot, 'Features/modules/temp/backend/billing-cycle'));
   const excelModule = require(path.join(projectRoot, 'Features/modules/temp/backend/workspace-excel'));
   const mixedAllocationModule = require(path.join(projectRoot, 'Features/modules/temp/backend/gcash-mixed-allocation'));
+  const workspaceRouter = backend.load('workspace');
   assert.strictEqual(storeModule.STORE_KEY, 'temp_workspace_isolated_v1');
-  assert.strictEqual(storeModule.SCHEMA_VERSION, 4);
+  assert.strictEqual(storeModule.SCHEMA_VERSION, 5);
   assert(!['customers', 'payments', 'plans'].includes(storeModule.STORE_KEY));
   assert.deepStrictEqual(Array.from(cycleModule.PLAN_TYPES).sort(), ['postpaid', 'prepaid', 'prorate']);
   assert.deepStrictEqual(Array.from(cycleModule.BILLING_SCHEDULE_MODES).sort(), ['date', 'day']);
+  workspaceRouter.configureNetworkStateProvider(async (branchId) => ({
+    naps: [{
+      id: 'nap-router-1',
+      code: 'POB:NAP-ROUTER',
+      splitter: '1:8',
+      capacity: 8,
+      connections: [{ port: 1, customerId: 'MAIN-001', customerName: 'Main Client' }]
+    }],
+    branchId
+  }));
+  const validatedNetworkSelection = await workspaceRouter.validateCustomerNetworkSelection(
+    { user: { branchId: 7 } },
+    { mapPin: '17.883000, 121.873000', napId: 'nap-router-1', napPort: 2 }
+  );
+  assert.strictEqual(validatedNetworkSelection.networkBranchId, 7);
+  assert.strictEqual(validatedNetworkSelection.napCode, 'POB:NAP-ROUTER');
+  await assert.rejects(
+    workspaceRouter.validateCustomerNetworkSelection(
+      { user: { branchId: 7 } },
+      { mapPin: '17.883000, 121.873000', napId: 'nap-router-1', napPort: 1 }
+    ),
+    (error) => error.statusCode === 409 && /already assigned to Main Client/.test(error.message)
+  );
+  console.log('PASS Temp router validates branch-owned canonical NAP availability');
   const mixedMainPlan = mixedAllocationModule.buildMainGcashAllocationPlan({
     officialAmount: 2000,
     transactionDate: '2026-08-07',
@@ -135,7 +160,12 @@ async function main() {
     planName: 'Temp Plan',
     monthlyRate: 1000,
     openingBalance: 500,
-    billingDay: 12
+    billingDay: 12,
+    mapPin: '17.883, 121.873',
+    networkBranchId: 1,
+    napId: 'nap-temp-1',
+    napCode: 'POB:NAP01',
+    napPort: 3
   });
   assert.strictEqual(customer.accountNumber, 'TMP000001');
   assert.strictEqual(customer.planType, 'postpaid');
@@ -143,6 +173,11 @@ async function main() {
   assert.strictEqual(customer.billingScheduleConfigured, true);
   assert.strictEqual(customer.activationDate, '2026-07-30');
   assert.strictEqual(customer.nextBillingDate, '2026-08-12');
+  assert.strictEqual(customer.mapPin, '17.883000, 121.873000');
+  assert.strictEqual(customer.networkBranchId, 1);
+  assert.strictEqual(customer.napId, 'nap-temp-1');
+  assert.strictEqual(customer.napCode, 'POB:NAP01');
+  assert.strictEqual(customer.napPort, 3);
   const editedCustomer = await isolatedStore.updateCustomer(customer.accountNumber, {
     firstName: 'Other Edited',
     lastName: 'Location',
@@ -159,6 +194,8 @@ async function main() {
   assert.strictEqual(editedCustomer.billingScheduleMode, 'date');
   assert.strictEqual(editedCustomer.nextBillingDate, '2026-08-20');
   assert.strictEqual(editedCustomer.billingDay, 20);
+  assert.strictEqual(editedCustomer.mapPin, '17.883000, 121.873000');
+  assert.strictEqual(editedCustomer.napPort, 3);
   await isolatedStore.createPayment({
     accountNumber: customer.accountNumber,
     kind: 'charge',
@@ -186,6 +223,55 @@ async function main() {
     (error) => error.statusCode === 409
   );
   console.log('PASS Temp customer/payment storage isolation and balance behavior');
+
+  const networkMemory = new Map();
+  const networkStore = storeModule.createWorkspaceStore({
+    readJson: async (key, fallback) => networkMemory.has(key) ? networkMemory.get(key) : fallback,
+    writeJson: async (key, value) => networkMemory.set(key, JSON.parse(JSON.stringify(value))),
+    today: () => '2026-08-30',
+    now: () => '2026-08-30T08:00:00.000Z'
+  });
+  const dmsNetworkCustomer = await networkStore.createCustomer({
+    accountNumber: 'TMP-NET-001',
+    firstName: 'Mapped',
+    lastName: 'Temp',
+    monthlyRate: 800,
+    billingDay: 15,
+    mapPin: `17\u00B055'24.84"N121\u00B044'39.55"E`,
+    networkBranchId: 1,
+    napId: 'nap-shared',
+    napCode: 'POB:NAP02',
+    napPort: 4
+  });
+  assert.strictEqual(dmsNetworkCustomer.mapPin, '17.923567, 121.744319');
+  await assert.rejects(
+    networkStore.createCustomer({
+      accountNumber: 'TMP-NET-002',
+      firstName: 'Duplicate',
+      lastName: 'Port',
+      monthlyRate: 800,
+      billingDay: 15,
+      mapPin: '17.885000, 121.875000',
+      networkBranchId: 1,
+      napId: 'nap-recreated',
+      napCode: 'POB:NAP02',
+      napPort: 4
+    }),
+    (error) => error.statusCode === 409 && /already assigned/i.test(error.message)
+  );
+  assert.throws(
+    () => storeModule.normalizeMapPin('invalid coordinates', { strict: true }),
+    /valid latitude and longitude/
+  );
+  assert.strictEqual(
+    storeModule.normalizeMapPin(`17\u00B055'24.84"N121\u00B044'39.55"E`, { strict: true }),
+    '17.923567, 121.744319'
+  );
+  assert.strictEqual(
+    storeModule.normalizeMapPin(`17\u00B055'24.84"S, 121\u00B044'39.55"W`, { strict: true }),
+    '-17.923567, -121.744319'
+  );
+  console.log('PASS Temp coordinate normalization and duplicate NAP-port protection');
 
   const cycleMemory = new Map();
   let cycleToday = '2026-07-30';
@@ -465,9 +551,9 @@ async function main() {
   ], { header: ['Field', 'Value'] }), excelModule.SHEET_NAMES.metadata);
   XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.json_to_sheet(
     exported.data.customers.map((record) => Object.fromEntries(
-      excelModule.CUSTOMER_FIELDS.map((field) => [field, record[field] ?? ''])
+      excelModule.LEGACY_CUSTOMER_FIELDS_V4.map((field) => [field, record[field] ?? ''])
     )),
-    { header: Array.from(excelModule.CUSTOMER_FIELDS) }
+    { header: Array.from(excelModule.LEGACY_CUSTOMER_FIELDS_V4) }
   ), excelModule.SHEET_NAMES.customers);
   XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.json_to_sheet(
     exported.data.payments.map((record) => Object.fromEntries(
@@ -866,8 +952,18 @@ async function main() {
   assert(tempHtml.includes('id="customersPanel"'));
   assert(tempHtml.includes('id="billingPanel"'));
   assert(tempHtml.includes('Isolated data'));
-  assert(tempHtml.includes('/temp.js?v=2.4'));
-  assert(tempHtml.includes('/temp.css?v=2.3'));
+  assert(tempHtml.includes('/temp.js?v=2.7'));
+  assert(tempHtml.includes('/temp.css?v=2.5'));
+  assert(tempHtml.includes('id="customerMapPin"'));
+  assert(tempHtml.includes('id="customerNap"'));
+  assert(tempHtml.includes('id="customerNapPort"'));
+  assert(tempHtml.includes('id="coordinateDialog"'));
+  assert(tempHtml.includes('id="openNapMapPickerBtn"'));
+  assert(tempHtml.includes('id="napMapDialog"'));
+  assert(tempHtml.includes('id="napPickerMap"'));
+  assert(tempHtml.includes('id="napMapPort"'));
+  assert(tempHtml.includes('id="useNapSelectionBtn"'));
+  assert(tempHtml.includes('leaflet@1.9.4'));
   assert(tempHtml.includes('id="historyTab"'));
   assert(tempHtml.includes('id="gcashTab"'));
   assert(tempHtml.includes('id="historyMonth" type="month"'));
@@ -914,6 +1010,18 @@ async function main() {
   assert(tempJs.includes("const TEMP_SERVICE_ADDRESSES = Object.freeze(['Poblacion', 'Masical']);"));
   assert(tempJs.includes("const TEMP_PLAN_TYPES = Object.freeze(['prepaid', 'postpaid', 'prorate']);"));
   assert(tempJs.includes("const TEMP_BILLING_SCHEDULE_MODES = Object.freeze(['date', 'day']);"));
+  assert(tempJs.includes("api('/network-options')"));
+  assert(tempJs.includes('function openCoordinatePicker()'));
+  assert(tempJs.includes('async function openNapMapPicker()'));
+  assert(tempJs.includes('function selectNapMapNap('));
+  assert(tempJs.includes('function useNapMapSelection()'));
+  assert(tempJs.includes('function napMapPortRows('));
+  assert(tempJs.includes('server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'));
+  assert(tempJs.includes("attribution: '&copy; Esri'"));
+  assert(tempJs.includes('const normalizedDms = raw'));
+  assert(tempJs.includes('const parseDmsSegment = (segment) =>'));
+  assert(tempJs.includes('function renderNetworkPorts('));
+  assert(tempJs.includes("workspace: 'temp'"));
   assert(tempJs.includes('const filenameFromDisposition ='));
   assert(tempJs.includes("async function exportWorkspace(format)"));
   assert(tempJs.includes("exportWorkspace('json')"));
@@ -1013,6 +1121,12 @@ async function main() {
   assert(tempCss.includes('.gcash-state--mixed'));
   assert(tempCss.includes('grid-template-columns: repeat(6, minmax(0, 1fr))'));
   assert(tempCss.includes('.gcash-allocation-main'));
+  assert(tempCss.includes('.temp-dialog--map[open]'));
+  assert(tempCss.includes('.coordinate-picker-map'));
+  assert(tempCss.includes('.temp-dialog--nap-map'));
+  assert(tempCss.includes('.nap-map-layout'));
+  assert(tempCss.includes('.nap-picker-map'));
+  assert(tempCss.includes('.temp-map-marker-shell'));
   assert(tempCss.includes('grid-template-columns: repeat(5, 1fr)'));
   assert(tempCss.includes('var(--tblr-font-sans-serif'));
   assert(tempJs.includes("const API_ROOT = '/api/temp'"));
@@ -1070,6 +1184,10 @@ async function main() {
   assert(routerSource.includes("accountHasRole(req.user, 'Admin')"));
   assert(routerSource.includes("express.raw({ type: 'application/octet-stream', limit: '20mb' })"));
   assert(routerSource.includes('parseWorkspaceExcelBuffer(req.body)'));
+  assert(routerSource.includes("router.get('/network-options'"));
+  assert(routerSource.includes("router.get('/network-customers'"));
+  assert(routerSource.includes('configureNetworkStateProvider'));
+  assert(routerSource.includes('validateCustomerNetworkSelection'));
   console.log('PASS standalone one-page Customer and Billing workspace');
 
   ['public/sidebar.html', 'public/topbar.html', 'public/index.html'].forEach((relativePath) => {
@@ -1084,6 +1202,8 @@ async function main() {
   assert(protectedPagesBlock[1].includes("'temp.html'"), 'temp.html must use the shared Admin page guard');
   assert(serverSource.includes("const { backend: tempBackend } = requireModuleRuntime('temp');"));
   assert(serverSource.includes("const tempWorkspaceRouter = tempBackend.load('workspace');"));
+  assert(serverSource.includes('tempWorkspaceRouter.configureNetworkStateProvider(ponManagementRouter.loadPonStateForBranch)'));
+  assert(serverSource.includes('ponManagementRouter.configureTempNetworkCustomersProvider(tempWorkspaceRouter.loadTempNetworkCustomers)'));
   assert(serverSource.includes("app.use('/api/temp', requireAuth, tempWorkspaceRouter);"));
   console.log('PASS Temp page and API shared Admin authentication guard');
   console.log('TEMP COMPATIBILITY PASSED');

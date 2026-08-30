@@ -527,10 +527,11 @@
     }
 
     const accountDisplay = account || (name && normalizeNameKey(fallbackRef) === normalizeNameKey(name) ? '' : fallbackRef);
+    const workspaceSuffix = toText(entry?.workspace).toLowerCase() === 'temp' ? ' · Temp' : '';
     if (name && accountDisplay && normalizeNameKey(name) !== normalizeNameKey(accountDisplay)) {
-      return `${name} (${accountDisplay})`;
+      return `${name} (${accountDisplay})${workspaceSuffix}`;
     }
-    return name || accountDisplay || '-';
+    return `${name || accountDisplay || '-'}${workspaceSuffix}`;
   };
 
   const getAssignedCustomerKeySet = () => {
@@ -551,12 +552,23 @@
     const pppoeUsername = toText(raw?.pppoeUsername || raw?.pppoe_username);
     const status = toText(raw?.status) || 'unknown';
     const key = toCustomerKey(accountNumber) || toCustomerKey(name);
-    return { accountNumber, name, area, pppoeUsername, status, key };
+    return {
+      accountNumber,
+      name,
+      area,
+      pppoeUsername,
+      status,
+      key,
+      workspace: toText(raw?.workspace).toLowerCase(),
+      readOnly: raw?.readOnly === true,
+      napId: toText(raw?.napId),
+      napPort: toPositiveInt(raw?.napPort)
+    };
   };
 
   const loadCustomers = async () => {
     try {
-      const response = await fetch('/api/customers', { credentials: 'same-origin' });
+      const response = await fetch('/api/pon/overview', { credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) return false;
       const payload = await response.json();
       const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.customers) ? payload.customers : [];
@@ -694,7 +706,9 @@
             port,
             opticalInfo,
             pppoeUsername: toText(entry?.pppoeUsername || entry?.pppoe_username),
-            subscriberStatus: normalizeSubscriberStatus(entry?.subscriberStatus || entry?.status)
+            subscriberStatus: normalizeSubscriberStatus(entry?.subscriberStatus || entry?.status),
+            workspace: toText(entry?.workspace).toLowerCase(),
+            readOnly: entry?.readOnly === true
           };
         })
         .filter(Boolean);
@@ -739,8 +753,9 @@
         coordinate = `${latitude}, ${longitude}`;
       }
     }
+    const canonicalConnectionCount = connections.filter((entry) => !entry.readOnly).length;
     const used = clamp(
-      Math.max(toNumber(rawNap?.used, 0), connections.length, 0),
+      Math.max(toNumber(rawNap?.used, 0), canonicalConnectionCount, 0),
       0,
       capacity
     );
@@ -777,7 +792,9 @@
           port,
           opticalInfo,
           pppoeUsername: toText(entry?.pppoeUsername || entry?.pppoe_username),
-          subscriberStatus: resolveConnectionSubscriberStatus(entry)
+          subscriberStatus: resolveConnectionSubscriberStatus(entry),
+          workspace: toText(entry?.workspace).toLowerCase(),
+          readOnly: entry?.readOnly === true
         };
       })
       .filter(Boolean)
@@ -849,7 +866,7 @@
       capacity: Math.max(toNumber(item.capacity, 0), 1),
       used: Math.max(toNumber(item.used, 0), 0),
       opticalPower: toText(item.opticalPower),
-      connections: getNapConnections(item).map((entry) => ({
+      connections: getNapConnections(item).filter((entry) => !entry.readOnly).map((entry) => ({
         customerId: toText(entry.customerId),
         customerName: toText(entry.customerName),
         customerRef: toText(entry.customerRef),
@@ -1848,9 +1865,12 @@
         const portLabel = String(portNo).padStart(2, '0');
         const portCodeBase = toText(nap.code) || 'NAP';
         const portCode = `${portCodeBase}-PORT-${portLabel}`;
-        const useTitle = entries.length ? 'Replace customer' : 'Assign customer';
-        const canSetOptical = entries.length > 0;
-        const canRemoveAssignment = entries.length > 0;
+        const hasReadOnlyAssignment = entries.some((entry) => entry.readOnly);
+        const useTitle = hasReadOnlyAssignment
+          ? 'Edit this Temp assignment from temp.html'
+          : (entries.length ? 'Replace customer' : 'Assign customer');
+        const canSetOptical = entries.length > 0 && !hasReadOnlyAssignment;
+        const canRemoveAssignment = entries.length > 0 && !hasReadOnlyAssignment;
         const setOpticalTitle = canSetOptical ? 'Set optical power' : 'Assign customer first';
         const removeTitle = canRemoveAssignment ? 'Remove customer from this port' : 'No customer assigned';
         return `
@@ -1870,6 +1890,7 @@
                     data-port-no="${portNo}"
                     title="${escapeHtml(useTitle)}"
                     aria-label="${escapeHtml(useTitle)}"
+                    ${hasReadOnlyAssignment ? 'disabled' : ''}
                   >
                     <i class="ti ti-user-plus" aria-hidden="true"></i>
                   </button>
@@ -1931,6 +1952,7 @@
     const query = toText(state.customerAssignSearch).toLowerCase();
     const rows = state.customers.filter((customer) => {
       if (!customer?.key) return false;
+      if (customer.readOnly) return false;
       if (assignedKeys.has(customer.key)) return false;
       if (!query) return true;
       return (
@@ -2024,6 +2046,11 @@
 
     const nap = state.naps[index];
     const existingConnections = getNapConnections(nap);
+    const readOnlyPortConnection = existingConnections.find((entry) => entry.port === portNo && entry.readOnly);
+    if (readOnlyPortConnection) {
+      showToast('This port belongs to a Temp customer. Edit its NAP assignment from temp.html.', 'error');
+      return false;
+    }
     const hasExistingPort = existingConnections.some((entry) => entry.port === portNo);
     if (hasExistingPort) {
       const confirmed = window.appConfirm
@@ -2090,6 +2117,10 @@
     const targetConnection = connections.find((entry) => entry.port === safePort);
     if (!targetConnection) {
       showToast('No customer assigned on this port.', 'info');
+      return false;
+    }
+    if (targetConnection.readOnly) {
+      showToast('This Temp assignment is managed from temp.html.', 'error');
       return false;
     }
 
@@ -2162,6 +2193,10 @@
       showToast('Assign customer first before setting optical power.', 'error');
       return false;
     }
+    if (targetConnection.readOnly) {
+      showToast('This Temp assignment is managed from temp.html.', 'error');
+      return false;
+    }
 
     state.selectedNapPortOptical = { napId: safeNapId, portNo: safePort };
     renderNapOpticalModal();
@@ -2192,6 +2227,10 @@
     const targetConnection = connections.find((entry) => entry.port === safePort);
     if (!targetConnection) {
       showToast('Assign customer first before setting optical power.', 'error');
+      return false;
+    }
+    if (targetConnection.readOnly) {
+      showToast('This Temp assignment is managed from temp.html.', 'error');
       return false;
     }
 

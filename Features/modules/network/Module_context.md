@@ -1,6 +1,6 @@
 # Network Module Context
 
-Last reviewed: 2026-08-29
+Last reviewed: 2026-08-30
 Status: Canonical module runtime; backend aliases are retired and browser URLs remain unchanged.
 
 ## Purpose and current scope
@@ -19,7 +19,7 @@ Status: Canonical module runtime; backend aliases are retired and browser URLs r
 - `backend/mikrotik.js`: `/api/mikrotik` operations for tests, PPPoE, profiles, traffic, sync, and router information. Active PPPoE creation is serialized with Billing's customer/payment lifecycle boundary and rejects both an active permanent closure and an unconsumed closed-balance/pending-payment reconnection decision. When a cached PPPoE link lacks an account number, activation resolves the canonical customer by normalized PPPoE username before applying the same guard.
 - `backend/mikrotik-client.js` and `backend/mikrotik-endpoint.js`: RouterOS connectivity and endpoint normalization.
 - `backend/mikrotik-audit-log.js`: records network commands through the Admin activity log.
-- `backend/pon-management-api.js`: `/api/pon/state`, `/api/pon/overview`, and PON state updates. State and overview reads expose an opaque `revision`; full-state `PUT /api/pon/state` requires the matching `expectedRevision`, returns the next revision, and rejects stale snapshots with `409 PON_STATE_CONFLICT` before changing records.
+- `backend/pon-management-api.js`: `/api/pon/state`, `/api/pon/overview`, and PON state updates. State and overview reads expose an opaque `revision`; full-state `PUT /api/pon/state` requires the matching `expectedRevision`, returns the next revision, and rejects stale snapshots with `409 PON_STATE_CONFLICT` before changing records. A server-composed Temp provider augments only `/overview` with branch-matched read-only Temp customers and port assignments; `/state`, its revision, and persisted PON rows remain canonical-only.
 - `backend/pon-serviceability.js` supplies both the distance-limited online/free-port candidate contract and an expanded-limit coverage-map mode that still enforces its requested radius while retaining full or offline NAPs inside it, with a numbered `ports` roster. Each port is classified as `available`, `occupied`, `reserved`, or `unavailable`; only an online unoccupied/unreserved port is selectable. Customer labels remain internal until the Technician route applies its dedicated coverage-map sanitizer.
 - PON revisions hash only persisted OLT, NAP, and port-assignment fields, excluding live/derived subscriber status. JSON comparisons run under the shared branch mutation lock. MySQL saves acquire the branch row and PON rows inside one transaction before comparing, and Technician reservation/finalization mutations acquire the same branch row so a later admin snapshot cannot overwrite a completed field assignment. Before either JSON or MySQL accepts a full Admin save, active reservations are also checked against the proposed topology: their NAP cannot be removed or reduced below the reserved port, and the held port cannot be assigned through PON Management.
 - `backend/pppoe-account-utils.js`: shared PPPoE normalization, merge, and deduplication helpers.
@@ -42,12 +42,14 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - The missing-configuration alert uses a true `hidden` state that cannot be overridden by Tabler display utilities. An enabled integration hides the alert immediately, and any confirmed MikroTik connection also clears it while restoring the workbench.
 - Other Network pages continue consuming their existing Customer Management coverage styles, Billing helpers, and shared shell/vendor assets through unchanged root URLs.
 - `web/js/pon-management.js` retains the loaded PON revision, sends it with every debounced or immediate save, adopts the revision returned by a successful save, and reloads the latest server state on a conflict. If that reload fails, PON editing is disabled instead of retrying a stale full snapshot.
+- PON Management labels derived Temp assignments, disables replace/remove/optical actions for their ports, omits Temp customers from its assignment picker, and filters every read-only connection out of canonical serialization. The administrative coverage map loads mapped Temp customers as orange `T` pins and uses the merged overview to draw their NAP links; the public coverage map is unchanged.
 
 ## Data and dependencies
 
 - Router, GenieACS, and mapping credentials/settings come from Admin-owned integration configuration.
 - Canonical shared database and storage imports come from `core/`; migrated Admin, Customer Management, and Billing dependencies resolve directly from their module backends.
 - Customer Management supplies customer identity, account number, coordinates, coverage, and PPPoE bindings.
+- Temp supplies a sanitized branch-filtered mapped-customer provider for derived Admin PON and Coverage Map display. Network never writes Temp customer/billing data, and Temp assignments never enter canonical `pon_nap_connections`.
 - Billing supplies plan-profile intent and service enforcement triggers.
 - Technician installation workflows consume the canonical Network PON, PPPoE, and MikroTik backends directly.
 - Activity auditing crosses into Admin-owned logs.
@@ -65,7 +67,7 @@ All API prefixes, authorization requirements, feature gates, and response contra
 
 ## Validation
 
-- `npm run refactor:network` verifies the descriptor, retirement of six root entries, 13 web files, server wiring, canonical cross-module dependencies, representative endpoint/PPPoE/audit/client/PON helper behavior, shared Tabler Leaflet popup structure, and the PPPoE page's focused Tabler dependency and component contract.
+- `npm run refactor:network` verifies the descriptor, retirement of six root entries, 13 web files, server wiring, canonical cross-module dependencies, representative endpoint/PPPoE/audit/client/PON helper behavior, non-mutating Temp overview merge, read-only PON serialization/action guards, administrative Temp map pins/links, shared Tabler Leaflet popup structure, and the PPPoE page's focused Tabler dependency and component contract.
 - `npm run refactor:phase6` runs inventory, Core, Admin, Customer Management, Billing, Network, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - The HTTP suite covers unchanged Network asset/page URLs, authentication and feature boundaries, public coverage-map data, and unauthenticated MikroTik/PON/GenieACS denials on ports `3190`/`4190`.
@@ -78,6 +80,8 @@ All API prefixes, authorization requirements, feature gates, and response contra
 - 2026-08-25 coverage-map validation: focused serviceability tests prove full and offline NAPs inside 600 meters remain visible, farther NAPs are excluded, every numbered port has a deterministic status, occupied ports retain the internal client label, and only online free ports are marked available.
 
 ## Latest meaningful changes
+
+- 2026-08-30: Added a provider-based, overview-only merge for mapped Temp customers. PON Management displays their assigned ports as read-only and cannot persist, replace, remove, or edit them; the administrative Coverage Map adds orange Temp pins and links. Canonical PON state/revisions, public coverage, and live router behavior remain unchanged.
 
 - 2026-08-29: Extended PPPoE activation protection through Customer Archive Reopen. A reopened subscriber remains blocked while the Final Closed Customer Balance or pending-payment reconnection is unsettled, including username-only saves whose cached PPPoE row lacks an account link.
 

@@ -399,6 +399,7 @@
                 <span class="map-legend__item"><span class="map-legend__dot is-online"></span> Customer Online</span>
                 <span class="map-legend__item"><span class="map-legend__dot is-offline"></span> Customer Offline</span>
                 <span class="map-legend__item"><span class="map-legend__dot is-unknown"></span> Customer Unknown</span>
+                <span class="map-legend__item"><span class="map-legend__dot is-temp" style="background:#f59f00"></span> Temp Customer</span>
                 <span class="map-legend__item"><span class="map-legend__dot is-nap"></span> NAP</span>
               </div>
               <button class="btn btn-primary btn-icon map-layers-fab" id="fabMapLayers" type="button" aria-label="Toggle Map Layers">
@@ -438,8 +439,9 @@
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const API_CUSTOMERS = '/api/customers';
+      const API_TEMP_CUSTOMERS = '/api/temp/network-customers';
       const API_PAYMENT_RECORDS = '/api/payment-records';
-      const API_PON_STATE = '/api/pon/state';
+      const API_PON_STATE = '/api/pon/overview';
       const REFRESH_INTERVAL_MS = 60_000;
       const LINKS_MIN_ZOOM = 14;
       const PHILIPPINES_CENTER = [12.8797, 121.774];
@@ -631,6 +633,7 @@
 
       const markerFillColor = (status, type = 'customer') => {
         const safe = normalizeStatus(status, 'planned');
+        if (type === 'temp') return '#f59f00';
         if (type === 'nap' && safe === 'active') return '#7c3aed';
         return statusColor(safe);
       };
@@ -836,10 +839,11 @@
           return markerIconCache.get(cacheKey);
         }
         const color = markerFillColor(safeStatus, type);
-        const badge = type === 'nap' ? 'N' : 'C';
-        const circleFill = darkTheme && type === 'customer' ? '#1e293b' : '#ffffff';
-        const circleStroke = darkTheme && type === 'customer' ? '#93c5fd' : '#ffffff';
-        const textFill = darkTheme && type === 'customer' ? '#cbd5f5' : color;
+        const badge = type === 'nap' ? 'N' : (type === 'temp' ? 'T' : 'C');
+        const customerType = type === 'customer' || type === 'temp';
+        const circleFill = darkTheme && customerType ? '#1e293b' : '#ffffff';
+        const circleStroke = darkTheme && customerType ? (type === 'temp' ? '#fcd34d' : '#93c5fd') : '#ffffff';
+        const textFill = darkTheme && customerType ? (type === 'temp' ? '#fcd34d' : '#cbd5f5') : color;
         const svg = `
           <svg xmlns="http://www.w3.org/2000/svg" width="64" height="80" viewBox="0 0 64 80">
             <path d="M32 0C19.3 0 9 10.3 9 23c0 19.5 23 43.7 23 43.7S55 42.5 55 23C55 10.3 44.7 0 32 0z" fill="${color}"/>
@@ -861,7 +865,7 @@
       const refreshThemeSensitiveMapVisuals = () => {
         markerIconCache.clear();
         customerRecords.forEach((row) => {
-          row.marker.setIcon(markerIcon(row.status, 'customer'));
+          row.marker.setIcon(markerIcon(row.status, row.workspace === 'temp' ? 'temp' : 'customer'));
         });
         napRecords.forEach((row) => {
           row.marker.setIcon(markerIcon(row.status, 'nap'));
@@ -909,7 +913,7 @@
             lat: row.lat,
             lng: row.lng,
             label: row.name,
-            keywords: `${row.name} ${row.accountNumber} customer`.toLowerCase()
+            keywords: `${row.name} ${row.accountNumber} ${row.workspace === 'temp' ? 'temp customer' : 'customer'}`.toLowerCase()
           });
         });
         napRecords.forEach((row) => {
@@ -1251,15 +1255,26 @@
         customerPointIndex = new Map();
         customerRecords = [];
 
-        const [res, paymentRecordsByAccount] = await Promise.all([
+        const [res, tempRes, paymentRecordsByAccount] = await Promise.all([
           fetch(API_CUSTOMERS, { cache: 'no-store' }),
+          fetch(API_TEMP_CUSTOMERS, { cache: 'no-store' }),
           loadPaymentRecordIndex()
         ]);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data?.error || data?.message || 'Unable to load customers.');
         }
-        const customers = Array.isArray(data) ? data : (Array.isArray(data.customers) ? data.customers : []);
+        const tempData = await tempRes.json().catch(() => ({}));
+        if (!tempRes.ok) {
+          throw new Error(tempData?.error || tempData?.message || 'Unable to load Temp customers.');
+        }
+        const mainCustomers = Array.isArray(data) ? data : (Array.isArray(data.customers) ? data.customers : []);
+        const tempCustomers = (Array.isArray(tempData?.customers) ? tempData.customers : []).map((customer) => ({
+          ...customer,
+          workspace: 'temp',
+          readOnly: true
+        }));
+        const customers = [...mainCustomers, ...tempCustomers];
         const paymentRecords = Array.from(paymentRecordsByAccount.values());
         const points = [];
         let mapped = 0;
@@ -1279,19 +1294,26 @@
           const fullName = `${firstName} ${lastName}`.trim();
           const name = fullName || String(customer?.name || '').trim() || 'Customer';
           const accountNumber = String(customer?.accountNumber || customer?.account || customer?.id || '').trim() || '-';
-          const status = normalizeMikrotikCustomerStatus(customer?.mikrotikStatus);
+          const isTempCustomer = customer?.workspace === 'temp';
+          const status = isTempCustomer
+            ? normalizeStatus(customer?.status, 'planned')
+            : normalizeMikrotikCustomerStatus(customer?.mikrotikStatus);
           const paymentRecord = paymentRecordsByAccount.get(normalizeLookupKey(accountNumber)) || null;
-          const balance = resolveCustomerCurrentBillDisplay(customer, paymentRecord, paymentRecords);
-          const marker = L.marker([lat, lng], { icon: markerIcon(status, 'customer') }).bindPopup(`
+          const balance = isTempCustomer
+            ? formatCustomerBalance(customer?.balance)
+            : resolveCustomerCurrentBillDisplay(customer, paymentRecord, paymentRecords);
+          const displayStatus = isTempCustomer ? statusLabel(status) : customerMapStatusLabel(status);
+          const markerType = isTempCustomer ? 'temp' : 'customer';
+          const marker = L.marker([lat, lng], { icon: markerIcon(status, markerType) }).bindPopup(`
             <div class="card map-popup-card">
               <div class="card-header">
-                <span class="avatar avatar-sm bg-blue-lt text-blue map-popup-card__avatar"><i class="ti ti-user" aria-hidden="true"></i></span>
+                <span class="avatar avatar-sm ${isTempCustomer ? 'bg-yellow-lt text-yellow' : 'bg-blue-lt text-blue'} map-popup-card__avatar"><i class="ti ti-${isTempCustomer ? 'clock-pin' : 'user'}" aria-hidden="true"></i></span>
                 <div class="map-popup-card__heading">
-                  <span class="map-popup-card__kicker">Subscriber</span>
+                  <span class="map-popup-card__kicker">${isTempCustomer ? 'Temporary Subscriber' : 'Subscriber'}</span>
                   <div class="map-popup-card__title">${escapeHtml(name)}</div>
                   <div class="map-popup-card__subtitle"><i class="ti ti-id" aria-hidden="true"></i> ${escapeHtml(accountNumber)}</div>
                 </div>
-                <span class="${statusBadgeClass(status)} map-popup-card__status">${escapeHtml(customerMapStatusLabel(status))}</span>
+                <span class="${statusBadgeClass(status)} map-popup-card__status">${escapeHtml(isTempCustomer ? `Temp · ${displayStatus}` : displayStatus)}</span>
               </div>
               <div class="card-body map-popup-card__body">
                 <div class="list-group list-group-flush map-popup-card__list">
@@ -1306,13 +1328,13 @@
             className: 'network-map-popup customer-map-popup',
             maxWidth: 320
           });
-          customerRecords.push({ marker, status, name, accountNumber, lat, lng });
+          customerRecords.push({ marker, status, name, accountNumber, lat, lng, workspace: isTempCustomer ? 'temp' : 'main' });
           points.push([lat, lng]);
           mapped += 1;
 
           const accountKey = normalizeLookupKey(accountNumber);
           const nameKey = normalizeName(name);
-          const pointPayload = { lat, lng, label: name, status, marker, accountNumber, coordinateSource: coordinate.source };
+          const pointPayload = { lat, lng, label: name, status, marker, accountNumber, coordinateSource: coordinate.source, workspace: isTempCustomer ? 'temp' : 'main' };
           if (accountKey) customerPointIndex.set(accountKey, pointPayload);
           if (nameKey && !customerPointIndex.has(nameKey)) customerPointIndex.set(nameKey, pointPayload);
         });

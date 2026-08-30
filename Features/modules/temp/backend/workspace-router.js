@@ -22,6 +22,11 @@ const {
 } = require('./workspace-excel');
 
 const router = express.Router();
+let networkStateProvider = null;
+
+const configureNetworkStateProvider = (provider) => {
+  networkStateProvider = typeof provider === 'function' ? provider : null;
+};
 
 router.use((req, res, next) => {
   if (!req.user || !accountHasRole(req.user, 'Admin')) {
@@ -65,6 +70,103 @@ const createRouterError = (message, statusCode = 400, code = '') => {
   const error = new workspaceStore.WorkspaceValidationError(message, statusCode);
   if (code) error.code = code;
   return error;
+};
+const toPositiveInteger = (value) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+const splitterCapacity = (value) => {
+  const parsed = Number(String(value || '').replace('/', ':').split(':')[1]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 16;
+};
+const napTotalPorts = (nap = {}) => {
+  const highestAssigned = (Array.isArray(nap.connections) ? nap.connections : [])
+    .reduce((highest, connection) => Math.max(highest, toPositiveInteger(connection?.port) || 0), 0);
+  return Math.max(
+    splitterCapacity(nap.splitter),
+    toPositiveInteger(nap.capacity) || 0,
+    highestAssigned,
+    1
+  );
+};
+const tempNetworkCustomer = (customer = {}) => ({
+  accountNumber: String(customer.accountNumber || '').trim(),
+  name: String(customer.fullName || `${customer.firstName || ''} ${customer.lastName || ''}`).trim(),
+  firstName: String(customer.firstName || '').trim(),
+  lastName: String(customer.lastName || '').trim(),
+  area: String(customer.address || '').trim(),
+  mapPin: String(customer.mapPin || '').trim(),
+  coordinates: String(customer.mapPin || '').trim(),
+  status: String(customer.status || 'inactive').trim().toLowerCase(),
+  balance: Number(customer.balance) || 0,
+  workspace: 'temp',
+  readOnly: true,
+  networkBranchId: toPositiveInteger(customer.networkBranchId),
+  napId: String(customer.napId || '').trim(),
+  napCode: String(customer.napCode || '').trim(),
+  napPort: toPositiveInteger(customer.napPort)
+});
+
+const loadTempNetworkCustomers = async (branchId) => {
+  const normalizedBranchId = toPositiveInteger(branchId);
+  if (!normalizedBranchId) return [];
+  const snapshot = await workspaceStore.getSnapshot();
+  return snapshot.customers
+    .filter((customer) => Number(customer.networkBranchId) === normalizedBranchId)
+    .map(tempNetworkCustomer)
+    .filter((customer) => customer.accountNumber);
+};
+
+const requireNetworkState = async (branchId) => {
+  if (!networkStateProvider) {
+    throw createRouterError('PON Management is unavailable. Try again after the server finishes loading.', 503);
+  }
+  return networkStateProvider(branchId);
+};
+
+const validateCustomerNetworkSelection = async (req, payload = {}) => {
+  const napId = String(payload?.napId || '').trim();
+  const napPort = toPositiveInteger(payload?.napPort);
+  if (!napId && !napPort) {
+    return {
+      ...payload,
+      networkBranchId: null,
+      napId: '',
+      napCode: '',
+      napPort: null
+    };
+  }
+  if (!napId || !napPort) {
+    throw createRouterError('Select both a NAP Pin and an available NAP port.');
+  }
+
+  const branchId = resolveBranchId(req);
+  const state = await requireNetworkState(branchId);
+  const nap = (Array.isArray(state?.naps) ? state.naps : []).find((entry) => (
+    String(entry?.id || '').trim() === napId
+    || String(entry?.code || '').trim().toLowerCase() === napId.toLowerCase()
+  ));
+  if (!nap) throw createRouterError('The selected NAP Pin is no longer available.', 409);
+  const totalPorts = napTotalPorts(nap);
+  if (napPort > totalPorts) {
+    throw createRouterError(`The selected NAP has only ${totalPorts} configured ports.`, 409);
+  }
+  const occupied = (Array.isArray(nap.connections) ? nap.connections : []).find((connection) => (
+    toPositiveInteger(connection?.port) === napPort
+  ));
+  if (occupied) {
+    const occupiedBy = String(
+      occupied.customerName || occupied.customerId || occupied.customerRef || 'another customer'
+    ).trim();
+    throw createRouterError(`That NAP port is already assigned to ${occupiedBy}.`, 409);
+  }
+  return {
+    ...payload,
+    networkBranchId: branchId,
+    napId: String(nap.id || napId).trim(),
+    napCode: String(nap.code || '').trim(),
+    napPort
+  };
 };
 
 const rejectManualOfficialGcashReference = async (req, payload = {}, paymentId = '') => {
@@ -219,9 +321,76 @@ router.get('/workspace', async (_req, res) => {
   }
 });
 
+router.get('/network-options', async (req, res) => {
+  try {
+    const branchId = resolveBranchId(req);
+    const [state, tempCustomers] = await Promise.all([
+      requireNetworkState(branchId),
+      loadTempNetworkCustomers(branchId)
+    ]);
+    const tempAssignments = new Map();
+    tempCustomers.forEach((customer) => {
+      if (!customer.napId || !customer.napPort) return;
+      const matchedNap = (Array.isArray(state?.naps) ? state.naps : []).find((nap) => (
+        String(nap?.id || '').trim() === customer.napId
+        || (
+          customer.napCode
+          && String(nap?.code || '').trim().toLowerCase() === customer.napCode.toLowerCase()
+        )
+      ));
+      const resolvedNapId = String(matchedNap?.id || customer.napId).trim();
+      tempAssignments.set(`${resolvedNapId}:${customer.napPort}`, customer);
+    });
+    const naps = (Array.isArray(state?.naps) ? state.naps : []).map((nap) => {
+      const totalPorts = napTotalPorts(nap);
+      const canonicalByPort = new Map(
+        (Array.isArray(nap.connections) ? nap.connections : [])
+          .map((connection) => [toPositiveInteger(connection?.port), connection])
+          .filter(([port]) => port)
+      );
+      const id = String(nap?.id || '').trim();
+      return {
+        id,
+        code: String(nap?.code || '').trim(),
+        location: String(nap?.location || '').trim(),
+        coordinate: String(nap?.coordinate || '').trim(),
+        totalPorts,
+        ports: Array.from({ length: totalPorts }, (_, index) => {
+          const port = index + 1;
+          const canonical = canonicalByPort.get(port) || null;
+          const temp = tempAssignments.get(`${id}:${port}`) || null;
+          return {
+            port,
+            available: !canonical && !temp,
+            workspace: canonical ? 'main' : (temp ? 'temp' : ''),
+            customerAccountNumber: String(
+              canonical?.customerId || canonical?.customerRef || temp?.accountNumber || ''
+            ).trim(),
+            customerName: String(canonical?.customerName || temp?.name || '').trim()
+          };
+        })
+      };
+    });
+    return res.json({ ok: true, branchId, naps, customers: tempCustomers });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.get('/network-customers', async (req, res) => {
+  try {
+    const branchId = resolveBranchId(req);
+    const customers = await loadTempNetworkCustomers(branchId);
+    return res.json({ ok: true, customers });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
 router.post('/customers', async (req, res) => {
   try {
-    const customer = await workspaceStore.createCustomer(req.body || {});
+    const payload = await validateCustomerNetworkSelection(req, req.body || {});
+    const customer = await workspaceStore.createCustomer(payload);
     return res.status(201).json({ ok: true, customer });
   } catch (error) {
     return sendError(res, error);
@@ -230,7 +399,8 @@ router.post('/customers', async (req, res) => {
 
 router.put('/customers/:accountNumber', async (req, res) => {
   try {
-    const customer = await workspaceStore.updateCustomer(req.params.accountNumber, req.body || {});
+    const payload = await validateCustomerNetworkSelection(req, req.body || {});
+    const customer = await workspaceStore.updateCustomer(req.params.accountNumber, payload);
     return res.json({ ok: true, customer });
   } catch (error) {
     return sendError(res, error);
@@ -773,3 +943,6 @@ router.post('/import-file', express.raw({ type: 'application/octet-stream', limi
 });
 
 module.exports = router;
+module.exports.configureNetworkStateProvider = configureNetworkStateProvider;
+module.exports.loadTempNetworkCustomers = loadTempNetworkCustomers;
+module.exports.validateCustomerNetworkSelection = validateCustomerNetworkSelection;

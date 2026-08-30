@@ -6,8 +6,9 @@
     <title>Secondary Location Workspace</title>
     <link rel="stylesheet" href="/vendor/tabler/css/tabler.min.css">
     <link rel="stylesheet" href="/vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="/css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="/temp.css?v=2.3">
+    <link rel="stylesheet" href="/temp.css?v=2.5">
     <script src="/theme-init.js?v=2.6"></script>
 </head>
 <body class="temp-workspace">
@@ -247,6 +248,10 @@
                 <label class="form-field"><span>Contact number</span><input class="form-control" id="customerContact" name="contactNumber" maxlength="40"></label>
                 <label class="form-field"><span>Email</span><input class="form-control" id="customerEmail" name="email" type="email" maxlength="160"></label>
                 <label class="form-field form-field--wide"><span>Service address</span><select class="form-select" id="customerAddress" name="address" required><option value="Poblacion">Poblacion</option><option value="Masical">Masical</option></select></label>
+                <label class="form-field form-field--wide"><span>Coordinates <small>(required for a NAP assignment)</small></span><div class="input-group"><input class="form-control" id="customerMapPin" name="mapPin" maxlength="120" placeholder="17.883000, 121.873000"><button class="btn btn-outline-primary" id="openCoordinatePickerBtn" type="button"><i class="ti ti-map-pin"></i> Pin on map</button></div></label>
+                <label class="form-field"><span>NAP Pin</span><div class="input-group"><select class="form-select" id="customerNap" name="napId"><option value="">No NAP assignment</option></select><button class="btn btn-outline-primary" id="openNapMapPickerBtn" type="button"><i class="ti ti-map-search"></i> Map</button></div></label>
+                <label class="form-field"><span>NAP Port</span><select class="form-select" id="customerNapPort" name="napPort" disabled><option value="">Select NAP first</option></select></label>
+                <div class="network-assignment-hint form-field--wide" id="customerNetworkHint" role="status"><i class="ti ti-network"></i><span>Coordinates and NAP assignment appear in PON Management and Coverage Map. Temp billing remains isolated.</span><button class="btn btn-outline-secondary btn-sm" id="clearNetworkAssignmentBtn" type="button">Clear assignment</button></div>
                 <label class="form-field"><span>Plan type</span><select class="form-select" id="customerPlanType" name="planType" required><option value="prepaid">Prepaid</option><option value="postpaid" selected>Postpaid</option><option value="prorate">Prorate</option></select></label>
                 <label class="form-field"><span>Activation date</span><input class="form-control" id="customerActivationDate" name="activationDate" type="date" required></label>
                 <label class="form-field"><span>Plan name</span><select class="form-select" id="customerPlan" name="planName" required><option value="Old plan">Old plan (700)</option><option value="Basic">Basic (800)</option><option value="Standard">Standard (1000)</option><option value="Premium">Premium (1200)</option></select></label>
@@ -260,6 +265,36 @@
             </div>
             <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="customerDialog">Cancel</button><button class="btn btn-primary" id="saveCustomerBtn" type="submit"><i class="ti ti-device-floppy"></i> Save customer</button></footer>
         </form>
+    </dialog>
+
+    <dialog class="temp-dialog temp-dialog--map" id="coordinateDialog">
+        <header class="dialog-header"><div><span class="dialog-eyebrow">Coordinates picker</span><h2>Pin Temp Customer Location</h2></div><button class="icon-button" type="button" data-close-dialog="coordinateDialog" aria-label="Close"><i class="ti ti-x"></i></button></header>
+        <div class="dialog-body">
+            <div class="coordinate-toolbar">
+                <button class="btn btn-outline-primary btn-sm" id="useCurrentLocationBtn" type="button"><i class="ti ti-current-location"></i> Use Current Location</button>
+                <span class="text-secondary small" id="coordinatePickerStatus">Click the map or drag the blue customer pin.</span>
+            </div>
+            <div id="coordinatePickerMap" class="coordinate-picker-map" aria-label="Temp customer coordinates map"></div>
+        </div>
+        <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="coordinateDialog">Cancel</button><button class="btn btn-primary" id="useCoordinatesBtn" type="button"><i class="ti ti-check"></i> Use Coordinates</button></footer>
+    </dialog>
+
+    <dialog class="temp-dialog temp-dialog--map temp-dialog--nap-map" id="napMapDialog">
+        <header class="dialog-header"><div><span class="dialog-eyebrow">NAP Map Picker</span><h2>Select NAP and Port</h2></div><button class="icon-button" type="button" data-close-dialog="napMapDialog" aria-label="Close"><i class="ti ti-x"></i></button></header>
+        <div class="dialog-body nap-map-dialog-body">
+            <div class="nap-map-toolbar" role="status"><i class="ti ti-info-circle"></i><span id="napMapStatus">Select a violet NAP marker to view its ports.</span></div>
+            <div class="nap-map-layout">
+                <div id="napPickerMap" class="nap-picker-map" aria-label="Temp customer NAP selection map"></div>
+                <aside class="nap-map-selection" aria-live="polite">
+                    <div class="nap-map-selection__heading"><span class="nap-map-selection__icon"><i class="ti ti-access-point"></i></span><div><small>Selected NAP</small><strong id="napMapSelectedName">Choose a NAP marker</strong></div></div>
+                    <p class="nap-map-selection__meta" id="napMapSelectedMeta">The blue pin marks the Temp customer location.</p>
+                    <span class="badge bg-secondary-lt text-secondary align-self-start" id="napMapAvailability">No NAP selected</span>
+                    <label class="form-field" for="napMapPort"><span>NAP Port</span><select class="form-select" id="napMapPort" disabled><option value="">Select a NAP first</option></select></label>
+                    <p class="nap-map-port-hint" id="napMapPortHint">Available ports can be assigned. Occupied ports remain visible but disabled.</p>
+                </aside>
+            </div>
+        </div>
+        <footer class="dialog-footer"><button class="btn btn-outline-secondary" type="button" data-close-dialog="napMapDialog">Cancel</button><button class="btn btn-primary" id="useNapSelectionBtn" type="button" disabled><i class="ti ti-check"></i> Use NAP &amp; Port</button></footer>
     </dialog>
 
     <dialog class="temp-dialog" id="paymentDialog">
@@ -339,6 +374,7 @@
     </dialog>
 
     <div class="temp-toast" id="tempToast" role="status" aria-live="polite" hidden><i class="ti ti-circle-check"></i><span></span></div>
-    <script src="/temp.js?v=2.4"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/temp.js?v=2.7"></script>
 </body>
 </html>

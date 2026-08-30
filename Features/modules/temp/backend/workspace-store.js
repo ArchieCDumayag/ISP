@@ -14,7 +14,7 @@ const {
 
 const STORE_KEY = 'temp_workspace_isolated_v1';
 const EXPORT_KIND = 'isp-temp-workspace-export';
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const LEGACY_SCHEMA_VERSION = 3;
 const OFFICIAL_GCASH_SOURCE = 'gcash-history';
 const PAYMENT_KINDS = new Set(['payment', 'charge', 'rebate', 'discount']);
@@ -82,6 +82,91 @@ const normalizePositiveInteger = (value) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
+const parseMapPinCoordinates = (value) => {
+  const raw = cleanText(value, 120);
+  if (!raw) return null;
+
+  const decimalMatch = raw.match(/^(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)$/);
+  if (decimalMatch) {
+    const latitude = Number(decimalMatch[1]);
+    const longitude = Number(decimalMatch[2]);
+    if (
+      Number.isFinite(latitude)
+      && latitude >= -90
+      && latitude <= 90
+      && Number.isFinite(longitude)
+      && longitude >= -180
+      && longitude <= 180
+    ) {
+      return { latitude, longitude };
+    }
+    return null;
+  }
+
+  const normalizedDms = raw
+    .replace(/\u00C2(?=\u00B0)/g, '')
+    .replace(/[\u00BA\u02DA]/g, '\u00B0')
+    .replace(/[\u2032\u2019]/g, "'")
+    .replace(/[\u2033\u201C\u201D]/g, '"')
+    .replace(/\uFF0C/g, ',')
+    .replace(/,/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const hasDmsMarkers = /[NSEW]/i.test(normalizedDms)
+    && /[\u00B0'"]|\d+\s+[NSEW]|\b[NSEW]\s*\d/i.test(normalizedDms);
+  if (!hasDmsMarkers) return null;
+
+  const parseDmsSegment = (segment) => {
+    const text = String(segment || '').trim().toUpperCase();
+    const hemisphere = text.match(/[NSEW]/)?.[0] || '';
+    if (!hemisphere) return null;
+    const numericParts = text.replace(/[NSEW]/g, ' ').match(/-?\d+(?:\.\d+)?/g) || [];
+    if (!numericParts.length || numericParts.length > 3) return null;
+    const degrees = Number(numericParts[0]);
+    const minutes = Number(numericParts[1] || 0);
+    const seconds = Number(numericParts[2] || 0);
+    if (
+      !Number.isFinite(degrees)
+      || !Number.isFinite(minutes)
+      || !Number.isFinite(seconds)
+      || minutes < 0
+      || minutes >= 60
+      || seconds < 0
+      || seconds >= 60
+    ) return null;
+    let decimal = Math.abs(degrees) + (minutes / 60) + (seconds / 3600);
+    if (hemisphere === 'S' || hemisphere === 'W') decimal *= -1;
+    return { value: decimal, hemisphere };
+  };
+
+  const segments = normalizedDms.match(/(?:[NSEW][^NSEW]+|[^NSEW]+[NSEW])/gi) || [];
+  const parsedSegments = segments.map(parseDmsSegment).filter(Boolean);
+  const latitude = parsedSegments.find((entry) => entry.hemisphere === 'N' || entry.hemisphere === 'S')?.value;
+  const longitude = parsedSegments.find((entry) => entry.hemisphere === 'E' || entry.hemisphere === 'W')?.value;
+  if (
+    !Number.isFinite(latitude)
+    || latitude < -90
+    || latitude > 90
+    || !Number.isFinite(longitude)
+    || longitude < -180
+    || longitude > 180
+  ) return null;
+  return { latitude, longitude };
+};
+const normalizeMapPin = (value, { strict = false } = {}) => {
+  const raw = cleanText(value, 120);
+  if (!raw) return '';
+  const coordinates = parseMapPinCoordinates(raw);
+  if (!coordinates) {
+    if (strict) {
+      throw new WorkspaceValidationError(
+        'Coordinates must contain a valid latitude and longitude in decimal or DMS format.'
+      );
+    }
+    return '';
+  }
+  return `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`;
+};
 const todayIso = () => formatManilaDate(new Date()) || new Date().toISOString().slice(0, 10);
 const manilaDateFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'Asia/Manila',
@@ -118,6 +203,11 @@ function normalizeCustomer(raw = {}) {
     contactNumber: cleanText(raw.contactNumber, 40),
     email: cleanText(raw.email, 160),
     address: cleanText(raw.address, 300),
+    mapPin: normalizeMapPin(raw.mapPin || raw.coordinates),
+    networkBranchId: normalizePositiveInteger(raw.networkBranchId),
+    napId: cleanText(raw.napId, 80),
+    napCode: cleanText(raw.napCode, 80).toUpperCase(),
+    napPort: normalizePositiveInteger(raw.napPort),
     planName: cleanText(raw.planName, 120),
     planType: normalizePlanType(raw.planType),
     monthlyRate: Math.max(0, roundMoney(raw.monthlyRate)),
@@ -309,6 +399,7 @@ function validateCustomerInput(payload, options = {}) {
     throw new WorkspaceValidationError('Billing day type must be Date or Number.');
   }
   const customer = normalizeCustomer({ ...payload, status: payload?.status || 'active' });
+  customer.mapPin = normalizeMapPin(payload?.mapPin || payload?.coordinates, { strict: true });
   if (!customer.firstName) throw new WorkspaceValidationError('First name is required.');
   if (!customer.lastName) throw new WorkspaceValidationError('Last name is required.');
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) {
@@ -326,8 +417,34 @@ function validateCustomerInput(payload, options = {}) {
   if (customer.billingScheduleMode === 'date' && !customer.nextBillingDate) {
     throw new WorkspaceValidationError('Next billing date is required when Billing day uses Date.');
   }
+  const hasNapSelection = Boolean(customer.napId || customer.napPort || customer.networkBranchId);
+  if (hasNapSelection && (!customer.napId || !customer.napPort || !customer.networkBranchId)) {
+    throw new WorkspaceValidationError('Select both a NAP Pin and an available NAP port.');
+  }
+  if (hasNapSelection && !customer.mapPin) {
+    throw new WorkspaceValidationError('Coordinates are required before assigning a NAP Pin.');
+  }
+  if (!hasNapSelection) {
+    customer.networkBranchId = null;
+    customer.napId = '';
+    customer.napCode = '';
+    customer.napPort = null;
+  }
   return customer;
 }
+
+const findTempNapPortConflict = (customers, candidate, excludedAccountNumber = '') => (
+  (Array.isArray(customers) ? customers : []).find((customer) => (
+    customer.accountNumber !== excludedAccountNumber
+    && candidate.networkBranchId
+    && customer.networkBranchId === candidate.networkBranchId
+    && (
+      customer.napId === candidate.napId
+      || (customer.napCode && candidate.napCode && customer.napCode === candidate.napCode)
+    )
+    && customer.napPort === candidate.napPort
+  )) || null
+);
 
 function validatePaymentInput(payload) {
   const requestedKind = cleanText(payload?.kind, 20).toLowerCase();
@@ -811,6 +928,13 @@ function createWorkspaceStore(options = {}) {
         if (workspace.customers.some((item) => item.accountNumber === customer.accountNumber)) {
           throw new WorkspaceValidationError('That Temp account number already exists.', 409);
         }
+        const napConflict = findTempNapPortConflict(workspace.customers, customer);
+        if (napConflict) {
+          throw new WorkspaceValidationError(
+            `That NAP port is already assigned to Temp customer ${napConflict.accountNumber}.`,
+            409
+          );
+        }
         Object.assign(customer, resolveInitialCycleState(customer, asOfDate));
         customer.createdAt = timestamp;
         customer.updatedAt = timestamp;
@@ -854,6 +978,13 @@ function createWorkspaceStore(options = {}) {
           updated.billingCycleInitialized = existing.billingCycleInitialized;
           updated.billingScheduleConfigured = existing.billingScheduleConfigured;
           updated.proratePending = existing.proratePending;
+        }
+        const napConflict = findTempNapPortConflict(workspace.customers, updated, account);
+        if (napConflict) {
+          throw new WorkspaceValidationError(
+            `That NAP port is already assigned to Temp customer ${napConflict.accountNumber}.`,
+            409
+          );
         }
         updated.createdAt = existing.createdAt;
         updated.updatedAt = timestamp;
@@ -1046,7 +1177,16 @@ function createWorkspaceStore(options = {}) {
         throw new WorkspaceValidationError('The Temp export is missing customer or transaction records.');
       }
 
-      payload.data.customers.forEach((customer) => validateCustomerInput(customer));
+      const validatedCustomers = payload.data.customers.map((customer) => validateCustomerInput(customer));
+      validatedCustomers.forEach((customer, index) => {
+        const conflict = findTempNapPortConflict(validatedCustomers.slice(0, index), customer);
+        if (conflict) {
+          throw new WorkspaceValidationError(
+            `The Temp export assigns NAP port ${customer.napPort} to both ${conflict.accountNumber} and ${customer.accountNumber}.`,
+            409
+          );
+        }
+      });
       payload.data.payments.forEach((payment) => {
         validatePaymentInput(payment);
         if (!cleanText(payment.id, 80) || !cleanText(payment.receiptNumber, 40)) {
@@ -1241,6 +1381,8 @@ module.exports = {
   buildOfficialGcashAllocationId,
   allocationSignature,
   normalizeWorkspace,
+  normalizeMapPin,
+  findTempNapPortConflict,
   buildWorkspaceSnapshot,
   createWorkspaceStore,
   ...defaultStore

@@ -164,6 +164,8 @@ const checks = [
   { path: '/api/system-backup/export', status: 401 },
   { path: '/api/customers', status: 401 },
   { path: '/api/temp/workspace', status: 401 },
+  { path: '/api/temp/network-options', status: 401 },
+  { path: '/api/temp/network-customers', status: 401 },
   { path: '/api/coverage', status: 401 },
   { path: '/api/referrals', status: 401 },
   { path: '/api/customer-drafts', status: 401 },

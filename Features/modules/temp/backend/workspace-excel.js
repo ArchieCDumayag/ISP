@@ -32,7 +32,7 @@ const COLLECTOR_HEADERS = Object.freeze([
   'Due'
 ]);
 
-const CUSTOMER_FIELDS = Object.freeze([
+const LEGACY_CUSTOMER_FIELDS_V4 = Object.freeze([
   'accountNumber',
   'firstName',
   'lastName',
@@ -54,6 +54,16 @@ const CUSTOMER_FIELDS = Object.freeze([
   'notes',
   'createdAt',
   'updatedAt'
+]);
+
+const CUSTOMER_FIELDS = Object.freeze([
+  ...LEGACY_CUSTOMER_FIELDS_V4.slice(0, 6),
+  'mapPin',
+  'networkBranchId',
+  'napId',
+  'napCode',
+  'napPort',
+  ...LEGACY_CUSTOMER_FIELDS_V4.slice(6)
 ]);
 
 const LEGACY_PAYMENT_FIELDS_V3 = Object.freeze([
@@ -85,7 +95,13 @@ const PAYMENT_FIELDS = Object.freeze([
   ...LEGACY_PAYMENT_FIELDS_V3.slice(-2)
 ]);
 
-const CUSTOMER_NUMBER_FIELDS = new Set(['monthlyRate', 'billingDay', 'openingBalance']);
+const CUSTOMER_NUMBER_FIELDS = new Set([
+  'monthlyRate',
+  'billingDay',
+  'openingBalance',
+  'networkBranchId',
+  'napPort'
+]);
 const CUSTOMER_BOOLEAN_FIELDS = new Set([
   'billingScheduleConfigured',
   'billingCycleInitialized',
@@ -146,6 +162,9 @@ function buildWorkspaceExcelBuffer(payload) {
     contactNumber: 18,
     email: 28,
     address: 24,
+    mapPin: 24,
+    napId: 24,
+    napCode: 18,
     planName: 18,
     notes: 42,
     createdAt: 26,
@@ -471,9 +490,10 @@ function parseWorkspaceExcelBuffer(buffer) {
     throw invalidWorkbook('This Temp workspace export was created by a newer unsupported version.');
   }
   const paymentFields = schemaVersion <= 3 ? LEGACY_PAYMENT_FIELDS_V3 : PAYMENT_FIELDS;
+  const customerFields = schemaVersion <= 4 ? LEGACY_CUSTOMER_FIELDS_V4 : CUSTOMER_FIELDS;
   const customers = recordsFromSheet(
     customerSheet,
-    CUSTOMER_FIELDS,
+    customerFields,
     SHEET_NAMES.customers,
     CUSTOMER_NUMBER_FIELDS,
     CUSTOMER_BOOLEAN_FIELDS
@@ -516,6 +536,7 @@ module.exports = {
   SHEET_NAMES,
   COLLECTOR_HEADERS,
   CUSTOMER_FIELDS,
+  LEGACY_CUSTOMER_FIELDS_V4,
   PAYMENT_FIELDS,
   LEGACY_PAYMENT_FIELDS_V3,
   buildWorkspaceExcelBuffer,

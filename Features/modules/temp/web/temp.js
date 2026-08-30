@@ -76,11 +76,25 @@
             summary: {},
             transactions: [],
             loaded: false
+        },
+        network: {
+            branchId: null,
+            naps: [],
+            loaded: false
         }
     };
     let gcashAllocationRows = [];
     let gcashAllocationTransaction = null;
     let toastTimer = null;
+    let coordinateMap = null;
+    let coordinateCustomerMarker = null;
+    let coordinateNapLayer = null;
+    let coordinateDraftPin = '';
+    let napMap = null;
+    let napMapCustomerMarker = null;
+    let napMapNapLayer = null;
+    let napMapDraftNapId = '';
+    let napMapDraftPort = '';
 
     const byId = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? '')
@@ -307,6 +321,414 @@
         return payload;
     }
 
+    function parseCoordinates(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        const decimalMatch = raw.match(/^(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)$/);
+        if (decimalMatch) {
+            const lat = Number(decimalMatch[1]);
+            const lng = Number(decimalMatch[2]);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+            return { lat, lng };
+        }
+
+        const normalizedDms = raw
+            .replace(/\u00C2(?=\u00B0)/g, '')
+            .replace(/[\u00BA\u02DA]/g, '\u00B0')
+            .replace(/[\u2032\u2019]/g, "'")
+            .replace(/[\u2033\u201C\u201D]/g, '"')
+            .replace(/\uFF0C/g, ',')
+            .replace(/,/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const hasDmsMarkers = /[NSEW]/i.test(normalizedDms)
+            && /[\u00B0'"]|\d+\s+[NSEW]|\b[NSEW]\s*\d/i.test(normalizedDms);
+        if (!hasDmsMarkers) return null;
+
+        const parseDmsSegment = (segment) => {
+            const text = String(segment || '').trim().toUpperCase();
+            const hemisphere = text.match(/[NSEW]/)?.[0] || '';
+            if (!hemisphere) return null;
+            const numericParts = text.replace(/[NSEW]/g, ' ').match(/-?\d+(?:\.\d+)?/g) || [];
+            if (!numericParts.length || numericParts.length > 3) return null;
+            const degrees = Number(numericParts[0]);
+            const minutes = Number(numericParts[1] || 0);
+            const seconds = Number(numericParts[2] || 0);
+            if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || !Number.isFinite(seconds)
+                || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) return null;
+            let decimal = Math.abs(degrees) + (minutes / 60) + (seconds / 3600);
+            if (hemisphere === 'S' || hemisphere === 'W') decimal *= -1;
+            return { value: decimal, hemisphere };
+        };
+
+        const segments = normalizedDms.match(/(?:[NSEW][^NSEW]+|[^NSEW]+[NSEW])/gi) || [];
+        const parsedSegments = segments.map(parseDmsSegment).filter(Boolean);
+        const lat = parsedSegments.find((entry) => entry.hemisphere === 'N' || entry.hemisphere === 'S')?.value;
+        const lng = parsedSegments.find((entry) => entry.hemisphere === 'E' || entry.hemisphere === 'W')?.value;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+        return { lat, lng };
+    }
+
+    function formatCoordinates(lat, lng) {
+        return `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
+    }
+
+    function selectedNetworkCustomerAccount() {
+        return String(byId('customerEditAccount').value || '').trim();
+    }
+
+    function selectedNap() {
+        const napId = String(byId('customerNap').value || '').trim();
+        return state.network.naps.find((nap) => String(nap.id || '') === napId) || null;
+    }
+
+    function renderNetworkHint() {
+        const hint = byId('customerNetworkHint').querySelector('span');
+        const nap = selectedNap();
+        const port = Number(byId('customerNapPort').value) || null;
+        if (nap && port) {
+            hint.textContent = `${nap.code || 'NAP'} · Port ${String(port).padStart(2, '0')} will appear in PON Management and Coverage Map as a Temp assignment.`;
+            return;
+        }
+        hint.textContent = 'Coordinates and NAP assignment appear in PON Management and Coverage Map. Temp billing remains isolated.';
+    }
+
+    function renderNetworkPorts(selectedPort = '') {
+        const select = byId('customerNapPort');
+        const nap = selectedNap();
+        const currentAccount = selectedNetworkCustomerAccount();
+        if (!nap) {
+            select.innerHTML = '<option value="">Select NAP first</option>';
+            select.disabled = true;
+            renderNetworkHint();
+            return;
+        }
+        const options = (Array.isArray(nap.ports) ? nap.ports : []).map((entry) => {
+            const port = Number(entry.port);
+            const isCurrent = String(entry.customerAccountNumber || '') === currentAccount;
+            const selectable = Boolean(entry.available || isCurrent);
+            const suffix = isCurrent
+                ? ' (Current)'
+                : (entry.available ? ' · Available' : ` · Used by ${entry.customerName || entry.customerAccountNumber || 'customer'}`);
+            return `<option value="${port}"${String(port) === String(selectedPort) ? ' selected' : ''}${selectable ? '' : ' disabled'}>Port ${String(port).padStart(2, '0')}${escapeHtml(suffix)}</option>`;
+        });
+        select.innerHTML = ['<option value="">Select an available port</option>', ...options].join('');
+        select.disabled = false;
+        renderNetworkHint();
+    }
+
+    function renderNetworkNapOptions(selectedNapId = '', selectedPort = '') {
+        const select = byId('customerNap');
+        select.innerHTML = [
+            '<option value="">No NAP assignment</option>',
+            ...state.network.naps.map((nap) => `<option value="${escapeHtml(nap.id)}"${String(nap.id) === String(selectedNapId) ? ' selected' : ''}>${escapeHtml(nap.code || 'Unnamed NAP')} · ${escapeHtml(nap.location || 'No location')}</option>`)
+        ].join('');
+        select.value = state.network.naps.some((nap) => String(nap.id) === String(selectedNapId)) ? String(selectedNapId) : '';
+        renderNetworkPorts(selectedPort);
+    }
+
+    async function loadNetworkOptions(selectedNapId = '', selectedPort = '') {
+        try {
+            const payload = await api('/network-options');
+            state.network = {
+                branchId: payload.branchId || null,
+                naps: Array.isArray(payload.naps) ? payload.naps : [],
+                loaded: true
+            };
+            renderNetworkNapOptions(selectedNapId, selectedPort);
+        } catch (error) {
+            state.network = { branchId: null, naps: [], loaded: false };
+            renderNetworkNapOptions();
+            showToast(error.message, 'error');
+        }
+    }
+
+    function customerMarkerIcon() {
+        return L.divIcon({
+            className: 'temp-map-marker-shell',
+            html: '<span class="temp-map-marker temp-map-marker--customer"><i class="ti ti-map-pin"></i></span>',
+            iconSize: [26, 26],
+            iconAnchor: [13, 24]
+        });
+    }
+
+    function napMarkerIcon(selected = false) {
+        return L.divIcon({
+            className: 'temp-map-marker-shell',
+            html: `<span class="temp-map-marker temp-map-marker--nap${selected ? ' temp-map-marker--nap-selected' : ''}"><i class="ti ti-access-point"></i></span>`,
+            iconSize: selected ? [30, 30] : [24, 24],
+            iconAnchor: selected ? [15, 15] : [12, 12]
+        });
+    }
+
+    function createEsriImageryLayer() {
+        return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 22,
+            maxNativeZoom: 18,
+            detectRetina: true,
+            keepBuffer: 4,
+            attribution: '&copy; Esri',
+            referrerPolicy: 'strict-origin-when-cross-origin'
+        });
+    }
+
+    function setCoordinateDraft(lat, lng, options = {}) {
+        coordinateDraftPin = formatCoordinates(lat, lng);
+        byId('coordinatePickerStatus').textContent = `Selected ${coordinateDraftPin}.`;
+        if (!coordinateCustomerMarker) {
+            coordinateCustomerMarker = L.marker([lat, lng], { draggable: true, icon: customerMarkerIcon(), zIndexOffset: 1000 }).addTo(coordinateMap);
+            coordinateCustomerMarker.on('dragend', () => {
+                const point = coordinateCustomerMarker.getLatLng();
+                setCoordinateDraft(point.lat, point.lng);
+            });
+        } else {
+            coordinateCustomerMarker.setLatLng([lat, lng]);
+        }
+        if (options.center !== false) coordinateMap.setView([lat, lng], Math.max(coordinateMap.getZoom(), 17));
+    }
+
+    function renderCoordinateNapMarkers() {
+        if (!coordinateMap) return;
+        if (coordinateNapLayer) coordinateNapLayer.remove();
+        coordinateNapLayer = L.layerGroup().addTo(coordinateMap);
+        state.network.naps.forEach((nap) => {
+            const point = parseCoordinates(nap.coordinate);
+            if (!point) return;
+            const availablePorts = (nap.ports || []).filter((port) => port.available).length;
+            const marker = L.marker([point.lat, point.lng], { icon: napMarkerIcon() }).addTo(coordinateNapLayer);
+            marker.bindTooltip(`${escapeHtml(nap.code || 'NAP')} · ${availablePorts} available`, { direction: 'top' });
+            marker.on('click', () => {
+                byId('customerNap').value = String(nap.id || '');
+                renderNetworkPorts();
+                byId('coordinatePickerStatus').textContent = `${nap.code || 'NAP'} selected. Choose an available port after using the coordinates.`;
+            });
+        });
+    }
+
+    function ensureCoordinateMap() {
+        if (coordinateMap || !window.L) return;
+        coordinateMap = L.map('coordinatePickerMap', { zoomControl: true }).setView([17.887, 121.873], 14);
+        createEsriImageryLayer().addTo(coordinateMap);
+        coordinateMap.on('click', (event) => setCoordinateDraft(event.latlng.lat, event.latlng.lng, { center: false }));
+    }
+
+    function openCoordinatePicker() {
+        if (!window.L) {
+            showToast('The map library did not load. Enter coordinates manually.', 'error');
+            return;
+        }
+        const dialog = byId('coordinateDialog');
+        dialog.showModal();
+        ensureCoordinateMap();
+        renderCoordinateNapMarkers();
+        const current = parseCoordinates(byId('customerMapPin').value);
+        const napPoint = parseCoordinates(selectedNap()?.coordinate);
+        const initial = current || napPoint || { lat: 17.887, lng: 121.873 };
+        setCoordinateDraft(initial.lat, initial.lng, { center: true });
+        window.setTimeout(() => coordinateMap.invalidateSize(), 0);
+    }
+
+    function useCurrentLocation() {
+        if (!navigator.geolocation) {
+            showToast('Current location is not supported by this browser.', 'error');
+            return;
+        }
+        const button = byId('useCurrentLocationBtn');
+        button.disabled = true;
+        byId('coordinatePickerStatus').textContent = 'Finding your current location…';
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setCoordinateDraft(position.coords.latitude, position.coords.longitude);
+                button.disabled = false;
+            },
+            (error) => {
+                byId('coordinatePickerStatus').textContent = 'Unable to read current location.';
+                button.disabled = false;
+                showToast(error.message || 'Unable to read current location.', 'error');
+            },
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+        );
+    }
+
+    function distanceMetersBetween(left, right) {
+        if (!left || !right) return null;
+        const toRadians = (value) => Number(value) * (Math.PI / 180);
+        const latitudeDelta = toRadians(right.lat - left.lat);
+        const longitudeDelta = toRadians(right.lng - left.lng);
+        const leftLatitude = toRadians(left.lat);
+        const rightLatitude = toRadians(right.lat);
+        const haversine = Math.sin(latitudeDelta / 2) ** 2
+            + Math.cos(leftLatitude) * Math.cos(rightLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+        return 6371000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    }
+
+    function formatNapDistance(nap) {
+        const customerPoint = parseCoordinates(byId('customerMapPin').value);
+        const napPoint = parseCoordinates(nap?.coordinate);
+        const distance = distanceMetersBetween(customerPoint, napPoint);
+        if (!Number.isFinite(distance)) return '';
+        return distance < 1000 ? `${Math.round(distance)} m away` : `${(distance / 1000).toFixed(1)} km away`;
+    }
+
+    function napMapPortRows(nap) {
+        const currentAccount = selectedNetworkCustomerAccount();
+        return (Array.isArray(nap?.ports) ? nap.ports : []).map((entry) => {
+            const port = Number(entry.port);
+            const isCurrent = String(entry.customerAccountNumber || '') === currentAccount;
+            return {
+                ...entry,
+                port,
+                isCurrent,
+                selectable: Number.isInteger(port) && port > 0 && Boolean(entry.available || isCurrent)
+            };
+        }).filter((entry) => Number.isInteger(entry.port) && entry.port > 0);
+    }
+
+    function renderNapMapSelection() {
+        const nap = state.network.naps.find((entry) => String(entry.id || '') === napMapDraftNapId) || null;
+        const portSelect = byId('napMapPort');
+        const useButton = byId('useNapSelectionBtn');
+        const availability = byId('napMapAvailability');
+        if (!nap) {
+            byId('napMapSelectedName').textContent = 'Choose a NAP marker';
+            byId('napMapSelectedMeta').textContent = 'The blue pin marks the Temp customer location.';
+            availability.className = 'badge bg-secondary-lt text-secondary align-self-start';
+            availability.textContent = 'No NAP selected';
+            portSelect.innerHTML = '<option value="">Select a NAP first</option>';
+            portSelect.disabled = true;
+            useButton.disabled = true;
+            byId('napMapPortHint').textContent = 'Available ports can be assigned. Occupied ports remain visible but disabled.';
+            return;
+        }
+
+        const portRows = napMapPortRows(nap);
+        const availableCount = portRows.filter((entry) => entry.available).length;
+        const currentPort = portRows.find((entry) => entry.isCurrent)?.port || null;
+        const distanceLabel = formatNapDistance(nap);
+        byId('napMapSelectedName').textContent = nap.code || 'Unnamed NAP';
+        byId('napMapSelectedMeta').textContent = [nap.location || 'No location', distanceLabel].filter(Boolean).join(' · ');
+        availability.className = `badge ${availableCount || currentPort ? 'bg-green-lt text-green' : 'bg-red-lt text-red'} align-self-start`;
+        availability.textContent = `${availableCount} of ${portRows.length} ports available${currentPort ? ` · Current Port ${String(currentPort).padStart(2, '0')}` : ''}`;
+        portSelect.innerHTML = [
+            '<option value="">Select an available port</option>',
+            ...portRows.map((entry) => {
+                const suffix = entry.isCurrent
+                    ? ' (Current)'
+                    : (entry.available ? ' · Available' : ` · Used by ${entry.customerName || entry.customerAccountNumber || 'customer'}`);
+                return `<option value="${entry.port}"${String(entry.port) === napMapDraftPort ? ' selected' : ''}${entry.selectable ? '' : ' disabled'}>Port ${String(entry.port).padStart(2, '0')}${escapeHtml(suffix)}</option>`;
+            })
+        ].join('');
+        const selectedRow = portRows.find((entry) => String(entry.port) === napMapDraftPort && entry.selectable);
+        if (!selectedRow) napMapDraftPort = '';
+        portSelect.value = napMapDraftPort;
+        portSelect.disabled = !portRows.some((entry) => entry.selectable);
+        useButton.disabled = !napMapDraftPort;
+        byId('napMapPortHint').textContent = portSelect.disabled
+            ? 'This NAP has no available port. Choose another NAP marker.'
+            : 'Choose an available port, then confirm the NAP assignment.';
+    }
+
+    function renderNapMapMarkers() {
+        if (!napMap) return;
+        if (napMapNapLayer) napMapNapLayer.remove();
+        napMapNapLayer = L.layerGroup().addTo(napMap);
+        state.network.naps.forEach((nap) => {
+            const point = parseCoordinates(nap.coordinate);
+            if (!point) return;
+            const portRows = napMapPortRows(nap);
+            const availableCount = portRows.filter((entry) => entry.available).length;
+            const selected = String(nap.id || '') === napMapDraftNapId;
+            const marker = L.marker([point.lat, point.lng], {
+                icon: napMarkerIcon(selected),
+                zIndexOffset: selected ? 500 : 0
+            }).addTo(napMapNapLayer);
+            marker.bindTooltip(`${escapeHtml(nap.code || 'NAP')} · ${availableCount} of ${portRows.length} available`, { direction: 'top' });
+            marker.on('click', () => selectNapMapNap(nap.id));
+        });
+    }
+
+    function selectNapMapNap(napId, preferredPort = '') {
+        const nap = state.network.naps.find((entry) => String(entry.id || '') === String(napId || '')) || null;
+        napMapDraftNapId = nap ? String(nap.id || '') : '';
+        const portRows = napMapPortRows(nap);
+        const preferredRow = portRows.find((entry) => String(entry.port) === String(preferredPort || '') && entry.selectable);
+        const firstSelectable = preferredRow || portRows.find((entry) => entry.selectable) || null;
+        napMapDraftPort = firstSelectable ? String(firstSelectable.port) : '';
+        renderNapMapMarkers();
+        renderNapMapSelection();
+        if (nap) {
+            byId('napMapStatus').textContent = `${nap.code || 'NAP'} selected. ${napMapDraftPort ? `Port ${String(napMapDraftPort).padStart(2, '0')} is ready.` : 'No available port.'}`;
+        }
+    }
+
+    function ensureNapMap() {
+        if (napMap || !window.L) return;
+        napMap = L.map('napPickerMap', { zoomControl: true }).setView([17.887, 121.873], 14);
+        createEsriImageryLayer().addTo(napMap);
+    }
+
+    function renderNapMapCustomer(point) {
+        if (!napMapCustomerMarker) {
+            napMapCustomerMarker = L.marker([point.lat, point.lng], {
+                icon: customerMarkerIcon(),
+                zIndexOffset: 1000,
+                interactive: false
+            }).addTo(napMap);
+            napMapCustomerMarker.bindTooltip('Temp customer location', { direction: 'top' });
+            return;
+        }
+        napMapCustomerMarker.setLatLng([point.lat, point.lng]);
+    }
+
+    async function openNapMapPicker() {
+        if (!window.L) {
+            showToast('The map library did not load. Select the NAP from the list.', 'error');
+            return;
+        }
+        const customerPoint = parseCoordinates(byId('customerMapPin').value);
+        if (!customerPoint) {
+            showToast('Pin the Temp customer location before choosing a NAP on the map.', 'error');
+            byId('customerMapPin').focus();
+            return;
+        }
+        const selectedNapId = String(byId('customerNap').value || '');
+        const selectedPort = String(byId('customerNapPort').value || '');
+        if (!state.network.loaded) await loadNetworkOptions(selectedNapId, selectedPort);
+        if (!state.network.loaded) return;
+
+        napMapDraftNapId = selectedNapId;
+        napMapDraftPort = selectedPort;
+        byId('napMapDialog').showModal();
+        ensureNapMap();
+        renderNapMapCustomer(customerPoint);
+        if (napMapDraftNapId) {
+            selectNapMapNap(napMapDraftNapId, napMapDraftPort);
+        } else {
+            renderNapMapMarkers();
+            renderNapMapSelection();
+        }
+        const mappedNapCount = state.network.naps.filter((nap) => parseCoordinates(nap.coordinate)).length;
+        if (!napMapDraftNapId) {
+            byId('napMapStatus').textContent = `${mappedNapCount} mapped NAP${mappedNapCount === 1 ? '' : 's'} shown. Select a violet marker to view ports.`;
+        }
+        napMap.setView([customerPoint.lat, customerPoint.lng], 15);
+        window.setTimeout(() => napMap.invalidateSize(), 0);
+    }
+
+    function useNapMapSelection() {
+        const nap = state.network.naps.find((entry) => String(entry.id || '') === napMapDraftNapId) || null;
+        const selectedPort = napMapPortRows(nap).find((entry) => String(entry.port) === napMapDraftPort && entry.selectable) || null;
+        if (!nap || !selectedPort) {
+            showToast('Select a NAP with an available port first.', 'error');
+            return;
+        }
+        byId('customerNap').value = String(nap.id || '');
+        renderNetworkPorts(String(selectedPort.port));
+        byId('customerNapPort').value = String(selectedPort.port);
+        renderNetworkHint();
+        byId('napMapDialog').close();
+    }
+
     function updateState(payload) {
         state.workspace = payload.workspace || state.workspace;
         state.customers = Array.isArray(payload.customers) ? payload.customers : [];
@@ -346,7 +768,10 @@
                 customer.email,
                 customer.address,
                 customer.planName,
-                customer.planType
+                customer.planType,
+                customer.mapPin,
+                customer.napCode,
+                customer.napPort
             ].some((value) => String(value || '').toLowerCase().includes(term));
         }), tableSortState.customer);
         const pagination = paginateRows(filteredCustomers, 'customer');
@@ -361,7 +786,7 @@
             return `<tr>
                 <td><span class="account-code">${escapeHtml(customer.accountNumber)}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.fullName)}</span></td>
-                <td><span class="cell-primary">${escapeHtml(customer.address || 'No address')}</span></td>
+                <td><span class="cell-primary">${escapeHtml(customer.address || 'No address')}</span>${customer.mapPin ? `<span class="cell-secondary temp-network-meta"><i class="ti ti-map-pin"></i>${escapeHtml(customer.mapPin)}</span>` : ''}${customer.napId && customer.napPort ? `<span class="cell-secondary temp-network-meta temp-network-meta--nap"><i class="ti ti-access-point"></i>${escapeHtml(customer.napCode || 'NAP')} · Port ${String(customer.napPort).padStart(2, '0')}</span>` : ''}</td>
                 <td><span class="cell-primary">${escapeHtml(customer.contactNumber || '—')}</span><span class="cell-secondary">${escapeHtml(customer.email || '')}</span></td>
                 <td><span class="cell-primary">${escapeHtml(customer.planName || 'No plan')}</span><span class="cell-secondary">${formatMoney(customer.monthlyRate)} / month</span></td>
                 <td><span class="plan-type-pill plan-type-pill--${escapeHtml(planType)}">${escapeHtml(titleCase(planType))}</span></td>
@@ -640,7 +1065,7 @@
         if (selectedPanel === 'gcash' && !state.gcash.loaded) loadGcash();
     }
 
-    function openCustomerDialog(customer = null) {
+    async function openCustomerDialog(customer = null) {
         byId('customerForm').reset();
         byId('customerEditAccount').value = customer?.accountNumber || '';
         byId('customerDialogTitle').textContent = customer ? 'Edit customer' : 'Add customer';
@@ -653,6 +1078,11 @@
         byId('customerAddress').value = TEMP_SERVICE_ADDRESSES.includes(customer?.address)
             ? customer.address
             : TEMP_SERVICE_ADDRESSES[0];
+        const storedCoordinates = parseCoordinates(customer?.mapPin);
+        byId('customerMapPin').value = storedCoordinates
+            ? formatCoordinates(storedCoordinates.lat, storedCoordinates.lng)
+            : (customer?.mapPin || '');
+        renderNetworkNapOptions(customer?.napId || '', customer?.napPort || '');
         byId('customerPlanType').value = TEMP_PLAN_TYPES.includes(customer?.planType)
             ? customer.planType
             : 'postpaid';
@@ -673,6 +1103,7 @@
         byId('customerStatus').value = customer?.status || 'active';
         byId('customerNotes').value = customer?.notes || '';
         updateCustomerBillingScheduleFields();
+        await loadNetworkOptions(customer?.napId || '', customer?.napPort || '');
         byId('customerDialog').showModal();
         window.setTimeout(() => byId('customerFirstName').focus(), 0);
     }
@@ -1003,6 +1434,16 @@
         payload.monthlyRate = Number(payload.monthlyRate || 0);
         payload.openingBalance = Number(payload.openingBalance || 0);
         payload.billingDay = Number(payload.billingDay || 1);
+        payload.napPort = payload.napPort ? Number(payload.napPort) : null;
+        payload.napId = String(payload.napId || '').trim();
+        const rawMapPin = String(payload.mapPin || '').trim();
+        const parsedMapPin = rawMapPin ? parseCoordinates(rawMapPin) : null;
+        if (rawMapPin && !parsedMapPin) {
+            showToast('Enter valid decimal or DMS latitude and longitude.', 'error');
+            byId('customerMapPin').focus();
+            return;
+        }
+        payload.mapPin = parsedMapPin ? formatCoordinates(parsedMapPin.lat, parsedMapPin.lng) : '';
         const button = byId('saveCustomerBtn');
         button.disabled = true;
         try {
@@ -1012,6 +1453,7 @@
             });
             byId('customerDialog').close();
             await loadWorkspace();
+            state.network.loaded = false;
             showToast(accountNumber ? 'Temp customer updated.' : 'Temp customer added.');
         } catch (error) {
             showToast(error.message, 'error');
@@ -1371,6 +1813,28 @@
     byId('customerForm').addEventListener('submit', saveCustomer);
     byId('customerPlan').addEventListener('change', () => synchronizeCustomerPlanAndRate('plan'));
     byId('customerRate').addEventListener('change', () => synchronizeCustomerPlanAndRate('rate'));
+    byId('customerNap').addEventListener('change', () => renderNetworkPorts());
+    byId('customerNapPort').addEventListener('change', renderNetworkHint);
+    byId('clearNetworkAssignmentBtn').addEventListener('click', () => {
+        byId('customerNap').value = '';
+        renderNetworkPorts();
+    });
+    byId('openCoordinatePickerBtn').addEventListener('click', openCoordinatePicker);
+    byId('openNapMapPickerBtn').addEventListener('click', openNapMapPicker);
+    byId('napMapPort').addEventListener('change', (event) => {
+        napMapDraftPort = String(event.target.value || '');
+        renderNapMapSelection();
+    });
+    byId('useNapSelectionBtn').addEventListener('click', useNapMapSelection);
+    byId('useCurrentLocationBtn').addEventListener('click', useCurrentLocation);
+    byId('useCoordinatesBtn').addEventListener('click', () => {
+        if (!parseCoordinates(coordinateDraftPin)) {
+            showToast('Choose a valid point on the map first.', 'error');
+            return;
+        }
+        byId('customerMapPin').value = coordinateDraftPin;
+        byId('coordinateDialog').close();
+    });
     byId('customerPlanType').addEventListener('change', updateCustomerCycleHint);
     byId('customerBillingScheduleMode').addEventListener('change', updateCustomerBillingScheduleFields);
     byId('customerNextBillingDate').addEventListener('change', updateCustomerCycleHint);

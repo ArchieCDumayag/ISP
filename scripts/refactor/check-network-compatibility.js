@@ -89,11 +89,21 @@ const pppoeTablerStyles = fs.readFileSync(path.join(webRoot, 'css', 'pppoe-table
   assert(source.includes('progress progress-sm'));
   assert(source.includes('const statusBadgeClass ='));
 });
+assert(coverageMapSource.includes("const API_TEMP_CUSTOMERS = '/api/temp/network-customers';"));
+assert(coverageMapSource.includes("const API_PON_STATE = '/api/pon/overview';"));
+assert(coverageMapSource.includes("workspace: 'temp'"));
+assert(coverageMapSource.includes("type === 'temp' ? 'T'"));
+assert(coverageMapSource.includes('Temporary Subscriber'));
 assert(ponManagementHtmlSource.includes('css/leaflet-popups-tabler.css?v=1.1'));
 assert(ponManagementHtmlSource.includes('js/pon-management.js?v=4.7'));
 assert(ponManagementJsSource.includes('expectedRevision: syncState.revision'));
 assert(ponManagementJsSource.includes('recoverFromPonRevisionConflict'));
 assert(ponManagementJsSource.includes('applyBackendRevision(result)'));
+assert(ponManagementJsSource.includes("fetch('/api/pon/overview'"));
+assert(ponManagementJsSource.includes('filter((entry) => !entry.readOnly)'));
+assert(ponManagementJsSource.includes('Edit this Temp assignment from temp.html'));
+assert(ponManagementBackendSource.includes('mergeTempNetworkAssignments'));
+assert(ponManagementBackendSource.includes("workspace: 'temp'"));
 assert(ponManagementBackendSource.includes("SELECT id FROM branches WHERE id = ? FOR UPDATE"));
 assert(ponManagementBackendSource.includes('loadRelationalRevisionSnapshot(connection, branchId, { lockRows: true })'));
 assert(ponManagementBackendSource.includes('assertExpectedPonRevision(payload?.expectedRevision, currentRevision)'));
@@ -246,6 +256,42 @@ assert.strictEqual(typeof pon.savePonStateForBranch, 'function');
 assert.strictEqual(typeof pon.createPonStateRevision, 'function');
 assert.strictEqual(typeof pon.assertExpectedPonRevision, 'function');
 assert.strictEqual(typeof pon.loadRelationalRevisionSnapshot, 'function');
+assert.strictEqual(typeof pon.configureTempNetworkCustomersProvider, 'function');
+assert.strictEqual(typeof pon.mergeTempNetworkAssignments, 'function');
+const canonicalPonState = {
+  olts: [{ id: 'olt-1', name: 'OLT 1' }],
+  naps: [{
+    id: 'nap-1',
+    code: 'POB:NAP01',
+    splitter: '1:8',
+    capacity: 8,
+    used: 1,
+    connections: [{ port: 1, customerId: 'MAIN-001', customerName: 'Main Client', customerRef: 'MAIN-001' }]
+  }]
+};
+const mergedPonState = pon.mergeTempNetworkAssignments(canonicalPonState, [{
+  accountNumber: 'TMP000001',
+  name: 'Temp Client',
+  napId: 'nap-1',
+  napCode: 'POB:NAP01',
+  napPort: 2
+}]);
+assert.strictEqual(canonicalPonState.naps[0].connections.length, 1);
+assert.strictEqual(mergedPonState.naps[0].connections.length, 2);
+assert.deepStrictEqual(
+  mergedPonState.naps[0].connections.find((entry) => entry.port === 2),
+  {
+    customerId: 'TMP000001',
+    customerName: 'Temp Client',
+    customerRef: 'TMP000001',
+    port: 2,
+    opticalInfo: '',
+    subscriberStatus: '',
+    workspace: 'temp',
+    readOnly: true
+  }
+);
+assert.strictEqual(mergedPonState.naps[0].availablePorts, 6);
 const ponServiceability = backend.load('ponServiceability');
 assert.strictEqual(typeof ponServiceability.findNearbyPonNaps, 'function');
 assert.strictEqual(typeof ponServiceability.reservePonPort, 'function');

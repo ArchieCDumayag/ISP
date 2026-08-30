@@ -1810,6 +1810,7 @@ const SYSTEM_UPDATE_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const SYSTEM_UPDATE_RESTART_DELAY_MS = 1800;
 const SYSTEM_UPDATE_REPOSITORY_FALLBACK_URL = 'https://github.com/ArchieCDumayag/ISP';
 let systemUpdateRestartScheduled = false;
+let systemUpdateApplyRequestActive = false;
 let systemUpdateRunState = {
     running: false,
     status: 'idle',
@@ -1817,6 +1818,11 @@ let systemUpdateRunState = {
     finishedAt: '',
     currentStep: '',
     message: '',
+    backupRef: '',
+    previousHead: '',
+    targetHead: '',
+    rolledBack: false,
+    rollbackMessage: '',
     logs: ''
 };
 
@@ -1827,6 +1833,11 @@ const makeSystemUpdateError = (message, statusCode = 500) => {
 };
 
 const normalizeGitCommandOutput = (value) => String(value || '').replace(/\s+$/g, '');
+
+const normalizeSystemUpdateHash = (value) => {
+    const hash = String(value || '').trim().toLowerCase();
+    return /^[a-f0-9]{40}$/.test(hash) ? hash : '';
+};
 
 const summarizeGitError = (error, fallback = 'Git command failed.') => {
     const stderr = normalizeGitCommandOutput(error?.stderr || '');
@@ -1977,8 +1988,56 @@ const cloneSystemUpdateRunState = () => ({
     finishedAt: systemUpdateRunState.finishedAt || '',
     currentStep: systemUpdateRunState.currentStep || '',
     message: systemUpdateRunState.message || '',
+    backupRef: systemUpdateRunState.backupRef || '',
+    previousHead: systemUpdateRunState.previousHead || '',
+    targetHead: systemUpdateRunState.targetHead || '',
+    rolledBack: Boolean(systemUpdateRunState.rolledBack),
+    rollbackMessage: systemUpdateRunState.rollbackMessage || '',
     logs: systemUpdateRunState.logs || ''
 });
+
+const cloneSystemUpdateRunProgress = () => {
+    const { logs, ...progress } = cloneSystemUpdateRunState();
+    return progress;
+};
+
+const readSystemUpdateJsonAtRef = async (gitRef, fileName, options = {}) => {
+    const ref = String(gitRef || '').trim();
+    const relativePath = String(fileName || '').trim();
+    if (!ref || !relativePath) {
+        throw makeSystemUpdateError('Update package validation is missing a Git reference or file name.', 500);
+    }
+
+    let raw = '';
+    try {
+        raw = await runGitCommand(['show', `${ref}:${relativePath}`], {
+            maxBuffer: options.maxBuffer || 10 * 1024 * 1024
+        });
+    } catch (error) {
+        if (options.optional) return null;
+        throw makeSystemUpdateError(
+            `The selected update does not contain a readable ${relativePath}: ${summarizeGitError(error)}`,
+            409
+        );
+    }
+
+    try {
+        return JSON.parse(raw);
+    } catch {
+        throw makeSystemUpdateError(`The selected update contains invalid JSON in ${relativePath}.`, 409);
+    }
+};
+
+const createSystemUpdateBackupRef = async (originalHead) => {
+    const safeHead = normalizeSystemUpdateHash(originalHead);
+    if (!safeHead) {
+        throw makeSystemUpdateError('Unable to create an update recovery point because the current commit is invalid.', 500);
+    }
+    const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+    const backupRef = `refs/isp-update-backups/${timestamp}-${safeHead.slice(0, 12)}`;
+    await runGitCommand(['update-ref', backupRef, safeHead]);
+    return backupRef;
+};
 
 const runSystemUpdateStep = (label, command, args = [], options = {}) => new Promise((resolve, reject) => {
     systemUpdateRunState.currentStep = label;
@@ -2046,9 +2105,14 @@ const scheduleSystemUpdateRestart = () => {
     }
 };
 
-const applySystemUpdateIfAvailable = async () => {
+const applySystemUpdateIfAvailable = async ({ expectedRemoteHash = '' } = {}) => {
     if (systemUpdateRunState.running) {
         throw makeSystemUpdateError('A system update is already running.', 409);
+    }
+
+    const confirmedRemoteHash = normalizeSystemUpdateHash(expectedRemoteHash);
+    if (!confirmedRemoteHash) {
+        throw makeSystemUpdateError('Refresh the update status and confirm the exact remote version before applying it.', 400);
     }
 
     const platformInfo = getSystemUpdatePlatformInfo();
@@ -2080,6 +2144,18 @@ const applySystemUpdateIfAvailable = async () => {
         };
     }
 
+    if (status.comparison?.diverged) {
+        throw makeSystemUpdateError(
+            'The local and remote branches have diverged. Automatic update is blocked; resolve the Git history manually.',
+            409
+        );
+    }
+
+    const statusRemoteHash = normalizeSystemUpdateHash(status.remote?.hash);
+    if (!statusRemoteHash || statusRemoteHash !== confirmedRemoteHash) {
+        throw makeSystemUpdateError('The remote update changed. Refresh status, review the new version, and confirm again.', 409);
+    }
+
     if (status.workingTree?.dirty) {
         throw makeSystemUpdateError(
             `Working tree has ${status.workingTree.changedFileCount || 0} local file change(s). Commit or stash them before automatic update.`,
@@ -2092,25 +2168,87 @@ const applySystemUpdateIfAvailable = async () => {
         status: 'running',
         startedAt: new Date().toISOString(),
         finishedAt: '',
-        currentStep: 'Starting update',
-        message: 'Applying update...',
+        currentStep: 'Validating update',
+        message: 'Validating the confirmed update...',
+        backupRef: '',
+        previousHead: '',
+        targetHead: confirmedRemoteHash,
+        rolledBack: false,
+        rollbackMessage: '',
         logs: ''
     };
+
+    let originalHead = '';
+    let originalHasPackageLock = false;
+    let sourceChanged = false;
 
     try {
         const remoteName = status.branch?.remote || 'origin';
         const remoteBranch = status.branch?.remoteBranch || status.branch?.local || 'main';
+        originalHead = normalizeSystemUpdateHash(await runGitCommand(['rev-parse', 'HEAD']));
+        originalHasPackageLock = fs.existsSync(path.join(PROJECT_ROOT, 'package-lock.json'));
+        systemUpdateRunState.previousHead = originalHead;
+
         await runSystemUpdateStep('Fetch remote updates', 'git', ['fetch', remoteName, remoteBranch], {
             timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
         });
-        await runSystemUpdateStep('Fast-forward tracked branch', 'git', ['pull', '--ff-only', remoteName, remoteBranch], {
+
+        systemUpdateRunState.currentStep = 'Verify confirmed version';
+        const fetchedRemoteHash = normalizeSystemUpdateHash(await runGitCommand(['rev-parse', 'FETCH_HEAD']));
+        if (!fetchedRemoteHash || fetchedRemoteHash !== confirmedRemoteHash) {
+            throw makeSystemUpdateError(
+                'The remote update changed while validation was running. Refresh status, review it, and confirm again.',
+                409
+            );
+        }
+
+        const pendingChanges = await runGitCommandOrEmpty(['status', '--porcelain']);
+        if (pendingChanges) {
+            const changedFileCount = pendingChanges.split(/\r?\n/).filter((line) => line.trim()).length;
+            throw makeSystemUpdateError(
+                `Working tree changed during validation (${changedFileCount} local file change${changedFileCount === 1 ? '' : 's'}). Commit or stash them before automatic update.`,
+                409
+            );
+        }
+
+        try {
+            await runGitCommand(['merge-base', '--is-ancestor', originalHead, fetchedRemoteHash]);
+        } catch {
+            throw makeSystemUpdateError(
+                'The selected remote version is not a fast-forward update. Resolve the Git history manually.',
+                409
+            );
+        }
+
+        systemUpdateRunState.currentStep = 'Validate update package';
+        const targetPackage = await readSystemUpdateJsonAtRef(fetchedRemoteHash, 'package.json');
+        if (!targetPackage || typeof targetPackage !== 'object' || Array.isArray(targetPackage)
+            || !String(targetPackage.scripts?.start || '').trim()) {
+            throw makeSystemUpdateError('The selected update package.json does not define a valid start script.', 409);
+        }
+        const targetPackageLock = await readSystemUpdateJsonAtRef(fetchedRemoteHash, 'package-lock.json', { optional: true });
+        if (targetPackageLock && (typeof targetPackageLock !== 'object' || Array.isArray(targetPackageLock))) {
+            throw makeSystemUpdateError('The selected update contains an invalid package-lock.json structure.', 409);
+        }
+        const targetHasPackageLock = Boolean(targetPackageLock);
+
+        systemUpdateRunState.currentStep = 'Create recovery point';
+        const backupRef = await createSystemUpdateBackupRef(originalHead);
+        systemUpdateRunState.backupRef = backupRef;
+        appendSystemUpdateLog(`\n[${new Date().toISOString()}] Recovery point: ${backupRef}\n`);
+
+        await runSystemUpdateStep('Fast-forward tracked branch', 'git', ['merge', '--ff-only', fetchedRemoteHash], {
             timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
         });
+        sourceChanged = true;
+        const appliedHead = normalizeSystemUpdateHash(await runGitCommand(['rev-parse', 'HEAD']));
+        if (appliedHead !== confirmedRemoteHash) {
+            throw makeSystemUpdateError('Git finished on an unexpected commit. Automatic rollback is required.', 500);
+        }
 
-        const hasPackageLock = fs.existsSync(path.join(PROJECT_ROOT, 'package-lock.json'));
-        const npmArgs = hasPackageLock
+        const npmArgs = targetHasPackageLock
             ? ['ci', '--omit=dev']
-            : ['install', '--omit=dev'];
+            : ['install', '--omit=dev', '--no-package-lock'];
         await runSystemUpdateStep('Install production dependencies', getSystemUpdateNpmCommand(), npmArgs, {
             timeout: SYSTEM_UPDATE_INSTALL_TIMEOUT_MS,
             maxBuffer: 4 * 1024 * 1024
@@ -2129,16 +2267,46 @@ const applySystemUpdateIfAvailable = async () => {
             applied: true,
             message: 'Update applied. The app is restarting now; refresh this tab after it comes back.',
             status,
-            updateRun: cloneSystemUpdateRunState()
+            updateRun: cloneSystemUpdateRunProgress()
         };
     } catch (error) {
+        const primaryMessage = summarizeGitError(error, 'Automatic update failed.');
+        const failureStatusCode = Number(error?.statusCode || 500);
+        const currentHead = normalizeSystemUpdateHash(await runGitCommandOrEmpty(['rev-parse', 'HEAD']));
+        sourceChanged = Boolean(originalHead && currentHead && currentHead !== originalHead);
+
+        if (sourceChanged && originalHead) {
+            try {
+                systemUpdateRunState.currentStep = 'Rolling back source';
+                await runSystemUpdateStep('Rolling back source', 'git', ['reset', '--hard', originalHead], {
+                    timeout: SYSTEM_UPDATE_FETCH_TIMEOUT_MS
+                });
+                const rollbackNpmArgs = originalHasPackageLock
+                    ? ['ci', '--omit=dev']
+                    : ['install', '--omit=dev', '--no-package-lock'];
+                await runSystemUpdateStep('Restore previous dependencies', getSystemUpdateNpmCommand(), rollbackNpmArgs, {
+                    timeout: SYSTEM_UPDATE_INSTALL_TIMEOUT_MS,
+                    maxBuffer: 4 * 1024 * 1024
+                });
+                systemUpdateRunState.rolledBack = true;
+                systemUpdateRunState.rollbackMessage = 'The previous source and production dependencies were restored.';
+                appendSystemUpdateLog(`\n[${new Date().toISOString()}] Rollback completed.\n`);
+            } catch (rollbackError) {
+                const rollbackFailure = summarizeGitError(rollbackError, 'Automatic rollback failed.');
+                systemUpdateRunState.rollbackMessage = `Automatic rollback failed: ${rollbackFailure}`;
+                appendSystemUpdateLog(`\n[${new Date().toISOString()}] ${systemUpdateRunState.rollbackMessage}\n`);
+            }
+        }
+
         systemUpdateRunState.running = false;
         systemUpdateRunState.status = 'failed';
         systemUpdateRunState.finishedAt = new Date().toISOString();
         systemUpdateRunState.currentStep = '';
-        systemUpdateRunState.message = summarizeGitError(error, 'Automatic update failed.');
+        systemUpdateRunState.message = systemUpdateRunState.rollbackMessage
+            ? `${primaryMessage} ${systemUpdateRunState.rollbackMessage}${systemUpdateRunState.rolledBack ? '' : ` Recovery point: ${systemUpdateRunState.backupRef || 'unavailable'}.`}`
+            : primaryMessage;
         appendSystemUpdateLog(`\n[${systemUpdateRunState.finishedAt}] Failed: ${systemUpdateRunState.message}\n`);
-        throw makeSystemUpdateError(systemUpdateRunState.message, 500);
+        throw makeSystemUpdateError(systemUpdateRunState.message, failureStatusCode);
     }
 };
 
@@ -2221,6 +2389,10 @@ const buildSystemUpdateStatus = async () => {
         : 0;
 
     const remoteStatusVerified = Boolean(fetchedAt);
+    const diverged = remoteStatusVerified && ahead > 0 && behind > 0;
+    if (diverged) {
+        warnings.push('The local and remote branches have diverged. Automatic update is disabled until the Git history is resolved manually.');
+    }
 
     return {
         repository: {
@@ -2246,6 +2418,8 @@ const buildSystemUpdateStatus = async () => {
             ahead,
             behind,
             updateAvailable: remoteStatusVerified && behind > 0,
+            canApply: remoteStatusVerified && behind > 0 && !diverged,
+            diverged,
             upToDate: remoteStatusVerified && behind === 0,
             unableToVerify: !remoteStatusVerified,
             fetchError
@@ -2255,7 +2429,7 @@ const buildSystemUpdateStatus = async () => {
             changedFileCount: dirtyCount
         },
         autoUpdate: getSystemUpdatePlatformInfo(),
-        updateRun: cloneSystemUpdateRunState(),
+        updateRun: cloneSystemUpdateRunProgress(),
         commits,
         warnings
     };
@@ -2644,18 +2818,52 @@ app.get('/api/system-update/status', requireAuth, async (req, res) => {
         });
     }
 });
+app.get('/api/system-update/run', requireAuth, (req, res) => {
+    if (!isAdminUser(req.user)) {
+        return res.status(403).json({ ok: false, error: 'Admin access required.' });
+    }
+
+    return res.json({
+        ok: true,
+        updateRun: cloneSystemUpdateRunProgress()
+    });
+});
 app.post('/api/system-update/check-and-apply', requireAuth, async (req, res) => {
     if (!isAdminUser(req.user)) {
         return res.status(403).json({ ok: false, error: 'Admin access required.' });
     }
 
+    if (req.body?.confirmed !== true) {
+        return res.status(400).json({
+            ok: false,
+            error: 'Confirm the system update before applying it.'
+        });
+    }
+
+    const expectedRemoteHash = normalizeSystemUpdateHash(req.body?.expectedRemoteHash);
+    if (!expectedRemoteHash) {
+        return res.status(400).json({
+            ok: false,
+            error: 'Refresh the update status and confirm the exact remote version before applying it.'
+        });
+    }
+
+    if (systemUpdateApplyRequestActive || systemUpdateRunState.running) {
+        return res.status(409).json({
+            ok: false,
+            error: 'A system update is already running.',
+            updateRun: cloneSystemUpdateRunProgress()
+        });
+    }
+
+    systemUpdateApplyRequestActive = true;
     try {
-        const result = await applySystemUpdateIfAvailable();
+        const result = await applySystemUpdateIfAvailable({ expectedRemoteHash });
         return res.json({
             ok: true,
             checkedAt: new Date().toISOString(),
             ...result,
-            updateRun: result.updateRun || cloneSystemUpdateRunState()
+            updateRun: result.updateRun || cloneSystemUpdateRunProgress()
         });
     } catch (error) {
         const statusCode = Number(error?.statusCode || 500);
@@ -2663,8 +2871,10 @@ app.post('/api/system-update/check-and-apply', requireAuth, async (req, res) => 
         return res.status(statusCode).json({
             ok: false,
             error: error.message || 'Failed to apply system update.',
-            updateRun: cloneSystemUpdateRunState()
+            updateRun: cloneSystemUpdateRunProgress()
         });
+    } finally {
+        systemUpdateApplyRequestActive = false;
     }
 });
 

@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-08-27
+Last reviewed: 2026-08-30
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -10,6 +10,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Maintain business profile, protected integration settings, activity logs, and app downloads.
 - Provide an Admin-only, password-confirmed project factory reset for operational records across all modules and branches.
 - Provide one Admin-only, versioned full-system backup archive and a checksum-validated complete restore for all application records and uploaded files.
+- Provide an Admin-confirmed, exact-commit system update with live progress, fast-forward validation, a Git recovery point, and automatic source/dependency rollback on failure.
 - Expose the information API plus owner-only setup, schema, and update tools.
 
 ## Canonical runtime layout
@@ -39,6 +40,7 @@ The former eleven root backend shims were retired in Phase 11. Existing browser 
 - The Accounts tab bar exposes GCash as a normal settings panel. Admins can view and edit the merchant account name, number, and QR code without relying on a hidden integration panel.
 - The `Data Reset` section inside `/accounts.html` displays current record/file counts, deletion and preservation scope, an Android offline-data warning, and the guarded reset form.
 - The shared toolbar Export button downloads the complete `.isp-backup.zip`; Import validates that archive, previews selected/current record and upload counts, labels an allowed `JSON -> MYSQL` conversion, and requires the current Admin password, `RESTORE ALL DATA`, and an explicit replacement acknowledgement. Legacy customer workbook imports remain available through the same picker for `.xlsx`, `.xls`, and `.json` files.
+- The `System Update` section checks the tracked remote branch, requires an Admin confirmation for the displayed commit, reports each running step through `/api/system-update/run`, and leaves the Apply button disabled for an unverified, dirty, unsupported, current, or diverged checkout.
 - `/setup.html` → `web/setup.html`
 - `/install-guide.html` → `web/install-guide.html`
 - `/update-download.html` → `web/update-download.html`
@@ -64,10 +66,11 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - Full-system archives include accounts/users, customers, plans, all payment and billing stores, imported GCash rows and allocations, Collector/Technician/Finance/Network/Customer App/Temp records, business and encrypted integration settings, activity/audit data, app-download records, and both upload roots. The manifest discovers records dynamically so new JSON stores or MySQL tables are not silently omitted.
 - Full-system archives intentionally exclude Admin/customer runtime sessions, `CONFIG_MASTER_KEY`, MySQL connection files, Firebase/service-account files, environment/source/log data, generated caches, and prior backup directories. Encrypted integration settings restored on another server require the same externally managed `CONFIG_MASTER_KEY`.
 - Complete restore replaces eligible records/uploads rather than merging them. It blocks other API requests, activates the shared maintenance write gate for background JSON/shared-MySQL mutations, drains queued JSON writes, creates `data/backups/pre-import-system-backup-*.isp-backup.zip`, and invalidates every server session after success. JSON file/upload swaps retain rollback copies until installation succeeds. Same-driver MySQL archives still require an exact table/column match; JSON-to-MySQL restore requires the mapped target columns and transactional InnoDB tables, preserves supplemental JSON stores in `app_store`, hashes legacy plaintext passwords, normalizes canonical customer ONU serials, rejects branch-local ONU ownership conflicts and conflicting payment IDs, clears sessions, and rolls back database/upload replacement together on failure. MySQL-to-JSON conversion remains unsupported.
+- System update execution permits only one server-side apply request at a time and requires an authenticated Admin, explicit confirmation, the exact 40-character remote commit shown in the UI, a clean working tree, a supported Windows/Ubuntu host, valid remote package metadata, and a verified fast-forward path. It fetches once more, rejects a changed remote target, creates `refs/isp-update-backups/*`, fast-forwards deterministically, installs production dependencies, and restarts only after success. A post-merge failure resets to the previous commit and reinstalls its dependency set; rollback failure preserves and reports the recovery ref for manual repair.
 
 ## Verification contract
 
-- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, eleven web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, profile-editor structure, and the visible GCash tab contract.
+- `npm run refactor:admin` checks the manifest, loader, retirement of eleven root entries, eleven web files, server wiring, canonical installer paths, IP Browser match precedence, secret redaction/preservation, profile-editor structure, the visible GCash tab contract, and the System Update confirmation/progress/recovery/rollback wiring.
 - `npm run refactor:phase3` runs structural, core, Admin, security, and isolated HTTP checks.
 - `npm run refactor:phase12` is the final cross-module structural, module, integration, security, HTTP, and package gate.
 - HTTP coverage includes public Admin files, protected-page redirects, owner-page denial, and unauthenticated API denial.
@@ -88,6 +91,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - `auth.js` still contains Collector/Technician login contracts; coordinate those module migrations.
 - Admin CSS is shared by Network pages; preserve its unchanged public URL.
 - System update/setup behavior can affect deployment and schema state; never run production mutations without explicit approval.
+- A source rollback cannot reverse application-data migrations performed by newly updated startup code. Schema/data migrations must remain backward compatible or carry their own recovery procedure, and production operators should retain a current full-system backup before applying an update that changes stored data.
 - Factory reset is global, permanent, and intentionally does not create a backup. Android offline records exist outside the server and can upload again after Sync unless cleared on those devices.
 - A full-system restore is global and replaces current server records. The preview expires after 15 minutes. Same-driver restore remains the default; the only cross-driver path is JSON backup to MySQL, and it is rejected unless every required table/column is present and every eligible table is InnoDB. MySQL-to-JSON remains unsupported. Android offline storage is outside the archive and can sync again later.
 - Full-system archives contain password hashes and protected business data even though raw server keys are excluded; store downloaded archives securely. Restored encrypted integrations depend on the same `CONFIG_MASTER_KEY`.
@@ -95,6 +99,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 
 ## Latest meaningful changes
 
+- 2026-08-30: Hardened Apply New Update around the exact Admin-reviewed remote commit. The server rejects stale confirmations, dirty/diverged/non-fast-forward checkouts, and invalid package metadata; exposes lightweight step progress; creates a Git recovery ref; performs a deterministic fast-forward; and automatically restores the previous source and production dependencies when a post-merge step fails. The UI confirms before mutation, displays progress and exact failure/rollback state, and keeps Apply disabled through restart.
 - 2026-08-24: Added fail-closed JSON-backup-to-MySQL restore. Preview validates a deterministic conversion plan and shows `JSON -> MYSQL`; restore creates the normal recovery archive, replaces mapped relational records and preserved supplemental stores in one InnoDB transaction, rejects conflicting payment IDs, restores uploads with rollback, and clears sessions. The supplied 21-store archive restored 356 customers and 465 source payment rows with no warnings; startup produced 970 unique ledger rows with zero logical duplicate groups while retaining 92 imported GCash transactions, and a fresh MySQL export revalidated successfully.
 - 2026-08-24: Hardened full-system Export so a generated archive is reopened and passed through Import's manifest, checksum, storage-driver, Admin-record, upload-root, and MySQL schema checks before download. Successful responses now include the exact archive length and snapshot ID; invalid or incomplete archives are rejected instead of being offered to the Admin.
 - 2026-08-16: Applied the Collector-owned excluded-client filter to every assigned-customer Collector authentication/refresh/map/payment-record response. Excluded accounts disappear from Android after a successful login or Sync, while Admin sessions, customers, payments, and offline-captured uploads remain intact; factory reset now clears the exclusion and existing priority stores.

@@ -144,6 +144,7 @@ console.log(`PASS Admin web root (${webFiles.length} files)`);
 
 const accountsHtml = fs.readFileSync(path.join(webRoot, 'accounts.html'), 'utf8');
 const accountsJs = fs.readFileSync(path.join(webRoot, 'accounts.js'), 'utf8');
+const systemUpdateServerSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8');
 assert(accountsHtml.includes('id="ip-browser-profile-body"'));
 assert(accountsHtml.includes('id="ipBrowserProfileModal"'));
 assert(accountsHtml.includes('Gateway / assigned IP matches'));
@@ -155,6 +156,20 @@ assert(accountsJs.includes('const normalizeIpBrowserMatchList = (value) => {'));
 assert(accountsJs.includes('profiles: ipBrowserProfiles.map((profile) => ({'));
 assert(accountsJs.includes("button.dataset.ipBrowserProfileAction === 'remove'"));
 console.log('PASS IP Browser profile editor and visible GCash settings tab structure');
+
+assert(accountsHtml.includes('id="system-update-warning" role="status" aria-live="polite"'));
+assert(accountsHtml.includes('accounts.js?v=4.1'));
+assert(accountsJs.includes('const confirmed = window.confirm('));
+assert(accountsJs.includes("fetch('/api/system-update/run'"));
+assert(accountsJs.includes('expectedRemoteHash'));
+assert(systemUpdateServerSource.includes("app.get('/api/system-update/run'"));
+assert(systemUpdateServerSource.includes('req.body?.confirmed !== true'));
+assert(systemUpdateServerSource.includes('systemUpdateApplyRequestActive || systemUpdateRunState.running'));
+assert(systemUpdateServerSource.includes("['merge-base', '--is-ancestor', originalHead, fetchedRemoteHash]"));
+assert(systemUpdateServerSource.includes("['update-ref', backupRef, safeHead]"));
+assert(systemUpdateServerSource.includes("['reset', '--hard', originalHead]"));
+assert(systemUpdateServerSource.includes("['install', '--omit=dev', '--no-package-lock']"));
+console.log('PASS Admin system update confirmation, progress, fast-forward, recovery, and rollback safeguards');
 
 const factoryReset = require(path.join(
   projectRoot,

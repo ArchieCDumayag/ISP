@@ -117,6 +117,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemUpdateWarning = document.getElementById('system-update-warning');
     const systemUpdateCommitCount = document.getElementById('system-update-commit-count');
     const systemUpdateCommitsBody = document.getElementById('system-update-commits-body');
+    let latestSystemUpdatePayload = null;
+    let systemUpdateProgressTimer = null;
+    let systemUpdateProgressRequestRunning = false;
     
     // Account management elements
     const accountsTable = document.getElementById('accounts-table-body');
@@ -869,14 +872,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const isEnabled = Boolean(autoUpdate.enabled);
         const hasUpdate = Boolean(comparison.updateAvailable);
         const unableToVerify = Boolean(comparison.unableToVerify);
+        const hasDiverged = Boolean(comparison.diverged);
         const hasLocalChanges = Boolean(payload.workingTree?.dirty);
-        systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasLocalChanges || !hasUpdate;
+        systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasDiverged || hasLocalChanges || !hasUpdate;
         if (isRunning) {
             systemUpdateCheckBtn.title = updateRun.currentStep || 'System update is running.';
         } else if (!isEnabled) {
             systemUpdateCheckBtn.title = autoUpdate.message || 'Automatic update is not supported on this install.';
         } else if (unableToVerify) {
             systemUpdateCheckBtn.title = comparison.fetchError || 'Unable to verify GitHub updates.';
+        } else if (hasDiverged) {
+            systemUpdateCheckBtn.title = 'The local and remote branches have diverged. Resolve the Git history manually.';
         } else if (hasLocalChanges) {
             systemUpdateCheckBtn.title = 'Commit or stash local changes before applying an update.';
         } else if (!hasUpdate) {
@@ -979,6 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderSystemUpdateStatus = (payload = {}) => {
         if (!systemUpdatePanel) return;
+        latestSystemUpdatePayload = payload;
         const repository = payload.repository || {};
         const branch = payload.branch || {};
         const local = payload.local || {};
@@ -1017,6 +1024,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (isRunning) {
             warnings.unshift(updateRun.currentStep || updateRun.message || 'System update is running.');
+        } else if (updateRun.status === 'failed' && updateRun.message) {
+            warnings.unshift(updateRun.message);
         }
         if (systemUpdateWarning) {
             systemUpdateWarning.hidden = !warnings.length;
@@ -1028,8 +1037,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setSystemUpdateBadge('update', 'Updating');
         } else if (updateRun.status === 'restart-pending') {
             setSystemUpdateBadge('updated', 'Restarting');
+        } else if (updateRun.status === 'failed') {
+            setSystemUpdateBadge('error', 'Update Failed');
         } else if (comparison.unableToVerify) {
             setSystemUpdateBadge('error', 'Unable to Verify');
+        } else if (comparison.diverged) {
+            setSystemUpdateBadge('error', 'Manual Action');
         } else if (comparison.updateAvailable) {
             setSystemUpdateBadge('update', 'Update Available');
         } else {
@@ -1078,35 +1091,127 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const stopSystemUpdateProgressPolling = () => {
+        if (systemUpdateProgressTimer) {
+            clearInterval(systemUpdateProgressTimer);
+            systemUpdateProgressTimer = null;
+        }
+    };
+
+    const renderSystemUpdateProgress = (updateRun = {}) => {
+        const status = String(updateRun.status || '').trim().toLowerCase();
+        if (status === 'running' || updateRun.running) {
+            const step = updateRun.currentStep || updateRun.message || 'Applying update...';
+            setSystemUpdateBadge('update', 'Updating');
+            if (systemUpdateWarning) {
+                systemUpdateWarning.hidden = false;
+                systemUpdateWarning.textContent = step;
+            }
+            if (systemUpdateCheckBtn) {
+                systemUpdateCheckBtn.innerHTML = '<i class="ti ti-loader-2" aria-hidden="true"></i> Updating...';
+                systemUpdateCheckBtn.title = step;
+            }
+        } else if (status === 'restart-pending') {
+            setSystemUpdateBadge('updated', 'Restarting');
+            if (systemUpdateWarning) {
+                systemUpdateWarning.hidden = false;
+                systemUpdateWarning.textContent = updateRun.message || 'Update applied. The app is restarting now.';
+            }
+            stopSystemUpdateProgressPolling();
+        } else if (status === 'failed') {
+            setSystemUpdateBadge('error', 'Update Failed');
+            if (systemUpdateWarning) {
+                systemUpdateWarning.hidden = false;
+                systemUpdateWarning.textContent = updateRun.message || 'Automatic update failed.';
+            }
+            stopSystemUpdateProgressPolling();
+        }
+    };
+
+    const fetchSystemUpdateRunProgress = async () => {
+        if (systemUpdateProgressRequestRunning) return;
+        systemUpdateProgressRequestRunning = true;
+        try {
+            const response = await fetch('/api/system-update/run', {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok && data?.ok !== false) {
+                renderSystemUpdateProgress(data.updateRun || {});
+            }
+        } finally {
+            systemUpdateProgressRequestRunning = false;
+        }
+    };
+
+    const startSystemUpdateProgressPolling = () => {
+        stopSystemUpdateProgressPolling();
+        fetchSystemUpdateRunProgress();
+        systemUpdateProgressTimer = setInterval(fetchSystemUpdateRunProgress, 1500);
+    };
+
     const checkAndApplySystemUpdate = async () => {
         if (!systemUpdatePanel) return;
+        const expectedRemoteHash = String(latestSystemUpdatePayload?.remote?.hash || '').trim();
+        const remoteLabel = String(latestSystemUpdatePayload?.remote?.shortHash || expectedRemoteHash.slice(0, 7)).trim();
+        const trackedBranch = String(
+            latestSystemUpdatePayload?.branch?.upstream
+            || latestSystemUpdatePayload?.branch?.remoteRef
+            || latestSystemUpdatePayload?.branch?.local
+            || 'the tracked branch'
+        ).trim();
+        if (!/^[a-f0-9]{40}$/i.test(expectedRemoteHash)) {
+            showInlineMessage(systemUpdatePanel, 'Refresh the update status before applying an update.', 'error');
+            return;
+        }
+        const confirmed = window.confirm(
+            `Apply update ${remoteLabel} from ${trackedBranch}?\n\nThe server will create a Git recovery point, install production dependencies, and restart after a successful update.`
+        );
+        if (!confirmed) return;
+
         const unlock = window.withButtonLock
-            ? window.withButtonLock(systemUpdateCheckBtn, { label: '<i class="ti ti-loader-2"></i> Checking...' })
+            ? window.withButtonLock(systemUpdateCheckBtn, { label: '<i class="ti ti-loader-2" aria-hidden="true"></i> Validating...' })
             : null;
         if (window.withButtonLock && !unlock) return;
+        if (!window.withButtonLock && systemUpdateCheckBtn) systemUpdateCheckBtn.disabled = true;
+        let restartPending = false;
+        let applyFailed = false;
 
         setSystemUpdateBadge('checking', 'Checking');
         if (systemUpdateWarning) {
             systemUpdateWarning.hidden = false;
-            systemUpdateWarning.textContent = 'Checking GitHub and preparing to apply the update...';
+            systemUpdateWarning.textContent = 'Validating the confirmed update and preparing a recovery point...';
         }
+        startSystemUpdateProgressPolling();
 
         try {
             const response = await fetch('/api/system-update/check-and-apply', {
                 method: 'POST',
                 credentials: 'include',
-                cache: 'no-store'
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    confirmed: true,
+                    expectedRemoteHash
+                })
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || data?.ok === false) {
-                throw new Error(data?.error || 'Failed to check for update.');
+                const updateError = new Error(data?.error || data?.updateRun?.message || 'Failed to apply update.');
+                updateError.updateRun = data?.updateRun || null;
+                throw updateError;
             }
 
-            if (data.status) {
+            if (data.status && !data.applied) {
                 renderSystemUpdateStatus(data.status);
             }
 
             if (data.applied) {
+                restartPending = true;
+                renderSystemUpdateProgress(data.updateRun || { status: 'restart-pending', message: data.message });
                 setSystemUpdateBadge('updated', 'Restarting');
                 if (systemUpdateCheckBtn) {
                     systemUpdateCheckBtn.disabled = true;
@@ -1125,14 +1230,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 showInlineMessage(systemUpdatePanel, data.message || 'Already up to date.', 'success');
             }
         } catch (error) {
-            setSystemUpdateBadge('error', 'Unavailable');
+            applyFailed = true;
+            latestSystemUpdatePayload = null;
+            if (error.updateRun) {
+                renderSystemUpdateProgress(error.updateRun);
+            } else {
+                setSystemUpdateBadge('error', 'Update Failed');
+            }
             if (systemUpdateWarning) {
                 systemUpdateWarning.hidden = false;
-                systemUpdateWarning.textContent = error.message || 'Failed to check for update.';
+                systemUpdateWarning.textContent = error.message || 'Failed to apply update.';
             }
-            showInlineMessage(systemUpdatePanel, error.message || 'Failed to check for update.', 'error');
+            showInlineMessage(systemUpdatePanel, error.message || 'Failed to apply update.', 'error');
         } finally {
+            stopSystemUpdateProgressPolling();
             if (unlock) unlock();
+            if (!window.withButtonLock && systemUpdateCheckBtn) systemUpdateCheckBtn.disabled = false;
+            if (restartPending && systemUpdateCheckBtn) {
+                systemUpdateCheckBtn.disabled = true;
+                systemUpdateCheckBtn.title = 'Update applied. The app is restarting now.';
+            } else if (applyFailed && systemUpdateCheckBtn) {
+                systemUpdateCheckBtn.disabled = true;
+                systemUpdateCheckBtn.title = 'Refresh status before trying the update again.';
+            }
         }
     };
 

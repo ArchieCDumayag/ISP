@@ -173,6 +173,7 @@ The local development login page is `http://localhost:3100/login.html` when the 
 
 - Express routers are mounted centrally in `server.js`.
 - The shared static shell comes from `public/index.html`, `public/layout.js`, `public/sidebar.html`, `public/topbar.html`, `public/styles.css`, and related common assets.
+- `/dashboard-v2.html` is a separate Admin-protected compact operations dashboard linked beside the existing dashboard. It reads canonical `/api/payment-records`, `/api/jobs`, and `/api/tickets` data to show area-filtered active customers, current outstanding balance, today's posted payment collections, open jobs/tickets, a six-month billed-versus-collected trend, urgent work, recent payments, and highest customer balances. It provides navigation into existing Customer, Billing, Technician, and Ticket workflows and does not mutate records.
 - Shared `public/css/tabler-app.css` applies Tabler's installed default sans-serif stack (`Inter Var`, `Inter`, then system fallbacks) to all rendered UI text across every module page; code-like elements retain Tabler's monospace stack and icon-font classes retain their dedicated fonts.
 - Shared `.close-modal` controls use actual Tabler `btn btn-icon btn-outline-secondary` markup with the `ti-x` icon. `public/css/tabler-app.css` keeps their Tabler sizing, variables, contrast, hover, and focus treatment consistent in light and dark themes without changing modal JavaScript.
 - Shared `public/js/tabler-enhance.js` enforces explicit modal dismissal across module pages: Escape and backdrop/outside clicks do not close an open modal, while interactive Close/Cancel controls and successful completed actions continue to close it. Interactive controls are excluded from modal-root detection so names such as `close-modal` cannot be mistaken for a backdrop. Enhanced Bootstrap modals also receive static-backdrop and keyboard-disabled settings. Temp's standalone native dialogs independently follow the same behavior.
@@ -229,6 +230,8 @@ Use one shared working tree and the coordination script. Agents lock exact files
 - The HTTP smoke child process uses `ISOLATED_RUNTIME_CONFIG=1` so it cannot inherit stored MySQL configuration; it exercises the full application surface without reading or mutating operator records.
 
 ## Latest integration changes
+
+- 2026-08-30: Added a separate Tabler Dashboard V2 page while retaining the chart-focused original dashboard. The new Admin-only operations view prioritizes four essential KPIs, quick actions, a compact billing/collection trend, urgent jobs and tickets, recent posted payments, and accounts needing attention, with one shared area filter and partial-source error reporting.
 
 - 2026-08-30: Hardened Admin Apply New Update with exact-commit confirmation, live step progress, dirty/diverged/stale-target/package validation, deterministic fast-forwarding, a Git recovery ref, and automatic source/dependency rollback on post-merge failure. The Apply control stays locked through restart and now displays the server's precise failure and rollback result.
 

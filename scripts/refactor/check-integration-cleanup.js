@@ -50,6 +50,8 @@ console.log('PASS nine complete manifest-driven module runtimes and canonical ow
 [
   'api.js',
   'app.js',
+  'dashboard-v2.html',
+  'dashboard-v2.js',
   'index.html',
   'layout.js',
   'sidebar.html',
@@ -57,12 +59,29 @@ console.log('PASS nine complete manifest-driven module runtimes and canonical ow
   'theme-init.js',
   'theme.js',
   'topbar.html',
+  'css/dashboard-v2.css',
   'vendor/tabler/css/tabler.min.css',
   'vendor/tabler/js/tabler.min.js'
 ].forEach((relativePath) => {
   assert(fs.existsSync(path.join(PUBLIC_ROOT, relativePath)), `Missing shared frontend file: public/${relativePath}`);
 });
 console.log('PASS shared frontend shell remains canonical under public/');
+
+const dashboardV2Html = fs.readFileSync(path.join(PUBLIC_ROOT, 'dashboard-v2.html'), 'utf8');
+const dashboardV2Js = fs.readFileSync(path.join(PUBLIC_ROOT, 'dashboard-v2.js'), 'utf8');
+const dashboardV2Css = fs.readFileSync(path.join(PUBLIC_ROOT, 'css', 'dashboard-v2.css'), 'utf8');
+const sidebarSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'sidebar.html'), 'utf8');
+assert(dashboardV2Html.includes('<h1>Dashboard Version 2</h1>'));
+assert(dashboardV2Html.includes('vendor/tabler/css/tabler.min.css'));
+assert(dashboardV2Html.includes('id="dashboardV2CollectionChart"'));
+assert(dashboardV2Html.includes('id="dashboardV2WorkQueue"'));
+assert(dashboardV2Html.includes('id="dashboardV2RecentPayments"'));
+assert(dashboardV2Js.includes("fetchJson('/api/payment-records')"));
+assert(dashboardV2Js.includes("fetchJson('/api/jobs')"));
+assert(dashboardV2Js.includes("fetchJson('/api/tickets?includeArchived=0')"));
+assert(dashboardV2Css.includes('.dashboard-v2-primary-grid'));
+assert(sidebarSource.includes('href="dashboard-v2.html"'));
+console.log('PASS compact Tabler Dashboard V2 shell, canonical data sources, and navigation');
 
 const tablerAppSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'css', 'tabler-app.css'), 'utf8');
 const sharedStylesSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'styles.css'), 'utf8');
@@ -107,6 +126,7 @@ const serverSource = fs.readFileSync(path.join(projectRoot, 'server.js'), 'utf8'
   'const PUBLIC_UPLOADS_DIR = path.join(PUBLIC_ROOT',
   'const LEGACY_UPLOADS_DIR = path.join(DATA_DIR'
 ].forEach((expected) => assert(serverSource.includes(expected), `server.js is missing ${expected}`));
+assert(serverSource.includes("'dashboard-v2.html'"));
 assert(!serverSource.includes('__dirname'));
 assert(!serverSource.includes('const rootPath ='));
 assert(!serverSource.includes('return res.sendFile(rootPath)'));

@@ -2984,6 +2984,7 @@ app.get(/^\/[^/]+\.(?:css|js|mjs|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|map)$/i, 
 // --- Page guard middleware for HTML pages (BEFORE static files) ---
 const PROTECTED_PAGES = new Set([
     'index.html',
+    'dashboard-v2.html',
     'update-download.html',
     'customers.html',
     'customer-archive.html',

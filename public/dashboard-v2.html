@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard V2 - THRE3J INTERNET</title>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+    <link rel="stylesheet" href="css/dashboard-v2.css?v=1.0">
+    <script src="theme-init.js?v=2.6"></script>
+</head>
+
+<body class="layout-fluid layout-fluid-vertical">
+    <div class="app-shell tabler-fluid-vertical">
+        <div id="sidebar"></div>
+        <div class="app-main page-wrapper">
+            <div id="topbar"></div>
+            <main class="page dashboard-v2">
+                <section class="page-header dashboard-v2-header">
+                    <div class="page-title">
+                        <p class="eyebrow">Operations Overview</p>
+                        <h1>Dashboard Version 2</h1>
+                        <p class="subtitle" id="dashboardV2ScopeMeta">Essential billing and field operations in one compact view.</p>
+                    </div>
+                    <div class="dashboard-v2-toolbar" aria-label="Dashboard controls">
+                        <label class="visually-hidden" for="dashboardV2AreaFilter">Filter by area</label>
+                        <select class="form-select form-select-sm" id="dashboardV2AreaFilter">
+                            <option value="">All areas</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" type="button" id="dashboardV2Refresh">
+                            <i class="ti ti-refresh" aria-hidden="true"></i>
+                            Refresh
+                        </button>
+                    </div>
+                </section>
+
+                <div class="alert alert-danger" id="dashboardV2Alert" role="alert" hidden></div>
+
+                <section class="dashboard-v2-kpis" aria-label="Key performance indicators">
+                    <article class="card dashboard-v2-kpi">
+                        <div class="card-body">
+                            <span class="avatar bg-blue-lt text-blue"><i class="ti ti-users" aria-hidden="true"></i></span>
+                            <div>
+                                <p class="dashboard-v2-label">Active Customers</p>
+                                <p class="dashboard-v2-value" id="dashboardV2ActiveCustomers">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2ActiveMeta">Loading accounts...</p>
+                            </div>
+                        </div>
+                    </article>
+                    <article class="card dashboard-v2-kpi">
+                        <div class="card-body">
+                            <span class="avatar bg-red-lt text-red"><i class="ti ti-alert-circle" aria-hidden="true"></i></span>
+                            <div>
+                                <p class="dashboard-v2-label">Outstanding Balance</p>
+                                <p class="dashboard-v2-value" id="dashboardV2Outstanding">&#8369;0.00</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2OutstandingMeta">Loading balances...</p>
+                            </div>
+                        </div>
+                    </article>
+                    <article class="card dashboard-v2-kpi">
+                        <div class="card-body">
+                            <span class="avatar bg-green-lt text-green"><i class="ti ti-cash" aria-hidden="true"></i></span>
+                            <div>
+                                <p class="dashboard-v2-label">Collections Today</p>
+                                <p class="dashboard-v2-value" id="dashboardV2CollectionsToday">&#8369;0.00</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2CollectionsMeta">Loading payments...</p>
+                            </div>
+                        </div>
+                    </article>
+                    <article class="card dashboard-v2-kpi">
+                        <div class="card-body">
+                            <span class="avatar bg-orange-lt text-orange"><i class="ti ti-tool" aria-hidden="true"></i></span>
+                            <div>
+                                <p class="dashboard-v2-label">Open Work</p>
+                                <p class="dashboard-v2-value" id="dashboardV2OpenWork">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2OpenWorkMeta">Loading jobs and tickets...</p>
+                            </div>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="card dashboard-v2-quick-actions" aria-labelledby="dashboardV2QuickActionsTitle">
+                    <div class="card-body">
+                        <div>
+                            <h2 class="card-title mb-1" id="dashboardV2QuickActionsTitle">Quick actions</h2>
+                            <p class="text-secondary mb-0">Open the most common daily workflows.</p>
+                        </div>
+                        <div class="btn-list">
+                            <a class="btn btn-outline-primary btn-sm" href="customers.html">
+                                <i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer
+                            </a>
+                            <a class="btn btn-outline-primary btn-sm" href="payments.html">
+                                <i class="ti ti-cash-banknote" aria-hidden="true"></i> Record Payment
+                            </a>
+                            <a class="btn btn-outline-primary btn-sm" href="technicians.html">
+                                <i class="ti ti-router" aria-hidden="true"></i> Install Customer
+                            </a>
+                            <a class="btn btn-outline-primary btn-sm" href="tickets.html">
+                                <i class="ti ti-ticket" aria-hidden="true"></i> Create Ticket
+                            </a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="dashboard-v2-primary-grid">
+                    <article class="card dashboard-v2-chart-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Billing and collection trend</h2>
+                                <p class="text-secondary mb-0" id="dashboardV2TrendMeta">Last six months</p>
+                            </div>
+                            <span class="badge bg-blue-lt text-blue" id="dashboardV2CollectionRate">0% collected</span>
+                        </header>
+                        <div class="card-body">
+                            <div class="dashboard-v2-chart-wrap">
+                                <canvas id="dashboardV2CollectionChart" role="img" aria-label="Monthly billed and collected amounts"></canvas>
+                                <p class="text-secondary dashboard-v2-empty" id="dashboardV2ChartEmpty" hidden>No billing or collection activity yet.</p>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="card dashboard-v2-work-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Urgent work</h2>
+                                <p class="text-secondary mb-0">Overdue and active field work first.</p>
+                            </div>
+                            <a class="btn btn-ghost-primary btn-sm" href="technicians.html">View jobs</a>
+                        </header>
+                        <div class="list-group list-group-flush dashboard-v2-work-list" id="dashboardV2WorkQueue">
+                            <div class="list-group-item text-secondary">Loading jobs and tickets...</div>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="dashboard-v2-secondary-grid">
+                    <article class="card dashboard-v2-payments-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Recent payments</h2>
+                                <p class="text-secondary mb-0">Latest posted customer collections.</p>
+                            </div>
+                            <a class="btn btn-ghost-primary btn-sm" href="payment-history.html">View history</a>
+                        </header>
+                        <div class="table-responsive">
+                            <table class="table table-vcenter card-table">
+                                <thead>
+                                    <tr>
+                                        <th>Customer</th>
+                                        <th>Source</th>
+                                        <th>Date</th>
+                                        <th class="text-end">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashboardV2RecentPayments">
+                                    <tr><td colspan="4" class="text-center text-secondary py-4">Loading payments...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+
+                    <article class="card dashboard-v2-attention-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Needs attention</h2>
+                                <p class="text-secondary mb-0">Largest current customer balances.</p>
+                            </div>
+                            <a class="btn btn-ghost-primary btn-sm" href="payments.html">Open billing</a>
+                        </header>
+                        <div class="list-group list-group-flush" id="dashboardV2AttentionList">
+                            <div class="list-group-item text-secondary">Loading balances...</div>
+                        </div>
+                    </article>
+                </section>
+
+                <p class="dashboard-v2-updated text-secondary" id="dashboardV2Updated" role="status" aria-live="polite">Loading dashboard...</p>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha256-s4B2di9zY7yekStouOA0gmeY213ya7YfAA7C56MTe8c=" crossorigin="anonymous"></script>
+    <script src="dashboard-v2.js?v=1.0"></script>
+    <script src="layout.js?v=3.9"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=2.2"></script>
+</body>
+
+</html>

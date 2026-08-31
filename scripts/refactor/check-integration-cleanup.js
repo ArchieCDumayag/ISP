@@ -73,15 +73,41 @@ const dashboardV2Css = fs.readFileSync(path.join(PUBLIC_ROOT, 'css', 'dashboard-
 const sidebarSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'sidebar.html'), 'utf8');
 assert(dashboardV2Html.includes('<h1>Dashboard Version 2</h1>'));
 assert(dashboardV2Html.includes('vendor/tabler/css/tabler.min.css'));
-assert(dashboardV2Html.includes('id="dashboardV2CollectionChart"'));
-assert(dashboardV2Html.includes('id="dashboardV2WorkQueue"'));
-assert(dashboardV2Html.includes('id="dashboardV2RecentPayments"'));
-assert(dashboardV2Js.includes("fetchJson('/api/payment-records')"));
-assert(dashboardV2Js.includes("fetchJson('/api/jobs')"));
-assert(dashboardV2Js.includes("fetchJson('/api/tickets?includeArchived=0')"));
-assert(dashboardV2Css.includes('.dashboard-v2-primary-grid'));
+[
+  'id="dashboardV2PendingGcash"',
+  'id="dashboardV2CollectorApprovals"',
+  'id="dashboardV2PendingRemittance"',
+  'id="dashboardV2ActionQueue"',
+  'id="dashboardV2GcashFreshness"',
+  'id="dashboardV2GcashLatest"',
+  'id="dashboardV2RecentCustomers"',
+  'id="dashboardV2RecentPayments"'
+].forEach((expected) => assert(dashboardV2Html.includes(expected), `Dashboard V2 is missing ${expected}`));
+[
+  "fetchJson('/api/customers')",
+  "fetchJson('/api/payment-records')",
+  "fetchJson('/api/jobs')",
+  "fetchJson('/api/tickets?includeArchived=0')",
+  "fetchJson('/api/customer-drafts?status=pending&limit=200&offset=0')",
+  "fetchJson('/api/disconnections')",
+  "fetchJson('/api/payments/gcash-pending')",
+  "fetchJson('/api/payment-confirmations/gcash-history/status')",
+  "fetchJson('/api/collector/payments/approvals')",
+  "fetchJson('/api/collector/payments/remittances')",
+  "fetchJson('/api/collector/payments/reschedules?status=active&limit=1000')"
+].forEach((expected) => assert(dashboardV2Js.includes(expected), `Dashboard V2 is missing ${expected}`));
+assert(dashboardV2Js.includes("'pending_gcash_verification'"));
+assert(dashboardV2Js.includes("'pending_approval'"));
+assert(dashboardV2Js.includes("'rejected'"));
+assert(dashboardV2Js.includes('metadataIncomplete'));
+assert(dashboardV2Js.includes('payload.pagination?.total'));
+[
+  '.dashboard-v2-primary-grid',
+  '.dashboard-v2-workflow-grid',
+  '.dashboard-v2-gcash-reminder'
+].forEach((expected) => assert(dashboardV2Css.includes(expected), `Dashboard V2 CSS is missing ${expected}`));
 assert(sidebarSource.includes('href="dashboard-v2.html"'));
-console.log('PASS compact Tabler Dashboard V2 shell, canonical data sources, and navigation');
+console.log('PASS action-first Tabler Dashboard V2 shell, canonical operational data sources, and navigation');
 
 const tablerAppSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'css', 'tabler-app.css'), 'utf8');
 const sharedStylesSource = fs.readFileSync(path.join(PUBLIC_ROOT, 'styles.css'), 'utf8');

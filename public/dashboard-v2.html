@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/dashboard-v2.css?v=1.0">
+    <link rel="stylesheet" href="css/dashboard-v2.css?v=2.0">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 
@@ -21,9 +21,9 @@
             <main class="page dashboard-v2">
                 <section class="page-header dashboard-v2-header">
                     <div class="page-title">
-                        <p class="eyebrow">Operations Overview</p>
+                        <p class="eyebrow">Daily Operations</p>
                         <h1>Dashboard Version 2</h1>
-                        <p class="subtitle" id="dashboardV2ScopeMeta">Essential billing and field operations in one compact view.</p>
+                        <p class="subtitle" id="dashboardV2ScopeMeta">Action queues, collections, customers, and field work in one view.</p>
                     </div>
                     <div class="dashboard-v2-toolbar" aria-label="Dashboard controls">
                         <label class="visually-hidden" for="dashboardV2AreaFilter">Filter by area</label>
@@ -39,109 +39,233 @@
 
                 <div class="alert alert-danger" id="dashboardV2Alert" role="alert" hidden></div>
 
-                <section class="dashboard-v2-kpis" aria-label="Key performance indicators">
-                    <article class="card dashboard-v2-kpi">
+                <section class="dashboard-v2-kpis" aria-label="Action summary">
+                    <a class="card dashboard-v2-kpi dashboard-v2-kpi-link" href="gcash-transaction.html">
                         <div class="card-body">
-                            <span class="avatar bg-blue-lt text-blue"><i class="ti ti-users" aria-hidden="true"></i></span>
+                            <span class="avatar bg-azure-lt text-azure"><i class="ti ti-device-mobile-dollar" aria-hidden="true"></i></span>
                             <div>
-                                <p class="dashboard-v2-label">Active Customers</p>
-                                <p class="dashboard-v2-value" id="dashboardV2ActiveCustomers">0</p>
-                                <p class="dashboard-v2-meta" id="dashboardV2ActiveMeta">Loading accounts...</p>
+                                <p class="dashboard-v2-label">Pending GCash</p>
+                                <p class="dashboard-v2-value" id="dashboardV2PendingGcash">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2PendingGcashMeta">Loading verification queue...</p>
                             </div>
                         </div>
-                    </article>
-                    <article class="card dashboard-v2-kpi">
+                    </a>
+                    <a class="card dashboard-v2-kpi dashboard-v2-kpi-link" href="collectors.html">
                         <div class="card-body">
-                            <span class="avatar bg-red-lt text-red"><i class="ti ti-alert-circle" aria-hidden="true"></i></span>
+                            <span class="avatar bg-yellow-lt text-yellow"><i class="ti ti-user-check" aria-hidden="true"></i></span>
                             <div>
-                                <p class="dashboard-v2-label">Outstanding Balance</p>
-                                <p class="dashboard-v2-value" id="dashboardV2Outstanding">&#8369;0.00</p>
-                                <p class="dashboard-v2-meta" id="dashboardV2OutstandingMeta">Loading balances...</p>
+                                <p class="dashboard-v2-label">Collector Approval</p>
+                                <p class="dashboard-v2-value" id="dashboardV2CollectorApprovals">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2CollectorApprovalsMeta">Loading submitted payments...</p>
                             </div>
                         </div>
-                    </article>
-                    <article class="card dashboard-v2-kpi">
+                    </a>
+                    <a class="card dashboard-v2-kpi dashboard-v2-kpi-link" href="collectors.html">
                         <div class="card-body">
-                            <span class="avatar bg-green-lt text-green"><i class="ti ti-cash" aria-hidden="true"></i></span>
+                            <span class="avatar bg-orange-lt text-orange"><i class="ti ti-cash-banknote" aria-hidden="true"></i></span>
                             <div>
-                                <p class="dashboard-v2-label">Collections Today</p>
-                                <p class="dashboard-v2-value" id="dashboardV2CollectionsToday">&#8369;0.00</p>
-                                <p class="dashboard-v2-meta" id="dashboardV2CollectionsMeta">Loading payments...</p>
+                                <p class="dashboard-v2-label">Pending Remittance</p>
+                                <p class="dashboard-v2-value" id="dashboardV2PendingRemittance">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2PendingRemittanceMeta">Loading branch remittances...</p>
                             </div>
                         </div>
-                    </article>
-                    <article class="card dashboard-v2-kpi">
+                    </a>
+                    <a class="card dashboard-v2-kpi dashboard-v2-kpi-link" href="disconnections.html">
                         <div class="card-body">
-                            <span class="avatar bg-orange-lt text-orange"><i class="ti ti-tool" aria-hidden="true"></i></span>
+                            <span class="avatar bg-red-lt text-red"><i class="ti ti-plug-off" aria-hidden="true"></i></span>
                             <div>
-                                <p class="dashboard-v2-label">Open Work</p>
-                                <p class="dashboard-v2-value" id="dashboardV2OpenWork">0</p>
-                                <p class="dashboard-v2-meta" id="dashboardV2OpenWorkMeta">Loading jobs and tickets...</p>
+                                <p class="dashboard-v2-label">For Disconnection</p>
+                                <p class="dashboard-v2-value" id="dashboardV2ForDisconnection">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2ForDisconnectionMeta">Loading credit-limit queue...</p>
                             </div>
                         </div>
-                    </article>
+                    </a>
+                    <a class="card dashboard-v2-kpi dashboard-v2-kpi-link" href="tickets.html">
+                        <div class="card-body">
+                            <span class="avatar bg-purple-lt text-purple"><i class="ti ti-ticket" aria-hidden="true"></i></span>
+                            <div>
+                                <p class="dashboard-v2-label">Open Tickets</p>
+                                <p class="dashboard-v2-value" id="dashboardV2OpenTickets">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2OpenTicketsMeta">Loading support queue...</p>
+                            </div>
+                        </div>
+                    </a>
+                    <a class="card dashboard-v2-kpi dashboard-v2-kpi-link" href="technicians.html">
+                        <div class="card-body">
+                            <span class="avatar bg-blue-lt text-blue"><i class="ti ti-tool" aria-hidden="true"></i></span>
+                            <div>
+                                <p class="dashboard-v2-label">Jobs Today</p>
+                                <p class="dashboard-v2-value" id="dashboardV2JobsToday">0</p>
+                                <p class="dashboard-v2-meta" id="dashboardV2JobsTodayMeta">Loading technician work...</p>
+                            </div>
+                        </div>
+                    </a>
+                </section>
+
+                <section class="card dashboard-v2-snapshot" aria-labelledby="dashboardV2SnapshotTitle">
+                    <div class="card-body">
+                        <div class="dashboard-v2-snapshot-heading">
+                            <h2 class="card-title mb-1" id="dashboardV2SnapshotTitle">Today at a glance</h2>
+                            <p class="text-secondary mb-0">Only effective, posted payments are included.</p>
+                        </div>
+                        <div class="dashboard-v2-snapshot-metric">
+                            <span>Active customers</span>
+                            <strong id="dashboardV2ActiveCustomers">0</strong>
+                            <small id="dashboardV2ActiveMeta">Loading accounts...</small>
+                        </div>
+                        <div class="dashboard-v2-snapshot-metric">
+                            <span>Outstanding balance</span>
+                            <strong id="dashboardV2Outstanding">&#8369;0.00</strong>
+                            <small id="dashboardV2OutstandingMeta">Loading balances...</small>
+                        </div>
+                        <div class="dashboard-v2-snapshot-metric">
+                            <span>Collections today</span>
+                            <strong class="text-green" id="dashboardV2CollectionsToday">&#8369;0.00</strong>
+                            <small id="dashboardV2CollectionsMeta">Loading Cash and GCash...</small>
+                        </div>
+                    </div>
                 </section>
 
                 <section class="card dashboard-v2-quick-actions" aria-labelledby="dashboardV2QuickActionsTitle">
                     <div class="card-body">
                         <div>
                             <h2 class="card-title mb-1" id="dashboardV2QuickActionsTitle">Quick actions</h2>
-                            <p class="text-secondary mb-0">Open the most common daily workflows.</p>
+                            <p class="text-secondary mb-0">Open the existing workflow that owns each action.</p>
                         </div>
                         <div class="btn-list">
-                            <a class="btn btn-outline-primary btn-sm" href="customers.html">
+                            <a class="btn btn-outline-primary btn-sm" href="customers.html?action=add">
                                 <i class="ti ti-user-plus" aria-hidden="true"></i> Add Customer
                             </a>
                             <a class="btn btn-outline-primary btn-sm" href="payments.html">
-                                <i class="ti ti-cash-banknote" aria-hidden="true"></i> Record Payment
+                                <i class="ti ti-receipt" aria-hidden="true"></i> Record Payment
                             </a>
-                            <a class="btn btn-outline-primary btn-sm" href="technicians.html">
-                                <i class="ti ti-router" aria-hidden="true"></i> Install Customer
+                            <a class="btn btn-outline-primary btn-sm" href="gcash-transaction.html">
+                                <i class="ti ti-file-upload" aria-hidden="true"></i> Upload GCash PDF
+                            </a>
+                            <a class="btn btn-outline-primary btn-sm" href="collectors.html">
+                                <i class="ti ti-calendar-plus" aria-hidden="true"></i> Create Schedule
                             </a>
                             <a class="btn btn-outline-primary btn-sm" href="tickets.html">
                                 <i class="ti ti-ticket" aria-hidden="true"></i> Create Ticket
+                            </a>
+                            <a class="btn btn-outline-primary btn-sm" href="technicians.html">
+                                <i class="ti ti-tool" aria-hidden="true"></i> Create Job
                             </a>
                         </div>
                     </div>
                 </section>
 
                 <section class="dashboard-v2-primary-grid">
-                    <article class="card dashboard-v2-chart-card">
+                    <article class="card dashboard-v2-action-card">
                         <header class="card-header">
                             <div>
-                                <h2 class="card-title mb-1">Billing and collection trend</h2>
-                                <p class="text-secondary mb-0" id="dashboardV2TrendMeta">Last six months</p>
+                                <h2 class="card-title mb-1">Action required</h2>
+                                <p class="text-secondary mb-0">Oldest and most urgent customer, collector, and field work first.</p>
                             </div>
-                            <span class="badge bg-blue-lt text-blue" id="dashboardV2CollectionRate">0% collected</span>
+                            <span class="badge bg-red-lt text-red" id="dashboardV2ActionCount">0 pending</span>
                         </header>
-                        <div class="card-body">
-                            <div class="dashboard-v2-chart-wrap">
-                                <canvas id="dashboardV2CollectionChart" role="img" aria-label="Monthly billed and collected amounts"></canvas>
-                                <p class="text-secondary dashboard-v2-empty" id="dashboardV2ChartEmpty" hidden>No billing or collection activity yet.</p>
-                            </div>
+                        <div class="list-group list-group-flush dashboard-v2-action-list" id="dashboardV2ActionQueue">
+                            <div class="list-group-item text-secondary">Loading action queues...</div>
                         </div>
                     </article>
 
-                    <article class="card dashboard-v2-work-card">
+                    <article class="card dashboard-v2-gcash-card">
                         <header class="card-header">
                             <div>
-                                <h2 class="card-title mb-1">Urgent work</h2>
-                                <p class="text-secondary mb-0">Overdue and active field work first.</p>
+                                <h2 class="card-title mb-1">Pending GCash</h2>
+                                <p class="text-secondary mb-0">Verify against the latest official statement.</p>
                             </div>
-                            <a class="btn btn-ghost-primary btn-sm" href="technicians.html">View jobs</a>
+                            <span class="badge bg-secondary-lt text-secondary" id="dashboardV2GcashFreshness">Checking PDF</span>
                         </header>
-                        <div class="list-group list-group-flush dashboard-v2-work-list" id="dashboardV2WorkQueue">
-                            <div class="list-group-item text-secondary">Loading jobs and tickets...</div>
+                        <div class="card-body dashboard-v2-gcash-body">
+                            <div class="dashboard-v2-gcash-reminder" id="dashboardV2GcashReminder">
+                                <span class="avatar bg-azure-lt text-azure"><i class="ti ti-file-type-pdf" aria-hidden="true"></i></span>
+                                <div>
+                                    <strong>Loading latest PDF status...</strong>
+                                    <p class="mb-0 text-secondary">The dashboard is checking statement coverage.</p>
+                                </div>
+                            </div>
+                            <dl class="dashboard-v2-gcash-meta">
+                                <div><dt>Latest upload</dt><dd id="dashboardV2GcashLatest">Checking...</dd></div>
+                                <div><dt>Statement coverage</dt><dd id="dashboardV2GcashStatementRange">Checking...</dd></div>
+                            </dl>
+                        </div>
+                        <div class="list-group list-group-flush dashboard-v2-gcash-list" id="dashboardV2PendingGcashList">
+                            <div class="list-group-item text-secondary">Loading pending GCash payments...</div>
+                        </div>
+                        <div class="card-footer">
+                            <a class="btn btn-primary btn-sm w-100" href="gcash-transaction.html">
+                                <i class="ti ti-file-upload" aria-hidden="true"></i> Review queue / Upload latest PDF
+                            </a>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="dashboard-v2-workflow-grid" aria-label="Operations workflows">
+                    <article class="card dashboard-v2-workflow-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Customer workflow</h2>
+                                <p class="text-secondary mb-0">Intake and account decisions.</p>
+                            </div>
+                            <span class="avatar bg-blue-lt text-blue"><i class="ti ti-users" aria-hidden="true"></i></span>
+                        </header>
+                        <div class="card-body dashboard-v2-workflow-stats">
+                            <a href="customer-draft-queue.html"><span>Customer drafts</span><strong id="dashboardV2DraftCount">0</strong><small>Awaiting Admin review</small></a>
+                            <a href="disconnections.html"><span>For disconnection</span><strong id="dashboardV2DisconnectionCount">0</strong><small>Credit-limit decisions</small></a>
+                        </div>
+                    </article>
+
+                    <article class="card dashboard-v2-workflow-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Collector workflow</h2>
+                                <p class="text-secondary mb-0">Schedule, approve, then remit.</p>
+                            </div>
+                            <span class="avatar bg-orange-lt text-orange"><i class="ti ti-map-pin-dollar" aria-hidden="true"></i></span>
+                        </header>
+                        <div class="card-body dashboard-v2-workflow-stats dashboard-v2-workflow-stats-three">
+                            <a href="collectors.html"><span>Schedules</span><strong id="dashboardV2ScheduleCount">0</strong><small>Active follow-ups</small></a>
+                            <a href="collectors.html"><span>Approvals</span><strong id="dashboardV2ApprovalCount">0</strong><small>Payments pending</small></a>
+                            <a href="collectors.html"><span>Remit</span><strong id="dashboardV2RemittanceCount">0</strong><small>Branch-wide batches</small></a>
+                        </div>
+                    </article>
+
+                    <article class="card dashboard-v2-workflow-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Service workflow</h2>
+                                <p class="text-secondary mb-0">Tickets and technician jobs.</p>
+                            </div>
+                            <span class="avatar bg-purple-lt text-purple"><i class="ti ti-tool" aria-hidden="true"></i></span>
+                        </header>
+                        <div class="card-body dashboard-v2-workflow-stats dashboard-v2-workflow-stats-three">
+                            <a href="tickets.html"><span>Tickets</span><strong id="dashboardV2TicketCount">0</strong><small>Open support work</small></a>
+                            <a href="technicians.html"><span>Jobs</span><strong id="dashboardV2JobCount">0</strong><small>Open field work</small></a>
+                            <a href="technicians.html"><span>Today</span><strong id="dashboardV2TodayJobCount">0</strong><small>Scheduled jobs</small></a>
                         </div>
                     </article>
                 </section>
 
                 <section class="dashboard-v2-secondary-grid">
+                    <article class="card dashboard-v2-customers-card">
+                        <header class="card-header">
+                            <div>
+                                <h2 class="card-title mb-1">Recent customers</h2>
+                                <p class="text-secondary mb-0">Latest five customer records.</p>
+                            </div>
+                            <a class="btn btn-ghost-primary btn-sm" href="customers.html">View all</a>
+                        </header>
+                        <div class="list-group list-group-flush" id="dashboardV2RecentCustomers">
+                            <div class="list-group-item text-secondary">Loading customers...</div>
+                        </div>
+                    </article>
+
                     <article class="card dashboard-v2-payments-card">
                         <header class="card-header">
                             <div>
                                 <h2 class="card-title mb-1">Recent payments</h2>
-                                <p class="text-secondary mb-0">Latest posted customer collections.</p>
+                                <p class="text-secondary mb-0">Latest ten effective Cash and GCash payments.</p>
                             </div>
                             <a class="btn btn-ghost-primary btn-sm" href="payment-history.html">View history</a>
                         </header>
@@ -150,28 +274,16 @@
                                 <thead>
                                     <tr>
                                         <th>Customer</th>
-                                        <th>Source</th>
+                                        <th>Method</th>
+                                        <th>Reference</th>
                                         <th>Date</th>
                                         <th class="text-end">Amount</th>
                                     </tr>
                                 </thead>
                                 <tbody id="dashboardV2RecentPayments">
-                                    <tr><td colspan="4" class="text-center text-secondary py-4">Loading payments...</td></tr>
+                                    <tr><td colspan="5" class="text-center text-secondary py-4">Loading payments...</td></tr>
                                 </tbody>
                             </table>
-                        </div>
-                    </article>
-
-                    <article class="card dashboard-v2-attention-card">
-                        <header class="card-header">
-                            <div>
-                                <h2 class="card-title mb-1">Needs attention</h2>
-                                <p class="text-secondary mb-0">Largest current customer balances.</p>
-                            </div>
-                            <a class="btn btn-ghost-primary btn-sm" href="payments.html">Open billing</a>
-                        </header>
-                        <div class="list-group list-group-flush" id="dashboardV2AttentionList">
-                            <div class="list-group-item text-secondary">Loading balances...</div>
                         </div>
                     </article>
                 </section>
@@ -181,8 +293,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha256-s4B2di9zY7yekStouOA0gmeY213ya7YfAA7C56MTe8c=" crossorigin="anonymous"></script>
-    <script src="dashboard-v2.js?v=1.0"></script>
+    <script src="dashboard-v2.js?v=2.0"></script>
     <script src="layout.js?v=3.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>

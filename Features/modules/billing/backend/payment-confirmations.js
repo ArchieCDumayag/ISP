@@ -18,6 +18,7 @@ const { extractGcashTransactionsFromPdf } = require('./gcash-pdf-parser');
 const {
     importGcashTransactionBatch,
     listGcashTransactionHistory,
+    getGcashTransactionHistoryStatus,
     evaluateGcashTransactionMatch,
     claimGcashTransaction,
     claimGcashTransactionAllocations,
@@ -380,6 +381,32 @@ const requireAdminWithBranch = (req, _res, next) => {
 
 router.use(requireAdminWithBranch);
 router.use(serializePaymentMutationRequest);
+
+// Lightweight, side-effect-free batch metadata for shared operational surfaces.
+// Unlike the full history read, this endpoint never runs payment reconciliation.
+router.get('/gcash-history/status', async (req, res, next) => {
+    try {
+        const status = await getGcashTransactionHistoryStatus({ branchId: req.branchId });
+        const batch = status.latestBatch;
+        return res.json({
+            ok: true,
+            latestBatch: batch ? {
+                id: toSafeText(batch.id, 80) || null,
+                fileName: toSafeText(batch.fileName, 180) || null,
+                statementFrom: toSafeText(batch.statementFrom, 20) || null,
+                statementTo: toSafeText(batch.statementTo, 20) || null,
+                sourceRowCount: Number(batch.sourceRowCount) || 0,
+                importedCount: Number(batch.importedCount) || 0,
+                importedAt: toSafeText(batch.importedAt, 80) || null
+            } : null,
+            totalTransactions: Number(status.totalTransactions) || 0,
+            pendingReservationCount: Number(status.pendingReservationCount) || 0,
+            updatedAt: status.updatedAt || null
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
 
 router.get('/gcash-history', async (req, res, next) => {
     try {

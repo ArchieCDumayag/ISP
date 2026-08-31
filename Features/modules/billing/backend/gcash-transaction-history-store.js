@@ -472,6 +472,37 @@ const listGcashTransactionHistory = async ({ branchId, limit = 200, all = false,
     };
 };
 
+const getGcashTransactionHistoryStatus = async ({ branchId } = {}) => {
+    const safeBranchId = Number(branchId);
+    if (!Number.isInteger(safeBranchId) || safeBranchId <= 0) {
+        throw createError(400, 'Branch assignment is required.');
+    }
+    const store = await readHistoryStore();
+    const bucket = getBranchBucket(store, safeBranchId);
+    const latestBatch = bucket.batches.reduce((latest, candidate) => {
+        if (!latest) return candidate;
+        return String(candidate?.importedAt || '').localeCompare(String(latest?.importedAt || '')) > 0
+            ? candidate
+            : latest;
+    }, null);
+    return {
+        latestBatch: latestBatch ? {
+            id: toSafeText(latestBatch.id, 80) || null,
+            fileName: toSafeText(latestBatch.fileName, 180) || null,
+            statementFrom: normalizeDateOnly(latestBatch.statementFrom) || null,
+            statementTo: normalizeDateOnly(latestBatch.statementTo) || null,
+            sourceRowCount: Math.max(Number(latestBatch.sourceRowCount) || 0, 0),
+            importedCount: Math.max(Number(latestBatch.importedCount) || 0, 0),
+            importedAt: toSafeText(latestBatch.importedAt, 80) || null
+        } : null,
+        totalTransactions: bucket.transactions.length,
+        pendingReservationCount: bucket.pendingReservations.reduce((count, reservation) => (
+            count + (sanitizePendingReservation(reservation) ? 1 : 0)
+        ), 0),
+        updatedAt: toSafeText(bucket.updatedAt, 80) || null
+    };
+};
+
 const createPendingReservationConflictError = (reservation) => {
     const safeReservation = sanitizePendingReservation(reservation);
     const error = createError(
@@ -1223,6 +1254,7 @@ module.exports = {
     GCASH_TRANSACTION_REMARKS,
     importGcashTransactionBatch,
     listGcashTransactionHistory,
+    getGcashTransactionHistoryStatus,
     reservePendingGcashReference,
     releasePendingGcashReference,
     evaluateGcashTransactionMatch,

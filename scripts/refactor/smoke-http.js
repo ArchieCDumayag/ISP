@@ -175,6 +175,7 @@ const checks = [
   { path: '/api/payment-records', status: 401 },
   { path: '/api/disconnections', status: 401 },
   { path: '/api/payment-confirmations', status: 401 },
+  { path: '/api/payment-confirmations/gcash-history/status', status: 401 },
   { path: '/api/mikrotik/info', status: 401 },
   { path: '/api/pon/state', status: 401 },
   { path: '/api/genieacs/status', status: 401 },

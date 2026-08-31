@@ -53,6 +53,7 @@ const {
     lockGcashTransactionPosting,
     unlockGcashTransactionPosting,
     listGcashTransactionHistory,
+    getGcashTransactionHistoryStatus,
     getGcashRecipientLabel,
     GCASH_TRANSACTION_REMARKS
 } = require('../backend/gcash-transaction-history-store');
@@ -235,6 +236,15 @@ assert(routeSource.includes("'/gcash-history/:reference/post-payment'"));
 assert(routeSource.includes("'/gcash-history/:reference/remark'"));
 assert(routeSource.includes("'/gcash-history/:reference/lock-posting'"));
 assert(routeSource.includes("'/gcash-history/:reference/unlock-posting'"));
+const dashboardStatusRouteStart = routeSource.indexOf("router.get('/gcash-history/status'");
+const fullHistoryRouteStart = routeSource.indexOf("router.get('/gcash-history',", dashboardStatusRouteStart + 1);
+assert(dashboardStatusRouteStart >= 0);
+assert(fullHistoryRouteStart > dashboardStatusRouteStart);
+const dashboardStatusRouteSource = routeSource.slice(dashboardStatusRouteStart, fullHistoryRouteStart);
+assert(dashboardStatusRouteSource.includes('getGcashTransactionHistoryStatus'));
+assert(dashboardStatusRouteSource.includes('latestBatch'));
+assert(dashboardStatusRouteSource.includes('pendingReservationCount'));
+assert(!dashboardStatusRouteSource.includes('reconcileExistingPaymentHistoryWithGcashTransactions'));
 assert(routeSource.includes("code = 'GCASH_TRANSACTION_POSTING_LOCKED'"));
 assert(routeSource.includes("code: 'GCASH_IMPORTED_AMOUNT_MISMATCH'"));
 assert(routeSource.includes("code: 'GCASH_ALLOCATION_TOTAL_MISMATCH'"));
@@ -538,6 +548,11 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     assert.deepStrictEqual(initialBranchHistory.availableMonths, ['2026-08']);
     assert.strictEqual(initialBranchHistory.filteredTotalTransactions, 2);
     assert.strictEqual(initialBranchHistory.selectedMonth, null);
+    const initialBranchStatus = await getGcashTransactionHistoryStatus({ branchId: 1 });
+    assert.strictEqual(initialBranchStatus.latestBatch.fileName, 'fixture.pdf');
+    assert.strictEqual(initialBranchStatus.totalTransactions, 2);
+    assert.strictEqual(initialBranchStatus.pendingReservationCount, 0);
+    assert.strictEqual(Object.hasOwn(initialBranchStatus, 'transactions'), false);
     const augustBranchHistory = await listGcashTransactionHistory({ branchId: 1, month: '2026-08', all: true });
     assert.strictEqual(augustBranchHistory.transactions.length, 2);
     assert.strictEqual(augustBranchHistory.totalTransactions, 2);

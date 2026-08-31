@@ -28,7 +28,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - `backend/integration-settings.js`: `/api/integrations` and protected settings.
 - `backend/info-api.js`: `/api/info` aggregation.
 - `backend/app-downloads.js` and `backend/app-downloads-store.js`: `/api/app-downloads`.
-- `backend/collector-app-updates.js`: public `/collector-updates/update.json` plus the current versioned APK, and Admin-only `/api/collector-app-updates` status/publish operations. APKs and the active manifest live under ignored `data/collector-updates`; local uploads or repository-scoped `raw.githubusercontent.com/ArchieCDumayag/CollectorApp/` imports are capped at 80 MB, validated as APK ZIPs, named by version/checksum, written atomically, SHA-256 hashed, and activity-audited.
+- `backend/collector-app-updates.js`: public `/collector-updates/update.json` plus the current versioned APK, and Admin-only `/api/collector-app-updates` status/publish operations. APKs and the active manifest live under ignored `data/collector-updates`; uploads are capped at 80 MB, validated as APK ZIPs, named by version/checksum, written atomically, SHA-256 hashed, and activity-audited.
 - `backend/setup-installer.js`: owner-only `/api/structure` and structure package operations.
 - `web/` contains Admin-owned browser files. It is mounted after page authorization guards and before the shared `public/` fallback.
 - Root browser-asset delivery checks shared `public/` and module web roots only, which keeps `/accounts.js` mapped to the Admin browser bundle without exposing repository source files.
@@ -39,7 +39,7 @@ The former eleven root backend shims were retired in Phase 11. Existing browser 
 
 - `/login.html` → `web/login.html`
 - `/accounts.html` → `web/accounts.html`
-- `/collector-app-update.html` → `web/collector-app-update.html`; Admins select a local permanent release-signed APK or its approved CollectorApp GitHub source, then provide the version name/code, release notes, optional required flag, and minimum supported version before an explicit publish confirmation.
+- `/collector-app-update.html` → `web/collector-app-update.html`; Admins select the permanent release-signed APK, version name/code, release notes, optional required flag, and minimum supported version before an explicit publish confirmation.
 - The System Update panel keeps **Apply New Update** available when an update exists even if the checkout has local tracked or untracked changes. The updater creates a temporary Git stash, applies it to an isolated worktree at the exact incoming commit as a compatibility check, fast-forwards only when that succeeds, restores the local changes before dependency installation/restart, and removes the temporary stash after verified restoration. A conflict fails without moving the production branch and restores the original working tree; a failed recovery retains the stash and reports its short identifier.
 - The Accounts tab bar exposes GCash as a normal settings panel. Admins can view and edit the merchant account name, number, and QR code without relying on a hidden integration panel.
 - The `Data Reset` section inside `/accounts.html` displays current record/file counts, deletion and preservation scope, an Android offline-data warning, and the guarded reset form.

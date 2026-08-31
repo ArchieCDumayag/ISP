@@ -82,13 +82,8 @@
                                     <div class="row g-3">
                                         <div class="col-12">
                                             <label class="form-label" for="collectorUpdateApk">Release APK</label>
-                                            <input class="form-control" id="collectorUpdateApk" type="file" accept=".apk,application/vnd.android.package-archive">
-                                            <div class="form-hint">Upload a local APK (maximum 80 MB), or provide the approved GitHub source below.</div>
-                                        </div>
-                                        <div class="col-12">
-                                            <label class="form-label" for="collectorUpdateSourceUrl">Release APK source URL</label>
-                                            <input class="form-control" id="collectorUpdateSourceUrl" type="url" maxlength="1000" placeholder="https://raw.githubusercontent.com/ArchieCDumayag/CollectorApp/main/releases/app.apk">
-                                            <div class="form-hint">Restricted to raw HTTPS files in the CollectorApp GitHub repository.</div>
+                                            <input class="form-control" id="collectorUpdateApk" type="file" accept=".apk,application/vnd.android.package-archive" required>
+                                            <div class="form-hint">Maximum file size: 80 MB.</div>
                                         </div>
                                         <div class="col-12 col-md-6">
                                             <label class="form-label" for="collectorUpdateVersionName">Version name</label>
@@ -130,7 +125,7 @@
         </div>
     </div>
 
-    <script src="collector-app-update.js?v=1.1"></script>
+    <script src="collector-app-update.js?v=1.0"></script>
     <script src="layout.js?v=3.9"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>

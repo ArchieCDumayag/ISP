@@ -2,7 +2,6 @@
   const refs = {
     form: document.getElementById('collectorUpdateForm'),
     apk: document.getElementById('collectorUpdateApk'),
-    sourceUrl: document.getElementById('collectorUpdateSourceUrl'),
     versionName: document.getElementById('collectorUpdateVersionName'),
     versionCode: document.getElementById('collectorUpdateVersionCode'),
     notes: document.getElementById('collectorUpdateNotes'),
@@ -91,20 +90,11 @@
     if (!refs.form.reportValidity()) return;
 
     const file = refs.apk.files?.[0];
-    const sourceUrl = refs.sourceUrl.value.trim();
-    if (!file && !sourceUrl) {
-      setResult('Select a valid APK file or provide its approved GitHub source URL.', 'danger');
-      return;
-    }
-    if (file && sourceUrl) {
-      setResult('Use either a local APK file or a source URL, not both.', 'danger');
-      return;
-    }
-    if (file && !file.name.toLowerCase().endsWith('.apk')) {
+    if (!file || !file.name.toLowerCase().endsWith('.apk')) {
       setResult('Select a valid APK file.', 'danger');
       return;
     }
-    if (file && (file.size <= 0 || file.size > 80 * 1024 * 1024)) {
+    if (file.size <= 0 || file.size > 80 * 1024 * 1024) {
       setResult('APK must be between 1 byte and 80 MB.', 'danger');
       return;
     }
@@ -132,16 +122,15 @@
     try {
       setLoading(true);
       setResult('Uploading and verifying the APK…', 'info');
-      const response = await fetch(`/api/collector-app-updates/${sourceUrl ? 'publish-url' : 'publish'}?${query.toString()}`, {
+      const response = await fetch(`/api/collector-app-updates/publish?${query.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': sourceUrl ? 'application/json' : 'application/vnd.android.package-archive' },
+        headers: { 'Content-Type': 'application/vnd.android.package-archive' },
         credentials: 'include',
-        body: sourceUrl ? JSON.stringify({ sourceUrl }) : file
+        body: file
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.ok) throw new Error(data.error || 'Failed to publish Collector update.');
       refs.apk.value = '';
-      refs.sourceUrl.value = '';
       renderStatus({ ok: true, available: true, update: data.update, manifestUrl: data.manifestUrl });
       setResult(data.message || 'Collector update published.', 'success');
     } catch (error) {

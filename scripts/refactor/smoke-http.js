@@ -24,7 +24,7 @@ const checks = [
   { path: '/css/accounts.css', status: 200, bodyIncludes: '.settings-hero' },
   { path: '/css/factory-reset.css', status: 200, bodyIncludes: '.factory-reset-panel' },
   { path: '/accounts.js', status: 200, bodyIncludes: "fetch('/api/accounts'" },
-  { path: '/collector-app-update.js', status: 200, bodyIncludes: "sourceUrl ? 'publish-url' : 'publish'" },
+  { path: '/collector-app-update.js', status: 200, bodyIncludes: '/api/collector-app-updates/publish' },
   { path: '/js/factory-reset.js', status: 200, bodyIncludes: "fetchJson('/api/admin-data-reset/preview')" },
   { path: '/temp.css', status: 200, bodyIncludes: '.isolation-notice' },
   { path: '/temp.js', status: 200, bodyIncludes: "const API_ROOT = '/api/temp'" },

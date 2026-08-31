@@ -155,6 +155,10 @@ const collectorUpdateHtml = fs.readFileSync(path.join(webRoot, 'collector-app-up
 const collectorUpdateJs = fs.readFileSync(path.join(webRoot, 'collector-app-update.js'), 'utf8');
 assert.strictEqual(collectorUpdateModule.PACKAGE_NAME, 'com.example.myapplication');
 assert.strictEqual(collectorUpdateModule.MAX_APK_BYTES, 80 * 1024 * 1024);
+assert.strictEqual(
+  collectorUpdateModule.PUBLIC_UPDATE_BASE_URL,
+  'http://192.168.100.9:3000/collector-updates'
+);
 assert.strictEqual(typeof collectorUpdateModule.publicRouter, 'function');
 assert.strictEqual(typeof collectorUpdateModule.adminRouter, 'function');
 assert(collectorUpdateHtml.includes('id="collectorUpdateForm"'));

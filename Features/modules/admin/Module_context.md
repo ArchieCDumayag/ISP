@@ -1,6 +1,6 @@
 # Admin Module Context
 
-Last reviewed: 2026-08-31
+Last reviewed: 2026-09-01
 Status: Physically modularized and loaded through the runtime module manifest.
 
 ## Purpose and current scope
@@ -8,7 +8,7 @@ Status: Physically modularized and loaded through the runtime module manifest.
 - Authenticate staff, collectors, and technicians; create/verify sessions and enforce roles.
 - Manage protected admin accounts and primary/backup admin safeguards.
 - Maintain business profile, protected integration settings, activity logs, and app downloads.
-- Publish release-signed THRE3J Collector Android updates through one Admin-only upload page and one public, checksum-bound OTA channel.
+- Publish release-signed THRE3J Collector Android updates through one Admin-only upload page and the LAN-only, checksum-bound channel at `http://192.168.100.9:3000/collector-updates`.
 - Provide an Admin-only, password-confirmed project factory reset for operational records across all modules and branches.
 - Provide one Admin-only, versioned full-system backup archive and a checksum-validated complete restore for all application records and uploaded files.
 - Provide an Admin-confirmed, exact-commit system update with live progress, fast-forward validation, a Git recovery point, and automatic source/dependency rollback on failure.
@@ -64,7 +64,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 - Admin Collector authentication imports the canonical Collector exclusion filter. The exclusion store and management APIs remain Collector-owned; Admin only enforces the filter at the shared `/api/auth/collector-*` boundary.
 - Owner-only routes require localhost plus `STRUCTURE_OWNER_ID`.
 - Sensitive integration data requires `CONFIG_MASTER_KEY`; production sessions require `SESSION_TOKEN_SECRET`.
-- Collector update metadata defaults to the request's trusted HTTPS host and may be pinned with `COLLECTOR_UPDATE_PUBLIC_BASE_URL`. The Android client independently verifies HTTPS, SHA-256, package ID, increasing version code, and the installed signing certificate before opening Android's installer.
+- Collector update metadata is pinned to `http://192.168.100.9:3000/collector-updates`. The Android client accepts cleartext update traffic only from that exact LAN host/port and independently verifies same-origin delivery, SHA-256, package ID, increasing version code, and the installed signing certificate before opening Android's installer.
 - IP Browser integration settings support up to 100 enabled/disabled router profiles. Each profile stores a label, ordered exact IP/IP:port, IPv4 CIDR, or wildcard match rules, protected username/password data, optional page selectors, and submit delay. Exact host/port matches outrank host matches, which outrank CIDR and wildcard rules; profile order breaks ties.
 - IP Browser profile credentials and usernames are redacted from `/api/integrations` responses and represented only by presence flags. Blank username/password values sent while editing an existing profile preserve the stored secrets. The legacy top-level IP Browser credentials remain the fallback when no profile matches.
 - Factory reset deletes customers, plans, billing/payment history, imported GCash transaction history, the centralized referral registry/application audit, collector/technician accounts and assignments, Collector client exclusions and priority assignments, schedules/reminders, tickets/jobs, PON/coverage state, Finance, SMS records/templates/automations, Temp workspace records, activity history, generated backups/cache, legacy record uploads, and payment proof files. It preserves Admin accounts/sessions, branches, business profile, account-number and Customer App/collector settings, integrations, app downloads, MySQL configuration, and source code. A non-secret last-reset audit marker is retained.
@@ -108,6 +108,7 @@ Shared shell, vendor, branding, and Tabler assets continue to fall back to `publ
 
 ## Latest meaningful changes
 
+- 2026-09-01: Moved the Collector OTA channel off the public deployment and pinned this local branch to `http://192.168.100.9:3000/collector-updates`. The Android LAN bootstrap accepts HTTP only from that exact host/port and retains same-origin, package, version, checksum, and signing-certificate verification.
 - 2026-08-31: Added the Admin-managed Collector Android OTA channel. An authenticated Admin can publish a release-signed APK from `/collector-app-update.html`; the server validates the archive, computes and publishes SHA-256/size/version metadata atomically, serves only the active version through `/collector-updates`, and records the publisher in the activity log. Existing Admin sessions replace a separate `admin.php` username/password file.
 - 2026-08-30: Hardened **Apply New Update** around the exact Admin-reviewed remote commit while supporting deployments with local hotfixes. The server rejects stale confirmations, diverged/non-fast-forward checkouts, and invalid package metadata; preserves tracked/untracked changes; preflights them in an isolated worktree; exposes live progress; creates a Git recovery ref; fast-forwards deterministically; restores local changes; and rolls source, checkout state, and dependencies back after a post-merge failure. The UI confirms before mutation, displays precise progress/failure state, and stays locked through restart.
 - 2026-08-24: Added fail-closed JSON-backup-to-MySQL restore. Preview validates a deterministic conversion plan and shows `JSON -> MYSQL`; restore creates the normal recovery archive, replaces mapped relational records and preserved supplemental stores in one InnoDB transaction, rejects conflicting payment IDs, restores uploads with rollback, and clears sessions. The supplied 21-store archive restored 356 customers and 465 source payment rows with no warnings; startup produced 970 unique ledger rows with zero logical duplicate groups while retaining 92 imported GCash transactions, and a fresh MySQL export revalidated successfully.

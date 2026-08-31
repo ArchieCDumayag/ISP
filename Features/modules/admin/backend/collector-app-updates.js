@@ -12,6 +12,7 @@ const adminRouter = express.Router();
 const UPDATE_DIR = path.join(DATA_DIR, 'collector-updates');
 const MANIFEST_PATH = path.join(UPDATE_DIR, 'update.json');
 const PACKAGE_NAME = 'com.example.myapplication';
+const PUBLIC_UPDATE_BASE_URL = 'http://192.168.100.9:3000/collector-updates';
 const MAX_APK_BYTES = 80 * 1024 * 1024;
 const ALLOWED_APK_SOURCE_HOST = 'raw.githubusercontent.com';
 const ALLOWED_APK_SOURCE_PREFIX = '/ArchieCDumayag/CollectorApp/';
@@ -229,19 +230,7 @@ const validateApkArchive = (buffer) => new Promise((resolve, reject) => {
   });
 });
 
-const resolvePublicBaseUrl = (req) => {
-  const configured = asText(process.env.COLLECTOR_UPDATE_PUBLIC_BASE_URL, 500).replace(/\/+$/, '');
-  if (configured) {
-    try {
-      const url = new URL(configured);
-      if (url.protocol !== 'https:') throw new Error('HTTPS is required.');
-      return url.toString().replace(/\/+$/, '');
-    } catch {
-      throw new Error('COLLECTOR_UPDATE_PUBLIC_BASE_URL must be a valid HTTPS URL.');
-    }
-  }
-  return `${req.protocol}://${req.get('host')}/collector-updates`;
-};
+const resolvePublicBaseUrl = () => PUBLIC_UPDATE_BASE_URL;
 
 const toPublicManifest = (req, manifest) => ({
   versionCode: manifest.versionCode,
@@ -449,6 +438,7 @@ module.exports = {
   adminRouter,
   MAX_APK_BYTES,
   PACKAGE_NAME,
+  PUBLIC_UPDATE_BASE_URL,
   normalizeManifest,
   readPublishedManifest,
   validateApkArchive,

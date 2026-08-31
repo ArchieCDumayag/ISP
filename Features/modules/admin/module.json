@@ -17,6 +17,8 @@
     "/api/integrations",
     "/api/info",
     "/api/app-downloads",
+    "/api/collector-app-updates",
+    "/collector-updates",
     "/api/admin-data-reset",
     "/api/system-backup",
     "/api/structure",
@@ -25,6 +27,7 @@
   "webEntryPoints": [
     "Features/modules/admin/web/login.html",
     "Features/modules/admin/web/accounts.html",
+    "Features/modules/admin/web/collector-app-update.html",
     "Features/modules/admin/web/setup.html",
     "Features/modules/admin/web/install-guide.html",
     "Features/modules/admin/web/update-download.html"

@@ -88,6 +88,7 @@ const factoryResetRouter = adminBackend.load('factoryReset');
 const systemBackupRouter = adminBackend.load('systemBackup');
 const { createSystemUpdateLocalChangesManager } = adminBackend.load('systemUpdateLocalChanges');
 const appDownloadsRouter = adminBackend.load('appDownloads');
+const collectorAppUpdates = adminBackend.load('collectorAppUpdates');
 const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
 const integrationSettingsRouter = adminBackend.load('integrationSettings');
 const { loadIntegrationSettings, resolveIpBrowserProfile } = integrationSettingsRouter;
@@ -2791,6 +2792,11 @@ const systemBackupLimiter = createRateLimiter({
     max: 20,
     message: 'Too many backup or restore attempts. Please wait before trying again.'
 });
+const collectorAppUpdateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 12,
+    message: 'Too many Collector app update requests. Please wait before trying again.'
+});
 app.use('/api/auth/login', adminLoginLimiter);
 app.use('/api/auth/collector-login', adminLoginLimiter);
 app.use('/api/auth/technician-login', adminLoginLimiter);
@@ -3016,6 +3022,7 @@ const PROTECTED_PAGES = new Set([
     'index.html',
     'dashboard-v2.html',
     'update-download.html',
+    'collector-app-update.html',
     'customers.html',
     'customer-archive.html',
     'payments.html',
@@ -6730,6 +6737,17 @@ app.use('/api/system-backup', requireAuth, systemBackupLimiter, systemBackupRout
 app.use('/api/collectors', requireAuth, collectorsRouter);
 app.use('/api/business-profile', businessProfileRouter);
 app.use('/api/app-downloads', appDownloadsRouter);
+app.use('/collector-updates', collectorAppUpdates.publicRouter);
+app.use(
+    '/api/collector-app-updates',
+    requireAuth,
+    collectorAppUpdateLimiter,
+    express.raw({
+        type: ['application/vnd.android.package-archive', 'application/octet-stream'],
+        limit: collectorAppUpdates.MAX_APK_BYTES
+    }),
+    collectorAppUpdates.adminRouter
+);
 app.use('/api/integrations', integrationSettingsRouter);
 app.use('/api/mikrotik', mikrotikRouter);
 app.use('/api/jobs', requireAuth, jobsRouter);

@@ -13,6 +13,8 @@ const UPDATE_DIR = path.join(DATA_DIR, 'collector-updates');
 const MANIFEST_PATH = path.join(UPDATE_DIR, 'update.json');
 const PACKAGE_NAME = 'com.example.myapplication';
 const MAX_APK_BYTES = 80 * 1024 * 1024;
+const ALLOWED_APK_SOURCE_HOST = 'raw.githubusercontent.com';
+const ALLOWED_APK_SOURCE_PREFIX = '/ArchieCDumayag/CollectorApp/';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const APK_FILE_PATTERN = /^THRE3J-Collector-[A-Za-z0-9._-]+\.apk$/;
 let publishInProgress = false;
@@ -39,6 +41,77 @@ const parsePositiveInteger = (value, fieldName, { allowZero = false } = {}) => {
 };
 
 const parseBoolean = (value) => ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
+
+const validateApkSourceUrl = (value) => {
+  let url;
+  try {
+    url = new URL(asText(value, 1000));
+  } catch {
+    const error = new Error('APK source must be a valid HTTPS URL.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.hostname !== ALLOWED_APK_SOURCE_HOST
+    || !url.pathname.startsWith(ALLOWED_APK_SOURCE_PREFIX)
+    || !url.pathname.toLowerCase().endsWith('.apk')
+    || url.username
+    || url.password
+    || url.port
+  ) {
+    const error = new Error('APK source must be a raw CollectorApp GitHub HTTPS URL.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return url.toString();
+};
+
+const downloadApkFromSource = async (sourceUrl) => {
+  const url = validateApkSourceUrl(sourceUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  try {
+    const response = await fetch(url, { redirect: 'error', signal: controller.signal });
+    if (!response.ok || !response.body) {
+      const error = new Error(`APK source returned HTTP ${response.status}.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    const declaredSize = Number(response.headers.get('content-length') || 0);
+    if (Number.isFinite(declaredSize) && declaredSize > MAX_APK_BYTES) {
+      const error = new Error('APK exceeds the 80 MB upload limit.');
+      error.statusCode = 413;
+      throw error;
+    }
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of response.body) {
+      total += chunk.length;
+      if (total > MAX_APK_BYTES) {
+        const error = new Error('APK exceeds the 80 MB upload limit.');
+        error.statusCode = 413;
+        throw error;
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+    if (!total) {
+      const error = new Error('APK source returned an empty file.');
+      error.statusCode = 400;
+      throw error;
+    }
+    return Buffer.concat(chunks, total);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error('APK source download timed out.');
+      timeoutError.statusCode = 504;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 const normalizeManifest = (incoming = {}) => {
   const versionCode = parsePositiveInteger(incoming.versionCode, 'Version code');
@@ -259,14 +332,9 @@ adminRouter.get('/', async (req, res, next) => {
   }
 });
 
-adminRouter.post('/publish', async (req, res, next) => {
-  if (publishInProgress) {
-    return res.status(409).json({ ok: false, error: 'Another Collector app update is being published.' });
-  }
-  publishInProgress = true;
+const publishUpdate = async (req, buffer) => {
   let apkPath = '';
   try {
-    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     if (!buffer.length) {
       const error = new Error('Select a non-empty APK file to publish.');
       error.statusCode = 400;
@@ -335,19 +403,46 @@ adminRouter.post('/publish', async (req, res, next) => {
       console.warn('Failed to record Collector app update activity:', error.message);
     });
 
-    return res.status(201).json({
+    return {
       ok: true,
       message: `THRE3J Collector ${manifest.versionName} is now published.`,
       update: toPublicManifest(req, manifest),
       manifestUrl: `${resolvePublicBaseUrl(req)}/update.json`
-    });
+    };
   } catch (error) {
     if (apkPath) await fs.promises.unlink(apkPath).catch(() => {});
+    throw error;
+  }
+};
+
+const runPublish = async (req, res, next, loadBuffer) => {
+  if (publishInProgress) {
+    return res.status(409).json({ ok: false, error: 'Another Collector app update is being published.' });
+  }
+  publishInProgress = true;
+  try {
+    const result = await publishUpdate(req, await loadBuffer());
+    return res.status(201).json(result);
+  } catch (error) {
     return next(error);
   } finally {
     publishInProgress = false;
   }
-});
+};
+
+adminRouter.post('/publish', (req, res, next) => runPublish(
+  req,
+  res,
+  next,
+  async () => (Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0))
+));
+
+adminRouter.post('/publish-url', (req, res, next) => runPublish(
+  req,
+  res,
+  next,
+  async () => downloadApkFromSource(req.body?.sourceUrl)
+));
 
 module.exports = {
   publicRouter,
@@ -356,5 +451,6 @@ module.exports = {
   PACKAGE_NAME,
   normalizeManifest,
   readPublishedManifest,
-  validateApkArchive
+  validateApkArchive,
+  validateApkSourceUrl
 };

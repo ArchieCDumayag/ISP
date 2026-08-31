@@ -159,9 +159,20 @@ assert.strictEqual(typeof collectorUpdateModule.publicRouter, 'function');
 assert.strictEqual(typeof collectorUpdateModule.adminRouter, 'function');
 assert(collectorUpdateHtml.includes('id="collectorUpdateForm"'));
 assert(collectorUpdateHtml.includes('accept=".apk,application/vnd.android.package-archive"'));
+assert(collectorUpdateHtml.includes('id="collectorUpdateSourceUrl"'));
 assert(collectorUpdateJs.includes("fetch('/api/collector-app-updates'"));
-assert(collectorUpdateJs.includes("fetch(`/api/collector-app-updates/publish?${query.toString()}`"));
+assert(collectorUpdateJs.includes("sourceUrl ? 'publish-url' : 'publish'"));
 assert(collectorUpdateJs.includes('window.appConfirm'));
+assert.strictEqual(
+  collectorUpdateModule.validateApkSourceUrl(
+    'https://raw.githubusercontent.com/ArchieCDumayag/CollectorApp/main/releases/app.apk'
+  ),
+  'https://raw.githubusercontent.com/ArchieCDumayag/CollectorApp/main/releases/app.apk'
+);
+assert.throws(
+  () => collectorUpdateModule.validateApkSourceUrl('https://127.0.0.1/private.apk'),
+  /raw CollectorApp GitHub HTTPS URL/
+);
 console.log('PASS Collector Android OTA manifest, guarded Admin publishing, and upload page contract');
 
 const accountsHtml = fs.readFileSync(path.join(webRoot, 'accounts.html'), 'utf8');

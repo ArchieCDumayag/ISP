@@ -8627,13 +8627,6 @@ app.use((err, req, res, next) => {
 });
 
 // --- Start Server ---
-// One-time public-deployment cleanup. Remove after the rollback has restarted production.
-const retiredPublicCollectorUpdateDir = path.join(DATA_DIR, 'collector-updates');
-if (fs.existsSync(retiredPublicCollectorUpdateDir)) {
-    fs.rmSync(retiredPublicCollectorUpdateDir, { recursive: true, force: true });
-    console.log('[info] Removed retired public Collector OTA files.');
-}
-
 startCustomerUpstream();
 
 app.listen(PORT, () => {

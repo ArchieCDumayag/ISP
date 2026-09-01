@@ -701,6 +701,51 @@ async function run() {
     assert.equal(stores.payments['ACC-RACE'].history
       .find((entry) => entry.id === racePayment.body.id).status, 'pending_approval');
 
+    const closedCorrectionStillAboveBalance = await request(
+      `/approvals/${encodeURIComponent(racePayment.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({
+          expectedAmount: 800,
+          amount: 400,
+          reason: 'Correction must still stay within the retained balance.'
+        })
+      }
+    );
+    assert.equal(closedCorrectionStillAboveBalance.status, 409);
+    assert.match(closedCorrectionStillAboveBalance.body.error, /exceeds.*current balance/i);
+
+    const correctedClosedPayment = await request(
+      `/approvals/${encodeURIComponent(racePayment.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({
+          expectedAmount: 800,
+          amount: 300,
+          reason: 'An Admin payment reduced the retained balance before approval.'
+        })
+      }
+    );
+    assert.equal(correctedClosedPayment.status, 200);
+    assert.equal(correctedClosedPayment.body.record.amount, 300);
+    assert.equal(correctedClosedPayment.body.record.closedAccountCollection, true);
+    assert.equal(correctedClosedPayment.body.record.amountCorrection.previousAmount, 800);
+    assert.equal(correctedClosedPayment.body.record.amountCorrection.correctedAmount, 300);
+    assert.equal(correctedClosedPayment.body.record.amountCorrection.correctedBy.id, 'admin-1');
+    assert.equal(stores.payments['ACC-RACE'].history
+      .find((entry) => entry.id === racePayment.body.id).status, 'pending_approval');
+
+    const correctedClosedApproval = await request(`/approvals/${encodeURIComponent(racePayment.body.id)}/approve`, {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(correctedClosedApproval.status, 200);
+    assert.equal(effectiveBalance('ACC-RACE'), 0);
+    assert.equal(refreshEvents.length, 0, 'closed correction and approval must not refresh or reconnect service');
+
     const reopenedSubmit = await request('/closed-accounts/ACC-REOPENED', {
       method: 'POST',
       body: JSON.stringify(payment({
@@ -832,7 +877,7 @@ async function run() {
     assert.match(collectorAdminSource, /function closedAccountCollectionBadge/);
     assert.match(collectorAdminSource, /CLOSED ACCOUNT/);
 
-    console.log('PASS search-only assigned closed accounts, Cash-only capture, official-GCash handoff, retry-safe shared mutation queue, branch-wide duplicate safety, archived history, approval race guard, no prepaid renewal/service refresh, and exact closed receipt reprint');
+    console.log('PASS search-only assigned closed accounts, Cash-only capture, audited balance-limited correction, official-GCash handoff, retry-safe shared mutation queue, branch-wide duplicate safety, archived history, approval race guard, no prepaid renewal/service refresh, and exact closed receipt reprint');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

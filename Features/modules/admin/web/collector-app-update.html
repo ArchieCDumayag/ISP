@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Collector App Update - Archie Point To Point Pisonet</title>
+    <script src="theme-init.js?v=2.6"></script>
+    <link rel="stylesheet" href="vendor/tabler/css/tabler.min.css">
+    <link rel="stylesheet" href="vendor/tabler-icons/tabler-icons.min.css">
+    <link rel="stylesheet" href="styles.css?v=2.9">
+    <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
+</head>
+<body>
+    <div class="app-shell">
+        <div id="sidebar"></div>
+        <div class="app-main">
+            <div id="topbar"></div>
+            <main class="container-xl py-4">
+                <div class="page-header d-print-none mb-4">
+                    <div class="row g-2 align-items-center">
+                        <div class="col">
+                            <div class="page-pretitle">Admin</div>
+                            <h1 class="page-title">Collector App Update</h1>
+                            <p class="text-secondary mt-2 mb-0">Publish a permanent release-signed APK to every Collector phone.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row row-cards">
+                    <div class="col-12 col-xl-4">
+                        <section class="card h-100" aria-labelledby="currentUpdateTitle">
+                            <div class="card-header">
+                                <h2 class="card-title" id="currentUpdateTitle">Published release</h2>
+                            </div>
+                            <div class="card-body">
+                                <dl class="row mb-0">
+                                    <dt class="col-5">Status</dt>
+                                    <dd class="col-7" id="collectorUpdateStatus">Loading…</dd>
+                                    <dt class="col-5">Version</dt>
+                                    <dd class="col-7" id="collectorUpdateVersion">—</dd>
+                                    <dt class="col-5">Version code</dt>
+                                    <dd class="col-7" id="collectorUpdateCurrentVersionCode">—</dd>
+                                    <dt class="col-5">APK size</dt>
+                                    <dd class="col-7" id="collectorUpdateSize">—</dd>
+                                    <dt class="col-5">Published</dt>
+                                    <dd class="col-7" id="collectorUpdatePublished">—</dd>
+                                    <dt class="col-5">SHA-256</dt>
+                                    <dd class="col-7 text-break font-monospace small" id="collectorUpdateSha">—</dd>
+                                </dl>
+                            </div>
+                            <div class="card-footer d-flex flex-wrap gap-2">
+                                <a class="btn btn-outline-primary btn-sm disabled" id="collectorManifestLink" target="_blank" rel="noopener" aria-disabled="true" tabindex="-1">
+                                    <i class="ti ti-file-code me-1" aria-hidden="true"></i> Manifest
+                                </a>
+                                <a class="btn btn-outline-primary btn-sm disabled" id="collectorApkLink" target="_blank" rel="noopener" aria-disabled="true" tabindex="-1">
+                                    <i class="ti ti-download me-1" aria-hidden="true"></i> APK
+                                </a>
+                                <button class="btn btn-outline-secondary btn-sm" type="button" id="collectorUpdateRefresh">
+                                    <i class="ti ti-refresh me-1" aria-hidden="true"></i> Refresh
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="col-12 col-xl-8">
+                        <section class="card" aria-labelledby="publishUpdateTitle">
+                            <div class="card-header">
+                                <div>
+                                    <h2 class="card-title" id="publishUpdateTitle">Publish new APK</h2>
+                                    <p class="text-secondary small mb-0 mt-1">Only upload an APK signed by the permanent THRE3J release key.</p>
+                                </div>
+                            </div>
+                            <form id="collectorUpdateForm">
+                                <div class="card-body">
+                                    <div class="alert alert-warning" role="alert">
+                                        <div class="d-flex">
+                                            <i class="ti ti-shield-lock me-2" aria-hidden="true"></i>
+                                            <div>Phones accept this cleartext update channel only at 192.168.100.9:3000 and still verify SHA-256, package name, version code, and the permanent signing certificate.</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <label class="form-label" for="collectorUpdateApk">Release APK</label>
+                                            <input class="form-control" id="collectorUpdateApk" type="file" accept=".apk,application/vnd.android.package-archive" aria-describedby="collectorUpdateApkHint">
+                                            <div class="form-hint" id="collectorUpdateApkHint">Upload a local APK (maximum 80 MB), or provide the approved GitHub source below.</div>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label" for="collectorUpdateSourceUrl">Release APK source URL</label>
+                                            <input class="form-control" id="collectorUpdateSourceUrl" type="url" maxlength="1000" placeholder="https://raw.githubusercontent.com/ArchieCDumayag/CollectorApp/main/releases/app.apk" aria-describedby="collectorUpdateSourceHint">
+                                            <div class="form-hint" id="collectorUpdateSourceHint">Restricted to raw HTTPS files in the CollectorApp GitHub repository.</div>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label class="form-label" for="collectorUpdateVersionName">Version name</label>
+                                            <input class="form-control" id="collectorUpdateVersionName" type="text" maxlength="40" placeholder="1.29" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,39}" required>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label class="form-label" for="collectorUpdateVersionCode">Version code</label>
+                                            <input class="form-control" id="collectorUpdateVersionCode" type="number" min="1" step="1" placeholder="30" required>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label" for="collectorUpdateNotes">Release notes</label>
+                                            <textarea class="form-control" id="collectorUpdateNotes" rows="4" maxlength="2000" placeholder="What changed in this release?"></textarea>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label class="form-check form-switch mt-3">
+                                                <input class="form-check-input" id="collectorUpdateRequired" type="checkbox">
+                                                <span class="form-check-label">Require this update</span>
+                                            </label>
+                                        </div>
+                                        <div class="col-12 col-md-6">
+                                            <label class="form-label" for="collectorUpdateMinimumCode">Minimum supported version code</label>
+                                            <input class="form-control" id="collectorUpdateMinimumCode" type="number" min="0" step="1" value="0" aria-describedby="collectorUpdateMinimumHint">
+                                            <div class="form-hint" id="collectorUpdateMinimumHint">Use 0 when older releases may continue.</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="alert d-none mt-3 mb-0" id="collectorUpdateResult" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></div>
+                                </div>
+                                <div class="card-footer text-end">
+                                    <button class="btn btn-primary" id="collectorUpdatePublish" type="submit">
+                                        <i class="ti ti-cloud-upload me-1" aria-hidden="true"></i> Publish Update
+                                    </button>
+                                </div>
+                            </form>
+                        </section>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="layout.js?v=3.9"></script>
+    <script src="collector-app-update.js?v=1.3"></script>
+    <script src="vendor/tabler/js/tabler.min.js"></script>
+    <script src="js/tabler-enhance.js?v=2.2"></script>
+</body>
+</html>

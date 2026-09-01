@@ -5,9 +5,34 @@ const net = require('net');
 const path = require('path');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
+require(path.join(projectRoot, 'core/config/env-loader'));
 const appPort = Number(process.env.REFACTOR_SMOKE_PORT || 3190);
 const upstreamPort = Number(process.env.REFACTOR_SMOKE_UPSTREAM_PORT || 4190);
 const baseUrl = `http://127.0.0.1:${appPort}`;
+const collectorAppUpdatesLanEnabled = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.COLLECTOR_APP_UPDATES_LAN_ENABLED || '').trim().toLowerCase()
+);
+const collectorOtaPageVariants = [
+  '/Collector-App-Update.html',
+  '/collector-app-update.HTML',
+  '/%63ollector-app-update.html'
+];
+const collectorOtaControllerVariants = [
+  '/Collector-App-Update.JS',
+  '/%63ollector-app-update.js',
+  '/collector-app-update.%6As'
+];
+const collectorOtaUnsafeWindowsAliases = [
+  '/%5Ccollector-app-update.html',
+  '/foo%5C..%5Ccollector-app-update.html',
+  '/foo%5C..%5Ccollector-app-update.js',
+  '/collector-app-update.html%3A%3A%24DATA',
+  '/collector-app-update.js%3A%3A%24DATA',
+  '/COLLEC~1.HTM',
+  '/COLLEC~1.JS',
+  '/collector-app-update.html.',
+  '/collector-app-update.js.'
+];
 
 const checks = [
   { path: '/styles.css', status: 200, bodyIncludes: '.app-shell' },
@@ -24,6 +49,15 @@ const checks = [
   { path: '/css/accounts.css', status: 200, bodyIncludes: '.settings-hero' },
   { path: '/css/factory-reset.css', status: 200, bodyIncludes: '.factory-reset-panel' },
   { path: '/accounts.js', status: 200, bodyIncludes: "fetch('/api/accounts'" },
+  collectorAppUpdatesLanEnabled
+    ? { path: '/collector-app-update.js', status: 200, bodyIncludes: "sourceUrl ? 'publish-url' : 'publish'" }
+    : { path: '/collector-app-update.js', status: 404 },
+  ...collectorOtaControllerVariants.map((variant) => (
+    collectorAppUpdatesLanEnabled
+      ? { path: variant, status: 200, bodyIncludes: "sourceUrl ? 'publish-url' : 'publish'" }
+      : { path: variant, status: 404 }
+  )),
+  ...collectorOtaUnsafeWindowsAliases.map((aliasPath) => ({ path: aliasPath, status: 404 })),
   { path: '/js/factory-reset.js', status: 200, bodyIncludes: "fetchJson('/api/admin-data-reset/preview')" },
   { path: '/temp.css', status: 200, bodyIncludes: '.isolation-notice' },
   { path: '/temp.js', status: 200, bodyIncludes: "const API_ROOT = '/api/temp'" },
@@ -80,6 +114,14 @@ const checks = [
   { path: '/js/customer-portal.js', status: 200, bodyIncludes: 'notificationTotalCount' },
   { path: '/setup.html', status: 200 },
   { path: '/accounts.html', status: 302, locationIncludes: '/login.html' },
+  collectorAppUpdatesLanEnabled
+    ? { path: '/collector-app-update.html', status: 302, locationIncludes: '/login.html' }
+    : { path: '/collector-app-update.html', status: 404 },
+  ...collectorOtaPageVariants.map((variant) => (
+    collectorAppUpdatesLanEnabled
+      ? { path: variant, status: 302, locationIncludes: '/login.html' }
+      : { path: variant, status: 404 }
+  )),
   { path: '/dashboard-v2.html', status: 302, locationIncludes: '/login.html' },
   { path: '/temp.html', status: 302, locationIncludes: '/login.html' },
   { path: '/update-download.html', status: 404 },
@@ -161,6 +203,21 @@ const checks = [
   { path: '/api/flavor/features', status: 404 },
   { path: '/api/flavors/features', status: 404 },
   { path: '/api/accounts', status: 401 },
+  collectorAppUpdatesLanEnabled
+    ? { path: '/api/collector-app-updates', status: 401 }
+    : { path: '/api/collector-app-updates', status: 404 },
+  ...(collectorAppUpdatesLanEnabled
+    ? [
+      '/api/collector-app-updates',
+      ...collectorOtaPageVariants,
+      ...collectorOtaControllerVariants,
+      ...collectorOtaUnsafeWindowsAliases
+    ].map((variant) => ({
+      path: variant,
+      status: 404,
+      headers: { 'cf-connecting-ip': '203.0.113.10' }
+    }))
+    : []),
   { path: '/api/admin-data-reset/preview', status: 401 },
   { path: '/api/system-backup/export', status: 401 },
   { path: '/api/customers', status: 401 },
@@ -211,21 +268,21 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForServer(child, output, timeoutMs = 20000) {
+async function waitForServer(child, output, targetBaseUrl = baseUrl, timeoutMs = 20000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (child.exitCode !== null) {
       throw new Error(`Server exited before readiness (code ${child.exitCode}).\n${output.join('')}`);
     }
     try {
-      const response = await fetch(`${baseUrl}/login.html`, { redirect: 'manual' });
+      const response = await fetch(`${targetBaseUrl}/login.html`, { redirect: 'manual' });
       if (response.status === 200) return;
     } catch (_error) {
       // The listener is still starting.
     }
     await wait(250);
   }
-  throw new Error(`Timed out waiting for ${baseUrl}.\n${output.join('')}`);
+  throw new Error(`Timed out waiting for ${targetBaseUrl}.\n${output.join('')}`);
 }
 
 async function stopChild(child) {
@@ -236,6 +293,59 @@ async function stopChild(child) {
     wait(3000).then(() => false)
   ]);
   if (!exited && child.exitCode === null) child.kill('SIGKILL');
+}
+
+async function verifyCollectorOtaFailClosedScenario({
+  label,
+  nodeEnv,
+  enabled,
+  scenarioAppPort,
+  scenarioUpstreamPort
+}) {
+  const scenarioBaseUrl = `http://127.0.0.1:${scenarioAppPort}`;
+  await assertPortAvailable(scenarioAppPort);
+  await assertPortAvailable(scenarioUpstreamPort);
+  const output = [];
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      NODE_ENV: nodeEnv,
+      SESSION_TOKEN_SECRET: 'refactor-smoke-only-session-secret-2026',
+      COLLECTOR_APP_UPDATES_LAN_ENABLED: enabled ? 'true' : 'false',
+      STORAGE_DRIVER: 'json',
+      ISOLATED_RUNTIME_CONFIG: '1',
+      PORT: String(scenarioAppPort),
+      PUBLIC_BASE_URL: scenarioBaseUrl,
+      CUSTOMER_UPSTREAM_PORT: String(scenarioUpstreamPort),
+      DISABLE_CLOUDFLARED: '1'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  child.stdout.on('data', (chunk) => output.push(chunk.toString()));
+  child.stderr.on('data', (chunk) => output.push(chunk.toString()));
+
+  const failClosedPaths = [
+    '/collector-app-update.html',
+    '/collector-app-update.js',
+    '/api/collector-app-updates',
+    '/collector-updates/update.json',
+    ...collectorOtaPageVariants,
+    ...collectorOtaControllerVariants,
+    ...collectorOtaUnsafeWindowsAliases
+  ];
+  try {
+    await waitForServer(child, output, scenarioBaseUrl);
+    for (const requestPath of failClosedPaths) {
+      const response = await fetch(`${scenarioBaseUrl}${requestPath}`, { redirect: 'manual' });
+      if (response.status !== 404) {
+        throw new Error(`${label} ${requestPath}: expected HTTP 404, received ${response.status}`);
+      }
+    }
+    console.log(`PASS Collector OTA ${label} fail-closed runtime (${scenarioAppPort}/${scenarioUpstreamPort})`);
+  } finally {
+    await stopChild(child);
+  }
 }
 
 async function main() {
@@ -265,7 +375,8 @@ async function main() {
     await waitForServer(child, output);
     for (const check of checks) {
       const response = await fetch(`${baseUrl}${check.path}`, {
-        redirect: check.followRedirects ? 'follow' : 'manual'
+        redirect: check.followRedirects ? 'follow' : 'manual',
+        headers: check.headers
       });
       const body = await response.text();
       if (response.status !== check.status) {
@@ -284,6 +395,21 @@ async function main() {
   } finally {
     await stopChild(child);
   }
+
+  await verifyCollectorOtaFailClosedScenario({
+    label: 'disabled-development',
+    nodeEnv: 'development',
+    enabled: false,
+    scenarioAppPort: appPort + 1,
+    scenarioUpstreamPort: upstreamPort + 1
+  });
+  await verifyCollectorOtaFailClosedScenario({
+    label: 'enabled-production',
+    nodeEnv: 'production',
+    enabled: true,
+    scenarioAppPort: appPort + 2,
+    scenarioUpstreamPort: upstreamPort + 2
+  });
 }
 
 main().catch((error) => {

@@ -62,9 +62,12 @@ const COLLECTOR_PAYMENT_PENDING_STATUS = 'pending_approval';
 const COLLECTOR_PAYMENT_APPROVED_STATUS = 'approved';
 const COLLECTOR_PAYMENT_REJECTED_STATUS = 'rejected';
 const COLLECTOR_PAYMENT_DECISION_REASON_MAX_LENGTH = 500;
+const COLLECTOR_PAYMENT_AMOUNT_CORRECTION_REASON_MAX_LENGTH = 500;
+const COLLECTOR_PAYMENT_AMOUNT_MAX = 9999999999.99;
 const COLLECTOR_REMITTANCE_DELETION_REASON_MAX_LENGTH = 500;
 const COLLECTOR_CLIENT_PAYMENT_ID_MAX_LENGTH = 96;
 const COLLECTOR_PAYMENT_REVIEW_TABLE = 'collector_payment_reviews';
+const COLLECTOR_PAYMENT_AMOUNT_CORRECTION_TABLE = 'collector_payment_amount_corrections';
 const CLOSED_ACCOUNT_COLLECTION_DESCRIPTION_PREFIX = 'Closed Account Collection';
 const CLOSED_ACCOUNT_SEARCH_MIN_LENGTH = 2;
 const COLLECTOR_PAYMENT_ACCOUNT_CLOSED_CODE = 'COLLECTOR_PAYMENT_ACCOUNT_CLOSED';
@@ -88,7 +91,32 @@ CREATE TABLE IF NOT EXISTS collector_payment_reviews (
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 `;
 
+const COLLECTOR_PAYMENT_AMOUNT_CORRECTION_DDL = `
+CREATE TABLE IF NOT EXISTS collector_payment_amount_corrections (
+  correction_order BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  correction_id VARCHAR(64) NOT NULL,
+  payment_entry_id VARCHAR(64) NOT NULL,
+  branch_id INT NOT NULL,
+  account_number VARCHAR(20) NOT NULL,
+  previous_amount DECIMAL(12, 2) NOT NULL,
+  corrected_amount DECIMAL(12, 2) NOT NULL,
+  correction_reason VARCHAR(500) NOT NULL,
+  corrected_at DATETIME(3) NOT NULL,
+  corrected_by_user_id VARCHAR(32) NULL,
+  corrected_by_username VARCHAR(100) NULL,
+  corrected_by_name VARCHAR(100) NULL,
+  corrected_by_role VARCHAR(30) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_collector_payment_corrections_id (correction_id),
+  KEY idx_collector_payment_corrections_entry (payment_entry_id, correction_order),
+  KEY idx_collector_payment_corrections_branch (branch_id, corrected_at),
+  CONSTRAINT fk_collector_payment_corrections_entry
+    FOREIGN KEY (payment_entry_id) REFERENCES payment_entries(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+`;
+
 let collectorPaymentReviewTableReady = false;
+let collectorPaymentAmountCorrectionTableReady = false;
 let collectorRemittanceMutationQueue = Promise.resolve();
 
 function enqueueCollectorRemittanceMutation(work) {
@@ -160,6 +188,35 @@ function sanitizeCollectorPaymentDecisionReason(value, required = false) {
     throw createError(400, 'Rejection reason is required.');
   }
   return trimmed;
+}
+
+function sanitizeCollectorPaymentAmountCorrectionReason(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    throw createError(400, 'Amount correction reason is required.');
+  }
+  if (trimmed.length > COLLECTOR_PAYMENT_AMOUNT_CORRECTION_REASON_MAX_LENGTH) {
+    throw createError(
+      400,
+      `Amount correction reason must be at most ${COLLECTOR_PAYMENT_AMOUNT_CORRECTION_REASON_MAX_LENGTH} characters.`
+    );
+  }
+  return trimmed;
+}
+
+function sanitizeCollectorPaymentCorrectionAmount(value, label = 'Corrected amount') {
+  const raw = typeof value === 'number' ? String(value) : String(value ?? '').trim();
+  if (!raw || !/^\d+(?:\.\d{1,2})?$/.test(raw)) {
+    throw createError(400, `${label} must be a positive number with at most two decimal places.`);
+  }
+  const amount = Number(raw);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > COLLECTOR_PAYMENT_AMOUNT_MAX) {
+    throw createError(
+      400,
+      `${label} must be between 0.01 and ${COLLECTOR_PAYMENT_AMOUNT_MAX.toFixed(2)}.`
+    );
+  }
+  return normalizeCurrency(amount);
 }
 
 function sanitizeCollectorRemittanceDeletionReason(value) {
@@ -895,6 +952,15 @@ function resolvePairedPrepaidChargeFingerprint(accountNumber, paymentEntry = {})
   const reference = String(paymentEntry.reference || paymentEntry.orNumber || '').trim();
   const amount = Math.abs(Number(paymentEntry.amount) || 0);
   if (!accountNumber || !reference || amount <= 0) return '';
+  const submissionFingerprintParts = String(paymentEntry.fingerprint || '').trim().split('|');
+  if (
+    submissionFingerprintParts.length >= 4
+    && submissionFingerprintParts.at(-2) === 'payment'
+    && /^\d+(?:\.\d{2})$/.test(submissionFingerprintParts.at(-1) || '')
+  ) {
+    submissionFingerprintParts[submissionFingerprintParts.length - 2] = 'charge';
+    return submissionFingerprintParts.join('|');
+  }
   return buildCollectorPaymentFingerprint(accountNumber, reference, 'charge', amount);
 }
 
@@ -907,9 +973,59 @@ function resolveApprovalCustomerName(customer = {}, accountNumber = '') {
   }, accountNumber);
 }
 
+function normalizeCollectorPaymentAmountCorrection(row = {}) {
+  const correctedBy = row.correctedBy || {};
+  const previousAmount = Number(row.previousAmount ?? row.previous_amount ?? row.fromAmount);
+  const correctedAmount = Number(row.correctedAmount ?? row.corrected_amount ?? row.toAmount);
+  const correctionOrder = Number(row.order ?? row.correctionOrder ?? row.correction_order);
+  return {
+    id: String(row.id || row.correctionId || row.correction_id || '').trim() || null,
+    order: Number.isSafeInteger(correctionOrder) && correctionOrder > 0 ? correctionOrder : null,
+    previousAmount: Number.isFinite(previousAmount) ? normalizeCurrency(previousAmount) : 0,
+    correctedAmount: Number.isFinite(correctedAmount) ? normalizeCurrency(correctedAmount) : 0,
+    reason: String(row.reason || row.correctionReason || row.correction_reason || '').trim(),
+    correctedAt: row.correctedAt || row.corrected_at || null,
+    correctedBy: {
+      id: String(correctedBy.id || row.correctedByUserId || row.corrected_by_user_id || '').trim(),
+      username: String(correctedBy.username || row.correctedByUsername || row.corrected_by_username || '').trim(),
+      name: String(correctedBy.name || row.correctedByName || row.corrected_by_name || '').trim(),
+      role: String(correctedBy.role || row.correctedByRole || row.corrected_by_role || 'Admin').trim() || 'Admin'
+    }
+  };
+}
+
+function collectorPaymentAmountCorrectionHistory(entry = {}) {
+  return (Array.isArray(entry?.amountCorrections) ? entry.amountCorrections : [])
+    .map(normalizeCollectorPaymentAmountCorrection)
+    .filter((correction) => correction.correctedAmount > 0);
+}
+
+function resolveCollectorPaymentAmountEditState(entry = {}) {
+  if (!isPendingCollectorPaymentStatus(entry?.status)) {
+    return { amountEditable: false, amountEditBlockedReason: 'Only pending payments can be corrected.' };
+  }
+  if (normalizeKind(entry?.kind || entry?.type) !== 'payment') {
+    return { amountEditable: false, amountEditBlockedReason: 'Only Cash payment amounts can be corrected.' };
+  }
+  const paymentMethod = String(entry?.paymentMethod || entry?.payment_method || '').trim().toLowerCase();
+  if (paymentMethod === 'gcash') {
+    return {
+      amountEditable: false,
+      amountEditBlockedReason: 'GCash amount is locked to the imported official transaction.'
+    };
+  }
+  if (paymentMethod && paymentMethod !== 'cash') {
+    return { amountEditable: false, amountEditBlockedReason: 'Only Cash payment amounts can be corrected.' };
+  }
+  return { amountEditable: true, amountEditBlockedReason: '' };
+}
+
 function mapCollectorPaymentApprovalItem(entry = {}, customer = {}, accountNumber = '') {
   const normalizedAccountNumber = String(entry.accountNumber || accountNumber || customer?.accountNumber || '').trim();
   const recordedBy = entry.recordedBy || {};
+  const amountCorrections = collectorPaymentAmountCorrectionHistory(entry);
+  const latestAmountCorrection = amountCorrections.at(-1) || null;
+  const amountEditState = resolveCollectorPaymentAmountEditState(entry);
   return {
     id: String(entry.id || '').trim(),
     accountNumber: normalizedAccountNumber,
@@ -930,7 +1046,13 @@ function mapCollectorPaymentApprovalItem(entry = {}, customer = {}, accountNumbe
     status: entry.status || COLLECTOR_PAYMENT_PENDING_STATUS,
     reviewedAt: entry.reviewedAt || entry.reviewed_at || null,
     reviewedBy: entry.reviewedBy || null,
-    decisionReason: entry.decisionReason || entry.decision_reason || ''
+    decisionReason: entry.decisionReason || entry.decision_reason || '',
+    ...amountEditState,
+    originalAmount: amountCorrections.length
+      ? amountCorrections[0].previousAmount
+      : Math.abs(Number(entry.amount) || 0),
+    amountCorrection: latestAmountCorrection,
+    amountCorrectionCount: amountCorrections.length
   };
 }
 
@@ -952,6 +1074,108 @@ async function ensureCollectorPaymentReviewTable() {
   if (collectorPaymentReviewTableReady) return;
   await query(COLLECTOR_PAYMENT_REVIEW_DDL);
   collectorPaymentReviewTableReady = true;
+}
+
+function buildCollectorPaymentAmountCorrection(actor = {}, previousAmount, correctedAmount, reason) {
+  return {
+    id: `amount-correction-${crypto.randomUUID()}`,
+    previousAmount: normalizeCurrency(previousAmount),
+    correctedAmount: normalizeCurrency(correctedAmount),
+    reason,
+    correctedAt: new Date().toISOString(),
+    correctedBy: {
+      id: String(actor?.id || '').trim(),
+      username: String(actor?.username || '').trim(),
+      name: String(actor?.name || actor?.username || 'Admin').trim(),
+      role: 'Admin'
+    }
+  };
+}
+
+async function ensureCollectorPaymentAmountCorrectionTable() {
+  if (collectorPaymentAmountCorrectionTableReady) return;
+  await query(COLLECTOR_PAYMENT_AMOUNT_CORRECTION_DDL);
+  collectorPaymentAmountCorrectionTableReady = true;
+}
+
+async function writeRelationalCollectorPaymentAmountCorrection(
+  connection,
+  correction,
+  entryId,
+  branchId,
+  accountNumber
+) {
+  await connection.query(
+    `INSERT INTO ${COLLECTOR_PAYMENT_AMOUNT_CORRECTION_TABLE} (
+       correction_id,
+       payment_entry_id,
+       branch_id,
+       account_number,
+       previous_amount,
+       corrected_amount,
+       correction_reason,
+       corrected_at,
+       corrected_by_user_id,
+       corrected_by_username,
+       corrected_by_name,
+       corrected_by_role
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      correction.id,
+      entryId,
+      String(branchId),
+      String(accountNumber),
+      correction.previousAmount,
+      correction.correctedAmount,
+      correction.reason,
+      toMysqlDateTimeMilliseconds(correction.correctedAt),
+      correction.correctedBy.id || null,
+      correction.correctedBy.username || null,
+      correction.correctedBy.name || null,
+      correction.correctedBy.role
+    ]
+  );
+}
+
+async function queryRelationalCollectorPaymentAmountCorrections(execute, branchId, entryIds = []) {
+  const ids = [...new Set((Array.isArray(entryIds) ? entryIds : [])
+    .map((entryId) => String(entryId || '').trim())
+    .filter(Boolean))];
+  const correctionsByEntryId = new Map();
+  if (!ids.length) return correctionsByEntryId;
+  const placeholders = ids.map(() => '?').join(', ');
+  const [rows] = await execute(
+    `SELECT
+       correction_order AS correctionOrder,
+       correction_id AS correctionId,
+       payment_entry_id AS paymentEntryId,
+       previous_amount AS previousAmount,
+       corrected_amount AS correctedAmount,
+       correction_reason AS correctionReason,
+       corrected_at AS correctedAt,
+       corrected_by_user_id AS correctedByUserId,
+       corrected_by_username AS correctedByUsername,
+       corrected_by_name AS correctedByName,
+       corrected_by_role AS correctedByRole
+     FROM ${COLLECTOR_PAYMENT_AMOUNT_CORRECTION_TABLE}
+     WHERE branch_id = ?
+       AND payment_entry_id IN (${placeholders})
+     ORDER BY correction_order ASC`,
+    [String(branchId), ...ids]
+  );
+  for (const row of rows || []) {
+    const paymentEntryId = String(row?.paymentEntryId || '').trim();
+    if (!paymentEntryId) continue;
+    const corrections = correctionsByEntryId.get(paymentEntryId) || [];
+    corrections.push(normalizeCollectorPaymentAmountCorrection(row));
+    correctionsByEntryId.set(paymentEntryId, corrections);
+  }
+  return correctionsByEntryId;
+}
+
+async function listRelationalCollectorPaymentAmountCorrections(branchId, entryIds = []) {
+  await ensureCollectorPaymentAmountCorrectionTable();
+  return queryRelationalCollectorPaymentAmountCorrections(query, branchId, entryIds);
 }
 
 async function writeRelationalCollectorPaymentReview(connection, review, entryId, branchId, accountNumber) {
@@ -1005,11 +1229,21 @@ function collectorPaymentEntriesMatch(existing = {}, requested = {}, accountNumb
   const requestedClosedContext = isClosedAccountCollectionEntry(requested);
   const existingClosureId = resolveClosedAccountCollectionClosureId(existing);
   const requestedClosureId = resolveClosedAccountCollectionClosureId(requested);
+  const existingFingerprint = String(existing.fingerprint || '').trim().toLowerCase();
+  const requestedFingerprint = String(requested.fingerprint || '').trim().toLowerCase();
+  const amountMatches = Math.abs(
+    Math.abs(Number(existing.amount) || 0) - Math.abs(Number(requested.amount) || 0)
+  ) < 0.0001;
+  const originalSubmissionMatches = Boolean(
+    existingFingerprint
+    && requestedFingerprint
+    && existingFingerprint === requestedFingerprint
+  );
   return existingAccount === requestedAccount
     && String(existing.reference || existing.orNumber || '').trim().toLowerCase()
       === String(requested.reference || requested.orNumber || '').trim().toLowerCase()
     && normalizeKind(existing.kind || existing.type) === normalizeKind(requested.kind || requested.type)
-    && Math.abs(Math.abs(Number(existing.amount) || 0) - Math.abs(Number(requested.amount) || 0)) < 0.0001
+    && (amountMatches || originalSubmissionMatches)
     && (!existingCollector || !requestedCollector || existingCollector === requestedCollector)
     && existingMethod === requestedMethod
     && existingDate === requestedDate
@@ -1266,6 +1500,13 @@ function toMysqlDateTime(value) {
   const parsed = new Date(raw);
   if (isNaN(parsed)) return null;
   return parsed.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function toMysqlDateTimeMilliseconds(value) {
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (isNaN(parsed)) return null;
+  return parsed.toISOString().slice(0, 23).replace('T', ' ');
 }
 
 function toMysqlDateOnly(value) {
@@ -2102,7 +2343,14 @@ async function listCollectorPaymentApprovals(req) {
        LIMIT 200`,
       [branchId, COLLECTOR_PAYMENT_PENDING_STATUS]
     );
-    const records = (rows || []).map((row) => mapCollectorPaymentApprovalItem(mapReceiptPaymentRow(row), {
+    const correctionMap = await listRelationalCollectorPaymentAmountCorrections(
+      branchId,
+      (rows || []).map((row) => row?.id)
+    );
+    const records = (rows || []).map((row) => mapCollectorPaymentApprovalItem({
+      ...mapReceiptPaymentRow(row),
+      amountCorrections: correctionMap.get(String(row?.id || '').trim()) || []
+    }, {
       accountNumber: row.accountNumber,
       customerName: row.customerName,
       name: row.customerName,
@@ -2148,7 +2396,10 @@ function isPairedPrepaidChargeEntry(entry = {}, target = {}, pairedFingerprint =
   const direction = resolveEntryDirection(entry);
   if (direction !== 'debit') return false;
   if (!isPendingCollectorPaymentStatus(entry.status)) return false;
-  if (pairedFingerprint && String(entry.fingerprint || '').trim() === pairedFingerprint) return true;
+  if (pairedFingerprint) {
+    const candidateFingerprint = String(entry.fingerprint || '').trim();
+    if (candidateFingerprint) return candidateFingerprint === pairedFingerprint;
+  }
   const description = String(entry.description || '').trim().toLowerCase();
   const entryRecorder = String(entry?.recordedBy?.id || entry.recordedByUserId || '').trim();
   const targetRecorder = String(target?.recordedBy?.id || target.recordedByUserId || '').trim();
@@ -2158,8 +2409,343 @@ function isPairedPrepaidChargeEntry(entry = {}, target = {}, pairedFingerprint =
     && (!entryRecorder || !targetRecorder || entryRecorder === targetRecorder);
 }
 
+async function listRelationalPairedPrepaidChargeEntries(
+  connection,
+  branchId,
+  accountNumber,
+  targetEntry,
+  pairedFingerprint
+) {
+  if (!pairedFingerprint) return [];
+  const [rows] = await connection.query(
+    `SELECT
+       id,
+       amount,
+       direction,
+       description,
+       recorded_at AS recordedAt,
+       recorded_by_user_id AS recordedByUserId,
+       status,
+       fingerprint
+     FROM payment_entries
+     WHERE branch_id = ?
+       AND account_number = ?
+       AND LOWER(COALESCE(status, '')) = ?
+       AND LOWER(COALESCE(direction, '')) = 'debit'
+     FOR UPDATE`,
+    [branchId, accountNumber, COLLECTOR_PAYMENT_PENDING_STATUS]
+  );
+  return (rows || []).filter((entry) => (
+    isPairedPrepaidChargeEntry(entry, targetEntry, pairedFingerprint)
+  ));
+}
+
 function enqueueCollectorPaymentMutation(work) {
   return enqueuePaymentMutation(work);
+}
+
+function collectorPaymentAmountCorrectionConflict(message, code) {
+  const error = createError(409, message);
+  error.code = code;
+  return error;
+}
+
+function assertCollectorPaymentPrepaidPairUnambiguous(matchCount) {
+  if (Number(matchCount) <= 1) return;
+  throw collectorPaymentAmountCorrectionConflict(
+    'Multiple pending prepaid renewal charges match this payment. Resolve the duplicate ledger entries before changing or reviewing it.',
+    'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS'
+  );
+}
+
+async function assertCollectorPaymentAmountCorrectionAllowed({ branchId, entry } = {}) {
+  const editState = resolveCollectorPaymentAmountEditState(entry);
+  if (!editState.amountEditable) {
+    throw collectorPaymentAmountCorrectionConflict(
+      editState.amountEditBlockedReason || 'This payment amount cannot be corrected.',
+      'COLLECTOR_PAYMENT_AMOUNT_NOT_EDITABLE'
+    );
+  }
+
+  const reference = String(entry?.reference || entry?.orNumber || entry?.or_number || '').trim();
+  const safeBranchId = Number(branchId);
+  if (!reference || !Number.isInteger(safeBranchId) || safeBranchId <= 0) return;
+  const history = await listGcashTransactionHistory({ branchId: safeBranchId, all: true });
+  const officialTransaction = resolveCollectorOfficialGcashTransaction(history?.transactions, reference);
+  if (officialTransaction) {
+    throw collectorPaymentAmountCorrectionConflict(
+      'This payment reference belongs to imported GCash history, so its amount is locked to the official transaction.',
+      'COLLECTOR_PAYMENT_AMOUNT_GCASH_IMMUTABLE'
+    );
+  }
+}
+
+function assertCollectorPaymentExpectedAmount(entry, expectedAmount, correctedAmount) {
+  const currentAmount = normalizeCurrency(Math.abs(Number(entry?.amount) || 0));
+  if (Math.abs(currentAmount - expectedAmount) > BALANCE_EPSILON) {
+    throw collectorPaymentAmountCorrectionConflict(
+      'The payment amount changed after this dialog was opened. Reload the approval list and review it again.',
+      'COLLECTOR_PAYMENT_AMOUNT_STALE'
+    );
+  }
+  if (Math.abs(currentAmount - correctedAmount) <= BALANCE_EPSILON) {
+    throw collectorPaymentAmountCorrectionConflict(
+      'Enter a different amount before saving the correction.',
+      'COLLECTOR_PAYMENT_AMOUNT_UNCHANGED'
+    );
+  }
+  return currentAmount;
+}
+
+async function correctCollectorPaymentAmountByIdUnlocked(req, rawEntryId) {
+  const actor = getApprovalActor(req);
+  const entryId = String(rawEntryId || '').trim();
+  if (!entryId) throw createError(400, 'Payment entry ID is required.');
+  const correctedAmount = sanitizeCollectorPaymentCorrectionAmount(req.body?.amount);
+  const expectedAmount = sanitizeCollectorPaymentCorrectionAmount(req.body?.expectedAmount, 'Expected amount');
+  const reason = sanitizeCollectorPaymentAmountCorrectionReason(
+    req.body?.reason || req.body?.correctionReason || req.body?.note
+  );
+  const branchId = actor?.branchId || null;
+
+  if (await isRelationalReady()) {
+    if (!branchId) {
+      throw createError(400, 'Branch assignment missing for this admin account.');
+    }
+    await ensureCollectorPaymentAmountCorrectionTable();
+    let targetEntry = null;
+    let targetAccountNumber = '';
+    let correction = null;
+    let pairedChargeUpdated = false;
+    await withTransaction(async (connection) => {
+      const [identityRows] = await connection.query(
+        `SELECT account_number AS accountNumber
+         FROM payment_entries
+         WHERE branch_id = ?
+           AND id = ?
+         LIMIT 1`,
+        [branchId, entryId]
+      );
+      targetAccountNumber = String((identityRows || [])[0]?.accountNumber || '').trim();
+      if (!targetAccountNumber) throw createError(404, 'Pending collector payment was not found.');
+      await lockPaymentAccount(connection, branchId, targetAccountNumber);
+      const [rows] = await connection.query(
+        `SELECT
+           id,
+           account_number AS accountNumber,
+           amount,
+           date,
+           kind,
+           direction,
+           reference,
+           or_number AS orNumber,
+           description,
+           type,
+           recorded_at AS recordedAt,
+           recorded_by_user_id AS recordedByUserId,
+           recorded_by_username AS recordedByUsername,
+           recorded_by_name AS recordedByName,
+           recorded_by_role AS recordedByRole,
+           payer,
+           status,
+           payment_method AS paymentMethod,
+           fingerprint,
+           xendit_id AS xenditId
+         FROM payment_entries
+         WHERE branch_id = ?
+           AND id = ?
+         LIMIT 1
+         FOR UPDATE`,
+        [branchId, entryId]
+      );
+      const row = (rows || [])[0] || null;
+      if (!row) throw createError(404, 'Pending collector payment was not found.');
+      targetEntry = mapReceiptPaymentRow(row);
+      targetAccountNumber = String(row.accountNumber || '').trim();
+      if (!isCollectorCreditApprovalEntry(targetEntry)) {
+        throw collectorPaymentAmountCorrectionConflict(
+          'Collector payment is not pending approval.',
+          'COLLECTOR_PAYMENT_AMOUNT_NOT_PENDING'
+        );
+      }
+      const previousAmount = assertCollectorPaymentExpectedAmount(targetEntry, expectedAmount, correctedAmount);
+      const submissionFingerprint = String(targetEntry.fingerprint || '').trim()
+        || buildCollectorPaymentFingerprint(
+          targetAccountNumber,
+          targetEntry.reference || targetEntry.orNumber,
+          targetEntry.kind || targetEntry.type,
+          previousAmount
+        );
+      targetEntry.fingerprint = submissionFingerprint;
+      await assertCollectorPaymentAmountCorrectionAllowed({ branchId, entry: targetEntry });
+      await assertCollectorPaymentApprovalAllowedForAccountState({
+        branchId,
+        accountNumber: targetAccountNumber,
+        entry: { ...targetEntry, amount: correctedAmount }
+      });
+
+      const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccountNumber, targetEntry);
+      const pairedCharges = await listRelationalPairedPrepaidChargeEntries(
+        connection,
+        branchId,
+        targetAccountNumber,
+        targetEntry,
+        pairedFingerprint
+      );
+      assertCollectorPaymentPrepaidPairUnambiguous(pairedCharges.length);
+      const pairedChargeId = String(pairedCharges[0]?.id || '').trim();
+      const [updateResult] = await connection.query(
+        `UPDATE payment_entries
+         SET amount = ?, fingerprint = ?
+         WHERE branch_id = ?
+           AND id = ?
+           AND LOWER(COALESCE(status, '')) = ?`,
+        [correctedAmount, submissionFingerprint, branchId, entryId, COLLECTOR_PAYMENT_PENDING_STATUS]
+      );
+      if (Number(updateResult?.affectedRows || 0) !== 1) {
+        throw collectorPaymentAmountCorrectionConflict(
+          'Collector payment is not pending approval.',
+          'COLLECTOR_PAYMENT_AMOUNT_NOT_PENDING'
+        );
+      }
+      if (pairedChargeId) {
+        const [pairedUpdateResult] = await connection.query(
+          `UPDATE payment_entries
+           SET amount = ?,
+               fingerprint = CASE
+                 WHEN fingerprint IS NULL OR TRIM(fingerprint) = '' THEN ?
+                 ELSE fingerprint
+               END
+           WHERE branch_id = ?
+             AND account_number = ?
+             AND id = ?
+             AND LOWER(COALESCE(status, '')) = ?
+             AND LOWER(COALESCE(direction, '')) = 'debit'`,
+          [
+            correctedAmount,
+            pairedFingerprint,
+            branchId,
+            targetAccountNumber,
+            pairedChargeId,
+            COLLECTOR_PAYMENT_PENDING_STATUS
+          ]
+        );
+        const pairedChargeMatchCount = Number(pairedUpdateResult?.affectedRows || 0);
+        if (pairedChargeMatchCount !== 1) {
+          throw collectorPaymentAmountCorrectionConflict(
+            'The paired prepaid renewal charge changed during correction. Reload the approval list and try again.',
+            'COLLECTOR_PAYMENT_PREPAID_PAIR_STALE'
+          );
+        }
+        pairedChargeUpdated = true;
+      }
+      correction = buildCollectorPaymentAmountCorrection(actor, previousAmount, correctedAmount, reason);
+      await writeRelationalCollectorPaymentAmountCorrection(
+        connection,
+        correction,
+        entryId,
+        branchId,
+        targetAccountNumber
+      );
+      const correctionMap = await queryRelationalCollectorPaymentAmountCorrections(
+        (sql, params) => connection.query(sql, params),
+        branchId,
+        [entryId]
+      );
+      targetEntry = {
+        ...targetEntry,
+        amount: correctedAmount,
+        fingerprint: submissionFingerprint,
+        amountCorrections: correctionMap.get(entryId) || [correction]
+      };
+    });
+    return {
+      record: mapCollectorPaymentApprovalItem(targetEntry, {}, targetAccountNumber),
+      correction,
+      pairedChargeUpdated
+    };
+  }
+
+  const [customers, payments] = await Promise.all([
+    readJson(STORE_KEYS.customers, []),
+    readJson(STORE_KEYS.payments, {})
+  ]);
+  const customerMap = new Map(
+    (Array.isArray(customers) ? customers : []).map((customer) => [
+      String(customer?.accountNumber || '').trim(),
+      customer
+    ])
+  );
+  let targetAccountNumber = '';
+  let targetEntry = null;
+  let targetHistory = null;
+  for (const [accountNumber, bucket] of Object.entries(payments || {})) {
+    const history = Array.isArray(bucket?.history) ? bucket.history : [];
+    const entry = history.find((item) => String(item?.id || '').trim() === entryId);
+    if (!entry) continue;
+    targetAccountNumber = String(accountNumber);
+    targetEntry = entry;
+    targetHistory = history;
+    break;
+  }
+  if (!targetEntry || !targetHistory) throw createError(404, 'Pending collector payment was not found.');
+  const targetCustomer = customerMap.get(targetAccountNumber) || {};
+  if (branchId && Array.isArray(customers) && customers.length && !customerMap.has(targetAccountNumber)) {
+    throw createError(404, 'Pending collector payment was not found.');
+  }
+  if (branchId && targetCustomer?.branchId && String(targetCustomer.branchId) !== String(branchId)) {
+    throw createError(404, 'Pending collector payment was not found.');
+  }
+  if (!isCollectorCreditApprovalEntry(targetEntry)) {
+    throw collectorPaymentAmountCorrectionConflict(
+      'Collector payment is not pending approval.',
+      'COLLECTOR_PAYMENT_AMOUNT_NOT_PENDING'
+    );
+  }
+  const previousAmount = assertCollectorPaymentExpectedAmount(targetEntry, expectedAmount, correctedAmount);
+  const effectiveBranchId = branchId || targetCustomer?.branchId || null;
+  const submissionFingerprint = String(targetEntry.fingerprint || '').trim()
+    || buildCollectorPaymentFingerprint(
+      targetAccountNumber,
+      targetEntry.reference || targetEntry.orNumber,
+      targetEntry.kind || targetEntry.type,
+      previousAmount
+    );
+  targetEntry.fingerprint = submissionFingerprint;
+  await assertCollectorPaymentAmountCorrectionAllowed({ branchId: effectiveBranchId, entry: targetEntry });
+  await assertCollectorPaymentApprovalAllowedForAccountState({
+    branchId: effectiveBranchId,
+    accountNumber: targetAccountNumber,
+    entry: { ...targetEntry, amount: correctedAmount }
+  });
+  const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccountNumber, targetEntry);
+  const pairedCharges = targetHistory.filter((entry) => (
+    entry !== targetEntry && isPairedPrepaidChargeEntry(entry, targetEntry, pairedFingerprint)
+  ));
+  assertCollectorPaymentPrepaidPairUnambiguous(pairedCharges.length);
+  const correction = buildCollectorPaymentAmountCorrection(actor, previousAmount, correctedAmount, reason);
+  targetEntry.amount = correctedAmount;
+  targetEntry.fingerprint = submissionFingerprint;
+  targetEntry.amountCorrections = [
+    ...(Array.isArray(targetEntry.amountCorrections) ? targetEntry.amountCorrections : []),
+    correction
+  ];
+  pairedCharges.forEach((entry) => {
+    entry.amount = correctedAmount;
+    if (!String(entry.fingerprint || '').trim()) entry.fingerprint = pairedFingerprint;
+  });
+  await writeJson(STORE_KEYS.payments, payments);
+  return {
+    record: mapCollectorPaymentApprovalItem(targetEntry, targetCustomer, targetAccountNumber),
+    correction,
+    pairedChargeUpdated: pairedCharges.length > 0
+  };
+}
+
+async function correctCollectorPaymentAmount(req) {
+  return enqueueCollectorPaymentMutation(() => (
+    correctCollectorPaymentAmountByIdUnlocked(req, req.params?.entryId)
+  ));
 }
 
 async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextStatus) {
@@ -2183,6 +2769,8 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
     let targetEntry = null;
     let targetAccountNumber = '';
     let targetIsClosedAccountCollection = false;
+    let pairedFingerprint = '';
+    let pairedChargeId = '';
     await withTransaction(async (connection) => {
       const [identityRows] = await connection.query(
         `SELECT account_number AS accountNumber
@@ -2241,6 +2829,17 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
         throw createError(409, 'Collector payment is not pending approval.');
       }
 
+      pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccountNumber, targetEntry);
+      const pairedCharges = await listRelationalPairedPrepaidChargeEntries(
+        connection,
+        branchId,
+        targetAccountNumber,
+        targetEntry,
+        pairedFingerprint
+      );
+      assertCollectorPaymentPrepaidPairUnambiguous(pairedCharges.length);
+      pairedChargeId = String(pairedCharges[0]?.id || '').trim();
+
       if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
         await assertCollectorPaymentApprovalAllowedForAccountState({
           branchId,
@@ -2267,17 +2866,23 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
         throw createError(409, 'Collector payment is not pending approval.');
       }
 
-      const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccountNumber, targetEntry);
-      if (pairedFingerprint) {
-        await connection.query(
+      if (pairedChargeId) {
+        const [pairedUpdateResult] = await connection.query(
           `UPDATE payment_entries
            SET status = ?
            WHERE branch_id = ?
              AND account_number = ?
-             AND fingerprint = ?
-             AND LOWER(COALESCE(status, '')) = ?`,
-          [nextStatus, branchId, targetAccountNumber, pairedFingerprint, COLLECTOR_PAYMENT_PENDING_STATUS]
+             AND id = ?
+             AND LOWER(COALESCE(status, '')) = ?
+             AND LOWER(COALESCE(direction, '')) = 'debit'`,
+          [nextStatus, branchId, targetAccountNumber, pairedChargeId, COLLECTOR_PAYMENT_PENDING_STATUS]
         );
+        if (Number(pairedUpdateResult?.affectedRows || 0) !== 1) {
+          throw collectorPaymentAmountCorrectionConflict(
+            'The paired prepaid renewal charge changed during review. Reload the approval list and try again.',
+            'COLLECTOR_PAYMENT_PREPAID_PAIR_STALE'
+          );
+        }
       }
       await writeRelationalCollectorPaymentReview(
         connection,
@@ -2368,6 +2973,12 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
     throw createError(409, 'Collector payment is not pending approval.');
   }
 
+  const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccount, targetEntry);
+  const pairedEntries = targetHistory.filter((entry) => (
+    entry !== targetEntry && isPairedPrepaidChargeEntry(entry, targetEntry, pairedFingerprint)
+  ));
+  assertCollectorPaymentPrepaidPairUnambiguous(pairedEntries.length);
+
   if (nextStatus === COLLECTOR_PAYMENT_APPROVED_STATUS) {
     await assertCollectorPaymentApprovalAllowedForAccountState({
       branchId: branchId || targetCustomer?.branchId,
@@ -2383,12 +2994,8 @@ async function updateCollectorPaymentApprovalByIdUnlocked(req, rawEntryId, nextS
   }
 
   Object.assign(targetEntry, review);
-  const pairedFingerprint = resolvePairedPrepaidChargeFingerprint(targetAccount, targetEntry);
-  targetHistory.forEach((entry) => {
-    if (entry === targetEntry) return;
-    if (isPairedPrepaidChargeEntry(entry, targetEntry, pairedFingerprint)) {
-      Object.assign(entry, review, { reviewedBy: { ...review.reviewedBy } });
-    }
+  pairedEntries.forEach((entry) => {
+    Object.assign(entry, review, { reviewedBy: { ...review.reviewedBy } });
   });
   await writeJson(STORE_KEYS.payments, payments);
   if (!isClosedAccountCollectionEntry(targetEntry)) {
@@ -3065,6 +3672,18 @@ router.post('/approvals/approve-all', async (req, res, next) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     next(err?.status ? err : createError(500, err.message || 'Failed to approve pending collector payments.'));
+  }
+});
+
+// PATCH /api/collector/payments/approvals/:entryId/amount
+// Admin-only audited correction. The payment remains pending until a separate
+// approval decision and GCash-linked amounts remain immutable.
+router.patch('/approvals/:entryId/amount', async (req, res, next) => {
+  try {
+    const result = await correctCollectorPaymentAmount(req);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    next(err?.status ? err : createError(500, err.message || 'Failed to correct collector payment amount.'));
   }
 });
 

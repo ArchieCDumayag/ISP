@@ -1,6 +1,7 @@
 // Collectors workspace sidebar + reporting logic
 (function () {
   const assignMessage = document.getElementById('assignMessage');
+  const collectorGlobalMessage = document.getElementById('collectorGlobalMessage');
   const reportContainer = document.getElementById('reportContainer');
   const collectorApprovalList = document.getElementById('collectorApprovalList');
   const collectorApprovalCount = document.getElementById('collectorApprovalCount');
@@ -25,6 +26,17 @@
   const collectorApprovalPageIndicator = document.getElementById('collectorApprovalPageIndicator');
   const collectorApprovalPreviousPage = document.getElementById('collectorApprovalPreviousPage');
   const collectorApprovalNextPage = document.getElementById('collectorApprovalNextPage');
+  const collectorPaymentAmountEditModal = document.getElementById('collectorPaymentAmountEditModal');
+  const collectorPaymentAmountEditForm = document.getElementById('collectorPaymentAmountEditForm');
+  const collectorPaymentAmountEditEntryId = document.getElementById('collectorPaymentAmountEditEntryId');
+  const collectorPaymentAmountEditExpectedAmount = document.getElementById('collectorPaymentAmountEditExpectedAmount');
+  const collectorPaymentAmountEditSummary = document.getElementById('collectorPaymentAmountEditSummary');
+  const collectorPaymentAmountEditValue = document.getElementById('collectorPaymentAmountEditValue');
+  const collectorPaymentAmountEditReason = document.getElementById('collectorPaymentAmountEditReason');
+  const collectorPaymentAmountEditMessage = document.getElementById('collectorPaymentAmountEditMessage');
+  const collectorPaymentAmountEditSubmit = document.getElementById('collectorPaymentAmountEditSubmit');
+  const closeCollectorPaymentAmountEditModal = document.getElementById('closeCollectorPaymentAmountEditModal');
+  const cancelCollectorPaymentAmountEditModal = document.getElementById('cancelCollectorPaymentAmountEditModal');
   const collectorPaymentRejectModal = document.getElementById('collectorPaymentRejectModal');
   const collectorPaymentRejectForm = document.getElementById('collectorPaymentRejectForm');
   const collectorPaymentRejectEntryId = document.getElementById('collectorPaymentRejectEntryId');
@@ -218,6 +230,8 @@
   let areaTotalsCache = {};
   let areaUnpaidCache = {};
   let collectorApprovalRecords = [];
+  let collectorPaymentAmountEditTrigger = null;
+  let collectorPaymentAmountEditSaving = false;
   let collectorPaymentRejectTrigger = null;
   let collectorRemittanceRecords = [];
   let collectorRemittanceFilter = 'pending';
@@ -929,6 +943,7 @@
 
   function renderCollectorApprovals(records = []) {
     const rows = Array.isArray(records) ? records : [];
+    const focusedSelectionId = document.activeElement?.getAttribute?.('data-collector-approval-select') || '';
     collectorApprovalRecords = rows;
     updateCollectorApprovalBatchState(rows);
     const validIds = new Set(rows.map((record) => String(record?.id || '').trim()).filter(Boolean));
@@ -1046,6 +1061,14 @@
           ? `<span class="badge bg-warning-lt text-warning">${escapeHtml(age.label)} pending</span>`
           : '';
         const closedBadge = closedAccountCollectionBadge(record);
+        const amountCorrection = record?.amountCorrection || null;
+        const correctionHint = amountCorrection
+          ? `<small class="collector-approval-payment-correction">Corrected from PHP ${escapeHtml(fmtMoney(amountCorrection.previousAmount))}</small>`
+          : '';
+        const amountEditable = record?.amountEditable !== false;
+        const amountEditBlockedReason = String(
+          record?.amountEditBlockedReason || 'This payment amount is locked.'
+        ).trim();
 
         paymentItem.innerHTML = `
           <label class="collector-approval-payment-select" title="Select ${escapeHtml(clientName)}">
@@ -1065,12 +1088,17 @@
           <div class="collector-approval-payment-field collector-approval-payment-amount">
             <span>Amount</span>
             <strong>PHP ${escapeHtml(fmtMoney(record?.amount))}</strong>
+            ${correctionHint}
           </div>
           <details class="collector-approval-action-menu">
             <summary class="btn btn-ghost-secondary btn-sm btn-icon" title="Payment actions" aria-label="Actions for payment from ${escapeHtml(clientName)}">
               <i class="ti ti-dots-vertical" aria-hidden="true"></i>
             </summary>
             <div class="collector-approval-action-menu__dropdown">
+              <button type="button" class="dropdown-item" data-collector-approval-action="edit-amount" data-entry-id="${escapeHtml(id)}"${amountEditable ? '' : ` aria-disabled="true" aria-label="Amount locked: ${escapeHtml(amountEditBlockedReason)}" title="${escapeHtml(amountEditBlockedReason)}"`}>
+                <i class="ti ti-edit" aria-hidden="true"></i>
+                <span>${amountEditable ? 'Edit Amount' : 'Amount Locked'}</span>
+              </button>
               <button type="button" class="dropdown-item text-danger" data-collector-approval-action="reject" data-entry-id="${escapeHtml(id)}">
                 <i class="ti ti-x" aria-hidden="true"></i>
                 <span>Reject Payment</span>
@@ -1082,6 +1110,14 @@
       });
       collectorApprovalList.appendChild(groupCard);
     });
+    if (focusedSelectionId) {
+      const replacementSelection = [...collectorApprovalList.querySelectorAll('[data-collector-approval-select]')]
+        .find((input) => (
+          String(input.getAttribute('data-collector-approval-select') || '').trim()
+          === String(focusedSelectionId).trim()
+        ));
+      replacementSelection?.focus?.();
+    }
   }
 
   function renderCollectorApprovalNotice(message, tone = 'danger') {
@@ -2722,6 +2758,174 @@
     }
   }
 
+  function setCollectorPaymentAmountEditMessage(message = '', tone = '') {
+    if (!collectorPaymentAmountEditMessage) return;
+    collectorPaymentAmountEditMessage.textContent = message;
+    collectorPaymentAmountEditMessage.className = `modal-message${tone ? ` text-${tone}` : ''}`;
+  }
+
+  function setCollectorPaymentAmountEditSaving(saving) {
+    collectorPaymentAmountEditSaving = Boolean(saving);
+    [
+      collectorPaymentAmountEditValue,
+      collectorPaymentAmountEditReason,
+      closeCollectorPaymentAmountEditModal,
+      cancelCollectorPaymentAmountEditModal,
+      collectorPaymentAmountEditSubmit,
+    ].forEach((control) => {
+      if (control) control.disabled = collectorPaymentAmountEditSaving;
+    });
+    const submitLabel = collectorPaymentAmountEditSubmit?.querySelector('span');
+    if (submitLabel) submitLabel.textContent = collectorPaymentAmountEditSaving ? 'Saving...' : 'Save Amount';
+    collectorPaymentAmountEditModal?.setAttribute(
+      'aria-busy',
+      collectorPaymentAmountEditSaving ? 'true' : 'false'
+    );
+    if (collectorPaymentAmountEditSaving) collectorPaymentAmountEditModal?.focus?.();
+  }
+
+  function focusCollectorApprovalAfterAmountEdit(entryId) {
+    if (collectorPaymentAmountEditModal?.classList.contains('show')) return;
+    const safeEntryId = String(entryId || '').trim();
+    const replacementSelection = [...document.querySelectorAll('[data-collector-approval-select]')]
+      .find((input) => String(input.getAttribute('data-collector-approval-select') || '').trim() === safeEntryId);
+    (replacementSelection || collectorApprovalRefresh)?.focus?.();
+  }
+
+  function containCollectorPaymentAmountEditFocus(event) {
+    if (
+      event.key !== 'Tab'
+      || !collectorPaymentAmountEditModal?.classList.contains('show')
+    ) return;
+    const focusable = [...collectorPaymentAmountEditModal.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+    )];
+    if (!focusable.length) {
+      event.preventDefault();
+      collectorPaymentAmountEditModal.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    const active = document.activeElement;
+    const activeIndex = focusable.indexOf(active);
+    if (activeIndex < 0) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function openCollectorPaymentAmountEditDialog(entryId, triggerBtn = null) {
+    const safeEntryId = String(entryId || '').trim();
+    if (
+      collectorPaymentAmountEditSaving
+      || !safeEntryId
+      || !collectorPaymentAmountEditModal
+      || !collectorPaymentAmountEditForm
+    ) return;
+    const record = collectorApprovalRecords.find((item) => String(item?.id || '').trim() === safeEntryId);
+    if (!record) {
+      toast('Reload the approval list and try again.', 'danger');
+      return;
+    }
+    if (record?.amountEditable === false) {
+      toast(record?.amountEditBlockedReason || 'This payment amount is locked.', 'danger');
+      return;
+    }
+    const currentAmount = Math.abs(Number(record?.amount) || 0);
+    setCollectorPaymentAmountEditSaving(false);
+    collectorPaymentAmountEditForm.reset();
+    if (collectorPaymentAmountEditEntryId) collectorPaymentAmountEditEntryId.value = safeEntryId;
+    if (collectorPaymentAmountEditExpectedAmount) {
+      collectorPaymentAmountEditExpectedAmount.value = currentAmount.toFixed(2);
+    }
+    if (collectorPaymentAmountEditValue) collectorPaymentAmountEditValue.value = currentAmount.toFixed(2);
+    if (collectorPaymentAmountEditSummary) {
+      const clientName = String(record?.customerName || record?.accountNumber || 'Client').trim();
+      const reference = String(record?.reference || 'No reference').trim();
+      collectorPaymentAmountEditSummary.textContent = `${clientName} - Current PHP ${fmtMoney(currentAmount)} - ${reference}`;
+    }
+    collectorPaymentAmountEditTrigger = triggerBtn;
+    setCollectorPaymentAmountEditMessage('');
+    collectorPaymentAmountEditModal.classList.add('show');
+    collectorPaymentAmountEditModal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+      collectorPaymentAmountEditValue?.focus();
+      collectorPaymentAmountEditValue?.select();
+    }, 50);
+  }
+
+  function closeCollectorPaymentAmountEditDialog({ restoreFocus = true, force = false } = {}) {
+    if (!collectorPaymentAmountEditModal) return;
+    if (collectorPaymentAmountEditSaving && !force) return;
+    const trigger = collectorPaymentAmountEditTrigger;
+    setCollectorPaymentAmountEditSaving(false);
+    collectorPaymentAmountEditModal.classList.remove('show');
+    collectorPaymentAmountEditModal.setAttribute('aria-hidden', 'true');
+    collectorPaymentAmountEditForm?.reset();
+    if (collectorPaymentAmountEditEntryId) collectorPaymentAmountEditEntryId.value = '';
+    if (collectorPaymentAmountEditExpectedAmount) collectorPaymentAmountEditExpectedAmount.value = '';
+    setCollectorPaymentAmountEditMessage('');
+    collectorPaymentAmountEditTrigger = null;
+    if (restoreFocus) trigger?.focus?.();
+  }
+
+  async function submitCollectorPaymentAmountCorrection(entryId, amount, expectedAmount, reason) {
+    const safeEntryId = String(entryId || '').trim();
+    if (!safeEntryId || collectorPaymentAmountEditSaving) return false;
+    setCollectorPaymentAmountEditSaving(true);
+    setCollectorPaymentAmountEditMessage('Saving corrected amount...');
+    try {
+      const res = await fetch(`/api/collector/payments/approvals/${encodeURIComponent(safeEntryId)}/amount`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ amount, expectedAmount, reason }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload?.error || 'Failed to update the collector payment amount.');
+      }
+      collectorApprovalSelectedIds.delete(safeEntryId);
+      updateCollectorApprovalSelectionState();
+      setCollectorPaymentAmountEditMessage('Amount updated. Refreshing approval lists...', 'success');
+      let refreshFailed = false;
+      try {
+        const refreshResults = await Promise.all([
+          loadCollectorApprovals(),
+          loadCollectorRemittances(),
+          loadAssignmentsAndReport(),
+        ]);
+        refreshFailed = refreshResults.some((result) => result !== true);
+      } catch {
+        refreshFailed = true;
+      }
+      closeCollectorPaymentAmountEditDialog({ restoreFocus: false, force: true });
+      toast(
+        refreshFailed
+          ? 'Amount updated, but some lists could not refresh. Reload this page.'
+          : 'Payment amount updated. Review it before approval.',
+        refreshFailed ? 'danger' : 'ok'
+      );
+      focusCollectorApprovalAfterAmountEdit(safeEntryId);
+      return true;
+    } catch (err) {
+      setCollectorPaymentAmountEditSaving(false);
+      setCollectorPaymentAmountEditMessage(
+        err?.message || 'Failed to update the collector payment amount.',
+        'danger'
+      );
+      return false;
+    }
+  }
+
   function setCollectorPaymentRejectMessage(message = '', tone = '') {
     if (!collectorPaymentRejectMessage) return;
     collectorPaymentRejectMessage.textContent = message;
@@ -2797,7 +3001,11 @@
   async function reviewCollectorPayment(entryId, action, triggerBtn = null) {
     const safeEntryId = String(entryId || '').trim();
     const safeAction = String(action || '').trim().toLowerCase();
-    if (!safeEntryId || !['approve', 'reject'].includes(safeAction)) return;
+    if (!safeEntryId || !['approve', 'reject', 'edit-amount'].includes(safeAction)) return;
+    if (safeAction === 'edit-amount') {
+      openCollectorPaymentAmountEditDialog(safeEntryId, triggerBtn);
+      return;
+    }
     if (safeAction === 'reject') {
       openCollectorPaymentRejectDialog(safeEntryId, triggerBtn);
       return;
@@ -2858,10 +3066,18 @@
 
   // Simple toast
   function toast(msg, type = 'ok') {
-    if (!assignMessage) return;
+    if (typeof window.appToast === 'function') {
+      window.appToast(msg, { type });
+      return;
+    }
+    const fallbackHost = collectorGlobalMessage || assignMessage;
+    if (!fallbackHost) return;
     const variant = type === 'ok' ? 'success' : 'danger';
-    assignMessage.innerHTML = `<div class="toast ${variant} show">${msg}</div>`;
-    setTimeout(() => (assignMessage.innerHTML = ''), 3200);
+    const fallbackToast = document.createElement('div');
+    fallbackToast.className = `toast ${variant} show`;
+    fallbackToast.textContent = String(msg ?? '');
+    fallbackHost.appendChild(fallbackToast);
+    setTimeout(() => fallbackToast.remove(), 3200);
   }
 
   function setModalMessage(text, type = 'info') {
@@ -4199,6 +4415,45 @@
   });
   collectorApprovalApproveSelected?.addEventListener('click', () => {
     approveSelectedCollectorPayments(collectorApprovalApproveSelected).catch(() => {});
+  });
+  closeCollectorPaymentAmountEditModal?.addEventListener('click', () => {
+    closeCollectorPaymentAmountEditDialog();
+  });
+  cancelCollectorPaymentAmountEditModal?.addEventListener('click', () => {
+    closeCollectorPaymentAmountEditDialog();
+  });
+  collectorPaymentAmountEditModal?.addEventListener('keydown', containCollectorPaymentAmountEditFocus);
+  collectorPaymentAmountEditForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!collectorPaymentAmountEditForm.reportValidity()) return;
+    const entryId = String(collectorPaymentAmountEditEntryId?.value || '').trim();
+    const rawAmount = String(collectorPaymentAmountEditValue?.value || '').trim();
+    const expectedAmount = String(collectorPaymentAmountEditExpectedAmount?.value || '').trim();
+    const reason = String(collectorPaymentAmountEditReason?.value || '').trim();
+    if (!/^\d+(?:\.\d{1,2})?$/.test(rawAmount) || Number(rawAmount) <= 0) {
+      setCollectorPaymentAmountEditMessage(
+        'Corrected amount must be a positive number with at most two decimal places.',
+        'danger'
+      );
+      collectorPaymentAmountEditValue?.focus();
+      return;
+    }
+    if (Math.abs(Number(rawAmount) - Number(expectedAmount)) < 0.005) {
+      setCollectorPaymentAmountEditMessage('Enter a different amount before saving.', 'danger');
+      collectorPaymentAmountEditValue?.focus();
+      return;
+    }
+    if (!reason) {
+      setCollectorPaymentAmountEditMessage('Amount correction reason is required.', 'danger');
+      collectorPaymentAmountEditReason?.focus();
+      return;
+    }
+    await submitCollectorPaymentAmountCorrection(
+      entryId,
+      rawAmount,
+      expectedAmount,
+      reason
+    );
   });
   closeCollectorPaymentRejectModal?.addEventListener('click', closeCollectorPaymentRejectDialog);
   cancelCollectorPaymentRejectModal?.addEventListener('click', closeCollectorPaymentRejectDialog);

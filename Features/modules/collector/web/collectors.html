@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css?v=2.9">
     <link rel="stylesheet" href="css/collectors.css?v=2.1">
     <link rel="stylesheet" href="css/tabler-app.css?v=3.1">
-    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.18">
+    <link rel="stylesheet" href="css/collectors-tabler.css?v=2.21">
     <script src="theme-init.js?v=2.6"></script>
 </head>
 <body class="layout-fluid layout-fluid-vertical">
@@ -437,7 +437,7 @@
                                 </button>
                             </div>
 
-                            <div id="assignMessage" class="assignment-toast"></div>
+                            <div id="assignMessage" class="assignment-toast" role="status" aria-live="polite" aria-atomic="true"></div>
                             <div class="collector-assignment-list-wrapper">
                                 <div class="collector-assignment-list" id="assignmentList" role="list" aria-live="polite"></div>
                                 <div class="empty-state p-3" id="assignmentsEmptyState" style="display:none;">
@@ -828,6 +828,46 @@
         </div>
     </div>
 
+    <!-- Collector Payment Amount Correction Modal -->
+    <div id="collectorPaymentAmountEditModal" class="modal modal-blur tabler-form-modal collector-payment-amount-edit-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="collectorPaymentAmountEditTitle" aria-describedby="collectorPaymentAmountEditDescription" tabindex="-1">
+        <div class="modal-dialog modal-sm modal-dialog-centered collector-payment-amount-edit-modal__dialog">
+            <div class="modal-content collector-payment-amount-edit-modal__content">
+                <div class="modal-header collector-payment-amount-edit-modal__header">
+                    <div>
+                        <h2 class="modal-title" id="collectorPaymentAmountEditTitle">Edit Payment Amount</h2>
+                        <p class="modal-subtitle mb-0" id="collectorPaymentAmountEditDescription">Save the corrected Cash amount first. The payment remains pending until it is approved separately.</p>
+                    </div>
+                    <button class="btn btn-icon btn-outline-secondary close-modal" type="button" id="closeCollectorPaymentAmountEditModal" aria-label="Close amount correction dialog">
+                        <i class="ti ti-x" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <form id="collectorPaymentAmountEditForm">
+                    <div class="modal-body collector-payment-amount-edit-modal__body">
+                        <input type="hidden" id="collectorPaymentAmountEditEntryId">
+                        <input type="hidden" id="collectorPaymentAmountEditExpectedAmount">
+                        <div class="alert alert-info collector-payment-amount-edit-summary" id="collectorPaymentAmountEditSummary" role="status"></div>
+                        <label class="form-label" for="collectorPaymentAmountEditValue">Corrected amount</label>
+                        <div class="input-group input-group-flat">
+                            <span class="input-group-text">PHP</span>
+                            <input class="form-control" id="collectorPaymentAmountEditValue" type="number" min="0.01" max="9999999999.99" step="0.01" inputmode="decimal" autocomplete="off" aria-describedby="collectorPaymentAmountEditAuditHint collectorPaymentAmountEditMessage" required>
+                        </div>
+                        <label class="form-label" for="collectorPaymentAmountEditReason">Correction reason</label>
+                        <textarea class="form-control" id="collectorPaymentAmountEditReason" rows="3" maxlength="500" placeholder="Example: Collector entered 800 instead of 500" aria-describedby="collectorPaymentAmountEditAuditHint collectorPaymentAmountEditMessage" required></textarea>
+                        <div class="form-hint" id="collectorPaymentAmountEditAuditHint">Required. The old amount, new amount, reason, Admin reviewer, and time are retained in the audit history. GCash-linked amounts are locked.</div>
+                        <div class="modal-message" id="collectorPaymentAmountEditMessage" role="status" aria-live="polite"></div>
+                    </div>
+                    <div class="modal-footer collector-payment-amount-edit-modal__actions">
+                        <button type="button" class="btn btn-link btn-sm" id="cancelCollectorPaymentAmountEditModal">Cancel</button>
+                        <button type="submit" class="btn btn-warning btn-sm" id="collectorPaymentAmountEditSubmit">
+                            <i class="ti ti-edit" aria-hidden="true"></i>
+                            <span>Save Amount</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Collector Payment Rejection Modal -->
     <div id="collectorPaymentRejectModal" class="modal modal-blur tabler-form-modal collector-payment-reject-modal collectors-tabler-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="collectorPaymentRejectTitle">
         <div class="modal-dialog modal-sm modal-dialog-centered collector-payment-reject-modal__dialog">
@@ -862,8 +902,10 @@
         </div>
     </div>
 
+    <div id="collectorGlobalMessage" class="collector-global-message" role="status" aria-live="polite" aria-atomic="true"></div>
+
     <script src="layout.js?v=3.9"></script>
-    <script src="js/collectors-page.js?v=3.21"></script>
+    <script src="js/collectors-page.js?v=3.24"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

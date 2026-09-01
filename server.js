@@ -37,6 +37,12 @@ const { backend: tempBackend } = requireModuleRuntime('temp');
 const MODULE_WEB_ROOTS = Object.freeze(
     [...MODULE_RUNTIMES.values()].map((runtime) => runtime.webRoot).filter(Boolean)
 );
+const COLLECTOR_APP_UPDATES_LAN_ENABLED = (
+    String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
+    && ['1', 'true', 'yes', 'on'].includes(
+        String(process.env.COLLECTOR_APP_UPDATES_LAN_ENABLED || '').trim().toLowerCase()
+    )
+);
 
 // Import API routers
 const plansRouter = billingBackend.load('plans');
@@ -88,6 +94,23 @@ const factoryResetRouter = adminBackend.load('factoryReset');
 const systemBackupRouter = adminBackend.load('systemBackup');
 const { createSystemUpdateLocalChangesManager } = adminBackend.load('systemUpdateLocalChanges');
 const appDownloadsRouter = adminBackend.load('appDownloads');
+const collectorAppUpdates = COLLECTOR_APP_UPDATES_LAN_ENABLED
+    ? adminBackend.load('collectorAppUpdates')
+    : null;
+const collectorAppUpdatesLanUrl = collectorAppUpdates
+    ? new URL(collectorAppUpdates.PUBLIC_UPDATE_BASE_URL)
+    : null;
+if (
+    collectorAppUpdatesLanUrl
+    && (
+        collectorAppUpdatesLanUrl.protocol !== 'http:'
+        || collectorAppUpdatesLanUrl.hostname !== '192.168.100.9'
+        || collectorAppUpdatesLanUrl.port !== '3000'
+        || collectorAppUpdatesLanUrl.pathname !== '/collector-updates'
+    )
+) {
+    throw new Error('Collector OTA must use the approved Windows LAN update URL.');
+}
 const { loadActivityLog, appendActivityLog, clearActivityLog } = adminBackend.load('activityLog');
 const integrationSettingsRouter = adminBackend.load('integrationSettings');
 const { loadIntegrationSettings, resolveIpBrowserProfile } = integrationSettingsRouter;
@@ -155,6 +178,23 @@ const parseHostOnly = (hostValue = '') => {
     const colonIndex = value.indexOf(':');
     return colonIndex >= 0 ? value.slice(0, colonIndex) : value;
 };
+const decodeRequestPathname = (value = '') => {
+    try {
+        return decodeURIComponent(String(value || ''));
+    } catch {
+        return null;
+    }
+};
+const hasUnsafeWindowsStaticPathSyntax = (decodedPathname = '') => (
+    decodedPathname.split('/').some((segment) => (
+        /[\\:~<>"|?*]/.test(segment) || /[. ]$/.test(segment)
+    ))
+);
+const normalizeRequestBasename = (value = '') => {
+    const decoded = decodeRequestPathname(value);
+    if (decoded === null || hasUnsafeWindowsStaticPathSyntax(decoded)) return null;
+    return path.posix.basename(decoded).toLowerCase();
+};
 
 const readCloudflaredHostname = () => {
     if (cachedCloudflaredHostname !== undefined) return cachedCloudflaredHostname;
@@ -172,6 +212,42 @@ const readCloudflaredHostname = () => {
 
 const parseFirstIp = (value = '') => String(value || '').split(',')[0].trim().toLowerCase();
 const isLoopbackIp = (value = '') => LOOPBACK_IPS.has(parseFirstIp(value));
+const isPrivateLanIp = (value = '') => {
+    const parsed = parseFirstIp(value);
+    if (isLoopbackIp(parsed)) return true;
+    const normalized = parsed.startsWith('::ffff:') ? parsed.slice(7) : parsed;
+    if (net.isIP(normalized) === 4) {
+        const octets = normalized.split('.').map(Number);
+        return octets[0] === 10
+            || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+            || (octets[0] === 192 && octets[1] === 168);
+    }
+    if (net.isIP(normalized) === 6) {
+        const firstGroup = Number.parseInt(normalized.split(':')[0], 16);
+        return (firstGroup & 0xfe00) === 0xfc00 || (firstGroup & 0xffc0) === 0xfe80;
+    }
+    return false;
+};
+const isCollectorAppUpdatesLanRequest = (req) => {
+    if (!collectorAppUpdates || !collectorAppUpdatesLanUrl) return false;
+    const proxyHeaders = [
+        'cf-connecting-ip',
+        'cf-ray',
+        'forwarded',
+        'x-forwarded-for',
+        'x-forwarded-host',
+        'x-forwarded-proto',
+        'x-real-ip'
+    ];
+    if (proxyHeaders.some((header) => String(req.headers[header] || '').trim())) return false;
+    const host = parseHostOnly(req.headers.host || '');
+    const remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress || '';
+    if (LOCALHOST_HOSTS.has(host)) return isLoopbackIp(remoteAddress);
+    return host === collectorAppUpdatesLanUrl.hostname && isPrivateLanIp(remoteAddress);
+};
+const requireCollectorAppUpdatesLanAccess = (req, res, next) => (
+    isCollectorAppUpdatesLanRequest(req) ? next() : res.status(404).send('Not Found')
+);
 const isAdminUser = (user) => Boolean(user) && accountHasRole(user, 'Admin');
 const isStructureOwnerUser = (user) => isAdminUser(user) && String(user.id || '').trim() === STRUCTURE_OWNER_ID;
 const requireMessengerReminderAccess = async (req, res, next) => {
@@ -2791,6 +2867,11 @@ const systemBackupLimiter = createRateLimiter({
     max: 20,
     message: 'Too many backup or restore attempts. Please wait before trying again.'
 });
+const collectorAppUpdateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 12,
+    message: 'Too many Collector app update requests. Please wait before trying again.'
+});
 app.use('/api/auth/login', adminLoginLimiter);
 app.use('/api/auth/collector-login', adminLoginLimiter);
 app.use('/api/auth/technician-login', adminLoginLimiter);
@@ -2993,6 +3074,21 @@ app.use('/assets', express.static(path.join(PUBLIC_ROOT, 'assets'), {
     setHeaders: setStaticAssetCacheHeaders
 }));
 
+// The Windows web root resolves file names case-insensitively. Normalize and
+// guard every Collector OTA page/controller spelling before generic static delivery.
+app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const basename = normalizeRequestBasename(req.path);
+    if (basename === null) return res.status(404).send('Not Found');
+    if (
+        (basename === 'collector-app-update.html' || basename === 'collector-app-update.js')
+        && !isCollectorAppUpdatesLanRequest(req)
+    ) {
+        return res.status(404).send('Not Found');
+    }
+    return next();
+});
+
 // Serve root static assets before page guards so CSS/JS never fall through to HTML routes.
 app.get(/^\/[^/]+\.(?:css|js|mjs|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|map)$/i, (req, res, next) => {
     const filename = path.basename(req.path);
@@ -3016,6 +3112,7 @@ const PROTECTED_PAGES = new Set([
     'index.html',
     'dashboard-v2.html',
     'update-download.html',
+    'collector-app-update.html',
     'customers.html',
     'customer-archive.html',
     'payments.html',
@@ -3067,7 +3164,8 @@ app.use(async (req, res, next) => {
     // Only enforce for GET requests (pages)
     if (req.method !== 'GET') return next();
     if (req.path === '/api' || req.path.startsWith('/api/')) return next();
-    const pathname = req.path;
+    const pathname = decodeRequestPathname(req.path);
+    if (pathname === null) return res.status(400).send('Bad Request');
 
     if (pathname === '/' || pathname === '') {
         return next();
@@ -3081,11 +3179,11 @@ app.use(async (req, res, next) => {
     let pageToCheck;
     if (pathname === '/' || raw === '') {
         pageToCheck = 'index.html';
-    } else if (pathname.endsWith('.html')) {
-        pageToCheck = raw;
+    } else if (pathname.toLowerCase().endsWith('.html')) {
+        pageToCheck = raw.toLowerCase();
     } else {
         // map '/payments' -> 'payments.html'
-        pageToCheck = `${raw}.html`;
+        pageToCheck = `${raw.toLowerCase()}.html`;
     }
 
     // Reports page has been deprecated; keep the URL from 404-ing by sending users back home.
@@ -3111,6 +3209,10 @@ app.use(async (req, res, next) => {
             return res.status(404).send('Not Found');
         }
         return next();
+    }
+
+    if (pageToCheck === 'collector-app-update.html' && !isCollectorAppUpdatesLanRequest(req)) {
+        return res.status(404).send('Not Found');
     }
 
     const user = await getUserFromSession(req);
@@ -6730,6 +6832,20 @@ app.use('/api/system-backup', requireAuth, systemBackupLimiter, systemBackupRout
 app.use('/api/collectors', requireAuth, collectorsRouter);
 app.use('/api/business-profile', businessProfileRouter);
 app.use('/api/app-downloads', appDownloadsRouter);
+if (collectorAppUpdates) {
+    app.use('/collector-updates', requireCollectorAppUpdatesLanAccess, collectorAppUpdates.publicRouter);
+    app.use(
+        '/api/collector-app-updates',
+        requireCollectorAppUpdatesLanAccess,
+        requireAuth,
+        collectorAppUpdateLimiter,
+        express.raw({
+            type: ['application/vnd.android.package-archive', 'application/octet-stream'],
+            limit: collectorAppUpdates.MAX_APK_BYTES
+        }),
+        collectorAppUpdates.adminRouter
+    );
+}
 app.use('/api/integrations', integrationSettingsRouter);
 app.use('/api/mikrotik', mikrotikRouter);
 app.use('/api/jobs', requireAuth, jobsRouter);

@@ -50,6 +50,14 @@ const stores = {
     planName: 'Postpaid 1000',
     planAmount: 1000,
     planBilling: 'Postpaid'
+  }, {
+    accountNumber: 'ACC-PREPAID',
+    name: 'Prepaid Approval Client',
+    area: 'North Area',
+    branchId: 'branch-1',
+    planName: 'Prepaid 400',
+    planAmount: 400,
+    planBilling: 'Prepaid'
   }],
   collectors: {
     assignments: {
@@ -64,8 +72,39 @@ const stores = {
 let relationalReady = false;
 const relationalPaymentRows = [];
 const relationalReviewRows = [];
+const relationalCorrectionRows = [];
 
 async function relationalConnectionQuery(sql, params = []) {
+  if (/FROM collector_payment_amount_corrections/i.test(sql)) {
+    const [branchId, ...entryIds] = params;
+    return [relationalCorrectionRows
+      .filter((row) => String(row.branchId) === String(branchId))
+      .filter((row) => entryIds.includes(row.paymentEntryId))
+      .map((row) => ({
+        correctionOrder: row.correctionOrder,
+        correctionId: row.correctionId,
+        paymentEntryId: row.paymentEntryId,
+        previousAmount: row.previousAmount,
+        correctedAmount: row.correctedAmount,
+        correctionReason: row.reason,
+        correctedAt: row.correctedAt,
+        correctedByUserId: row.correctedById,
+        correctedByUsername: 'admin',
+        correctedByName: 'Admin User',
+        correctedByRole: 'Admin'
+      }))];
+  }
+  if (/SELECT[\s\S]+recorded_at AS recordedAt[\s\S]+FROM payment_entries[\s\S]+account_number = \?[\s\S]+direction[\s\S]+FOR UPDATE/i.test(sql)) {
+    const [branchId, accountNumber, expectedStatus] = params;
+    return [relationalPaymentRows
+      .filter((row) => (
+        String(row.branchId) === String(branchId)
+        && String(row.accountNumber) === String(accountNumber)
+        && String(row.status).toLowerCase() === String(expectedStatus).toLowerCase()
+        && String(row.direction || '').toLowerCase() === 'debit'
+      ))
+      .map((row) => structuredClone(row))];
+  }
   if (/SELECT account_number AS accountNumber[\s\S]+FROM payment_entries/i.test(sql)
       && !/FOR UPDATE/i.test(sql)) {
     const [branchId, entryId] = params;
@@ -80,6 +119,62 @@ async function relationalConnectionQuery(sql, params = []) {
       String(item.branchId) === String(branchId) && String(item.id) === String(entryId)
     ));
     return [row ? [structuredClone(row)] : []];
+  }
+  if (/UPDATE payment_entries[\s\S]+SET amount = \?, fingerprint = \?[\s\S]+AND id = \?/i.test(sql)) {
+    const [amount, fingerprint, branchId, entryId, expectedStatus] = params;
+    const row = relationalPaymentRows.find((item) => (
+      String(item.branchId) === String(branchId)
+      && String(item.id) === String(entryId)
+      && String(item.status).toLowerCase() === String(expectedStatus).toLowerCase()
+    ));
+    if (!row) return [{ affectedRows: 0 }];
+    row.amount = amount;
+    row.fingerprint = fingerprint;
+    return [{ affectedRows: 1 }];
+  }
+  if (/UPDATE payment_entries[\s\S]+SET amount = \?,[\s\S]+fingerprint = CASE[\s\S]+AND account_number = \?[\s\S]+AND id = \?/i.test(sql)) {
+    const [amount, fingerprint, branchId, accountNumber, entryId, expectedStatus] = params;
+    const row = relationalPaymentRows.find((item) => (
+      String(item.branchId) === String(branchId)
+      && String(item.accountNumber) === String(accountNumber)
+      && String(item.id) === String(entryId)
+      && String(item.status).toLowerCase() === String(expectedStatus).toLowerCase()
+      && String(item.direction || '').toLowerCase() === 'debit'
+    ));
+    if (!row) return [{ affectedRows: 0 }];
+    row.amount = amount;
+    if (!String(row.fingerprint || '').trim()) row.fingerprint = fingerprint;
+    return [{ affectedRows: 1 }];
+  }
+  if (/UPDATE payment_entries[\s\S]+SET amount = \?[\s\S]+AND fingerprint = \?[\s\S]+direction/i.test(sql)) {
+    const [amount, branchId, accountNumber, fingerprint, expectedStatus] = params;
+    let affectedRows = 0;
+    relationalPaymentRows.forEach((row) => {
+      if (
+        String(row.branchId) === String(branchId)
+        && String(row.accountNumber) === String(accountNumber)
+        && String(row.fingerprint || '') === String(fingerprint || '')
+        && String(row.status).toLowerCase() === String(expectedStatus).toLowerCase()
+        && String(row.direction || '').toLowerCase() === 'debit'
+      ) {
+        row.amount = amount;
+        affectedRows += 1;
+      }
+    });
+    return [{ affectedRows }];
+  }
+  if (/UPDATE payment_entries[\s\S]+SET status = \?[\s\S]+AND account_number = \?[\s\S]+AND id = \?/i.test(sql)) {
+    const [status, branchId, accountNumber, entryId, expectedStatus] = params;
+    const row = relationalPaymentRows.find((item) => (
+      String(item.branchId) === String(branchId)
+      && String(item.accountNumber) === String(accountNumber)
+      && String(item.id) === String(entryId)
+      && String(item.status).toLowerCase() === String(expectedStatus).toLowerCase()
+      && String(item.direction || '').toLowerCase() === 'debit'
+    ));
+    if (!row) return [{ affectedRows: 0 }];
+    row.status = status;
+    return [{ affectedRows: 1 }];
   }
   if (/UPDATE payment_entries[\s\S]+AND id = \?/i.test(sql)) {
     const [status, branchId, entryId, expectedStatus] = params;
@@ -119,6 +214,21 @@ async function relationalConnectionQuery(sql, params = []) {
     });
     return [{ affectedRows: 1 }];
   }
+  if (/INSERT INTO collector_payment_amount_corrections/i.test(sql)) {
+    relationalCorrectionRows.push({
+      correctionOrder: relationalCorrectionRows.length + 1,
+      correctionId: params[0],
+      paymentEntryId: params[1],
+      branchId: params[2],
+      accountNumber: params[3],
+      previousAmount: params[4],
+      correctedAmount: params[5],
+      reason: params[6],
+      correctedAt: params[7],
+      correctedById: params[8]
+    });
+    return [{ affectedRows: 1 }];
+  }
   throw new Error(`Unexpected relational transaction query: ${sql}`);
 }
 
@@ -139,9 +249,48 @@ replaceModule('../../../../core/data/data-store', {
   }
 });
 replaceModule('../../../../core/data/db', {
-  query: async (sql) => {
+  query: async (sql, params = []) => {
     if (relationalReady && /CREATE TABLE IF NOT EXISTS collector_payment_reviews/i.test(sql)) {
       return [{ affectedRows: 0 }];
+    }
+    if (relationalReady && /CREATE TABLE IF NOT EXISTS collector_payment_amount_corrections/i.test(sql)) {
+      assert.match(sql, /correction_order BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY/i);
+      assert.match(sql, /corrected_at DATETIME\(3\) NOT NULL/i);
+      assert.match(sql, /FOREIGN KEY \(payment_entry_id\) REFERENCES payment_entries\(id\) ON DELETE CASCADE/i);
+      assert.match(sql, /ENGINE=InnoDB/i);
+      return [{ affectedRows: 0 }];
+    }
+    if (relationalReady && /FROM collector_payment_amount_corrections/i.test(sql)) {
+      const [branchId, ...entryIds] = params;
+      return [relationalCorrectionRows
+        .filter((row) => String(row.branchId) === String(branchId))
+        .filter((row) => entryIds.includes(row.paymentEntryId))
+        .map((row) => ({
+          correctionOrder: row.correctionOrder,
+          correctionId: row.correctionId,
+          paymentEntryId: row.paymentEntryId,
+          previousAmount: row.previousAmount,
+          correctedAmount: row.correctedAmount,
+          correctionReason: row.reason,
+          correctedAt: row.correctedAt,
+          correctedByUserId: row.correctedById,
+          correctedByUsername: 'admin',
+          correctedByName: 'Admin User',
+          correctedByRole: 'Admin'
+        }))];
+    }
+    if (relationalReady && /FROM payment_entries pe[\s\S]+LEFT JOIN customers c/i.test(sql)) {
+      const [branchId, status] = params;
+      return [relationalPaymentRows
+        .filter((row) => String(row.branchId) === String(branchId))
+        .filter((row) => String(row.status).toLowerCase() === String(status).toLowerCase())
+        .map((row) => ({
+          ...structuredClone(row),
+          customerName: row.accountNumber === 'ACC-GCASH' ? 'GCash Approval Client' : 'Approval Test Client',
+          firstName: null,
+          lastName: null,
+          area: row.accountNumber === 'ACC-GCASH' ? 'GCash Area' : 'North Area'
+        }))];
     }
     throw new Error(`Unexpected relational query: ${sql}`);
   }
@@ -157,7 +306,19 @@ replaceModule('../../billing/backend/payment-numbering', {
   assertEntryNumbersAvailable: async () => {},
   enqueuePaymentMutation: async (work) => work(),
   lockPaymentAccount: async () => {},
-  withTransaction: async (work) => work({ query: relationalConnectionQuery })
+  withTransaction: async (work) => {
+    const paymentSnapshot = structuredClone(relationalPaymentRows);
+    const reviewSnapshot = structuredClone(relationalReviewRows);
+    const correctionSnapshot = structuredClone(relationalCorrectionRows);
+    try {
+      return await work({ query: relationalConnectionQuery });
+    } catch (error) {
+      relationalPaymentRows.splice(0, relationalPaymentRows.length, ...paymentSnapshot);
+      relationalReviewRows.splice(0, relationalReviewRows.length, ...reviewSnapshot);
+      relationalCorrectionRows.splice(0, relationalCorrectionRows.length, ...correctionSnapshot);
+      throw error;
+    }
+  }
 });
 replaceModule('../../billing/backend/payment-service-refresh', {
   triggerBranchServiceRefresh: () => {}
@@ -324,6 +485,108 @@ async function run() {
     assert.equal(pending.status, 200);
     assert.equal(pending.body.records.length, 1);
     assert.equal(pending.body.records[0].id, submitted.body.id);
+    assert.equal(pending.body.records[0].amountEditable, true);
+
+    const collectorCannotCorrectAmount = await request(
+      `/approvals/${encodeURIComponent(submitted.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          expectedAmount: 1000,
+          amount: 850,
+          reason: 'Collector entered the wrong Cash amount.'
+        })
+      }
+    );
+    assert.equal(collectorCannotCorrectAmount.status, 403);
+
+    const correctionNeedsReason = await request(`/approvals/${encodeURIComponent(submitted.body.id)}/amount`, {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ expectedAmount: 1000, amount: 850 })
+    });
+    assert.equal(correctionNeedsReason.status, 400);
+
+    const correctionRejectsFractionalCent = await request(
+      `/approvals/${encodeURIComponent(submitted.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({
+          expectedAmount: 1000,
+          amount: '850.005',
+          reason: 'Invalid precision must not be rounded silently.'
+        })
+      }
+    );
+    assert.equal(correctionRejectsFractionalCent.status, 400);
+
+    const staleCorrection = await request(`/approvals/${encodeURIComponent(submitted.body.id)}/amount`, {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 900,
+        amount: 850,
+        reason: 'Stale Admin view must not overwrite the current amount.'
+      })
+    });
+    assert.equal(staleCorrection.status, 409);
+    assert.equal(staleCorrection.body.code, 'COLLECTOR_PAYMENT_AMOUNT_STALE');
+
+    const corrected = await request(`/approvals/${encodeURIComponent(submitted.body.id)}/amount`, {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 1000,
+        amount: 850,
+        reason: 'Collector entered 1000 instead of the counted Cash amount.'
+      })
+    });
+    assert.equal(corrected.status, 200);
+    assert.equal(corrected.body.record.amount, 850);
+    assert.equal(corrected.body.record.status, 'pending_approval');
+    assert.equal(corrected.body.record.amountCorrection.previousAmount, 1000);
+    assert.equal(corrected.body.record.amountCorrection.correctedAmount, 850);
+    assert.equal(corrected.body.record.amountCorrection.correctedBy.id, 'admin-1');
+    assert.equal(corrected.body.record.amountCorrectionCount, 1);
+    assert.equal(isEffectivePaymentEntryStatus(corrected.body.record), false);
+
+    const correctedStored = stores.payments['ACC-100'].history.find((entry) => entry.id === submitted.body.id);
+    assert.equal(correctedStored.amount, 850);
+    assert.equal(correctedStored.status, 'pending_approval');
+    assert.equal(correctedStored.fingerprint, 'acc-100|col-ref-001|payment|1000.00');
+    assert.equal(correctedStored.amountCorrections.length, 1);
+    assert.equal(correctedStored.amountCorrections[0].reason, 'Collector entered 1000 instead of the counted Cash amount.');
+
+    const remittanceAfterCorrection = await request('/remittances', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(remittanceAfterCorrection.status, 200);
+    assert.equal(remittanceAfterCorrection.body.records[0].paymentSummary.pendingAmount, 850);
+    assert.equal(remittanceAfterCorrection.body.records[0].paymentSummary.totalAmount, 850);
+    assert.equal(
+      stores.collector_remittances.records[0].payments[0].amount,
+      1000,
+      'the captured remittance snapshot remains unchanged while hydration uses the correction'
+    );
+
+    const originalUploadRetryAfterCorrection = await request('/ACC-100', {
+      method: 'POST',
+      body: JSON.stringify(payment)
+    });
+    assert.equal(originalUploadRetryAfterCorrection.status, 200);
+    assert.equal(originalUploadRetryAfterCorrection.body.replayed, true);
+    assert.equal(originalUploadRetryAfterCorrection.body.id, submitted.body.id);
+    assert.equal(originalUploadRetryAfterCorrection.body.amount, 850);
+    assert.equal(stores.payments['ACC-100'].history.length, 1);
+
+    const pendingAfterCorrection = await request('/approvals', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(pendingAfterCorrection.status, 200);
+    assert.equal(pendingAfterCorrection.body.records[0].amount, 850);
+    assert.equal(pendingAfterCorrection.body.records[0].originalAmount, 1000);
+    assert.equal(pendingAfterCorrection.body.records[0].amountCorrectionCount, 1);
 
     const collectorCannotApprove = await request(`/approvals/${encodeURIComponent(submitted.body.id)}/approve`, {
       method: 'POST'
@@ -347,6 +610,18 @@ async function run() {
       body: JSON.stringify({})
     });
     assert.equal(secondApproval.status, 409);
+
+    const approvedAmountCannotChange = await request(`/approvals/${encodeURIComponent(submitted.body.id)}/amount`, {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 850,
+        amount: 800,
+        reason: 'Approved payments must be immutable.'
+      })
+    });
+    assert.equal(approvedAmountCannotChange.status, 409);
+    assert.equal(approvedAmountCannotChange.body.code, 'COLLECTOR_PAYMENT_AMOUNT_NOT_PENDING');
 
     const rejectCandidate = await request('/ACC-100', {
       method: 'POST',
@@ -452,7 +727,7 @@ async function run() {
     assert.equal(confirmedRemittance.body.paymentApproval.approved, 0);
     assert.equal(confirmedRemittance.body.paymentApproval.alreadyApproved, 2);
     assert.equal(confirmedRemittance.body.paymentApproval.pending, 0);
-    assert.equal(confirmedRemittance.body.record.totalAmount, 2000);
+    assert.equal(confirmedRemittance.body.record.totalAmount, 1850);
     assert.equal(confirmedRemittance.body.record.rejectedTotalAmount, 1000);
     assert.equal(confirmedRemittance.body.record.adminNote, 'Daily cash verified.');
     const combinedStored = stores.payments['ACC-100'].history.find((entry) => entry.id === combinedCandidate.body.id);
@@ -483,7 +758,7 @@ async function run() {
     assert.equal(archivedRemittance.body.record.status, 'remitted');
     assert.ok(archivedRemittance.body.record.archivedAt);
     assert.equal(archivedRemittance.body.record.archivedBy.id, 'admin-1');
-    assert.equal(archivedRemittance.body.record.totalAmount, 2000);
+    assert.equal(archivedRemittance.body.record.totalAmount, 1850);
     assert.equal(archivedRemittance.body.record.payments.length, 3);
     assert.equal(archivedRemittance.body.record.archiveHistory.length, 1);
     assert.equal(archivedRemittance.body.record.archiveHistory[0].action, 'archived');
@@ -516,7 +791,7 @@ async function run() {
     assert.equal(restoredRemittance.body.replayed, false);
     assert.equal(restoredRemittance.body.record.status, 'remitted');
     assert.equal(restoredRemittance.body.record.archivedAt, null);
-    assert.equal(restoredRemittance.body.record.totalAmount, 2000);
+    assert.equal(restoredRemittance.body.record.totalAmount, 1850);
     assert.equal(restoredRemittance.body.record.payments.length, 3);
     assert.equal(restoredRemittance.body.record.archiveHistory.length, 2);
     assert.equal(restoredRemittance.body.record.archiveHistory[1].action, 'restored');
@@ -566,7 +841,7 @@ async function run() {
     assert.equal(deletedRemittance.body.deletion.remittanceId, remittanceId);
     assert.equal(deletedRemittance.body.deletion.reason, 'Duplicate archived office copy.');
     assert.equal(deletedRemittance.body.deletion.deletedBy.id, 'admin-1');
-    assert.equal(deletedRemittance.body.deletion.totalAmount, 2000);
+    assert.equal(deletedRemittance.body.deletion.totalAmount, 1850);
     assert.equal(deletedRemittance.body.deletion.paymentCount, 3);
     assert.equal(stores.collector_remittances.records.length, 0);
     assert.equal(stores.collector_remittances.deletedRecords.length, 1);
@@ -615,6 +890,181 @@ async function run() {
     assert.equal(stores.collector_remittances.records.length, 0);
     assert.deepEqual(stores.payments, paymentsBeforeBatchDeletion);
 
+    const prepaidPayment = {
+      amount: 400,
+      date: '2026-08-19',
+      recordedAt: '2026-08-19T09:30:00+08:00',
+      reference: 'PREPAID-CORRECTION-001',
+      paymentMethod: 'Cash',
+      kind: 'payment',
+      clientPaymentId: 'prepaid-correction-001'
+    };
+    const prepaidSubmission = await request('/ACC-PREPAID', {
+      method: 'POST',
+      body: JSON.stringify(prepaidPayment)
+    });
+    assert.equal(prepaidSubmission.status, 201);
+    const secondPrepaidPayment = {
+      ...prepaidPayment,
+      reference: 'PREPAID-CORRECTION-002',
+      clientPaymentId: 'prepaid-correction-002'
+    };
+    const secondPrepaidSubmission = await request('/ACC-PREPAID', {
+      method: 'POST',
+      body: JSON.stringify(secondPrepaidPayment)
+    });
+    assert.equal(secondPrepaidSubmission.status, 201);
+    assert.notEqual(secondPrepaidSubmission.body.id, prepaidSubmission.body.id);
+    const prepaidHistory = stores.payments['ACC-PREPAID'].history;
+    assert.equal(prepaidHistory.length, 4);
+    let prepaidCredit = prepaidHistory.find((entry) => entry.id === prepaidSubmission.body.id);
+    let prepaidCharge = prepaidHistory.find((entry) => (
+      entry.fingerprint === 'acc-prepaid|prepaid-correction-001|charge|400.00'
+    ));
+    let secondPrepaidCredit = prepaidHistory.find((entry) => entry.id === secondPrepaidSubmission.body.id);
+    let secondPrepaidCharge = prepaidHistory.find((entry) => (
+      entry.fingerprint === 'acc-prepaid|prepaid-correction-002|charge|400.00'
+    ));
+    assert.ok(prepaidCharge);
+    assert.ok(secondPrepaidCharge);
+    assert.equal(prepaidCredit.amount, 400);
+    assert.equal(prepaidCharge.amount, 400);
+    assert.equal(secondPrepaidCredit.amount, 400);
+    assert.equal(secondPrepaidCharge.amount, 400);
+    assert.equal(prepaidCharge.recordedAt, secondPrepaidCharge.recordedAt);
+    assert.notEqual(prepaidCharge.fingerprint, secondPrepaidCharge.fingerprint);
+
+    const prepaidCorrection = await request(
+      `/approvals/${encodeURIComponent(prepaidSubmission.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({
+          expectedAmount: 400,
+          amount: 350,
+          reason: 'Counted Cash is lower than the Collector entry.'
+        })
+      }
+    );
+    assert.equal(prepaidCorrection.status, 200);
+    assert.equal(prepaidCorrection.body.pairedChargeUpdated, true);
+    prepaidCredit = stores.payments['ACC-PREPAID'].history.find((entry) => entry.id === prepaidSubmission.body.id);
+    prepaidCharge = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.fingerprint === 'acc-prepaid|prepaid-correction-001|charge|400.00'
+    ));
+    secondPrepaidCredit = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.id === secondPrepaidSubmission.body.id
+    ));
+    secondPrepaidCharge = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.fingerprint === 'acc-prepaid|prepaid-correction-002|charge|400.00'
+    ));
+    assert.equal(prepaidCredit.amount, 350);
+    assert.equal(prepaidCharge.amount, 350);
+    assert.equal(secondPrepaidCredit.amount, 400);
+    assert.equal(secondPrepaidCharge.amount, 400);
+    assert.equal(prepaidCredit.fingerprint, 'acc-prepaid|prepaid-correction-001|payment|400.00');
+    assert.equal(prepaidCharge.fingerprint, 'acc-prepaid|prepaid-correction-001|charge|400.00');
+    assert.equal(secondPrepaidCredit.status, 'pending_approval');
+    assert.equal(secondPrepaidCharge.status, 'pending_approval');
+    assert.deepEqual(secondPrepaidCredit.amountCorrections || [], []);
+    assert.equal(stores.payments['ACC-PREPAID'].history.length, 4);
+
+    const prepaidOriginalRetry = await request('/ACC-PREPAID', {
+      method: 'POST',
+      body: JSON.stringify(prepaidPayment)
+    });
+    assert.equal(prepaidOriginalRetry.status, 200);
+    assert.equal(prepaidOriginalRetry.body.replayed, true);
+    assert.equal(stores.payments['ACC-PREPAID'].history.length, 4);
+
+    const prepaidApproval = await request(
+      `/approvals/${encodeURIComponent(prepaidSubmission.body.id)}/approve`,
+      {
+        method: 'POST',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({})
+      }
+    );
+    assert.equal(prepaidApproval.status, 200);
+    prepaidCredit = stores.payments['ACC-PREPAID'].history.find((entry) => entry.id === prepaidSubmission.body.id);
+    prepaidCharge = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.fingerprint === 'acc-prepaid|prepaid-correction-001|charge|400.00'
+    ));
+    secondPrepaidCredit = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.id === secondPrepaidSubmission.body.id
+    ));
+    secondPrepaidCharge = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.fingerprint === 'acc-prepaid|prepaid-correction-002|charge|400.00'
+    ));
+    assert.equal(prepaidCredit.status, 'approved');
+    assert.equal(prepaidCharge.status, 'approved');
+    assert.equal(secondPrepaidCredit.status, 'pending_approval');
+    assert.equal(secondPrepaidCharge.status, 'pending_approval');
+
+    secondPrepaidCharge.fingerprint = '';
+    const duplicateLegacyPrepaidCharge = {
+      ...structuredClone(secondPrepaidCharge),
+      id: 'legacy-duplicate-prepaid-charge',
+      fingerprint: ''
+    };
+    stores.payments['ACC-PREPAID'].history.push(duplicateLegacyPrepaidCharge);
+    const ambiguousLegacyPrepaidCorrection = await request(
+      `/approvals/${encodeURIComponent(secondPrepaidSubmission.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({
+          expectedAmount: 400,
+          amount: 375,
+          reason: 'This must fail while duplicate legacy charges are unresolved.'
+        })
+      }
+    );
+    assert.equal(ambiguousLegacyPrepaidCorrection.status, 409);
+    assert.equal(
+      ambiguousLegacyPrepaidCorrection.body.code,
+      'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS'
+    );
+    secondPrepaidCredit = stores.payments['ACC-PREPAID'].history.find((entry) => (
+      entry.id === secondPrepaidSubmission.body.id
+    ));
+    const ambiguousLegacyCharges = stores.payments['ACC-PREPAID'].history.filter((entry) => (
+      entry.id === secondPrepaidCharge.id || entry.id === duplicateLegacyPrepaidCharge.id
+    ));
+    assert.equal(secondPrepaidCredit.amount, 400);
+    assert.equal(secondPrepaidCredit.amountCorrections?.length || 0, 0);
+    assert.deepEqual(ambiguousLegacyCharges.map((entry) => entry.amount), [400, 400]);
+    const ambiguousLegacyApproval = await request(
+      `/approvals/${encodeURIComponent(secondPrepaidSubmission.body.id)}/approve`,
+      {
+        method: 'POST',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({})
+      }
+    );
+    assert.equal(ambiguousLegacyApproval.status, 409);
+    assert.equal(ambiguousLegacyApproval.body.code, 'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS');
+    const ambiguousLegacyRejection = await request(
+      `/approvals/${encodeURIComponent(secondPrepaidSubmission.body.id)}/reject`,
+      {
+        method: 'POST',
+        headers: { 'x-test-actor': 'admin' },
+        body: JSON.stringify({ reason: 'Duplicate legacy pair must be resolved first.' })
+      }
+    );
+    assert.equal(ambiguousLegacyRejection.status, 409);
+    assert.equal(ambiguousLegacyRejection.body.code, 'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS');
+    assert.deepEqual(
+      stores.payments['ACC-PREPAID'].history
+        .filter((entry) => (
+          entry.id === secondPrepaidSubmission.body.id
+          || entry.id === secondPrepaidCharge.id
+          || entry.id === duplicateLegacyPrepaidCharge.id
+        ))
+        .map((entry) => entry.status),
+      ['pending_approval', 'pending_approval', 'pending_approval']
+    );
+
     relationalPaymentRows.push({
       id: 'rel-pay-001',
       branchId: 'branch-1',
@@ -639,6 +1089,69 @@ async function run() {
       xenditId: null
     });
     relationalReady = true;
+    const relationalCorrection = await request('/approvals/rel-pay-001/amount', {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 1000,
+        amount: 875,
+        reason: 'Relational Cash count correction.'
+      })
+    });
+    assert.equal(relationalCorrection.status, 200);
+    assert.equal(relationalCorrection.body.record.amount, 875);
+    assert.equal(relationalPaymentRows[0].amount, 875);
+    assert.equal(relationalPaymentRows[0].fingerprint, 'acc-100|rel-ref-001|payment|1000.00');
+    assert.equal(relationalCorrectionRows.length, 1);
+    assert.equal(relationalCorrectionRows[0].paymentEntryId, 'rel-pay-001');
+    assert.equal(relationalCorrectionRows[0].previousAmount, 1000);
+    assert.equal(relationalCorrectionRows[0].correctedAmount, 875);
+    assert.equal(relationalCorrectionRows[0].reason, 'Relational Cash count correction.');
+    assert.equal(relationalCorrectionRows[0].correctedById, 'admin-1');
+    const relationalPendingAfterCorrection = await request('/approvals', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(relationalPendingAfterCorrection.status, 200);
+    assert.equal(relationalPendingAfterCorrection.body.records.length, 1);
+    assert.equal(relationalPendingAfterCorrection.body.records[0].amount, 875);
+    assert.equal(relationalPendingAfterCorrection.body.records[0].originalAmount, 1000);
+    assert.equal(relationalPendingAfterCorrection.body.records[0].amountCorrectionCount, 1);
+    assert.equal(
+      relationalPendingAfterCorrection.body.records[0].amountCorrection.reason,
+      'Relational Cash count correction.'
+    );
+    const secondRelationalCorrection = await request('/approvals/rel-pay-001/amount', {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 875,
+        amount: 900,
+        reason: 'Second verified Cash count correction.'
+      })
+    });
+    assert.equal(secondRelationalCorrection.status, 200);
+    assert.equal(secondRelationalCorrection.body.record.amount, 900);
+    assert.equal(secondRelationalCorrection.body.record.originalAmount, 1000);
+    assert.equal(secondRelationalCorrection.body.record.amountCorrectionCount, 2);
+    assert.equal(
+      secondRelationalCorrection.body.record.amountCorrection.reason,
+      'Second verified Cash count correction.'
+    );
+    assert.equal(relationalPaymentRows[0].amount, 900);
+    assert.equal(relationalCorrectionRows.length, 2);
+    assert.equal(relationalCorrectionRows[1].previousAmount, 875);
+    assert.equal(relationalCorrectionRows[1].correctedAmount, 900);
+    const relationalPendingAfterSecondCorrection = await request('/approvals', {
+      headers: { 'x-test-actor': 'admin' }
+    });
+    assert.equal(relationalPendingAfterSecondCorrection.status, 200);
+    assert.equal(relationalPendingAfterSecondCorrection.body.records[0].amount, 900);
+    assert.equal(relationalPendingAfterSecondCorrection.body.records[0].originalAmount, 1000);
+    assert.equal(relationalPendingAfterSecondCorrection.body.records[0].amountCorrectionCount, 2);
+    assert.equal(
+      relationalPendingAfterSecondCorrection.body.records[0].amountCorrection.reason,
+      'Second verified Cash count correction.'
+    );
     const relationalApproval = await request('/approvals/rel-pay-001/approve', {
       method: 'POST',
       headers: { 'x-test-actor': 'admin' },
@@ -650,6 +1163,130 @@ async function run() {
     assert.equal(relationalReviewRows[0].paymentEntryId, 'rel-pay-001');
     assert.equal(relationalReviewRows[0].status, 'approved');
     assert.equal(relationalReviewRows[0].reviewedById, 'admin-1');
+
+    const ambiguousRelationalPayment = {
+      id: 'rel-prepaid-ambiguous',
+      branchId: 'branch-1',
+      accountNumber: 'ACC-PREPAID',
+      amount: 400,
+      date: '2026-08-20',
+      kind: 'payment',
+      direction: 'credit',
+      reference: 'REL-PREPAID-AMBIGUOUS',
+      orNumber: null,
+      description: 'Relational prepaid collector payment',
+      type: 'payment',
+      recordedAt: '2026-08-20 09:30:00',
+      recordedByUserId: 'collector-1',
+      recordedByUsername: 'collector.one',
+      recordedByName: 'Collector One',
+      recordedByRole: 'Collector',
+      payer: 'Prepaid Approval Client',
+      status: 'pending_approval',
+      paymentMethod: 'Cash',
+      fingerprint: 'acc-prepaid|rel-prepaid-ambiguous|payment|400.00',
+      xenditId: null
+    };
+    const ambiguousRelationalCharge = {
+      ...ambiguousRelationalPayment,
+      id: 'rel-prepaid-ambiguous-charge-1',
+      kind: 'charge',
+      direction: 'debit',
+      description: 'Prepaid renewal charge',
+      type: 'debit',
+      fingerprint: null
+    };
+    relationalPaymentRows.push(
+      ambiguousRelationalPayment,
+      ambiguousRelationalCharge,
+      { ...ambiguousRelationalCharge, id: 'rel-prepaid-ambiguous-charge-2' }
+    );
+    const correctionCountBeforeAmbiguity = relationalCorrectionRows.length;
+    const ambiguousRelationalCorrection = await request('/approvals/rel-prepaid-ambiguous/amount', {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 400,
+        amount: 350,
+        reason: 'Relational duplicate pairs must roll back without changing the ledger.'
+      })
+    });
+    assert.equal(ambiguousRelationalCorrection.status, 409);
+    assert.equal(
+      ambiguousRelationalCorrection.body.code,
+      'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS'
+    );
+    assert.equal(relationalCorrectionRows.length, correctionCountBeforeAmbiguity);
+    assert.deepEqual(
+      relationalPaymentRows
+        .filter((entry) => String(entry.id).startsWith('rel-prepaid-ambiguous'))
+        .map((entry) => entry.amount),
+      [400, 400, 400]
+    );
+    const ambiguousRelationalApproval = await request('/approvals/rel-prepaid-ambiguous/approve', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(ambiguousRelationalApproval.status, 409);
+    assert.equal(
+      ambiguousRelationalApproval.body.code,
+      'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS'
+    );
+    const ambiguousRelationalRejection = await request('/approvals/rel-prepaid-ambiguous/reject', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ reason: 'Duplicate relational pair must be resolved first.' })
+    });
+    assert.equal(ambiguousRelationalRejection.status, 409);
+    assert.equal(
+      ambiguousRelationalRejection.body.code,
+      'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS'
+    );
+    assert.deepEqual(
+      relationalPaymentRows
+        .filter((entry) => String(entry.id).startsWith('rel-prepaid-ambiguous'))
+        .map((entry) => entry.status),
+      ['pending_approval', 'pending_approval', 'pending_approval']
+    );
+    relationalPaymentRows.find((entry) => (
+      entry.id === 'rel-prepaid-ambiguous-charge-1'
+    )).fingerprint = 'acc-prepaid|rel-prepaid-ambiguous|charge|400.00';
+    const mixedRelationalCorrection = await request('/approvals/rel-prepaid-ambiguous/amount', {
+      method: 'PATCH',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({
+        expectedAmount: 400,
+        amount: 350,
+        reason: 'Mixed exact and legacy pairs must also remain unresolved.'
+      })
+    });
+    assert.equal(mixedRelationalCorrection.status, 409);
+    assert.equal(mixedRelationalCorrection.body.code, 'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS');
+    const mixedRelationalApproval = await request('/approvals/rel-prepaid-ambiguous/approve', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({})
+    });
+    assert.equal(mixedRelationalApproval.status, 409);
+    assert.equal(mixedRelationalApproval.body.code, 'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS');
+    const mixedRelationalRejection = await request('/approvals/rel-prepaid-ambiguous/reject', {
+      method: 'POST',
+      headers: { 'x-test-actor': 'admin' },
+      body: JSON.stringify({ reason: 'Mixed duplicate pair must be resolved first.' })
+    });
+    assert.equal(mixedRelationalRejection.status, 409);
+    assert.equal(mixedRelationalRejection.body.code, 'COLLECTOR_PAYMENT_PREPAID_PAIR_AMBIGUOUS');
+    assert.deepEqual(
+      relationalPaymentRows
+        .filter((entry) => String(entry.id).startsWith('rel-prepaid-ambiguous'))
+        .map((entry) => [entry.amount, entry.status]),
+      [
+        [400, 'pending_approval'],
+        [400, 'pending_approval'],
+        [400, 'pending_approval']
+      ]
+    );
     relationalReady = false;
 
     let gcashImportIndex = 0;
@@ -759,6 +1396,24 @@ async function run() {
       'gcash-collector-ok-2'
     );
     assert.equal(gcashSubmission.status, 201);
+    const explicitGcashAmountLocked = await request(
+      `/approvals/${encodeURIComponent(gcashSubmission.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin-gcash' },
+        body: JSON.stringify({
+          expectedAmount: 800,
+          amount: 750,
+          reason: 'GCash amount must stay tied to imported history.'
+        })
+      }
+    );
+    assert.equal(explicitGcashAmountLocked.status, 409);
+    assert.equal(explicitGcashAmountLocked.body.code, 'COLLECTOR_PAYMENT_AMOUNT_NOT_EDITABLE');
+    assert.equal(
+      stores.payments['ACC-GCASH'].history.find((entry) => entry.id === gcashSubmission.body.id).amount,
+      800
+    );
     gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });
     officialTransaction = findOfficialGcashTransaction(gcashHistory, 'GCASH-COLLECTOR-OK-2');
     assert.equal(officialTransaction.assignment, null);
@@ -877,6 +1532,23 @@ async function run() {
       })
     });
     assert.equal(mislabeledSubmission.status, 201);
+    const officialReferenceCashAmountLocked = await request(
+      `/approvals/${encodeURIComponent(mislabeledSubmission.body.id)}/amount`,
+      {
+        method: 'PATCH',
+        headers: { 'x-test-actor': 'admin-gcash' },
+        body: JSON.stringify({
+          expectedAmount: 600,
+          amount: 550,
+          reason: 'Official GCash-linked Cash entry must stay immutable.'
+        })
+      }
+    );
+    assert.equal(officialReferenceCashAmountLocked.status, 409);
+    assert.equal(
+      officialReferenceCashAmountLocked.body.code,
+      'COLLECTOR_PAYMENT_AMOUNT_GCASH_IMMUTABLE'
+    );
     const mislabeledApproval = await approveCollectorGcash(mislabeledSubmission.body.id);
     assert.equal(mislabeledApproval.status, 200);
     gcashHistory = await actualGcashHistoryStore.listGcashTransactionHistory({ branchId: 1, all: true });

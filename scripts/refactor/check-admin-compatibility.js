@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const assert = require('assert');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -22,6 +22,7 @@ const backendPairs = [
   ['activity-log.js', 'activity-log'],
   ['app-downloads-store.js', 'app-downloads-store'],
   ['app-downloads.js', 'app-downloads'],
+  ['collector-app-updates.js', 'collector-app-updates'],
   ['auth.js', 'auth'],
   ['business-profile.js', 'business-profile'],
   ['factory-reset.js', 'factory-reset'],
@@ -124,6 +125,8 @@ const webRoot = getModuleWebRoot('admin', { required: true });
 const webFiles = [
   'accounts.html',
   'accounts.js',
+  'collector-app-update.html',
+  'collector-app-update.js',
   'css/accounts.css',
   'css/factory-reset.css',
   'css/login.css',
@@ -143,6 +146,58 @@ webFiles.forEach((relativePath) => {
   );
 });
 console.log(`PASS Admin web root (${webFiles.length} files)`);
+
+const collectorUpdateModule = require(path.join(
+  projectRoot,
+  'Features/modules/admin/backend/collector-app-updates'
+));
+const collectorUpdateBackendSource = fs.readFileSync(path.join(
+  projectRoot,
+  'Features/modules/admin/backend/collector-app-updates.js'
+), 'utf8');
+const collectorUpdateHtml = fs.readFileSync(path.join(webRoot, 'collector-app-update.html'), 'utf8');
+const collectorUpdateJs = fs.readFileSync(path.join(webRoot, 'collector-app-update.js'), 'utf8');
+assert.strictEqual(collectorUpdateModule.PACKAGE_NAME, 'com.example.myapplication');
+assert.strictEqual(collectorUpdateModule.MAX_APK_BYTES, 80 * 1024 * 1024);
+assert.strictEqual(
+  collectorUpdateModule.PUBLIC_UPDATE_BASE_URL,
+  'http://192.168.100.9:3000/collector-updates'
+);
+assert.strictEqual(typeof collectorUpdateModule.publicRouter, 'function');
+assert.strictEqual(typeof collectorUpdateModule.adminRouter, 'function');
+assert(collectorUpdateBackendSource.includes('adminRouter.use(requireAdmin)'));
+assert(collectorUpdateHtml.includes('id="collectorUpdateForm"'));
+assert(collectorUpdateHtml.includes('accept=".apk,application/vnd.android.package-archive"'));
+assert(collectorUpdateHtml.includes('id="collectorUpdateSourceUrl"'));
+assert(collectorUpdateHtml.includes('aria-atomic="true"'));
+assert(
+  collectorUpdateHtml.indexOf('layout.js?v=3.9')
+    < collectorUpdateHtml.indexOf('collector-app-update.js?v=1.3'),
+  'Shared confirmation helpers must load before the Collector OTA page controller'
+);
+assert(collectorUpdateJs.includes("fetch('/api/collector-app-updates'"));
+assert(collectorUpdateJs.includes("sourceUrl ? 'publish-url' : 'publish'"));
+assert(collectorUpdateJs.includes('window.appConfirm'));
+assert(collectorUpdateJs.includes("refs.form.setAttribute('aria-busy'"));
+assert(collectorUpdateJs.includes("element.removeAttribute('href')"));
+assert(collectorUpdateJs.includes('if (loaded && announce) refs.refresh.focus()'));
+assert(collectorUpdateJs.includes('if (published) refs.publish.focus()'));
+assert.strictEqual(
+  collectorUpdateModule.validateApkSourceUrl(
+    'https://raw.githubusercontent.com/ArchieCDumayag/CollectorApp/main/releases/app.apk'
+  ),
+  'https://raw.githubusercontent.com/ArchieCDumayag/CollectorApp/main/releases/app.apk'
+);
+assert.throws(
+  () => collectorUpdateModule.validateApkSourceUrl('https://127.0.0.1/private.apk'),
+  /raw CollectorApp GitHub HTTPS URL/
+);
+execFileSync(
+  process.execPath,
+  [path.join(projectRoot, 'Features/modules/admin/tests/collector-app-updates.test.js')],
+  { cwd: projectRoot, stdio: 'inherit' }
+);
+console.log('PASS Collector Android OTA manifest, Admin authorization, upload page, and HTTP delivery contract');
 
 const accountsHtml = fs.readFileSync(path.join(webRoot, 'accounts.html'), 'utf8');
 const accountsJs = fs.readFileSync(path.join(webRoot, 'accounts.js'), 'utf8');
@@ -171,6 +226,20 @@ assert(systemUpdateServerSource.includes("['merge-base', '--is-ancestor', origin
 assert(systemUpdateServerSource.includes("['update-ref', backupRef, safeHead]"));
 assert(systemUpdateServerSource.includes("['reset', '--hard', originalHead]"));
 assert(systemUpdateServerSource.includes("['install', '--omit=dev', '--no-package-lock']"));
+assert(systemUpdateServerSource.includes('COLLECTOR_APP_UPDATES_LAN_ENABLED'));
+assert(systemUpdateServerSource.includes("String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'"));
+assert(systemUpdateServerSource.includes("? adminBackend.load('collectorAppUpdates')"));
+assert(systemUpdateServerSource.includes('if (collectorAppUpdates) {'));
+assert(systemUpdateServerSource.includes("app.use('/collector-updates', requireCollectorAppUpdatesLanAccess"));
+assert(systemUpdateServerSource.includes("'cf-connecting-ip'"));
+assert(systemUpdateServerSource.includes("'x-forwarded-proto'"));
+assert(systemUpdateServerSource.includes('hasUnsafeWindowsStaticPathSyntax'));
+assert(systemUpdateServerSource.includes('normalizeRequestBasename(req.path)'));
+assert(systemUpdateServerSource.includes('pageToCheck = raw.toLowerCase()'));
+assert(systemUpdateServerSource.includes("pageToCheck === 'collector-app-update.html'"));
+assert(systemUpdateServerSource.includes("'/api/collector-app-updates'"));
+assert(systemUpdateServerSource.includes('collectorAppUpdateLimiter'));
+assert(systemUpdateServerSource.includes('application/vnd.android.package-archive'));
 console.log('PASS Admin system update confirmation, progress, fast-forward, recovery, and rollback safeguards');
 assert(accountsHtml.includes('id="system-update-check"'));
 assert(accountsJs.includes('systemUpdateCheckBtn.disabled = isRunning || !isEnabled || unableToVerify || hasDiverged || !hasUpdate;'));

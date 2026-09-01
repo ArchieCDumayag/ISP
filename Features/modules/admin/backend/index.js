@@ -5,6 +5,7 @@ const entries = Object.freeze({
   activityLog: './activity-log',
   appDownloadsStore: './app-downloads-store',
   appDownloads: './app-downloads',
+  collectorAppUpdates: './collector-app-updates',
   auth: './auth',
   businessProfile: './business-profile',
   factoryReset: './factory-reset',

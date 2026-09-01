@@ -375,6 +375,27 @@ body.layout-fluid-vertical .collectors-dashboard-grid .collectors-board.card {
     margin: 0 !important;
 }
 
+.collector-global-message {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 21000;
+    width: min(26rem, calc(100vw - 2rem));
+    pointer-events: none;
+}
+
+.collector-global-message:empty {
+    display: none;
+}
+
+.collector-global-message .toast {
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    pointer-events: auto;
+}
+
 .collectors-board .collector-approval-panel {
     display: grid;
     gap: .5rem;
@@ -1244,7 +1265,8 @@ body.layout-fluid-vertical .collectors-dashboard-grid .collectors-board.card {
     --app-form-modal-width: 720px;
 }
 
-.collectors-tabler-modal.collector-payment-reject-modal {
+.collectors-tabler-modal.collector-payment-reject-modal,
+.collectors-tabler-modal.collector-payment-amount-edit-modal {
     --app-form-modal-width: 460px;
 }
 
@@ -1410,24 +1432,28 @@ body.theme-dark .collector-schedule-payment-details,
     gap: .5rem;
 }
 
-.collector-payment-reject-modal__body {
+.collector-payment-reject-modal__body,
+.collector-payment-amount-edit-modal__body {
     display: grid;
     gap: .5rem;
 }
 
-.collector-payment-reject-modal__body .form-label {
+.collector-payment-reject-modal__body .form-label,
+.collector-payment-amount-edit-modal__body .form-label {
     margin: 0;
     font-size: .75rem;
     font-weight: 600;
 }
 
-.collector-payment-reject-modal__body textarea.form-control {
+.collector-payment-reject-modal__body textarea.form-control,
+.collector-payment-amount-edit-modal__body textarea.form-control {
     min-height: 6rem;
     resize: vertical;
     font-size: .8125rem;
 }
 
-.collector-payment-reject-summary {
+.collector-payment-reject-summary,
+.collector-payment-amount-edit-summary {
     margin: 0;
     padding: .5rem .625rem;
     font-size: .75rem;
@@ -1435,17 +1461,25 @@ body.theme-dark .collector-schedule-payment-details,
 }
 
 .collector-payment-reject-modal__body .form-hint,
-.collector-payment-reject-modal__body .modal-message {
+.collector-payment-reject-modal__body .modal-message,
+.collector-payment-amount-edit-modal__body .form-hint,
+.collector-payment-amount-edit-modal__body .modal-message {
     min-height: 1rem;
     margin: 0;
     font-size: .6875rem;
 }
 
-.collector-payment-reject-modal__actions {
+.collector-payment-reject-modal__actions,
+.collector-payment-amount-edit-modal__actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: .5rem;
+}
+
+.collector-payment-amount-edit-modal__body .input-group-text,
+.collector-payment-amount-edit-modal__body input.form-control {
+    font-size: .8125rem;
 }
 
 .assignment-modal__body {
@@ -2273,6 +2307,17 @@ body.theme-dark .collectors-board .collector-approval-payment-field > small,
     margin: 0;
 }
 
+.collectors-payments-card .collector-approval-payment-correction {
+    color: var(--tblr-warning, #f59f00);
+    font-size: .625rem;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+}
+
 .collectors-payments-card .collector-approval-action-menu {
     position: relative;
     grid-column: 4;
@@ -2313,6 +2358,11 @@ body.theme-dark .collectors-board .collector-approval-payment-field > small,
     border-radius: .25rem;
     background: transparent;
     font-size: .6875rem;
+}
+
+.collectors-payments-card .collector-approval-action-menu__dropdown .dropdown-item[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: .65;
 }
 
 .collectors-payments-card .collector-payment-pagination {

@@ -248,6 +248,28 @@ CREATE TABLE IF NOT EXISTS payment_entries (
   CONSTRAINT fk_payments_customer FOREIGN KEY (account_number) REFERENCES customers(account_number) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS collector_payment_amount_corrections (
+  correction_order BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  correction_id VARCHAR(64) NOT NULL,
+  payment_entry_id VARCHAR(64) NOT NULL,
+  branch_id INT NOT NULL,
+  account_number VARCHAR(20) NOT NULL,
+  previous_amount DECIMAL(12, 2) NOT NULL,
+  corrected_amount DECIMAL(12, 2) NOT NULL,
+  correction_reason VARCHAR(500) NOT NULL,
+  corrected_at DATETIME(3) NOT NULL,
+  corrected_by_user_id VARCHAR(32) NULL,
+  corrected_by_username VARCHAR(100) NULL,
+  corrected_by_name VARCHAR(100) NULL,
+  corrected_by_role VARCHAR(30) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_collector_payment_corrections_id (correction_id),
+  KEY idx_collector_payment_corrections_entry (payment_entry_id, correction_order),
+  KEY idx_collector_payment_corrections_branch (branch_id, corrected_at),
+  CONSTRAINT fk_collector_payment_corrections_entry
+    FOREIGN KEY (payment_entry_id) REFERENCES payment_entries(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS payment_confirmation_queue (
   id VARCHAR(64) PRIMARY KEY,
   branch_id INT NOT NULL,

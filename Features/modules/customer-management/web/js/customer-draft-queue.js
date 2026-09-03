@@ -43,6 +43,22 @@
     const reviewPonSelectionStatus = document.getElementById('draftReviewPonSelectionStatus');
     const reviewPonHelp = document.getElementById('draftReviewPonHelp');
     const reviewOnuSerial = document.getElementById('draftReviewOnuSerial');
+    const reviewCompleteServiceAddress = document.getElementById('draftReviewCompleteServiceAddress');
+    const reviewSharedMobileWarning = document.getElementById('draftReviewSharedMobileWarning');
+    const reviewSharedMobileMessage = document.getElementById('draftReviewSharedMobileMessage');
+    const reviewSharedMobileConfirmed = document.getElementById('draftReviewSharedMobileConfirmed');
+    const reviewSharedMobileReason = document.getElementById('draftReviewSharedMobileReason');
+    const reviewReferrerInput = document.getElementById('draftReviewReferrer');
+    const reviewReferrerOptions = document.getElementById('draftReviewReferrerOptions');
+    const reviewReferrerHelp = document.getElementById('draftReviewReferrerHelp');
+    const locationTechnicalDisplays = {
+        provinceCode: document.getElementById('draftReviewProvinceCodeDisplay'),
+        municipalityCode: document.getElementById('draftReviewMunicipalityCodeDisplay'),
+        barangayCode: document.getElementById('draftReviewBarangayCodeDisplay'),
+        gpsAccuracyMeters: document.getElementById('draftReviewGpsAccuracyDisplay'),
+        gpsCapturedAt: document.getElementById('draftReviewGpsCapturedAtDisplay'),
+        locationSource: document.getElementById('draftReviewLocationSourceDisplay')
+    };
 
     const savedPageSize = Number(localStorage.getItem('draftQueuePageSize'));
     const initialPageSize = Array.from(pageSizeSelect?.options || []).some((option) => Number(option.value) === savedPageSize)
@@ -54,8 +70,10 @@
         itemsById: new Map(),
         plans: [],
         coverageAreas: [],
+        customers: [],
         ponCandidates: [],
         ponOptionsLoading: false,
+        sharedMobileConflicts: [],
         activeId: '',
         queueStatus: String(statusSelect?.value || 'pending').trim().toLowerCase() || 'pending',
         searchTerm: '',
@@ -117,6 +135,157 @@
         if (/^09\d{9}$/.test(digits)) return digits;
         return fallbackToRaw ? original : '';
     };
+    const normalizeLookupText = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const getCustomerDisplayName = (customer = {}) => String(
+        customer.name
+        || [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' ')
+        || customer.accountNumber
+        || ''
+    ).trim();
+    const getReferrerDisplayValue = (customer = {}) => {
+        const accountNumber = String(customer.accountNumber || '').trim();
+        const name = getCustomerDisplayName(customer) || accountNumber;
+        return accountNumber ? `${name} — ${accountNumber}` : name;
+    };
+    const findReferrerSelection = (value) => {
+        const query = normalizeLookupText(value);
+        if (!query) return null;
+        return state.customers.find((customer) => [
+            customer.accountNumber,
+            getReferrerDisplayValue(customer)
+        ].some((candidate) => normalizeLookupText(candidate) === query)) || null;
+    };
+    const populateReferrerOptions = () => {
+        if (!reviewReferrerOptions) return;
+        const activeAccountNumber = String(reviewForm?.elements?.accountNumber?.value || '').trim();
+        reviewReferrerOptions.innerHTML = '';
+        state.customers
+            .filter((customer) => String(customer?.accountNumber || '').trim() !== activeAccountNumber)
+            .sort((left, right) => getCustomerDisplayName(left).localeCompare(getCustomerDisplayName(right)))
+            .forEach((customer) => {
+                const option = document.createElement('option');
+                option.value = getReferrerDisplayValue(customer);
+                reviewReferrerOptions.appendChild(option);
+            });
+    };
+    const syncReferrerLegacyFields = () => {
+        const value = String(reviewReferrerInput?.value || '').trim();
+        const selected = findReferrerSelection(value);
+        const accountField = reviewForm?.elements?.referralCustomerAccountNumber;
+        const nameField = reviewForm?.elements?.referralCustomerName;
+        const sourceField = reviewForm?.elements?.referralSourceType;
+        const referredByField = reviewForm?.elements?.referredBy;
+        if (!value) {
+            if (accountField) accountField.value = '';
+            if (nameField) nameField.value = '';
+            if (sourceField) sourceField.value = '';
+            if (referredByField) referredByField.value = '';
+            if (reviewReferrerHelp) reviewReferrerHelp.textContent = 'Optional. Select one existing customer; the account number is stored as the canonical referral.';
+            return null;
+        }
+        if (!selected) {
+            if (accountField) accountField.value = '';
+            if (nameField) nameField.value = '';
+            if (sourceField) sourceField.value = '';
+            if (referredByField) referredByField.value = '';
+            if (reviewReferrerHelp) reviewReferrerHelp.textContent = 'Select an exact customer from the suggestions.';
+            return null;
+        }
+        const accountNumber = String(selected.accountNumber || '').trim();
+        const name = getCustomerDisplayName(selected) || accountNumber;
+        if (accountField) accountField.value = accountNumber;
+        if (nameField) nameField.value = name;
+        if (sourceField) sourceField.value = 'customer';
+        if (referredByField) referredByField.value = name;
+        if (reviewReferrerInput) reviewReferrerInput.value = getReferrerDisplayValue(selected);
+        if (reviewReferrerHelp) reviewReferrerHelp.textContent = `Referral will be linked to account ${accountNumber}.`;
+        return selected;
+    };
+    const composeCompleteServiceAddress = (draft = {}) => {
+        const parts = [draft.serviceAddress || draft.street, draft.barangay, draft.municipality, draft.province]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean);
+        return parts.reduce((address, part) => {
+            if (!address) return part;
+            return normalizeLookupText(address).includes(normalizeLookupText(part))
+                ? address
+                : `${address}, ${part}`;
+        }, '');
+    };
+    const extractStreetFromCompleteAddress = (completeAddress, draft = {}) => {
+        const complete = String(completeAddress || '').trim();
+        if (!complete) return '';
+        const originalComplete = composeCompleteServiceAddress(draft);
+        if (normalizeLookupText(complete) === normalizeLookupText(originalComplete) && String(draft.street || '').trim()) {
+            return String(draft.street || '').trim();
+        }
+        const suffix = [draft.barangay, draft.municipality, draft.province]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+            .join(', ');
+        if (suffix && normalizeLookupText(complete).endsWith(normalizeLookupText(suffix))) {
+            return complete.slice(0, complete.length - suffix.length).replace(/[\s,]+$/, '').trim();
+        }
+        return complete;
+    };
+    const syncLocationTechnicalDisplays = (draft = {}) => {
+        const values = {
+            provinceCode: draft.provinceCode || '-',
+            municipalityCode: draft.municipalityCode || '-',
+            barangayCode: draft.barangayCode || '-',
+            gpsAccuracyMeters: draft.gpsAccuracyMeters == null || draft.gpsAccuracyMeters === ''
+                ? '-'
+                : `${draft.gpsAccuracyMeters} meters`,
+            gpsCapturedAt: draft.gpsCapturedAt ? formatDateTime(draft.gpsCapturedAt) : '-',
+            locationSource: draft.locationSource || '-'
+        };
+        Object.entries(locationTechnicalDisplays).forEach(([key, element]) => {
+            if (element) element.textContent = String(values[key] || '-');
+        });
+    };
+    const showSharedMobileWarning = (conflicts = []) => {
+        const safeConflicts = (Array.isArray(conflicts) ? conflicts : []).filter((entry) => entry?.accountNumber);
+        const signature = safeConflicts.map((entry) => String(entry.accountNumber || '')).sort().join('|');
+        if (reviewSharedMobileWarning?.dataset?.conflictSignature !== signature) {
+            if (reviewSharedMobileConfirmed) reviewSharedMobileConfirmed.checked = false;
+            if (reviewSharedMobileReason) reviewSharedMobileReason.value = '';
+        }
+        state.sharedMobileConflicts = safeConflicts;
+        if (!reviewSharedMobileWarning) return;
+        reviewSharedMobileWarning.dataset.conflictSignature = signature;
+        reviewSharedMobileWarning.hidden = safeConflicts.length === 0;
+        if (!safeConflicts.length) return;
+        const labels = safeConflicts.map((entry) => {
+            const accountNumber = String(entry.accountNumber || '').trim();
+            const name = String(entry.customerName || '').trim();
+            return name ? `${name} (Account ${accountNumber})` : `Account ${accountNumber}`;
+        });
+        if (reviewSharedMobileMessage) {
+            reviewSharedMobileMessage.textContent = `This mobile number is already used by ${labels.join(', ')}.`;
+        }
+    };
+    const syncSharedMobileWarning = () => {
+        const mobile = normalizePhilippineMobile(reviewContactNumberInput?.value || '', false);
+        const activeAccountNumber = String(reviewForm?.elements?.accountNumber?.value || '').trim();
+        if (!mobile) {
+            showSharedMobileWarning([]);
+            return [];
+        }
+        const conflicts = state.customers.filter((customer) => {
+            const accountNumber = String(customer?.accountNumber || '').trim();
+            if (!accountNumber || accountNumber === activeAccountNumber) return false;
+            const candidateMobile = normalizePhilippineMobile(
+                customer?.mobileRaw || customer?.mobile || customer?.contactNumber || '',
+                false
+            );
+            return candidateMobile && candidateMobile === mobile;
+        }).map((customer) => ({
+            accountNumber: String(customer.accountNumber || '').trim(),
+            customerName: getCustomerDisplayName(customer)
+        }));
+        showSharedMobileWarning(conflicts);
+        return conflicts;
+    };
     const normalizeCustomerStatusValue = (value, fallback = 'active') => {
         const raw = String(value || '').trim().toLowerCase();
         if (raw === 'force-active') return 'active';
@@ -151,7 +320,10 @@
             data = { ok: false, error: text || `Unexpected response (${response.status})` };
         }
         if (!response.ok || data.ok === false) {
-            throw new Error(data.error || data.message || `Request failed (${response.status})`);
+            const error = new Error(data.error || data.message || `Request failed (${response.status})`);
+            error.status = response.status;
+            error.data = data;
+            throw error;
         }
         return data;
     };
@@ -621,23 +793,36 @@
         const safeSelectedPort = String(selectedPort || '').trim();
         const candidate = state.ponCandidates.find((entry) => String(entry?.napId || '').trim() === safeNapId);
         reviewNapPortSelect.innerHTML = '';
-        reviewNapPortSelect.add(new Option(candidate ? 'Select available port' : 'No port data', ''));
+        reviewNapPortSelect.add(new Option(candidate ? 'Select port' : 'No port data', ''));
         const ports = Array.isArray(candidate?.ports) ? candidate.ports : [];
         ports.forEach((portEntry) => {
             const port = String(portEntry?.port || '').trim();
             if (!port) return;
             const isCurrent = safeNapId === String(reviewNapSelect?.dataset?.currentNapId || '')
                 && port === String(reviewNapPortSelect.dataset.currentPort || '');
-            const available = portEntry?.available === true || String(portEntry?.status || '') === 'available';
-            if (!available && !isCurrent) return;
-            const statusLabel = isCurrent
-                ? (available ? 'technician request, available now' : 'technician request, unavailable now')
-                : 'available';
-            reviewNapPortSelect.add(new Option(`Port ${port} — ${statusLabel}`, port));
+            const status = String(portEntry?.status || '').trim().toLowerCase();
+            const available = portEntry?.available === true || status === 'available';
+            const customerName = String(portEntry?.customerName || '').trim();
+            const customerAccountNumber = String(portEntry?.customerAccountNumber || '').trim();
+            const owner = [customerName, customerAccountNumber ? `Account ${customerAccountNumber}` : '']
+                .filter(Boolean)
+                .join(' — ');
+            let statusLabel = 'Available';
+            if (status === 'occupied') statusLabel = owner ? `Used by ${owner}` : 'Used by another customer';
+            else if (status === 'reserved') statusLabel = owner ? `Reserved for ${owner}` : 'Reserved / held';
+            else if (!available) statusLabel = candidate?.oltStatus && String(candidate.oltStatus).toLowerCase() !== 'online'
+                ? 'Unavailable — OLT offline'
+                : 'Unavailable';
+            if (isCurrent) statusLabel = `Technician requested — ${statusLabel}`;
+            const option = new Option(`Port ${port} — ${statusLabel}`, port);
+            option.disabled = !available;
+            reviewNapPortSelect.add(option);
         });
         if (safeSelectedPort && !Array.from(reviewNapPortSelect.options)
             .some((option) => option.value === safeSelectedPort)) {
-            reviewNapPortSelect.add(new Option(`Port ${safeSelectedPort} — technician request, availability unknown`, safeSelectedPort));
+            const unknownOption = new Option(`Port ${safeSelectedPort} — Technician requested — availability unknown`, safeSelectedPort);
+            unknownOption.disabled = true;
+            reviewNapPortSelect.add(unknownOption);
         }
         reviewNapPortSelect.value = safeSelectedPort;
     };
@@ -713,9 +898,21 @@
     };
 
     const readReviewFormPayload = () => {
+        const activeDraft = state.itemsById.get(state.activeId)?.draftData || {};
+        const completeAddress = String(reviewCompleteServiceAddress?.value || '').trim();
+        if (reviewForm?.elements?.street) {
+            reviewForm.elements.street.value = extractStreetFromCompleteAddress(completeAddress, {
+                ...activeDraft,
+                barangay: reviewForm.elements.barangay?.value,
+                municipality: reviewForm.elements.municipality?.value,
+                province: reviewForm.elements.province?.value
+            });
+        }
+        if (reviewForm?.elements?.serviceAddress) reviewForm.elements.serviceAddress.value = completeAddress;
+        syncReferrerLegacyFields();
         const formData = new FormData(reviewForm);
         const payload = Object.fromEntries(formData.entries());
-        const activeDraft = state.itemsById.get(state.activeId)?.draftData || {};
+        delete payload.completeServiceAddress;
         const fallbackPlanId = String(activeDraft.planId || '').trim();
         const fallbackPlanName = String(activeDraft.planName || '').trim();
         let matchedPlan = findPlanMatch({ planName: payload.planName });
@@ -940,6 +1137,15 @@
         populateCoverageAreaOptions();
     };
 
+    const loadCustomers = async () => {
+        const payload = await apiFetch('/api/customers');
+        state.customers = Array.isArray(payload.customers) ? payload.customers : [];
+        populateReferrerOptions();
+        if (state.activeId) {
+            syncSharedMobileWarning();
+        }
+    };
+
     const loadQueue = async () => {
         const status = state.queueStatus === 'in-progress' ? 'in-progress' : 'pending';
         const data = await apiFetch(`/api/customer-drafts?status=${encodeURIComponent(status)}&limit=100&offset=0`);
@@ -960,6 +1166,8 @@
         }
         reviewStatusMeta.textContent = '';
         reviewStatusMeta.hidden = true;
+        state.sharedMobileConflicts = [];
+        showSharedMobileWarning([]);
         if (reviewDueDateDisplay) reviewDueDateDisplay.value = '';
         setReviewPasswordVisibility(false);
         setModalState(reviewModal, false);
@@ -967,6 +1175,7 @@
 
     reviewContactNumberInput?.addEventListener('blur', () => {
         reviewContactNumberInput.value = normalizePhilippineMobile(reviewContactNumberInput.value);
+        syncSharedMobileWarning();
     });
 
     const setReviewMode = (item) => {
@@ -985,6 +1194,7 @@
         const draft = item.draftData || {};
         populatePlanOptions(draft.planName || '');
         reviewForm.elements.accountNumber.value = getDraftAccountNumber(item) || '';
+        populateReferrerOptions();
         reviewForm.elements.firstName.value = draft.firstName || '';
         reviewForm.elements.middleName.value = draft.middleName || '';
         reviewForm.elements.lastName.value = draft.lastName || '';
@@ -998,6 +1208,7 @@
         reviewForm.elements.clientEventId.value = draft.clientEventId || '';
         reviewForm.elements.street.value = draft.street || '';
         reviewForm.elements.serviceAddress.value = draft.serviceAddress || '';
+        if (reviewCompleteServiceAddress) reviewCompleteServiceAddress.value = composeCompleteServiceAddress(draft);
         reviewForm.elements.barangay.value = draft.barangay || '';
         reviewForm.elements.municipality.value = draft.municipality || '';
         reviewForm.elements.province.value = draft.province || '';
@@ -1012,6 +1223,7 @@
         reviewForm.elements.gpsAccuracyMeters.value = draft.gpsAccuracyMeters ?? '';
         reviewForm.elements.gpsCapturedAt.value = draft.gpsCapturedAt || '';
         reviewForm.elements.locationSource.value = draft.locationSource || '';
+        syncLocationTechnicalDisplays(draft);
         reviewForm.elements.planName.value = draft.planName || '';
         reviewForm.elements.planCategory.value = normalizePlanCategory(draft.planCategory || 'postpaid');
         reviewForm.elements.planAmount.value = draft.planAmount != null ? draft.planAmount : '';
@@ -1039,6 +1251,17 @@
         reviewForm.elements.referralCustomerName.value = draft.referralCustomerName || '';
         reviewForm.elements.referralSourceType.value = draft.referralSourceType || '';
         reviewForm.elements.referredBy.value = draft.referredBy || '';
+        const selectedReferrer = state.customers.find((customer) => (
+            String(customer?.accountNumber || '').trim() === String(draft.referralCustomerAccountNumber || '').trim()
+        )) || null;
+        if (reviewReferrerInput) {
+            reviewReferrerInput.value = selectedReferrer
+                ? getReferrerDisplayValue(selectedReferrer)
+                : (draft.referralCustomerAccountNumber
+                    ? `${draft.referralCustomerName || 'Existing customer'} — ${draft.referralCustomerAccountNumber}`
+                    : (draft.referredBy || ''));
+        }
+        if (selectedReferrer) syncReferrerLegacyFields();
         reviewForm.elements.prepaidExpirationAt.value = toDateTimeLocalInputValue(draft.prepaidExpirationAt || '');
         const draftAccountNumber = getDraftAccountNumber(item) || '';
         const portalCredentials = resolveDraftPortalCredentials(draft, draftAccountNumber);
@@ -1096,6 +1319,7 @@
         applyReviewPlanCategoryUI(reviewForm.elements.planCategory.value || 'postpaid');
         recomputeReviewDueDate();
         setReviewPasswordVisibility(false);
+        syncSharedMobileWarning();
 
         reviewMeta.textContent = 'Generate a customer profile, assign a plan, and set the first billing cycle.';
         if (getQueueStatus(item) === 'pending') {
@@ -1154,6 +1378,24 @@
             reviewForm.elements.area.focus();
             return;
         }
+        const referrerValue = String(reviewReferrerInput?.value || '').trim();
+        const selectedReferrer = syncReferrerLegacyFields();
+        if (referrerValue && !selectedReferrer) {
+            notify('Select an exact Referred By Customer from the suggestions.', 'error');
+            reviewReferrerInput?.focus();
+            return;
+        }
+        const sharedMobileConflicts = syncSharedMobileWarning();
+        if (sharedMobileConflicts.length && !reviewSharedMobileConfirmed?.checked) {
+            notify('Confirm that the duplicate mobile number is an intentional shared contact.', 'error');
+            reviewSharedMobileConfirmed?.focus();
+            return;
+        }
+        if (sharedMobileConflicts.length && String(reviewSharedMobileReason?.value || '').trim().length < 5) {
+            notify('Enter a clear reason for approving the shared mobile number.', 'error');
+            reviewSharedMobileReason?.focus();
+            return;
+        }
         if (!enforceNonPastReviewBillDateSelection()) {
             recomputeReviewDueDate();
             return;
@@ -1189,12 +1431,24 @@
             const data = await apiFetch(`/api/customer-drafts/${encodeURIComponent(item.id)}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ draftData: payload })
+                body: JSON.stringify({
+                    draftData: payload,
+                    ...(state.sharedMobileConflicts.length ? {
+                        sharedMobileOverride: {
+                            confirmed: reviewSharedMobileConfirmed?.checked === true,
+                            reason: String(reviewSharedMobileReason?.value || '').trim()
+                        }
+                    } : {})
+                })
             });
             closeReviewModal();
             await loadQueue();
             notify(`Customer account ${data.customer?.accountNumber || ''} finalized.`, 'success');
         } catch (error) {
+            if (error?.data?.code === 'CUSTOMER_DRAFT_SHARED_MOBILE_CONFIRMATION_REQUIRED') {
+                showSharedMobileWarning(error.data.duplicateAccounts || []);
+                reviewSharedMobileWarning?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
             notify(error.message || 'Unable to finalize customer.', 'error');
         } finally {
             approveBtn.disabled = false;
@@ -1401,6 +1655,9 @@
         if (event.target === reviewModal) closeReviewModal();
     });
     reviewForm?.addEventListener('submit', handleApprove);
+    reviewContactNumberInput?.addEventListener('input', syncSharedMobileWarning);
+    reviewReferrerInput?.addEventListener('input', syncReferrerLegacyFields);
+    reviewReferrerInput?.addEventListener('change', syncReferrerLegacyFields);
     reviewForm?.elements?.area?.addEventListener('change', () => {
         const areaSelect = reviewForm.elements.area;
         const value = String(areaSelect.value || '').trim();
@@ -1435,7 +1692,7 @@
         populateReviewPortOptions(reviewNapSelect.value, currentPort);
     });
 
-    Promise.all([loadPlans(), loadCoverageAreas(), loadQueue()]).catch((error) => {
+    Promise.all([loadPlans(), loadCoverageAreas(), loadCustomers(), loadQueue()]).catch((error) => {
         notify(error.message || 'Unable to load draft queue.', 'error');
     });
 })();

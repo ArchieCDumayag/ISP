@@ -377,5 +377,11 @@ execFileSync(process.execPath, [
 execFileSync(process.execPath, [
   path.join(projectRoot, 'Features/modules/billing/tests/gcash-transaction-history.test.js')
 ], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/payment-deletion-archive-store.test.js')
+], { stdio: 'inherit' });
+execFileSync(process.execPath, [
+  path.join(projectRoot, 'Features/modules/billing/tests/payment-deletion-recovery.test.js')
+], { stdio: 'inherit' });
 console.log('PASS Billing normalization, plan-profile, and balance helper behavior');
 console.log('BILLING COMPATIBILITY PASSED');

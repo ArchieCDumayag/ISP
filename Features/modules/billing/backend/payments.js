@@ -55,6 +55,13 @@ const {
 const {
     isProtectedClosedAccountPaymentEvidence
 } = require('./closed-account-payment-evidence');
+const {
+    appendPaymentDeletionRecords,
+    createPaymentDeletionRecord,
+    listPaymentDeletionRecords,
+    markPaymentDeletionRestored,
+    readPaymentDeletionArchive
+} = require('./payment-deletion-archive-store');
 
 const router = express.Router();
 router.use(serializePaymentMutationRequest);
@@ -4274,6 +4281,208 @@ const normalizeEntryIds = (values = []) => Array.from(new Set(
         .filter(Boolean)
 ));
 
+const PAYMENT_DELETION_REASON_MAX_LENGTH = 500;
+const PAYMENT_DELETION_REASON_MIN_LENGTH = 8;
+const DEFAULT_PAYMENT_DELETION_REASON = 'Deleted through an existing Admin payment action.';
+const COLLECTOR_PAYMENT_AMOUNT_CORRECTION_TABLE = 'collector_payment_amount_corrections';
+
+const getPostedGcashPaymentEntryIdSet = async (branchId) => new Set(
+    (await listPostedGcashPaymentBindings({ branchId }))
+        .map((binding) => String(binding?.paymentEntryId || '').trim())
+        .filter(Boolean)
+);
+
+const assertPostedGcashPaymentEntriesNotDeleted = (entryIds = [], postedEntryIds = new Set()) => {
+    const protectedEntryId = normalizeEntryIds(entryIds).find((entryId) => postedEntryIds.has(entryId));
+    if (!protectedEntryId) return;
+    const error = createPaymentHistoryGcashBindingLockedError();
+    error.message = 'Posted official GCash payments are immutable and cannot be deleted from Payment History.';
+    throw error;
+};
+
+const normalizePaymentDeletionReason = (value, {
+    required = false,
+    fallback = DEFAULT_PAYMENT_DELETION_REASON,
+    action = 'deletion'
+} = {}) => {
+    const reason = String(value || '').trim();
+    if (!reason && required) {
+        throw createError(400, `A reason is required for payment ${action}.`);
+    }
+    const resolved = reason || String(fallback || '').trim();
+    if (resolved.length < PAYMENT_DELETION_REASON_MIN_LENGTH) {
+        throw createError(400, `Payment ${action} reason must be at least ${PAYMENT_DELETION_REASON_MIN_LENGTH} characters.`);
+    }
+    if (resolved.length > PAYMENT_DELETION_REASON_MAX_LENGTH) {
+        throw createError(400, `Payment ${action} reason must be at most ${PAYMENT_DELETION_REASON_MAX_LENGTH} characters.`);
+    }
+    return resolved;
+};
+
+const toPaymentDeletionActor = (user = {}) => ({
+    id: String(user?.id || '').trim() || null,
+    username: String(user?.username || '').trim() || null,
+    name: String(user?.name || user?.fullName || user?.displayName || '').trim() || null,
+    role: String(user?.role || '').trim() || null
+});
+
+const toPaymentDeletionCustomerSnapshot = (customer = {}, accountNumber = '') => {
+    const firstName = String(customer?.firstName || '').trim();
+    const lastName = String(customer?.lastName || '').trim();
+    const name = [firstName, lastName].filter(Boolean).join(' ').trim()
+        || String(customer?.name || customer?.fullName || '').trim()
+        || `Account ${String(accountNumber || '').trim()}`;
+    const area = String(
+        customer?.area
+        || customer?.coverageArea
+        || customer?.cluster
+        || ''
+    ).trim();
+    return { name, area };
+};
+
+const getBranchPaymentCustomer = async (branchId, accountNumber) => {
+    const normalizedAccountNumber = String(accountNumber || '').trim();
+    const customers = await readCustomers(branchId);
+    const customer = (Array.isArray(customers) ? customers : []).find((item) => {
+        if (String(item?.accountNumber || '').trim() !== normalizedAccountNumber) return false;
+        const customerBranchId = String(item?.branchId || '').trim();
+        return !branchId || !customerBranchId || customerBranchId === String(branchId);
+    });
+    if (!customer) {
+        throw createError(404, 'Customer account was not found in this Admin branch.');
+    }
+    return customer;
+};
+
+const isMissingCollectorPaymentCorrectionTableError = (error) => (
+    error?.code === 'ER_NO_SUCH_TABLE'
+    || error?.errno === 1146
+);
+
+const readRelationalPaymentAmountCorrections = async (connection, entryIds = []) => {
+    const normalizedEntryIds = normalizeEntryIds(entryIds);
+    if (!normalizedEntryIds.length) return [];
+    const placeholders = normalizedEntryIds.map(() => '?').join(', ');
+    try {
+        const [rows] = await connection.query(
+            `SELECT
+                correction_id AS id,
+                payment_entry_id AS paymentEntryId,
+                branch_id AS branchId,
+                account_number AS accountNumber,
+                previous_amount AS previousAmount,
+                corrected_amount AS correctedAmount,
+                correction_reason AS reason,
+                corrected_at AS correctedAt,
+                corrected_by_user_id AS correctedByUserId,
+                corrected_by_username AS correctedByUsername,
+                corrected_by_name AS correctedByName,
+                corrected_by_role AS correctedByRole
+             FROM ${COLLECTOR_PAYMENT_AMOUNT_CORRECTION_TABLE}
+             WHERE payment_entry_id IN (${placeholders})
+             ORDER BY correction_order ASC`,
+            normalizedEntryIds
+        );
+        return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+        if (isMissingCollectorPaymentCorrectionTableError(error)) return [];
+        throw error;
+    }
+};
+
+const restoreRelationalPaymentAmountCorrections = async (connection, corrections = []) => {
+    const rows = Array.isArray(corrections) ? corrections : [];
+    if (!rows.length) return;
+    for (const correction of rows) {
+        try {
+            await connection.query(
+                `INSERT INTO ${COLLECTOR_PAYMENT_AMOUNT_CORRECTION_TABLE} (
+                    correction_id,
+                    payment_entry_id,
+                    branch_id,
+                    account_number,
+                    previous_amount,
+                    corrected_amount,
+                    correction_reason,
+                    corrected_at,
+                    corrected_by_user_id,
+                    corrected_by_username,
+                    corrected_by_name,
+                    corrected_by_role
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    correction?.id || correction?.correctionId,
+                    correction?.paymentEntryId,
+                    correction?.branchId,
+                    correction?.accountNumber,
+                    Number(correction?.previousAmount) || 0,
+                    Number(correction?.correctedAmount) || 0,
+                    String(correction?.reason || '').trim(),
+                    toMysqlDateTime(correction?.correctedAt),
+                    correction?.correctedByUserId || null,
+                    correction?.correctedByUsername || null,
+                    correction?.correctedByName || null,
+                    correction?.correctedByRole || null
+                ]
+            );
+        } catch (error) {
+            if (isMissingCollectorPaymentCorrectionTableError(error)) {
+                throw createError(409, 'The Collector amount-correction audit store is unavailable, so this payment cannot be restored safely.');
+            }
+            if (error?.code === 'ER_DUP_ENTRY' || error?.errno === 1062) {
+                throw createError(409, 'A Collector amount-correction audit ID already exists, so this payment cannot be restored safely.');
+            }
+            throw error;
+        }
+    }
+};
+
+const groupPaymentCorrectionsByEntryId = (corrections = []) => {
+    const grouped = new Map();
+    (Array.isArray(corrections) ? corrections : []).forEach((correction) => {
+        const entryId = String(correction?.paymentEntryId || '').trim();
+        if (!entryId) return;
+        const rows = grouped.get(entryId) || [];
+        rows.push(correction);
+        grouped.set(entryId, rows);
+    });
+    return grouped;
+};
+
+const createPaymentDeletionRecordsForEntries = ({
+    branchId,
+    accountNumber,
+    entries,
+    customer,
+    corrections,
+    user,
+    reason,
+    source,
+    deletedAt
+} = {}) => {
+    const correctionsByEntryId = groupPaymentCorrectionsByEntryId(corrections);
+    const customerSnapshot = toPaymentDeletionCustomerSnapshot(customer, accountNumber);
+    const actor = toPaymentDeletionActor(user);
+    return (Array.isArray(entries) ? entries : []).map((entry) => {
+        const relationalCorrections = correctionsByEntryId.get(String(entry?.id || '').trim()) || [];
+        const embeddedCorrections = Array.isArray(entry?.amountCorrections) ? entry.amountCorrections : [];
+        return createPaymentDeletionRecord({
+            branchId,
+            accountNumber,
+            entry,
+            customer: customerSnapshot,
+            related: {
+                amountCorrections: relationalCorrections.length ? relationalCorrections : embeddedCorrections
+            },
+            deletedAt,
+            deletedBy: actor,
+            reason,
+            source
+        });
+    });
+};
+
 const assertClosedAccountPaymentEvidenceNotDeleted = (entries = []) => {
     if (!(Array.isArray(entries) ? entries : []).some(isProtectedClosedAccountPaymentEvidence)) return;
     throw createError(
@@ -4331,7 +4540,15 @@ const reconcileCustomerCycleAfterDeletedCharges = async (accountNumber, branchId
     await writeCustomers([nextCustomer], nextCustomer.branchId || branchId);
 };
 
-const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId) => {
+const deletePaymentEntriesForAccount = async ({
+    accountNumber,
+    entryIds,
+    branchId,
+    user,
+    reason,
+    source = 'payment-entry-delete',
+    postedGcashEntryIds = null
+} = {}) => {
     const normalizedAccountNumber = String(accountNumber || '').trim();
     const normalizedEntryIds = normalizeEntryIds(entryIds);
     if (!normalizedAccountNumber) {
@@ -4340,6 +4557,10 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
     if (!normalizedEntryIds.length) {
         throw createError(400, 'Select at least one transaction to delete.');
     }
+    const immutableGcashEntryIds = postedGcashEntryIds instanceof Set
+        ? postedGcashEntryIds
+        : await getPostedGcashPaymentEntryIdSet(branchId);
+    assertPostedGcashPaymentEntriesNotDeleted(normalizedEntryIds, immutableGcashEntryIds);
     const activeClosure = await getActiveClosedCustomerAccount(branchId, normalizedAccountNumber);
     if (activeClosure) {
         throw createClosedAccountFinalBalanceProtectedError(
@@ -4358,7 +4579,11 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
         throw createError(409, 'A payment used to activate a reconnection cannot be deleted because it is part of the audited service decision.');
     }
 
+    const deletionReason = normalizePaymentDeletionReason(reason);
+    const customer = await getBranchPaymentCustomer(branchId, normalizedAccountNumber);
+    const deletedAt = new Date().toISOString();
     let deletedEntries = [];
+    let deletionRecords = [];
 
     if (await isRelationalReady()) {
         if (!branchId) {
@@ -4400,10 +4625,31 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
                 selectParams
             );
             deletedEntries = (rows || []).map(mapPaymentRow);
-            if (!deletedEntries.length) {
+            if (deletedEntries.length !== normalizedEntryIds.length) {
                 throw createError(404, normalizedEntryIds.length === 1 ? 'Payment entry not found' : 'Payment entries not found');
             }
             assertClosedAccountPaymentEvidenceNotDeleted(deletedEntries);
+
+            const corrections = await readRelationalPaymentAmountCorrections(
+                connection,
+                deletedEntries.map((entry) => entry.id)
+            );
+            deletionRecords = createPaymentDeletionRecordsForEntries({
+                branchId,
+                accountNumber: normalizedAccountNumber,
+                entries: deletedEntries,
+                customer,
+                corrections,
+                user,
+                reason: deletionReason,
+                source,
+                deletedAt
+            });
+            await appendPaymentDeletionRecords({
+                branchId,
+                records: deletionRecords,
+                executor: connection
+            });
 
             const deleteParams = [normalizedAccountNumber, branchId, ...normalizedEntryIds];
             const [result] = await connection.query(
@@ -4413,8 +4659,12 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
                    AND id IN (${placeholders})`,
                 deleteParams
             );
-            if (!result || !result.affectedRows) {
+            const affectedRows = Number(result?.affectedRows) || 0;
+            if (!affectedRows) {
                 throw createError(404, normalizedEntryIds.length === 1 ? 'Payment entry not found' : 'Payment entries not found');
+            }
+            if (affectedRows !== normalizedEntryIds.length) {
+                throw createError(409, 'Payment entries changed during deletion. No entries were deleted.');
             }
         });
     } else {
@@ -4429,11 +4679,44 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
 
         const selectedIds = new Set(normalizedEntryIds);
         deletedEntries = history.filter((entry) => selectedIds.has(String(entry?.id || '').trim()));
-        if (!deletedEntries.length) {
+        if (deletedEntries.length !== normalizedEntryIds.length) {
             throw createError(404, normalizedEntryIds.length === 1 ? 'Payment entry not found' : 'Payment entries not found');
         }
         assertClosedAccountPaymentEvidenceNotDeleted(deletedEntries);
 
+        deletionRecords = createPaymentDeletionRecordsForEntries({
+            branchId,
+            accountNumber: normalizedAccountNumber,
+            entries: deletedEntries,
+            customer,
+            user,
+            reason: deletionReason,
+            source,
+            deletedAt
+        });
+        // JSON mode cannot commit two files in one filesystem operation. Write
+        // the recovery copy first so an interrupted delete never loses money.
+        // A retry reuses an identical prepared tombstone and completes removal.
+        const archive = await readPaymentDeletionArchive({ branchId });
+        const recordsToAppend = [];
+        deletionRecords = deletionRecords.map((record) => {
+            const prepared = (Array.isArray(archive?.records) ? archive.records : []).find((candidate) => (
+                String(candidate?.status || 'deleted').toLowerCase() === 'deleted'
+                && String(candidate?.accountNumber || '').trim() === normalizedAccountNumber
+                && String(candidate?.entryId || candidate?.entry?.id || '').trim() === String(record?.entryId || record?.entry?.id || '').trim()
+            ));
+            if (!prepared) {
+                recordsToAppend.push(record);
+                return record;
+            }
+            if (JSON.stringify(prepared?.entry || {}) !== JSON.stringify(record?.entry || {})) {
+                throw createError(409, 'A different archived snapshot already exists for this payment entry.');
+            }
+            return prepared;
+        });
+        if (recordsToAppend.length) {
+            await appendPaymentDeletionRecords({ branchId, records: recordsToAppend });
+        }
         payments[normalizedAccountNumber].history = history.filter((entry) => !selectedIds.has(String(entry?.id || '').trim()));
         await writePayments(payments);
     }
@@ -4442,8 +4725,382 @@ const deletePaymentEntriesForAccount = async (accountNumber, entryIds, branchId)
 
     return {
         deletedEntries,
-        deletedCount: deletedEntries.length
+        deletedCount: deletedEntries.length,
+        deletionRecords
     };
+};
+
+const PAYMENT_RESTORE_ENTRY_FIELDS = [
+    'id',
+    'amount',
+    'date',
+    'kind',
+    'direction',
+    'reference',
+    'orNumber',
+    'description',
+    'type',
+    'recordedAt',
+    'payer',
+    'status',
+    'paymentMethod',
+    'fingerprint',
+    'xenditId'
+];
+
+const paymentRestoreEntrySignature = (entry = {}) => JSON.stringify({
+    ...Object.fromEntries(PAYMENT_RESTORE_ENTRY_FIELDS.map((field) => [field, entry?.[field] ?? null])),
+    recordedBy: {
+        id: entry?.recordedBy?.id ?? null,
+        username: entry?.recordedBy?.username ?? null,
+        name: entry?.recordedBy?.name ?? null,
+        role: entry?.recordedBy?.role ?? null
+    }
+});
+
+const createPaymentRestoreConflictError = (message, code = 'PAYMENT_RESTORE_CONFLICT') => {
+    const error = createError(409, message);
+    error.code = code;
+    return error;
+};
+
+const assertPaymentRestoreReferenceAuthority = async ({ branchId, record } = {}) => {
+    const reference = String(record?.entry?.reference || '').trim();
+    if (!reference) return;
+    const entryId = String(record?.entryId || record?.entry?.id || '').trim();
+    const history = await listGcashTransactionHistory({ branchId, all: true });
+    const matchingTransactions = (Array.isArray(history?.transactions) ? history.transactions : [])
+        .filter((transaction) => paymentReferencesMatch(transaction?.reference, reference));
+    const ownedPostedTransaction = matchingTransactions.find((transaction) => (
+        transaction?.assignment?.status === 'posted'
+        && getGcashAssignmentPaymentEntryIds(transaction.assignment).has(entryId)
+    ));
+    const conflictingTransaction = matchingTransactions.find((transaction) => transaction !== ownedPostedTransaction);
+    const pendingReservation = (Array.isArray(history?.pendingReservations) ? history.pendingReservations : [])
+        .find((reservation) => paymentReferencesMatch(reservation?.reference, reference));
+    if ((matchingTransactions.length && !ownedPostedTransaction) || conflictingTransaction || pendingReservation) {
+        throw createPaymentRestoreConflictError(
+            'The original payment reference is now owned or reserved by official GCash history.',
+            'PAYMENT_RESTORE_GCASH_REFERENCE_CONFLICT'
+        );
+    }
+};
+
+const assertJsonPaymentRestoreAvailable = ({
+    payments,
+    record,
+    branchAccountNumbers
+} = {}) => {
+    const entry = record?.entry || {};
+    const entryId = String(entry?.id || '').trim();
+    const accountNumber = String(record?.accountNumber || '').trim();
+    const reference = String(entry?.reference || '').trim();
+    const orNumber = String(entry?.orNumber || '').trim();
+    const fingerprint = String(entry?.fingerprint || '').trim();
+    let alreadyPresent = false;
+
+    Object.entries(payments && typeof payments === 'object' ? payments : {}).forEach(([candidateAccount, bucket]) => {
+        (Array.isArray(bucket?.history) ? bucket.history : []).forEach((candidate) => {
+            const candidateEntryId = String(candidate?.id || '').trim();
+            if (entryId && candidateEntryId === entryId) {
+                if (
+                    String(candidateAccount) === accountNumber
+                    && paymentRestoreEntrySignature(candidate) === paymentRestoreEntrySignature(entry)
+                ) {
+                    alreadyPresent = true;
+                    return;
+                }
+                throw createPaymentRestoreConflictError(
+                    'The original payment entry ID is already used by another active record.',
+                    'PAYMENT_RESTORE_ID_CONFLICT'
+                );
+            }
+
+            if (!branchAccountNumbers.has(String(candidateAccount))) return;
+            if (reference && [candidate?.reference, candidate?.orNumber]
+                .some((value) => paymentReferencesMatch(value, reference))) {
+                throw createPaymentRestoreConflictError(
+                    'The original payment reference is already used by an active record.',
+                    'PAYMENT_RESTORE_REFERENCE_CONFLICT'
+                );
+            }
+            if (orNumber && [candidate?.orNumber, candidate?.reference]
+                .some((value) => normalizeManualPaymentReferenceKey(value) === normalizeManualPaymentReferenceKey(orNumber))) {
+                throw createPaymentRestoreConflictError(
+                    'The original OR number is already used by an active record.',
+                    'PAYMENT_RESTORE_OR_CONFLICT'
+                );
+            }
+            if (
+                fingerprint
+                && String(candidateAccount) === accountNumber
+                && String(candidate?.fingerprint || '').trim() === fingerprint
+            ) {
+                throw createPaymentRestoreConflictError(
+                    'An active payment already has the original request fingerprint.',
+                    'PAYMENT_RESTORE_FINGERPRINT_CONFLICT'
+                );
+            }
+        });
+    });
+
+    return { alreadyPresent };
+};
+
+const assertRelationalPaymentRestoreAvailable = async (connection, branchId, record = {}) => {
+    const entry = record?.entry || {};
+    const entryId = String(entry?.id || '').trim();
+    const accountNumber = String(record?.accountNumber || '').trim();
+    if (!entryId) {
+        throw createPaymentRestoreConflictError('The archived payment is missing its original entry ID.');
+    }
+
+    const [idRows] = await connection.query(
+        'SELECT id FROM payment_entries WHERE id = ? LIMIT 1',
+        [entryId]
+    );
+    if (idRows?.length) {
+        throw createPaymentRestoreConflictError(
+            'The original payment entry ID is already used by an active record.',
+            'PAYMENT_RESTORE_ID_CONFLICT'
+        );
+    }
+
+    await assertEntryNumbersAvailable(connection, branchId, entry);
+    const [branchRows] = await connection.query(
+        `SELECT id, account_number AS accountNumber, reference, or_number AS orNumber, fingerprint
+         FROM payment_entries
+         WHERE branch_id = ?`,
+        [branchId]
+    );
+    const reference = String(entry?.reference || '').trim();
+    const orNumber = String(entry?.orNumber || '').trim();
+    const fingerprint = String(entry?.fingerprint || '').trim();
+    for (const candidate of branchRows || []) {
+        if (reference && [candidate?.reference, candidate?.orNumber]
+            .some((value) => paymentReferencesMatch(value, reference))) {
+            throw createPaymentRestoreConflictError(
+                'The original payment reference is already used by an active record.',
+                'PAYMENT_RESTORE_REFERENCE_CONFLICT'
+            );
+        }
+        if (orNumber && [candidate?.orNumber, candidate?.reference]
+            .some((value) => normalizeManualPaymentReferenceKey(value) === normalizeManualPaymentReferenceKey(orNumber))) {
+            throw createPaymentRestoreConflictError(
+                'The original OR number is already used by an active record.',
+                'PAYMENT_RESTORE_OR_CONFLICT'
+            );
+        }
+        if (
+            fingerprint
+            && String(candidate?.accountNumber || '').trim() === accountNumber
+            && String(candidate?.fingerprint || '').trim() === fingerprint
+        ) {
+            throw createPaymentRestoreConflictError(
+                'An active payment already has the original request fingerprint.',
+                'PAYMENT_RESTORE_FINGERPRINT_CONFLICT'
+            );
+        }
+    }
+};
+
+const getPaymentDeletionRecordById = (archive = {}, deletionId = '') => {
+    const safeDeletionId = String(deletionId || '').trim();
+    return (Array.isArray(archive?.records) ? archive.records : []).find((record) => (
+        String(record?.id || '').trim() === safeDeletionId
+    )) || null;
+};
+
+const restorePaymentDeletionRecord = async ({ branchId, deletionId, user, reason } = {}) => {
+    const safeDeletionId = String(deletionId || '').trim();
+    if (!safeDeletionId) throw createError(400, 'Deleted payment ID is required.');
+    const restoreReason = normalizePaymentDeletionReason(reason, {
+        required: true,
+        fallback: '',
+        action: 'restoration'
+    });
+    const initialArchive = await readPaymentDeletionArchive({ branchId });
+    const initialRecord = getPaymentDeletionRecordById(initialArchive, safeDeletionId);
+    if (!initialRecord) throw createError(404, 'Deleted payment was not found in this Admin branch.');
+    if (String(initialRecord?.status || 'deleted').toLowerCase() !== 'deleted') {
+        throw createPaymentRestoreConflictError('This payment has already been restored.', 'PAYMENT_ALREADY_RESTORED');
+    }
+
+    const accountNumber = String(initialRecord?.accountNumber || '').trim();
+    const entry = normalizePaymentEntry(initialRecord?.entry || {});
+    if (!accountNumber || !String(entry?.id || '').trim()) {
+        throw createPaymentRestoreConflictError('The archived payment record is incomplete and cannot be restored safely.');
+    }
+    await getBranchPaymentCustomer(branchId, accountNumber);
+    const activeClosure = await getActiveClosedCustomerAccount(branchId, accountNumber);
+    if (activeClosure) {
+        throw createClosedAccountFinalBalanceProtectedError(
+            'Payment History cannot be restored while the customer account is closed. Reopen the account first.'
+        );
+    }
+
+    const restoredAt = new Date().toISOString();
+    const restoredBy = toPaymentDeletionActor(user);
+    let restoredRecord = null;
+
+    if (await isRelationalReady()) {
+        if (!branchId) throw createError(400, 'Branch assignment missing for this admin account.');
+        await withTransaction(async (connection) => {
+            await lockPaymentAccount(connection, branchId, accountNumber);
+            const archive = await readPaymentDeletionArchive({ branchId, executor: connection, lock: true });
+            const currentRecord = getPaymentDeletionRecordById(archive, safeDeletionId);
+            if (!currentRecord) throw createError(404, 'Deleted payment was not found in this Admin branch.');
+            if (String(currentRecord?.status || 'deleted').toLowerCase() !== 'deleted') {
+                throw createPaymentRestoreConflictError('This payment has already been restored.', 'PAYMENT_ALREADY_RESTORED');
+            }
+            await assertPaymentRestoreReferenceAuthority({ branchId, record: currentRecord });
+            await assertRelationalPaymentRestoreAvailable(connection, branchId, currentRecord);
+            await insertPaymentEntry(currentRecord.entry, branchId, accountNumber, connection);
+            await restoreRelationalPaymentAmountCorrections(
+                connection,
+                currentRecord?.related?.amountCorrections || []
+            );
+            restoredRecord = await markPaymentDeletionRestored({
+                branchId,
+                id: safeDeletionId,
+                restoredAt,
+                actor: restoredBy,
+                reason: restoreReason,
+                executor: connection
+            });
+        });
+    } else {
+        const archive = await readPaymentDeletionArchive({ branchId });
+        const currentRecord = getPaymentDeletionRecordById(archive, safeDeletionId);
+        if (!currentRecord) throw createError(404, 'Deleted payment was not found in this Admin branch.');
+        if (String(currentRecord?.status || 'deleted').toLowerCase() !== 'deleted') {
+            throw createPaymentRestoreConflictError('This payment has already been restored.', 'PAYMENT_ALREADY_RESTORED');
+        }
+        await assertPaymentRestoreReferenceAuthority({ branchId, record: currentRecord });
+        const [payments, branchCustomers] = await Promise.all([
+            readPayments(branchId),
+            readCustomers(branchId)
+        ]);
+        const branchAccountNumbers = new Set((Array.isArray(branchCustomers) ? branchCustomers : [])
+            .map((customer) => String(customer?.accountNumber || '').trim())
+            .filter(Boolean));
+        const availability = assertJsonPaymentRestoreAvailable({
+            payments,
+            record: currentRecord,
+            branchAccountNumbers
+        });
+        if (!availability.alreadyPresent) {
+            if (!payments[accountNumber]) payments[accountNumber] = { history: [] };
+            if (!Array.isArray(payments[accountNumber].history)) payments[accountNumber].history = [];
+            payments[accountNumber].history.unshift(currentRecord.entry);
+            // Write the payment first. If the archive audit update is interrupted,
+            // a retry detects the identical active row and completes the audit.
+            await writePayments(payments);
+        }
+        restoredRecord = await markPaymentDeletionRestored({
+            branchId,
+            id: safeDeletionId,
+            restoredAt,
+            actor: restoredBy,
+            reason: restoreReason
+        });
+    }
+
+    triggerBranchServiceRefresh(branchId, 'payments-restore');
+    return { record: restoredRecord, entry, accountNumber };
+};
+
+const listAllPaymentDeletionRecords = async (branchId) => {
+    const pageSize = 100;
+    let offset = 0;
+    let total = 0;
+    const items = [];
+    do {
+        const page = await listPaymentDeletionRecords({
+            branchId,
+            includeRestored: false,
+            limit: pageSize,
+            offset
+        });
+        total = Number(page?.total) || 0;
+        items.push(...(Array.isArray(page?.items) ? page.items : []));
+        offset += pageSize;
+    } while (offset < total);
+    return items;
+};
+
+const toPublicPaymentDeletionRecord = (record = {}, activeEntry = null, { relational = false } = {}) => {
+    const entry = normalizePaymentEntry(record?.entry || {});
+    const sourceStillPresent = Boolean(activeEntry);
+    const exactActiveMatch = sourceStillPresent
+        && paymentRestoreEntrySignature(activeEntry) === paymentRestoreEntrySignature(entry);
+    return {
+        id: record?.id || null,
+        accountNumber: record?.accountNumber || null,
+        entryId: record?.entryId || entry?.id || null,
+        customer: {
+            name: record?.customer?.name || record?.customer?.customerName || `Account ${record?.accountNumber || ''}`.trim(),
+            area: record?.customer?.area || record?.customer?.coverageArea || ''
+        },
+        entry: {
+            id: entry?.id || null,
+            amount: Number(entry?.amount) || 0,
+            date: entry?.date || null,
+            kind: entry?.kind || entry?.type || null,
+            direction: entry?.direction || null,
+            reference: entry?.reference || null,
+            orNumber: entry?.orNumber || null,
+            description: entry?.description || null,
+            recordedAt: entry?.recordedAt || null,
+            recordedBy: entry?.recordedBy || null,
+            payer: entry?.payer || null,
+            status: entry?.status || null,
+            paymentMethod: entry?.paymentMethod || null,
+            fingerprint: entry?.fingerprint || null,
+            xenditId: entry?.xenditId || null
+        },
+        deletionReason: record?.deletionReason || null,
+        deletedAt: record?.deletedAt || null,
+        deletedBy: record?.deletedBy || null,
+        source: record?.source || null,
+        status: record?.status || 'deleted',
+        related: {
+            amountCorrections: Array.isArray(record?.related?.amountCorrections)
+                && record.related.amountCorrections.length
+                ? record.related.amountCorrections
+                : (Array.isArray(record?.entry?.amountCorrections)
+                    ? record.entry.amountCorrections
+                    : [])
+        },
+        audit: Array.isArray(record?.audit) ? record.audit : [],
+        restorable: !sourceStillPresent || (exactActiveMatch && !relational),
+        recoveryPending: exactActiveMatch && !relational,
+        restoreBlockedReason: sourceStillPresent
+            ? (exactActiveMatch && relational
+                ? 'The original entry is already active; relational recovery cannot be finalized automatically.'
+                : (!exactActiveMatch ? 'The original entry ID is already used by another active record.' : null))
+            : null
+    };
+};
+
+const getPublicDeletedPaymentRecords = async (branchId) => {
+    const [records, payments, relational] = await Promise.all([
+        listAllPaymentDeletionRecords(branchId),
+        readPayments(branchId),
+        isRelationalReady()
+    ]);
+    const activeEntriesById = new Map();
+    Object.values(payments && typeof payments === 'object' ? payments : {}).forEach((bucket) => {
+        (Array.isArray(bucket?.history) ? bucket.history : []).forEach((entry) => {
+            const entryId = String(entry?.id || '').trim();
+            if (entryId && !activeEntriesById.has(entryId)) activeEntriesById.set(entryId, entry);
+        });
+    });
+    return records.map((record) => toPublicPaymentDeletionRecord(
+            record,
+            activeEntriesById.get(String(record?.entryId || record?.entry?.id || '').trim()) || null,
+            { relational }
+        ));
 };
 
 const deriveCreditLimit = (customer) => {
@@ -5111,45 +5768,141 @@ router.post('/backup', async (req, res, next) => {
     }
 });
 
-// DELETE /api/payments/clear - Back up, then clear payment records
-router.delete('/clear', async (req, res, next) => {
+// GET /api/payments/deleted - List recoverable deleted payment entries
+router.get('/deleted', async (req, res, next) => {
     try {
         const user = await assertAdminUser(req);
-        const branchId = user.branchId || null;
-        const payments = await readPayments(branchId);
+        const branchId = Number(user?.branchId);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            throw createError(400, 'Branch assignment missing for this admin account.');
+        }
+        const records = await getPublicDeletedPaymentRecords(branchId);
+        res.json({ ok: true, total: records.length, records });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to retrieve deleted payments.'));
+    }
+});
+
+// POST /api/payments/deleted/:deletionId/restore - Restore the exact archived entry
+router.post('/deleted/:deletionId/restore', async (req, res, next) => {
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = Number(user?.branchId);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            throw createError(400, 'Branch assignment missing for this admin account.');
+        }
+        const result = await restorePaymentDeletionRecord({
+            branchId,
+            deletionId: req.params.deletionId,
+            user,
+            reason: req.body?.reason
+        });
+        res.json({
+            ok: true,
+            restored: true,
+            accountNumber: result.accountNumber,
+            entryId: result.entry?.id || null,
+            record: toPublicPaymentDeletionRecord(result.record)
+        });
+    } catch (error) {
+        next(error?.status ? error : createError(500, 'Failed to restore deleted payment.'));
+    }
+});
+
+// DELETE /api/payments/clear - Back up, then archive payment records
+router.delete('/clear', async (req, res, next) => {
+    let removedCount = 0;
+    try {
+        const user = await assertAdminUser(req);
+        const branchId = Number(user.branchId);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            throw createError(400, 'Branch assignment missing for this admin account.');
+        }
+        const deletionReason = normalizePaymentDeletionReason(req.body?.reason, {
+            required: true,
+            fallback: '',
+            action: 'deletion'
+        });
+        const [payments, customers] = await Promise.all([
+            readPayments(branchId),
+            readCustomers(branchId)
+        ]);
+        const branchAccountNumbers = new Set((Array.isArray(customers) ? customers : [])
+            .map((customer) => String(customer?.accountNumber || '').trim())
+            .filter(Boolean));
+        const targetPayments = Object.fromEntries(Object.entries(payments || {}).filter(([accountNumber]) => (
+            branchAccountNumbers.has(String(accountNumber || '').trim())
+        )));
         const activeClosedAccounts = await getActiveClosedAccountNumberSet(branchId);
         if (activeClosedAccounts.size > 0) {
             throw createClosedAccountFinalBalanceProtectedError(
-                'Payment History cannot be cleared while closed customer accounts are active.'
+                'Payment History cannot be archived while closed customer accounts are active.'
             );
         }
-        const entries = Object.values(payments || {}).flatMap((bucket) => (
+        const entries = Object.values(targetPayments).flatMap((bucket) => (
             Array.isArray(bucket?.history) ? bucket.history : []
         ));
+        if (entries.some((entry) => !String(entry?.id || '').trim())) {
+            throw createError(409, 'Payment History contains a legacy entry without an ID and cannot be archived safely. Back up and repair that entry first.');
+        }
+        const postedGcashEntryIds = await getPostedGcashPaymentEntryIdSet(branchId);
+        assertPostedGcashPaymentEntriesNotDeleted(
+            entries.map((entry) => entry?.id),
+            postedGcashEntryIds
+        );
         assertClosedAccountPaymentEvidenceNotDeleted(entries);
-        const backup = await createPaymentRecordsBackup(payments, {
+        const disconnections = await readBranchDisconnections(branchId);
+        Object.entries(targetPayments).forEach(([accountNumber, bucket]) => {
+            const decision = getAccountDisconnection(disconnections, accountNumber);
+            const protectedActivationPaymentIds = new Set(
+                (Array.isArray(decision?.reconnectionHistory) ? decision.reconnectionHistory : [])
+                    .flatMap((settlement) => Array.isArray(settlement?.activationPayments) ? settlement.activationPayments : [])
+                    .map((entry) => String(entry?.entryId || '').trim())
+                    .filter(Boolean)
+            );
+            if ((Array.isArray(bucket?.history) ? bucket.history : []).some((entry) => (
+                protectedActivationPaymentIds.has(String(entry?.id || '').trim())
+            ))) {
+                throw createError(409, 'Payment History contains an audited reconnection activation payment and cannot be archived.');
+            }
+        });
+        const backup = await createPaymentRecordsBackup(targetPayments, {
             branchId,
             user,
             reason: 'before-clear-payment-history'
         });
-        const removedCount = countPaymentEntries(payments);
-        const relational = await isRelationalReady();
-
-        if (relational) {
-            if (!branchId) {
-                throw createError(400, 'Branch is required to clear relational payment records.');
-            }
-            await withTransaction(async (connection) => {
-                await connection.query('DELETE FROM payment_entries WHERE branch_id = ?', [branchId]);
+        for (const [accountNumber, bucket] of Object.entries(targetPayments)) {
+            const entryIds = (Array.isArray(bucket?.history) ? bucket.history : [])
+                .map((entry) => String(entry?.id || '').trim())
+                .filter(Boolean);
+            if (!entryIds.length) continue;
+            const result = await deletePaymentEntriesForAccount({
+                accountNumber,
+                entryIds,
+                branchId,
+                user,
+                reason: deletionReason,
+                source: 'payment-history-clear',
+                postedGcashEntryIds
             });
-        } else {
-            await writePayments({});
+            removedCount += result.deletedCount;
         }
 
         triggerBranchServiceRefresh(branchId, 'payments-clear');
-        res.json({ ok: true, removedCount, backup });
+        res.json({ ok: true, removedCount, archivedCount: removedCount, backup });
     } catch (error) {
-        next(error.status ? error : createError(500, 'Failed to clear payment records.'));
+        if (removedCount > 0) {
+            triggerBranchServiceRefresh(req.user?.branchId || null, 'payments-clear-partial');
+            const partialError = createError(
+                409,
+                `Archive All stopped after archiving ${removedCount} payment ${removedCount === 1 ? 'entry' : 'entries'}. `
+                + 'Those entries remain recoverable in Deleted Payments; reload both tabs before retrying.'
+            );
+            partialError.code = 'PAYMENT_ARCHIVE_PARTIAL';
+            partialError.archivedCount = removedCount;
+            return next(partialError);
+        }
+        next(error.status ? error : createError(500, 'Failed to archive payment records.'));
     }
 });
 
@@ -5606,15 +6359,28 @@ router.post('/:accountNumber', async (req, res, next) => {
 // POST /api/payments/:accountNumber/bulk-delete - Delete multiple history entries for one account
 router.post('/:accountNumber/bulk-delete', async (req, res, next) => {
     try {
+        const user = await assertAdminUser(req);
         const { accountNumber } = req.params;
-        const branchId = req.user?.branchId || null;
+        const branchId = Number(user?.branchId);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            throw createError(400, 'Branch assignment missing for this admin account.');
+        }
         const entryIds = normalizeEntryIds(req.body?.entryIds);
-        const result = await deletePaymentEntriesForAccount(accountNumber, entryIds, branchId);
+        const result = await deletePaymentEntriesForAccount({
+            accountNumber,
+            entryIds,
+            branchId,
+            user,
+            reason: req.body?.reason,
+            source: 'payment-bulk-delete'
+        });
         triggerBranchServiceRefresh(branchId, 'payments-delete-bulk');
         res.status(200).json({
             success: true,
             deletedCount: result.deletedCount,
-            deletedEntryIds: result.deletedEntries.map((entry) => entry.id).filter(Boolean)
+            archivedCount: result.deletedCount,
+            deletedEntryIds: result.deletedEntries.map((entry) => entry.id).filter(Boolean),
+            deletionRecordIds: result.deletionRecords.map((record) => record.id).filter(Boolean)
         });
     } catch (error) {
         next(error?.status ? error : createError(500, 'Failed to delete payment entries.'));
@@ -5624,11 +6390,28 @@ router.post('/:accountNumber/bulk-delete', async (req, res, next) => {
 // DELETE /api/payments/:accountNumber/:entryId - Delete a specific entry from history
 router.delete('/:accountNumber/:entryId', async (req, res, next) => {
     try {
+        const user = await assertAdminUser(req);
         const { accountNumber, entryId } = req.params;
-        const branchId = req.user?.branchId || null;
-        await deletePaymentEntriesForAccount(accountNumber, [entryId], branchId);
+        const branchId = Number(user?.branchId);
+        if (!Number.isInteger(branchId) || branchId <= 0) {
+            throw createError(400, 'Branch assignment missing for this admin account.');
+        }
+        const result = await deletePaymentEntriesForAccount({
+            accountNumber,
+            entryIds: [entryId],
+            branchId,
+            user,
+            reason: req.body?.reason,
+            source: 'payment-entry-delete'
+        });
         triggerBranchServiceRefresh(branchId, 'payments-delete');
-        res.status(204).send(); // No Content
+        res.status(200).json({
+            success: true,
+            deleted: true,
+            archived: true,
+            entryId,
+            deletionRecordId: result.deletionRecords[0]?.id || null
+        });
     } catch (error) {
         next(error?.status ? error : createError(500, 'Failed to delete payment entry.'));
     }

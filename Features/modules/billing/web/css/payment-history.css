@@ -51,6 +51,35 @@ body:has(.payment-history-page) .app-main main,
     white-space: nowrap;
 }
 
+.payment-history-view-tabs {
+    margin-bottom: 1rem;
+    box-shadow: none;
+}
+
+.payment-history-view-tabs .card-header {
+    min-height: 0;
+}
+
+.payment-history-view-tabs .nav-link {
+    min-width: 12rem;
+    border-top: 0;
+    font-weight: 500;
+}
+
+.payment-history-view-tabs .nav-link .badge {
+    min-width: 1.5rem;
+}
+
+.payment-history-tab-content,
+.payment-history-tab-content > .tab-pane {
+    min-width: 0;
+}
+
+.payment-history-tab-content > .tab-pane:focus-visible {
+    outline: 2px solid var(--tblr-primary, #066fd1);
+    outline-offset: .25rem;
+}
+
 .payment-history-page .page-insights {
     margin: 0 0 1rem;
     min-width: 0;
@@ -129,6 +158,14 @@ body:has(.payment-history-page) .app-main main,
     min-width: 0;
 }
 
+.payment-history-deleted-toolbar-grid {
+    grid-template-columns: minmax(16rem, 1.15fr) minmax(38rem, 3fr);
+}
+
+.payment-history-deleted-inline-filters {
+    grid-template-columns: repeat(5, minmax(8rem, 1fr));
+}
+
 .payment-history-inline-filters .toolbar-filter-control,
 .payment-history-inline-filters .form-control,
 .payment-history-inline-filters .form-select {
@@ -179,6 +216,30 @@ body:has(.payment-history-page) .app-main main,
 
 .payment-history-table {
     min-width: 58rem;
+}
+
+.payment-history-deleted-note {
+    display: flex;
+    align-items: flex-start;
+    gap: .625rem;
+    margin-bottom: 1rem;
+}
+
+.payment-history-deleted-note > .ti {
+    flex: 0 0 auto;
+    margin-top: .125rem;
+    font-size: 1.125rem;
+}
+
+.payment-history-deleted-table {
+    min-width: 76rem;
+}
+
+.payment-history-deleted-table .payment-history-deleted-reason {
+    display: block;
+    max-width: 22rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .payment-history-table caption {
@@ -243,6 +304,18 @@ body:has(.payment-history-page) .app-main main,
     gap: .25rem;
 }
 
+.payment-history-recovery-record {
+    padding: .75rem;
+    border: 1px solid var(--tblr-border-color, #e5e7eb);
+    border-radius: var(--tblr-border-radius, 6px);
+    background: var(--tblr-bg-surface-secondary, #f3f4f6);
+}
+
+#paymentHistoryDeleteModal .modal-footer .btn,
+#paymentHistoryRestoreModal .modal-footer .btn {
+    gap: .375rem;
+}
+
 #paymentHistoryUnmatchedModal.modal {
     z-index: 1105 !important;
     pointer-events: auto !important;
@@ -282,8 +355,44 @@ body:has(.payment-history-page) .app-main main,
     z-index: 1110 !important;
 }
 
+.payment-history-body > .modal-backdrop,
+.payment-history-modal-backdrop.modal-backdrop,
 .payment-history-unmatched-backdrop.modal-backdrop {
     z-index: 1100 !important;
+}
+
+#paymentHistoryDeleteModal.modal,
+#paymentHistoryRestoreModal.modal,
+#paymentHistoryAuditModal.modal {
+    z-index: 1110 !important;
+    pointer-events: auto !important;
+}
+
+#paymentHistoryDeleteModal .modal-dialog,
+#paymentHistoryDeleteModal .modal-content,
+#paymentHistoryDeleteModal .modal-header,
+#paymentHistoryDeleteModal .modal-body,
+#paymentHistoryDeleteModal .modal-footer,
+#paymentHistoryDeleteModal .form-control,
+#paymentHistoryDeleteModal .btn,
+#paymentHistoryDeleteModal .btn-close,
+#paymentHistoryRestoreModal .modal-dialog,
+#paymentHistoryRestoreModal .modal-content,
+#paymentHistoryRestoreModal .modal-header,
+#paymentHistoryRestoreModal .modal-body,
+#paymentHistoryRestoreModal .modal-footer,
+#paymentHistoryRestoreModal .form-control,
+#paymentHistoryRestoreModal .form-check-input,
+#paymentHistoryRestoreModal .btn,
+#paymentHistoryRestoreModal .btn-close,
+#paymentHistoryAuditModal .modal-dialog,
+#paymentHistoryAuditModal .modal-content,
+#paymentHistoryAuditModal .modal-header,
+#paymentHistoryAuditModal .modal-body,
+#paymentHistoryAuditModal .modal-footer,
+#paymentHistoryAuditModal .btn,
+#paymentHistoryAuditModal .btn-close {
+    pointer-events: auto !important;
 }
 
 .payment-history-unmatched-table {
@@ -354,6 +463,10 @@ body:has(.payment-history-page) .app-main main,
         grid-template-columns: 1fr;
     }
 
+    .payment-history-deleted-inline-filters {
+        grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    }
+
     .payment-history-admin-actions {
         justify-content: flex-start;
         white-space: normal;
@@ -388,6 +501,11 @@ body:has(.payment-history-page) .app-main main,
         grid-template-columns: 1fr;
     }
 
+    .payment-history-view-tabs .nav-link {
+        min-width: 10.5rem;
+        padding: .75rem 1rem !important;
+    }
+
     .payment-history-toolbar.card-header {
         padding: .875rem;
     }
@@ -404,6 +522,21 @@ body:has(.payment-history-page) .app-main main,
     .payment-history-admin-actions {
         display: grid;
         grid-template-columns: 1fr;
+    }
+
+    .payment-history-deleted-note {
+        padding: .75rem;
+    }
+
+    #paymentHistoryDeleteModal .modal-footer,
+    #paymentHistoryRestoreModal .modal-footer {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    #paymentHistoryDeleteModal .modal-footer .btn,
+    #paymentHistoryRestoreModal .modal-footer .btn {
+        width: 100%;
     }
 
     .table-footer.card-footer {

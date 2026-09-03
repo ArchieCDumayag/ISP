@@ -222,13 +222,20 @@ const sanitizeAssignmentAllocation = (value) => {
     const accountNumber = toSafeText(value.accountNumber, 20);
     const amount = normalizeMoney(value.amount);
     if (!accountNumber || amount == null || amount <= 0) return null;
-    return {
+    const allocation = {
         accountNumber,
         customerName: toSafeText(value.customerName, 200),
         amount,
         billingMonth: normalizeBillingMonth(value.billingMonth) || null,
         paymentEntryId: toSafeText(value.paymentEntryId, 64) || null
     };
+    const endingBalanceBefore = normalizeMoney(value.endingBalanceBefore);
+    const balanceApplied = normalizeMoney(value.balanceApplied);
+    const advanceAmount = normalizeMoney(value.advanceAmount);
+    if (endingBalanceBefore != null) allocation.endingBalanceBefore = endingBalanceBefore;
+    if (balanceApplied != null) allocation.balanceApplied = balanceApplied;
+    if (advanceAmount != null) allocation.advanceAmount = advanceAmount;
+    return allocation;
 };
 
 const sanitizeAssignment = (value) => {
@@ -243,7 +250,7 @@ const sanitizeAssignment = (value) => {
     const singleAllocation = allocations.length === 1 ? allocations[0] : null;
     const paymentEntryIds = allocations.map((allocation) => allocation.paymentEntryId).filter(Boolean);
     const allocationTotal = allocations.reduce((sum, allocation) => sum + Number(allocation.amount || 0), 0);
-    return {
+    const assignment = {
         status: value.status === 'posted' ? 'posted' : 'claimed',
         submissionId,
         accountNumber: singleAllocation?.accountNumber || '',
@@ -262,6 +269,8 @@ const sanitizeAssignment = (value) => {
         paymentEntryIds,
         postedAt: toSafeText(value.postedAt, 40) || null
     };
+    if (value.advanceConfirmed === true) assignment.advanceConfirmed = true;
+    return assignment;
 };
 
 const sanitizeAssignmentAuditEntry = (value) => {
@@ -862,6 +871,7 @@ const claimGcashTransactionAllocations = async ({
     allocations,
     amount,
     paymentDate,
+    advanceConfirmed,
     claimedBy
 } = {}) => {
     const safeBranchId = Number(branchId);
@@ -942,6 +952,7 @@ const claimGcashTransactionAllocations = async ({
             allocations: safeAllocations,
             amount,
             paymentDate,
+            advanceConfirmed,
             claimedAt,
             claimedBy
         });

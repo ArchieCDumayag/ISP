@@ -479,7 +479,8 @@ test('create allocation, onboarding rollback, audit, and relational schema hooks
   assert.match(createSource, /await connection\.commit\(\)/);
   assert.match(createSource, /await connection\.rollback\(\)/);
   assert.match(createSource, /SELECT GET_LOCK\(/);
-  assert.match(createSource, /latestDuplicate = findCustomerCreateDuplicate/);
+  assert.match(createSource, /latestDuplicate = findCustomerCreateBlockingDuplicate/);
+  assert.match(createSource, /\{ allowDuplicateMobile \}/);
   assert.ok(createSource.indexOf('await connection.beginTransaction()')
     < createSource.indexOf('await writeCustomers([persistedCustomer]'));
   assert.ok(createSource.indexOf('await writeCustomers([persistedCustomer]')

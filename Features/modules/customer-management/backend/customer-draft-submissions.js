@@ -254,6 +254,79 @@ const normalizePhilippineMobile = (value, { fallbackToRaw = true } = {}) => {
     return fallbackToRaw ? original : '';
 };
 
+const findDraftSharedMobileConflicts = ({ draft = {}, customers = [], accountNumber = '' } = {}) => {
+    const mobile = normalizePhilippineMobile(draft.mobile || draft.contactNumber || '', { fallbackToRaw: false });
+    const targetAccountNumber = toSafeText(accountNumber, 20);
+    if (!mobile) return [];
+    const seen = new Set();
+    return (Array.isArray(customers) ? customers : []).reduce((matches, customer) => {
+        const candidateAccountNumber = toSafeText(customer?.accountNumber, 20);
+        if (!candidateAccountNumber || candidateAccountNumber === targetAccountNumber || seen.has(candidateAccountNumber)) {
+            return matches;
+        }
+        const candidateMobile = normalizePhilippineMobile(
+            customer?.mobileRaw || customer?.mobile || customer?.contactNumber || '',
+            { fallbackToRaw: false }
+        );
+        if (!candidateMobile || candidateMobile !== mobile) return matches;
+        seen.add(candidateAccountNumber);
+        matches.push({
+            accountNumber: candidateAccountNumber,
+            customerName: buildCustomerName(customer) || candidateAccountNumber
+        });
+        return matches;
+    }, []);
+};
+
+const createSharedMobileConfirmationError = (conflicts = [], message = '') => {
+    const safeConflicts = (Array.isArray(conflicts) ? conflicts : []).map((entry) => ({
+        accountNumber: toSafeText(entry?.accountNumber, 20),
+        customerName: toSafeText(entry?.customerName, 200)
+    })).filter((entry) => entry.accountNumber);
+    const firstAccountNumber = safeConflicts[0]?.accountNumber || '';
+    const error = createError(
+        409,
+        message || (firstAccountNumber
+            ? `Mobile number already belongs to account ${firstAccountNumber}. Confirm it is a shared contact and record the reason to continue.`
+            : 'This mobile number is already used by another customer. Confirm it is a shared contact and record the reason to continue.')
+    );
+    error.code = 'CUSTOMER_DRAFT_SHARED_MOBILE_CONFIRMATION_REQUIRED';
+    error.duplicate = { kind: 'mobile', accountNumber: firstAccountNumber };
+    error.duplicateAccounts = safeConflicts;
+    return error;
+};
+
+const resolveDraftSharedMobileApproval = ({
+    draft = {},
+    customers = [],
+    accountNumber = '',
+    override = {},
+    actor = null
+} = {}) => {
+    const conflicts = findDraftSharedMobileConflicts({ draft, customers, accountNumber });
+    if (!conflicts.length) return null;
+    const confirmed = override?.confirmed === true;
+    const reason = toSafeText(override?.reason, 500);
+    if (!confirmed) throw createSharedMobileConfirmationError(conflicts);
+    if (reason.length < 5) {
+        throw createSharedMobileConfirmationError(
+            conflicts,
+            'Enter a clear reason for approving this shared mobile number.'
+        );
+    }
+    return {
+        confirmed: true,
+        reason,
+        matchedAccounts: conflicts.map((entry) => ({ ...entry })),
+        confirmedAt: new Date().toISOString(),
+        confirmedBy: {
+            id: toSafeText(actor?.id, 32),
+            username: toSafeText(actor?.username, 100),
+            name: toSafeText(actor?.name, 120)
+        }
+    };
+};
+
 const normalizeDraftPayload = (payload = {}) => {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
     const firstName = normalizeCustomerName(source.firstName, 100);
@@ -2088,6 +2161,13 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 existing.draftAccountNumber || existing.approvedCustomerAccountNumber,
                 20
             );
+            const sharedMobileApproval = resolveDraftSharedMobileApproval({
+                draft: reviewedDraft,
+                customers,
+                accountNumber: linkedCustomerAccountNumber,
+                override: req.body?.sharedMobileOverride,
+                actor: req.user || null
+            });
             reviewedDraft = applyDraftPortalCredentialDefaults(reviewedDraft, linkedCustomerAccountNumber);
             validateDraftPayload(reviewedDraft, { coverageAreas });
             const reviewedPonSelection = getDraftPonSelection(reviewedDraft);
@@ -2108,7 +2188,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                     branchId: req.branchId,
                     refreshSource: 'customer-drafts-finalize',
                     allowPastBillingDates: true,
-                    trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
+                    trustedOnuSerialNumber: reviewedDraft.onuSerialNumber,
+                    allowDuplicateMobile: Boolean(sharedMobileApproval)
                 });
             } catch (error) {
                 if (Number(error?.status || 0) !== 404) {
@@ -2121,7 +2202,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                     branchId: req.branchId,
                     refreshSource: 'customer-drafts-finalize',
                     allowPastBillingDates: true,
-                    trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
+                    trustedOnuSerialNumber: reviewedDraft.onuSerialNumber,
+                    allowDuplicateMobile: Boolean(sharedMobileApproval)
                 });
             }
 
@@ -2151,6 +2233,10 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
 
             const finalizedDraft = {
                 ...reviewedDraft,
+                ...(sharedMobileApproval ? {
+                    sharedMobileContact: true,
+                    sharedMobileOverrideAudit: sharedMobileApproval
+                } : {}),
                 accountNumber: persistedCustomer?.accountNumber || linkedCustomerAccountNumber || '',
                 mobile: persistedCustomer?.mobileRaw || persistedCustomer?.mobile || reviewedDraft.mobile || '',
                 contactNumber: persistedCustomer?.mobileRaw || persistedCustomer?.mobile || reviewedDraft.mobile || '',
@@ -2268,6 +2354,13 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             existing.draft_account_number || existing.approved_customer_account_number,
             20
         );
+        const sharedMobileApproval = resolveDraftSharedMobileApproval({
+            draft: reviewedDraft,
+            customers,
+            accountNumber: linkedCustomerAccountNumber,
+            override: req.body?.sharedMobileOverride,
+            actor: req.user || null
+        });
         reviewedDraft = applyDraftPortalCredentialDefaults(reviewedDraft, linkedCustomerAccountNumber);
         validateDraftPayload(reviewedDraft, { coverageAreas });
         const reviewedPonSelection = getDraftPonSelection(reviewedDraft);
@@ -2287,7 +2380,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 branchId: req.branchId,
                 refreshSource: 'customer-drafts-finalize',
                 allowPastBillingDates: true,
-                trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
+                trustedOnuSerialNumber: reviewedDraft.onuSerialNumber,
+                allowDuplicateMobile: Boolean(sharedMobileApproval)
             });
         } catch (error) {
             if (Number(error?.status || 0) !== 404) {
@@ -2300,7 +2394,8 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
                 branchId: req.branchId,
                 refreshSource: 'customer-drafts-finalize',
                 allowPastBillingDates: true,
-                trustedOnuSerialNumber: reviewedDraft.onuSerialNumber
+                trustedOnuSerialNumber: reviewedDraft.onuSerialNumber,
+                allowDuplicateMobile: Boolean(sharedMobileApproval)
             });
         }
 
@@ -2331,6 +2426,10 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
 
         const finalizedDraft = {
             ...reviewedDraft,
+            ...(sharedMobileApproval ? {
+                sharedMobileContact: true,
+                sharedMobileOverrideAudit: sharedMobileApproval
+            } : {}),
             accountNumber: persistedCustomer?.accountNumber || linkedCustomerAccountNumber || '',
             mobile: persistedCustomer?.mobileRaw || persistedCustomer?.mobile || reviewedDraft.mobile || '',
             contactNumber: persistedCustomer?.mobileRaw || persistedCustomer?.mobile || reviewedDraft.mobile || '',
@@ -2405,6 +2504,24 @@ adminRouter.post('/:id/approve', async (req, res, next) => {
             } catch {
                 // ignore rollback errors
             }
+        }
+        if (
+            error?.code === 'CUSTOMER_DRAFT_SHARED_MOBILE_CONFIRMATION_REQUIRED'
+            || error?.duplicate?.kind === 'mobile'
+        ) {
+            const duplicateAccounts = Array.isArray(error?.duplicateAccounts) && error.duplicateAccounts.length
+                ? error.duplicateAccounts
+                : (error?.duplicate?.accountNumber ? [{
+                    accountNumber: toSafeText(error.duplicate.accountNumber, 20),
+                    customerName: ''
+                }] : []);
+            return res.status(409).json({
+                ok: false,
+                error: error.message,
+                code: 'CUSTOMER_DRAFT_SHARED_MOBILE_CONFIRMATION_REQUIRED',
+                duplicate: { kind: 'mobile' },
+                duplicateAccounts
+            });
         }
         next(error);
     } finally {
@@ -2574,6 +2691,8 @@ module.exports.buildTechnicianProfile = buildTechnicianProfile;
 module.exports.loadTechnicianByToken = loadTechnicianByToken;
 module.exports.requireTechnicianAuth = requireTechnicianAuth;
 module.exports.normalizeDraftPayload = normalizeDraftPayload;
+module.exports.findDraftSharedMobileConflicts = findDraftSharedMobileConflicts;
+module.exports.resolveDraftSharedMobileApproval = resolveDraftSharedMobileApproval;
 module.exports.applyFirstBillDefaults = applyFirstBillDefaults;
 module.exports.computeFirstBillCollection = computeFirstBillCollection;
 module.exports.applyReferralDefaults = applyReferralDefaults;

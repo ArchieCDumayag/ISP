@@ -276,7 +276,7 @@
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title" id="queuePostGcashModalTitle">Bind &amp; Post Imported GCash Payment</h2>
-                        <p class="text-secondary mt-1 mb-0">Allocate this reference across one to three customer accounts. Paid clients can receive advance payments.</p>
+                        <p class="text-secondary mt-1 mb-0">Allocate this reference across one to three customer accounts. Any amount above a current balance becomes confirmed advance credit.</p>
                     </div>
                     <button class="btn btn-icon btn-outline-secondary close-modal" type="button" data-dismiss="queue-post-gcash-modal" aria-label="Close">
                         <i class="ti ti-x" aria-hidden="true"></i>
@@ -342,10 +342,19 @@
                                 </div>
                                 <div id="queuePostGcashAllocationTotal" class="alert alert-warning mt-3 mb-0" role="status">Allocated: ₱0.00 | Remaining: ₱0.00</div>
                             </div>
+                            <div class="col-12" id="queuePostGcashAdvanceConfirmationGroup" hidden>
+                                <div class="alert alert-warning mb-0" role="status">
+                                    <label class="form-check mb-0">
+                                        <input class="form-check-input" type="checkbox" id="queuePostGcashAdvanceConfirmed">
+                                        <span class="form-check-label" id="queuePostGcashAdvanceConfirmationText">I confirm the displayed excess will be stored as advance credit.</span>
+                                    </label>
+                                    <div class="form-hint ms-4">The full imported amount stays under this GCash reference; only the excess carries forward to the customer's next bill.</div>
+                                </div>
+                            </div>
                             <div class="col-12">
                                 <label class="form-check mb-0">
                                     <input class="form-check-input" type="checkbox" id="queuePostGcashAssignmentConfirmed">
-                                    <span class="form-check-label">I verified every customer, amount due or advance payment, allocation amount, reference, recipient, and the exact imported total.</span>
+                                    <span class="form-check-label">I verified every customer, balance-and-advance split, allocation amount, reference, recipient, and the exact imported total.</span>
                                 </label>
                                 <div class="form-hint ms-4">All allocations post together. After posting, this reference is permanently locked to this allocation group.</div>
                             </div>
@@ -732,7 +741,7 @@
     </div>
 
     <script src="layout.js?v=3.9"></script>
-    <script src="payment-confirmation-queue.js?v=5.21"></script>
+    <script src="payment-confirmation-queue.js?v=5.22"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

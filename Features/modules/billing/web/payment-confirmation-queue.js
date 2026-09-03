@@ -75,6 +75,9 @@
     const postGcashAllocations = document.getElementById('queuePostGcashAllocations');
     const postGcashAddAllocationButton = document.getElementById('queuePostGcashAddAllocationBtn');
     const postGcashAllocationTotal = document.getElementById('queuePostGcashAllocationTotal');
+    const postGcashAdvanceConfirmationGroup = document.getElementById('queuePostGcashAdvanceConfirmationGroup');
+    const postGcashAdvanceConfirmed = document.getElementById('queuePostGcashAdvanceConfirmed');
+    const postGcashAdvanceConfirmationText = document.getElementById('queuePostGcashAdvanceConfirmationText');
     const postGcashAssignmentConfirmed = document.getElementById('queuePostGcashAssignmentConfirmed');
     const postGcashSubmitButton = document.getElementById('queuePostGcashSubmitBtn');
     const bindPendingGcashModal = document.getElementById('queueBindPendingGcashModal');
@@ -703,6 +706,48 @@
         postGcashAllocations?.querySelectorAll('[data-gcash-allocation-row]') || []
     );
 
+    const getPostGcashAdvanceBreakdown = () => getPostGcashAllocationRows().map((row) => {
+        const accountNumber = String(row.querySelector('[data-gcash-allocation-account]')?.value || '').trim();
+        const amount = Number(row.querySelector('[data-gcash-allocation-amount]')?.value);
+        const record = state.paymentRecords.find((item) => (
+            String(item?.accountNumber || '').trim() === accountNumber
+        )) || null;
+        const endingBalance = getCanonicalEndingBalance(record || {});
+        if (!accountNumber || !record || !Number.isFinite(amount) || amount <= 0 || !Number.isFinite(endingBalance)) {
+            return { row, accountNumber, record, amount, balanceApplied: 0, advanceAmount: 0 };
+        }
+        const positiveEndingBalance = Math.max(0, endingBalance);
+        const balanceApplied = Number(Math.min(amount, positiveEndingBalance).toFixed(2));
+        const advanceAmount = Number(Math.max(0, amount - balanceApplied).toFixed(2));
+        return { row, accountNumber, record, amount, balanceApplied, advanceAmount };
+    });
+
+    const renderPostGcashAdvanceConfirmation = ({ reset = false } = {}) => {
+        const advanceRows = getPostGcashAdvanceBreakdown().filter((item) => item.advanceAmount > 0.009);
+        const advanceTotal = Number(advanceRows.reduce((sum, item) => sum + item.advanceAmount, 0).toFixed(2));
+        const hasAdvance = advanceTotal > 0.009;
+        if (postGcashAdvanceConfirmationGroup) postGcashAdvanceConfirmationGroup.hidden = !hasAdvance;
+        if (postGcashAdvanceConfirmed) {
+            postGcashAdvanceConfirmed.required = hasAdvance;
+            if (reset || !hasAdvance) postGcashAdvanceConfirmed.checked = false;
+        }
+        if (postGcashAdvanceConfirmationText) {
+            if (advanceRows.length === 1) {
+                postGcashAdvanceConfirmationText.textContent = `I confirm ${formatCurrency(advanceTotal)} will be stored as advance credit for ${getPaymentRecordName(advanceRows[0].record)}.`;
+            } else if (hasAdvance) {
+                postGcashAdvanceConfirmationText.textContent = `I confirm ${formatCurrency(advanceTotal)} total will be stored as advance credit across these customers.`;
+            } else {
+                postGcashAdvanceConfirmationText.textContent = 'I confirm the displayed excess will be stored as advance credit.';
+            }
+        }
+        return { advanceRows, advanceTotal };
+    };
+
+    const invalidatePostGcashConfirmations = () => {
+        if (postGcashAssignmentConfirmed) postGcashAssignmentConfirmed.checked = false;
+        renderPostGcashAdvanceConfirmation({ reset: true });
+    };
+
     const renumberPostGcashAllocationRows = () => {
         getPostGcashAllocationRows().forEach((row, index) => {
             const title = row.querySelector('[data-gcash-allocation-title]');
@@ -732,6 +777,7 @@
         if (postGcashAddAllocationButton) {
             postGcashAddAllocationButton.disabled = !state.paymentRecords.length || getPostGcashAllocationRows().length >= 3;
         }
+        renderPostGcashAdvanceConfirmation();
     };
 
     const resetPostGcashAllocations = () => {
@@ -766,6 +812,9 @@
                 summary.textContent = 'Select a customer to review the amount due or advance payment.';
             }
         }
+        if (postGcashAssignmentConfirmed) postGcashAssignmentConfirmed.checked = false;
+        if (postGcashAdvanceConfirmed) postGcashAdvanceConfirmed.checked = false;
+        if (postGcashAdvanceConfirmationGroup) postGcashAdvanceConfirmationGroup.hidden = true;
         renumberPostGcashAllocationRows();
         renderPostGcashAllocationTotal();
     };
@@ -896,6 +945,7 @@
         searchInput.value = getPostGcashAccountDisplay(record);
         closePostGcashAccountSuggestions();
         updatePostGcashCurrentMonth(row);
+        invalidatePostGcashConfirmations();
         renderPostGcashAllocationTotal();
     };
 
@@ -944,19 +994,29 @@
         }
 
         const isAdvancePayment = isPostGcashAdvancePaymentRecord(record);
-        if (amountInput && !isAdvancePayment && Number.isFinite(endingBalance) && endingBalance > 0) {
-            amountInput.max = endingBalance.toFixed(2);
-        } else {
-            amountInput?.removeAttribute('max');
-        }
+        amountInput?.removeAttribute('max');
         if (summary) {
             const available = currentCycle && Number.isFinite(endingBalance);
-            summary.className = `alert ${available ? 'alert-info' : 'alert-warning'} mb-0`;
-            summary.textContent = available
-                ? (isAdvancePayment
+            const amount = Number(amountInput?.value);
+            const positiveEndingBalance = Math.max(0, Number(endingBalance) || 0);
+            const balanceApplied = Number.isFinite(amount) && amount > 0
+                ? Number(Math.min(amount, positiveEndingBalance).toFixed(2))
+                : 0;
+            const advanceAmount = Number.isFinite(amount) && amount > 0
+                ? Number(Math.max(0, amount - balanceApplied).toFixed(2))
+                : 0;
+            summary.className = `alert ${available && advanceAmount <= 0.009 ? 'alert-info' : 'alert-warning'} mb-0`;
+            if (!available) {
+                summary.textContent = `${getPaymentRecordName(record)} has no current billing cycle available.`;
+            } else if (balanceApplied > 0.009 && advanceAmount > 0.009) {
+                summary.textContent = `${formatCurrency(balanceApplied)} will settle the current balance. ${formatCurrency(advanceAmount)} will be recorded as advance credit.`;
+            } else if (advanceAmount > 0.009) {
+                summary.textContent = `${getPaymentRecordName(record)} | ${formatCurrency(advanceAmount)} will be recorded as advance credit.`;
+            } else {
+                summary.textContent = isAdvancePayment
                     ? `${getPaymentRecordName(record)} | Advance Payment`
-                    : `${getPaymentRecordName(record)} | Amount due: ${formatCurrency(endingBalance)}`)
-                : `${getPaymentRecordName(record)} has no current billing cycle available.`;
+                    : `${getPaymentRecordName(record)} | Amount due: ${formatCurrency(endingBalance)}`;
+            }
         }
     };
 
@@ -999,6 +1059,7 @@
         const newRow = getPostGcashAllocationRows().at(-1);
         populatePostGcashAccounts(newRow);
         renumberPostGcashAllocationRows();
+        invalidatePostGcashConfirmations();
         renderPostGcashAllocationTotal();
         newRow?.querySelector('[data-gcash-account-search]')?.focus({ preventScroll: true });
     };
@@ -2666,26 +2727,15 @@
             allocationRows[unavailableAccountIndex]?.querySelector('[data-gcash-account-search]')?.focus();
             return;
         }
-        const overBalanceIndex = allocations.findIndex((allocation) => {
-            const record = state.paymentRecords.find((item) => (
-                String(item?.accountNumber || '').trim() === allocation.accountNumber
-            ));
-            const endingBalance = getCanonicalEndingBalance(record || {});
-            return !isPostGcashAdvancePaymentRecord(record || {})
-                && allocation.amount - endingBalance > 0.009;
-        });
-        if (overBalanceIndex >= 0) {
-            const allocation = allocations[overBalanceIndex];
-            const record = state.paymentRecords.find((item) => (
-                String(item?.accountNumber || '').trim() === allocation.accountNumber
-            ));
-            notify(`Allocation ${overBalanceIndex + 1} cannot exceed the ending balance of ${formatCurrency(getCanonicalEndingBalance(record || {}))}.`, 'error');
-            allocationRows[overBalanceIndex]?.querySelector('[data-gcash-allocation-amount]')?.focus();
-            return;
-        }
         const allocatedTotal = Number(allocations.reduce((sum, allocation) => sum + allocation.amount, 0).toFixed(2));
         if (Math.abs(allocatedTotal - amount) > 0.009) {
             notify(`Allocation total must equal ${formatCurrency(amount)}.`, 'error');
+            return;
+        }
+        const { advanceTotal } = renderPostGcashAdvanceConfirmation();
+        if (advanceTotal > 0.009 && !postGcashAdvanceConfirmed?.checked) {
+            notify(`Confirm that ${formatCurrency(advanceTotal)} will be stored as advance credit.`, 'error');
+            postGcashAdvanceConfirmed?.focus();
             return;
         }
         if (!postGcashAssignmentConfirmed?.checked) {
@@ -2700,6 +2750,7 @@
             await postGcashHistoryPayment(reference, {
                 amount: Number(amount.toFixed(2)),
                 allocations,
+                advanceConfirmed: advanceTotal > 0.009,
                 assignmentConfirmed: true
             });
             closePostGcashModal();
@@ -3193,9 +3244,12 @@
             const accountInput = row.querySelector('[data-gcash-allocation-account]');
             if (accountInput) accountInput.value = '';
             updatePostGcashCurrentMonth(row);
+            invalidatePostGcashConfirmations();
             renderPostGcashAccountSuggestions(row);
         }
         if (event.target.matches('[data-gcash-allocation-amount]')) {
+            updatePostGcashCurrentMonth(row);
+            invalidatePostGcashConfirmations();
             renderPostGcashAllocationTotal();
         }
     });
@@ -3251,6 +3305,7 @@
         if (!removeButton) return;
         removeButton.closest('[data-gcash-allocation-row]')?.remove();
         renumberPostGcashAllocationRows();
+        invalidatePostGcashConfirmations();
         renderPostGcashAllocationTotal();
     });
     postGcashForm?.addEventListener('submit', onPostGcashSubmit);

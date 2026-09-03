@@ -5,6 +5,8 @@ const path = require('node:path');
 
 const {
   normalizeDraftPayload,
+  findDraftSharedMobileConflicts,
+  resolveDraftSharedMobileApproval,
   applyFirstBillDefaults,
   computeFirstBillCollection,
   applyReferralDefaults,
@@ -16,6 +18,53 @@ const {
   selectRecoverableOwnedInProgressDraft,
   buildDraftDuplicateConflict
 } = require('../backend/customer-draft-submissions');
+
+test('Admin can approve an intentional shared mobile only with an audited reason', () => {
+  const customers = [{
+    accountNumber: '100000365',
+    firstName: 'Existing',
+    lastName: 'Customer',
+    mobileRaw: '09361565251'
+  }];
+  const draft = { mobile: '+639361565251' };
+  assert.deepEqual(findDraftSharedMobileConflicts({ draft, customers }), [{
+    accountNumber: '100000365',
+    customerName: 'Existing Customer'
+  }]);
+  assert.throws(
+    () => resolveDraftSharedMobileApproval({ draft, customers }),
+    (error) => error?.status === 409
+      && error?.code === 'CUSTOMER_DRAFT_SHARED_MOBILE_CONFIRMATION_REQUIRED'
+      && error?.duplicateAccounts?.[0]?.accountNumber === '100000365'
+  );
+  assert.throws(
+    () => resolveDraftSharedMobileApproval({
+      draft,
+      customers,
+      override: { confirmed: true, reason: 'no' }
+    }),
+    /clear reason/i
+  );
+  const approval = resolveDraftSharedMobileApproval({
+    draft,
+    customers,
+    override: { confirmed: true, reason: 'Parent manages both household accounts' },
+    actor: { id: '9', username: 'admin', name: 'Admin User' }
+  });
+  assert.equal(approval.confirmed, true);
+  assert.equal(approval.reason, 'Parent manages both household accounts');
+  assert.deepEqual(approval.matchedAccounts, [{
+    accountNumber: '100000365',
+    customerName: 'Existing Customer'
+  }]);
+  assert.deepEqual(approval.confirmedBy, { id: '9', username: 'admin', name: 'Admin User' });
+  assert.match(approval.confirmedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(findDraftSharedMobileConflicts({
+    draft,
+    customers,
+    accountNumber: '100000365'
+  }), []);
+});
 
 test('technician onboarding keeps structured identity, address, payment, and referral input', () => {
   const draft = normalizeDraftPayload({
@@ -347,6 +396,11 @@ test('draft decisions serialize JSON and claim MySQL state before destructive cl
     source.indexOf('const validateDraftPayload')
   );
   assert.match(approve, /return await withDraftSubmissionLock/);
+  assert.match(approve, /resolveDraftSharedMobileApproval/);
+  assert.match(approve, /sharedMobileOverrideAudit/);
+  assert.match(approve, /allowDuplicateMobile: Boolean\(sharedMobileApproval\)/);
+  assert.ok(approve.indexOf('resolveDraftSharedMobileApproval')
+    < approve.indexOf('prepareDraftPonHoldForAdmin'));
   assert.match(approve, /recordDraftFirstBillPayment/);
   assert.match(source, /advancePayment: collection\.firstBillAmountReceived/);
   assert.match(approve, /createPendingDraftReferral/);
@@ -394,6 +448,44 @@ test('Admin approval atomically finalizes the reviewed requested NAP port', () =
   assert.match(source, /finalizeRequestedPonAssignment/);
   assert.match(source, /releasePonDraftHold/);
   assert.match(source, /adminRouter\.get\('\/:id\/pon-options'/);
+});
+
+test('customer creation can bypass only a confirmed mobile duplicate', () => {
+  const { findCustomerCreateBlockingDuplicate } = require('../backend/customers');
+  const existing = [{
+    accountNumber: '100000365',
+    branchId: 1,
+    firstName: 'Existing',
+    lastName: 'Customer',
+    mobileRaw: '09361565251',
+    email: 'existing@example.com',
+    street: 'House 1',
+    barangay: 'San Jose',
+    municipality: 'Baggao',
+    province: 'Cagayan'
+  }];
+  assert.equal(findCustomerCreateBlockingDuplicate({
+    mobile: '+639361565251',
+    firstName: 'Different',
+    lastName: 'Person',
+    street: 'House 2',
+    barangay: 'Tallang',
+    municipality: 'Baggao',
+    province: 'Cagayan'
+  }, existing, 1, { allowDuplicateMobile: true }), null);
+  assert.equal(findCustomerCreateBlockingDuplicate({
+    mobile: '+639361565251',
+    email: 'existing@example.com'
+  }, existing, 1, { allowDuplicateMobile: true })?.kind, 'email');
+  assert.equal(findCustomerCreateBlockingDuplicate({
+    mobile: '+639361565251',
+    firstName: 'Existing',
+    lastName: 'Customer',
+    street: 'House 1',
+    barangay: 'San Jose',
+    municipality: 'Baggao',
+    province: 'Cagayan'
+  }, existing, 1, { allowDuplicateMobile: true })?.kind, 'identityAddress');
 });
 
 test('technician submits customer, billing, GPS, requested port, and ONU in one draft request', () => {

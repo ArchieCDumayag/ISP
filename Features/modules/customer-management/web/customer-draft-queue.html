@@ -89,14 +89,23 @@
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMiddleName">Middle Name</label><input class="form-control form-control-sm" type="text" id="draftReviewMiddleName" name="middleName" maxlength="100"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label required" for="draftReviewLastName">Last Name</label><input class="form-control form-control-sm" type="text" id="draftReviewLastName" name="lastName" maxlength="100" required></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewStatus">Status</label><select class="form-select form-select-sm" id="draftReviewStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="disabled">Disabled</option></select></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewContactNumber">Mobile Number</label><input class="form-control form-control-sm" type="tel" id="draftReviewContactNumber" name="contactNumber" maxlength="16" inputmode="tel"></div>
+                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewContactNumber">Mobile Number</label><input class="form-control form-control-sm" type="tel" id="draftReviewContactNumber" name="contactNumber" maxlength="16" inputmode="tel"><div class="form-hint">A household contact may be shared only with an audited Admin confirmation.</div></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewEmail">Email</label><input class="form-control form-control-sm" type="email" id="draftReviewEmail" name="email" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFacebookAccount">Facebook Account</label><input class="form-control form-control-sm" type="text" id="draftReviewFacebookAccount" name="facebookAccount" maxlength="200"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFacebookConfirmedAt">Facebook Confirmed At</label><input class="form-control form-control-sm" type="text" id="draftReviewFacebookConfirmedAt" name="facebookConfirmedAt" maxlength="80"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFacebookConfirmedBy">Facebook Confirmed By</label><input class="form-control form-control-sm" type="text" id="draftReviewFacebookConfirmedBy" name="facebookConfirmedBy" maxlength="120"></div>
                                 <div class="col-md-6 col-lg-4 d-flex align-items-end"><label class="form-check mb-2"><input class="form-check-input" type="checkbox" id="draftReviewFacebookConfirmed" name="facebookConfirmed" value="true"><span class="form-check-label">Facebook identity confirmed</span></label></div>
                                 <div class="col-md-6 col-lg-8"><label class="form-label" for="draftReviewClientEventId">App Submission Event ID</label><input class="form-control form-control-sm font-monospace" type="text" id="draftReviewClientEventId" name="clientEventId" readonly></div>
-                            </div><input type="hidden" name="planAmount" id="draftReviewPlanAmount"><div class="alert alert-warning py-2 mt-3 mb-0" id="draftReviewStatusMeta" hidden></div></div>
+                            </div><input type="hidden" name="planAmount" id="draftReviewPlanAmount">
+                            <div class="alert alert-warning mt-3 mb-0" id="draftReviewSharedMobileWarning" role="alert" hidden>
+                                <div class="fw-semibold" id="draftReviewSharedMobileMessage">This mobile number is already used by another customer.</div>
+                                <div class="text-secondary small mt-1">The mobile remains a shared contact only. Portal login continues to use the unique username or account number.</div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-12"><label class="form-check mb-0" for="draftReviewSharedMobileConfirmed"><input class="form-check-input" type="checkbox" id="draftReviewSharedMobileConfirmed"><span class="form-check-label">I verified this is an intentional shared household/contact number.</span></label></div>
+                                    <div class="col-12"><label class="form-label required" for="draftReviewSharedMobileReason">Approval reason</label><input class="form-control form-control-sm" type="text" id="draftReviewSharedMobileReason" maxlength="500" placeholder="Example: Parent is the contact for two household accounts"></div>
+                                </div>
+                            </div>
+                            <div class="alert alert-warning py-2 mt-3 mb-0" id="draftReviewStatusMeta" hidden></div></div>
                         </div>
 
                         <div class="card mb-3">
@@ -110,19 +119,31 @@
                         <div class="card mb-3">
                             <div class="card-header py-2"><h3 class="card-title mb-0">Service address</h3></div>
                             <div class="card-body"><div class="row g-3">
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewStreet">Street/House No.</label><input class="form-control form-control-sm" type="text" id="draftReviewStreet" name="street" maxlength="150"></div>
-                                <div class="col-md-6 col-lg-8"><label class="form-label" for="draftReviewServiceAddress">Submitted Service Address</label><input class="form-control form-control-sm" type="text" id="draftReviewServiceAddress" name="serviceAddress" maxlength="255"></div>
+                                <div class="col-12"><label class="form-label" for="draftReviewCompleteServiceAddress">Complete Service Address</label><input class="form-control form-control-sm" type="text" id="draftReviewCompleteServiceAddress" name="completeServiceAddress" maxlength="255" placeholder="House/Street, Barangay, Municipality, Province"><div class="form-hint">One review field; the structured Android address remains stored for compatibility and audit.</div></div>
+                                <input type="hidden" id="draftReviewStreet" name="street">
+                                <input type="hidden" id="draftReviewServiceAddress" name="serviceAddress">
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewBarangay">Barangay</label><input class="form-control form-control-sm" type="text" id="draftReviewBarangay" name="barangay" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMunicipality">Municipality/City</label><input class="form-control form-control-sm" type="text" id="draftReviewMunicipality" name="municipality" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewProvince">Province</label><input class="form-control form-control-sm" type="text" id="draftReviewProvince" name="province" maxlength="150"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewArea">Area / Cluster</label><select class="form-select form-select-sm" id="draftReviewArea" name="area"><option value="">Select area</option></select></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMapPin">Coordinates</label><input class="form-control form-control-sm" type="text" id="draftReviewMapPin" name="mapPin" maxlength="120" placeholder="e.g. 14.599500, 120.984200"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewProvinceCode">Province Code</label><input class="form-control form-control-sm" type="text" id="draftReviewProvinceCode" name="provinceCode" maxlength="20"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewMunicipalityCode">Municipality Code</label><input class="form-control form-control-sm" type="text" id="draftReviewMunicipalityCode" name="municipalityCode" maxlength="20"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewBarangayCode">Barangay Code</label><input class="form-control form-control-sm" type="text" id="draftReviewBarangayCode" name="barangayCode" maxlength="20"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewGpsAccuracy">GPS Accuracy (meters)</label><input class="form-control form-control-sm" type="number" id="draftReviewGpsAccuracy" name="gpsAccuracyMeters" min="0" max="10000" step="0.01"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewGpsCapturedAt">GPS Captured At</label><input class="form-control form-control-sm" type="text" id="draftReviewGpsCapturedAt" name="gpsCapturedAt" maxlength="80"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewLocationSource">Location Source</label><input class="form-control form-control-sm" type="text" id="draftReviewLocationSource" name="locationSource" maxlength="20"></div>
+                                <input type="hidden" id="draftReviewProvinceCode" name="provinceCode">
+                                <input type="hidden" id="draftReviewMunicipalityCode" name="municipalityCode">
+                                <input type="hidden" id="draftReviewBarangayCode" name="barangayCode">
+                                <input type="hidden" id="draftReviewGpsAccuracy" name="gpsAccuracyMeters">
+                                <input type="hidden" id="draftReviewGpsCapturedAt" name="gpsCapturedAt">
+                                <input type="hidden" id="draftReviewLocationSource" name="locationSource">
+                                <details class="col-12 border rounded p-3 bg-body" id="draftReviewLocationTechnicalDetails">
+                                    <summary class="fw-semibold">Location Technical Details <span class="text-secondary fw-normal">(Android audit data)</span></summary>
+                                    <dl class="row g-2 mt-2 mb-0 small">
+                                        <dt class="col-md-4">Province Code</dt><dd class="col-md-8 mb-0" id="draftReviewProvinceCodeDisplay">-</dd>
+                                        <dt class="col-md-4">Municipality Code</dt><dd class="col-md-8 mb-0" id="draftReviewMunicipalityCodeDisplay">-</dd>
+                                        <dt class="col-md-4">Barangay Code</dt><dd class="col-md-8 mb-0" id="draftReviewBarangayCodeDisplay">-</dd>
+                                        <dt class="col-md-4">GPS Accuracy</dt><dd class="col-md-8 mb-0" id="draftReviewGpsAccuracyDisplay">-</dd>
+                                        <dt class="col-md-4">GPS Captured At</dt><dd class="col-md-8 mb-0" id="draftReviewGpsCapturedAtDisplay">-</dd>
+                                        <dt class="col-md-4">Location Source</dt><dd class="col-md-8 mb-0" id="draftReviewLocationSourceDisplay">-</dd>
+                                    </dl>
+                                </details>
                             </div></div>
                         </div>
 
@@ -158,10 +179,11 @@
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillReceived">Amount Received by Technician</label><input class="form-control form-control-sm" type="number" id="draftReviewFirstBillReceived" name="firstBillAmountReceived" min="0" max="10000000" step="0.01"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillPeriodStart">First Bill Period Start</label><input class="form-control form-control-sm" type="date" id="draftReviewFirstBillPeriodStart" name="firstBillPeriodStart"></div>
                                 <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewFirstBillPeriodEnd">First Bill Period End</label><input class="form-control form-control-sm" type="date" id="draftReviewFirstBillPeriodEnd" name="firstBillPeriodEnd"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferralAccount">Referral Account</label><input class="form-control form-control-sm" type="text" id="draftReviewReferralAccount" name="referralCustomerAccountNumber" maxlength="20"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferralName">Referral Customer</label><input class="form-control form-control-sm" type="text" id="draftReviewReferralName" name="referralCustomerName" maxlength="200"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferralSource">Referral Source</label><input class="form-control form-control-sm" type="text" id="draftReviewReferralSource" name="referralSourceType" maxlength="40"></div>
-                                <div class="col-md-6 col-lg-4"><label class="form-label" for="draftReviewReferredBy">Referred By</label><input class="form-control form-control-sm" type="text" id="draftReviewReferredBy" name="referredBy" maxlength="200"></div>
+                                <div class="col-md-6 col-lg-8"><label class="form-label" for="draftReviewReferrer">Referred By Customer</label><input class="form-control form-control-sm" type="text" id="draftReviewReferrer" list="draftReviewReferrerOptions" autocomplete="off" placeholder="Search customer name or account number"><datalist id="draftReviewReferrerOptions"></datalist><div class="form-hint" id="draftReviewReferrerHelp">Optional. Select one existing customer; the account number is stored as the canonical referral.</div></div>
+                                <input type="hidden" id="draftReviewReferralAccount" name="referralCustomerAccountNumber">
+                                <input type="hidden" id="draftReviewReferralName" name="referralCustomerName">
+                                <input type="hidden" id="draftReviewReferralSource" name="referralSourceType">
+                                <input type="hidden" id="draftReviewReferredBy" name="referredBy">
                             </div></div>
                         </div>
 
@@ -178,7 +200,7 @@
     <script src="layout.js?v=3.9"></script>
     <script src="js/confirm-dialog.js?v=1.1"></script>
     <script src="/js/customer-name-case.js?v=1.0"></script>
-    <script src="js/customer-draft-queue.js?v=3.4"></script>
+    <script src="js/customer-draft-queue.js?v=3.5"></script>
     <script src="vendor/tabler/js/tabler.min.js"></script>
     <script src="js/tabler-enhance.js?v=2.2"></script>
 </body>

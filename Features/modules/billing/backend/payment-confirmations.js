@@ -607,6 +607,7 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
     const allocations = normalizeDirectGcashAllocations(req.body);
     const confirmedAmount = toFiniteNumber(req.body?.amount);
     const assignmentConfirmed = isExplicitlyConfirmed(req.body?.assignmentConfirmed);
+    const advanceConfirmed = isExplicitlyConfirmed(req.body?.advanceConfirmed);
     const submissionId = buildGcashHistorySubmissionId(req.branchId, reference);
     try {
         if (!reference) throw createError(400, 'GCash reference number is required.');
@@ -763,28 +764,38 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
                     error: `Account ${allocation.accountNumber} has no available billing balance.`
                 });
             }
-            const currentPaymentStatus = toSafeText(
-                currentCycle?.paymentStatus || billingSummary.billingStatus,
-                40
-            ).toLowerCase();
-            const isAdvancePayment = endingBalance <= 0.009
-                || ['paid', 'settled'].includes(currentPaymentStatus);
-            if (!isAdvancePayment && allocation.amount - endingBalance > 0.009) {
-                return res.status(409).json({
-                    ok: false,
-                    code: 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE',
-                    error: `Allocation for account ${allocation.accountNumber} cannot exceed its ending balance.`,
-                    accountNumber: allocation.accountNumber,
-                    endingBalance: Number(endingBalance.toFixed(2)),
-                    allocationAmount: allocation.amount
-                });
-            }
+            const positiveEndingBalance = Math.max(0, Number(endingBalance.toFixed(2)));
+            const balanceApplied = Number(Math.min(allocation.amount, positiveEndingBalance).toFixed(2));
+            const advanceAmount = Number(Math.max(0, allocation.amount - balanceApplied).toFixed(2));
             resolvedAllocations.push({
                 ...allocation,
                 billingMonth,
                 customerName: getPaymentRecordCustomerName(paymentRecord),
-                endingBalance: Number(endingBalance.toFixed(2)),
-                isAdvancePayment
+                endingBalanceBefore: Number(endingBalance.toFixed(2)),
+                balanceApplied,
+                advanceAmount,
+                isAdvancePayment: balanceApplied <= 0.009 && advanceAmount > 0.009,
+                includesAdvanceCredit: advanceAmount > 0.009
+            });
+        }
+
+        const advanceTotal = Number(resolvedAllocations.reduce((sum, allocation) => (
+            sum + allocation.advanceAmount
+        ), 0).toFixed(2));
+        if (advanceTotal > 0.009 && !advanceConfirmed) {
+            return res.status(400).json({
+                ok: false,
+                code: 'GCASH_ADVANCE_CONFIRMATION_REQUIRED',
+                error: `Confirm that ${advanceTotal.toFixed(2)} will be recorded as advance credit before posting.`,
+                advanceTotal,
+                allocations: resolvedAllocations.map((allocation) => ({
+                    accountNumber: allocation.accountNumber,
+                    customerName: allocation.customerName,
+                    amount: allocation.amount,
+                    endingBalanceBefore: allocation.endingBalanceBefore,
+                    balanceApplied: allocation.balanceApplied,
+                    advanceAmount: allocation.advanceAmount
+                }))
             });
         }
 
@@ -803,6 +814,7 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
                 allocations: resolvedAllocations,
                 amount: importedAmount,
                 paymentDate: officialPaymentDate,
+                advanceConfirmed: advanceTotal > 0.009 ? true : undefined,
                 claimedBy: reviewer
             });
             claimCreated = !claimedGcash.idempotent;
@@ -823,9 +835,11 @@ router.post('/gcash-history/:reference/post-payment', async (req, res, next) => 
             amount: Number(importedAmount.toFixed(2)),
             allocations: resolvedAllocations.map((allocation, index) => ({
                 ...allocation,
-                description: allocation.isAdvancePayment
-                    ? `Imported GCash advance payment allocation ${index + 1} of ${resolvedAllocations.length} posted through current billing cycle ${allocation.billingMonth}`
-                    : `Imported GCash payment allocation ${index + 1} of ${resolvedAllocations.length} posted to current billing cycle ${allocation.billingMonth}`
+                description: allocation.balanceApplied > 0.009 && allocation.advanceAmount > 0.009
+                    ? `Imported GCash payment allocation ${index + 1} of ${resolvedAllocations.length}: PHP ${allocation.balanceApplied.toFixed(2)} applied to current billing cycle ${allocation.billingMonth}; PHP ${allocation.advanceAmount.toFixed(2)} recorded as advance credit`
+                    : (allocation.isAdvancePayment
+                        ? `Imported GCash advance payment allocation ${index + 1} of ${resolvedAllocations.length} posted through current billing cycle ${allocation.billingMonth}`
+                        : `Imported GCash payment allocation ${index + 1} of ${resolvedAllocations.length} posted to current billing cycle ${allocation.billingMonth}`)
             })),
             reference,
             date: officialPaymentDate,

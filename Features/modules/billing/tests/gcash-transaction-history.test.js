@@ -251,9 +251,12 @@ assert(routeSource.includes("code: 'GCASH_ALLOCATION_TOTAL_MISMATCH'"));
 assert(routeSource.includes('claimGcashTransactionAllocations'));
 assert(routeSource.includes('finalizeGcashTransactionAllocations'));
 assert(routeSource.includes("code: 'GCASH_CURRENT_BILLING_CYCLE_UNAVAILABLE'"));
-assert(routeSource.includes("code: 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE'"));
-assert(routeSource.includes('const isAdvancePayment = endingBalance <= 0.009'));
+assert(routeSource.includes("code: 'GCASH_ADVANCE_CONFIRMATION_REQUIRED'"));
+assert(!routeSource.includes("code: 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE'"));
+assert(routeSource.includes('const balanceApplied = Number(Math.min(allocation.amount, positiveEndingBalance).toFixed(2))'));
+assert(routeSource.includes('const advanceAmount = Number(Math.max(0, allocation.amount - balanceApplied).toFixed(2))'));
 assert(routeSource.includes('Imported GCash advance payment allocation'));
+assert(routeSource.includes('recorded as advance credit'));
 assert(routeSource.includes('date: officialPaymentDate'));
 assert(routeSource.includes('paymentReceivedAt: officialTransactionAt'));
 assert(routeSource.includes("code = 'GCASH_TRANSACTION_TIMESTAMP_REQUIRED'"));
@@ -299,7 +302,11 @@ assert(htmlSource.includes('id="queuePostGcashAllocationTotal"'));
 assert(!htmlSource.includes('Current Billing Month'));
 assert(!htmlSource.includes('data-gcash-allocation-month'));
 assert(htmlSource.includes('Select a customer to review the amount due or advance payment.'));
-assert(htmlSource.includes('Paid clients can receive advance payments.'));
+assert(htmlSource.includes('Any amount above a current balance becomes confirmed advance credit.'));
+assert(htmlSource.includes('id="queuePostGcashAdvanceConfirmationGroup"'));
+assert(htmlSource.includes('id="queuePostGcashAdvanceConfirmed"'));
+assert(htmlSource.includes('id="queuePostGcashAdvanceConfirmationText"'));
+assert(htmlSource.includes('only the excess carries forward'));
 assert(!htmlSource.includes('Open Billing Month'));
 assert(htmlSource.includes('<th>Description</th>'));
 assert(htmlSource.includes('<th>Amount</th>'));
@@ -349,7 +356,7 @@ assert(htmlSource.includes('One official transaction updates one existing pendin
 assert(htmlSource.includes('it does not create another payment'));
 assert(htmlSource.includes('Compare the reference, time, sender, recipient, and description.'));
 assert(htmlSource.includes('css/payment-confirmation-queue.css?v=4.11'));
-assert(htmlSource.includes('payment-confirmation-queue.js?v=5.21'));
+assert(htmlSource.includes('payment-confirmation-queue.js?v=5.22'));
 assert(htmlSource.includes('id="queueGcashVisibleCount"'));
 assert(htmlSource.includes('<col class="gcash-col-description">'));
 assert(htmlSource.includes('<col class="gcash-col-match">'));
@@ -466,6 +473,11 @@ assert(browserSource.includes('queue-gcash-account-option__amount'));
 assert(browserSource.includes('Amount due:'));
 assert(browserSource.includes('Advance Payment'));
 assert(browserSource.includes('isPostGcashAdvancePaymentRecord'));
+assert(browserSource.includes('getPostGcashAdvanceBreakdown'));
+assert(browserSource.includes('renderPostGcashAdvanceConfirmation'));
+assert(browserSource.includes('advanceConfirmed: advanceTotal > 0.009'));
+assert(browserSource.includes('will settle the current balance'));
+assert(!browserSource.includes('cannot exceed the ending balance'));
 assert(browserSource.includes('getPostGcashAccountDisplay'));
 assert(browserSource.includes('formatCurrency(getCanonicalEndingBalance(record))'));
 assert(!browserSource.includes('Number(getCanonicalEndingBalance(record)) > 0.009'));
@@ -1046,6 +1058,12 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
                     ...transaction,
                     reference: 'DIRECT-LOCK-1003',
                     credit: 750,
+                    recipient: '09361565251'
+                },
+                {
+                    ...transaction,
+                    reference: 'DIRECT-OVERPAY-1004',
+                    credit: 810,
                     recipient: '09361565251'
                 }
             ]
@@ -2359,7 +2377,7 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
                     ]);
                     assert(payload.allocations.every((allocation) => allocation.isAdvancePayment === false));
                     assert(payload.allocations.every((allocation) => allocation.description.includes('current billing cycle')));
-                } else {
+                } else if (payload.reference === 'DIRECTADVANCE1002') {
                     assert.strictEqual(payload.reference, 'DIRECTADVANCE1002');
                     assert.strictEqual(payload.amount, 500);
                     assert.strictEqual(payload.allocations.length, 1);
@@ -2368,6 +2386,19 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
                     assert.strictEqual(payload.allocations[0].billingMonth, currentBillingMonth);
                     assert.strictEqual(payload.allocations[0].isAdvancePayment, true);
                     assert(payload.allocations[0].description.includes('advance payment'));
+                } else {
+                    assert.strictEqual(payload.reference, 'DIRECTOVERPAY1004');
+                    assert.strictEqual(payload.amount, 810);
+                    assert.strictEqual(payload.allocations.length, 1);
+                    assert.strictEqual(payload.allocations[0].accountNumber, 'ACC-OVERPAY');
+                    assert.strictEqual(payload.allocations[0].amount, 810);
+                    assert.strictEqual(payload.allocations[0].endingBalanceBefore, 800);
+                    assert.strictEqual(payload.allocations[0].balanceApplied, 800);
+                    assert.strictEqual(payload.allocations[0].advanceAmount, 10);
+                    assert.strictEqual(payload.allocations[0].isAdvancePayment, false);
+                    assert.strictEqual(payload.allocations[0].includesAdvanceCredit, true);
+                    assert(payload.allocations[0].description.includes('PHP 800.00 applied'));
+                    assert(payload.allocations[0].description.includes('PHP 10.00 recorded as advance credit'));
                 }
                 return {
                     inserted: true,
@@ -2395,7 +2426,8 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
                         'ACC-3001': 300,
                         'ACC-3002': 300,
                         'ACC-3003': 400,
-                        'ACC-PAID': 0
+                        'ACC-PAID': 0,
+                        'ACC-OVERPAY': 800
                     }[accountNumber] ?? 1000),
                     currentCycle: {
                         billingMonthKey: currentBillingMonth,
@@ -2468,18 +2500,19 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     assert.strictEqual(allocationMismatch.payload.code, 'GCASH_ALLOCATION_TOTAL_MISMATCH');
     assert.strictEqual(paymentWriteCount, 0);
 
-    const endingBalanceMismatch = await invokeDirectPost({
-        amount: 1000,
+    const advanceConfirmationMissing = await invokeDirectPost({
+        amount: 810,
         allocations: [
-            { accountNumber: 'ACC-3001', amount: 301 },
-            { accountNumber: 'ACC-3002', amount: 299 },
-            { accountNumber: 'ACC-3003', amount: 400 }
+            { accountNumber: 'ACC-OVERPAY', amount: 810 }
         ],
         assignmentConfirmed: true
-    });
-    assert.strictEqual(endingBalanceMismatch.statusCode, 409);
-    assert.strictEqual(endingBalanceMismatch.payload.code, 'GCASH_ALLOCATION_EXCEEDS_ENDING_BALANCE');
-    assert.strictEqual(endingBalanceMismatch.payload.endingBalance, 300);
+    }, 'DIRECT-OVERPAY-1004');
+    assert.strictEqual(advanceConfirmationMissing.statusCode, 400);
+    assert.strictEqual(advanceConfirmationMissing.payload.code, 'GCASH_ADVANCE_CONFIRMATION_REQUIRED');
+    assert.strictEqual(advanceConfirmationMissing.payload.advanceTotal, 10);
+    assert.strictEqual(advanceConfirmationMissing.payload.allocations[0].endingBalanceBefore, 800);
+    assert.strictEqual(advanceConfirmationMissing.payload.allocations[0].balanceApplied, 800);
+    assert.strictEqual(advanceConfirmationMissing.payload.allocations[0].advanceAmount, 10);
     assert.strictEqual(paymentWriteCount, 0);
 
     const directPost = await invokeDirectPost({
@@ -2523,6 +2556,7 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
         allocations: [
             { accountNumber: 'ACC-PAID', amount: 500 }
         ],
+        advanceConfirmed: true,
         assignmentConfirmed: true
     }, 'DIRECT-ADVANCE-1002');
     assert.strictEqual(advancePost.statusCode, 201);
@@ -2532,6 +2566,54 @@ assert(paymentHistoryHtmlSource.includes('Suggestions show only the client name 
     assert.strictEqual(advancePost.payload.assignment.allocations[0].amount, 500);
     assert.strictEqual(paymentWriteCount, 2);
     assert.strictEqual(paymentWritePayloads[1].allocations[0].isAdvancePayment, true);
+
+    const overpaymentPost = await invokeDirectPost({
+        amount: 810,
+        allocations: [
+            { accountNumber: 'ACC-OVERPAY', amount: 810 }
+        ],
+        advanceConfirmed: true,
+        assignmentConfirmed: true
+    }, 'DIRECT-OVERPAY-1004');
+    assert.strictEqual(overpaymentPost.statusCode, 201);
+    assert.strictEqual(overpaymentPost.payload.assignment.status, 'posted');
+    assert.strictEqual(overpaymentPost.payload.assignment.advanceConfirmed, true);
+    assert.strictEqual(overpaymentPost.payload.assignment.allocations.length, 1);
+    assert.strictEqual(overpaymentPost.payload.assignment.allocations[0].accountNumber, 'ACC-OVERPAY');
+    assert.strictEqual(overpaymentPost.payload.assignment.allocations[0].amount, 810);
+    assert.strictEqual(overpaymentPost.payload.assignment.allocations[0].endingBalanceBefore, 800);
+    assert.strictEqual(overpaymentPost.payload.assignment.allocations[0].balanceApplied, 800);
+    assert.strictEqual(overpaymentPost.payload.assignment.allocations[0].advanceAmount, 10);
+    assert.strictEqual(paymentWriteCount, 3);
+    assert.strictEqual(paymentWritePayloads[2].allocations[0].balanceApplied, 800);
+    assert.strictEqual(paymentWritePayloads[2].allocations[0].advanceAmount, 10);
+
+    const overpaymentBreakdown = calculatePaymentBreakdownEndingBalance({
+        accountNumber: 'ACC-OVERPAY',
+        planCategory: 'prepaid',
+        planAmount: 800,
+        history: [
+            {
+                id: `bill-ACC-OVERPAY-${currentBillingMonth}`,
+                amount: 800,
+                date: `${currentBillingMonth}-01`,
+                kind: 'bill',
+                direction: 'debit',
+                description: 'Monthly bill'
+            },
+            {
+                id: 'proof-directoverpay1004',
+                amount: 810,
+                date: currentPostingDate,
+                kind: 'payment',
+                direction: 'credit',
+                paymentMethod: 'gcash',
+                description: `Imported GCash payment: PHP 800.00 applied to current billing cycle ${currentBillingMonth}; PHP 10.00 recorded as advance credit`
+            }
+        ]
+    });
+    assert.strictEqual(overpaymentBreakdown.endingBalance, -10);
+    assert.strictEqual(overpaymentBreakdown.rows.at(-1).amountPaid, 810);
 
     const officialDisplayBreakdown = calculatePaymentBreakdownEndingBalance({
         accountNumber: 'ACC-OFFICIAL-DATE',

@@ -391,6 +391,19 @@ const findCustomerCreateDuplicate = (payload = {}, existingCustomers = [], branc
     return null;
 };
 
+const findCustomerCreateBlockingDuplicate = (payload = {}, existingCustomers = [], branchId = null, options = {}) => {
+    const duplicatePayload = options.allowDuplicateMobile === true
+        ? {
+            ...(payload || {}),
+            mobileRaw: '',
+            mobile: '',
+            contactNumber: '',
+            contact: ''
+        }
+        : payload;
+    return findCustomerCreateDuplicate(duplicatePayload, existingCustomers, branchId);
+};
+
 const validateAdminCustomerCreatePayload = (payload = {}, existingCustomers = [], branchId = null) => {
     const normalized = { ...(payload || {}) };
     normalized.firstName = normalizeCustomerField(payload?.firstName, 'firstName', { required: true });
@@ -5818,7 +5831,8 @@ const createCustomerRecordUnlocked = async (
         includePortalSetup = false,
         actor = null,
         accountCreateAttempt = 0,
-        trustedOnuSerialNumber
+        trustedOnuSerialNumber,
+        allowDuplicateMobile = false
     } = {}
 ) => {
     const scopedBranchId = Number(branchId);
@@ -6003,6 +6017,17 @@ const createCustomerRecordUnlocked = async (
     const payments = await readPayments(scopedBranchId);
     const inactiveByRules = isCustomerInactiveByRules(newCustomer, { plans, payments, now });
     const persistedCustomer = applyRuntimeStatusRules(newCustomer, { inactiveByRules });
+    const createDuplicate = findCustomerCreateBlockingDuplicate(
+        { ...effectivePayload, loginUsername },
+        customers,
+        scopedBranchId,
+        { allowDuplicateMobile }
+    );
+    if (createDuplicate) {
+        const duplicateError = createError(409, createDuplicate.message);
+        duplicateError.duplicate = createDuplicate;
+        throw duplicateError;
+    }
     let customerWasPersisted = false;
     let openingEntry = null;
     let auditEntry = null;
@@ -6042,10 +6067,11 @@ const createCustomerRecordUnlocked = async (
                  FROM customers
                  FOR UPDATE`
             );
-            const latestDuplicate = findCustomerCreateDuplicate(
+            const latestDuplicate = findCustomerCreateBlockingDuplicate(
                 { ...effectivePayload, loginUsername },
                 latestCustomerRows,
-                scopedBranchId
+                scopedBranchId,
+                { allowDuplicateMobile }
             );
             if (latestDuplicate) {
                 const duplicateError = createError(409, latestDuplicate.message);
@@ -6124,7 +6150,8 @@ const createCustomerRecordUnlocked = async (
                         includePortalSetup,
                         actor,
                         accountCreateAttempt: accountCreateAttempt + 1,
-                        trustedOnuSerialNumber
+                        trustedOnuSerialNumber,
+                        allowDuplicateMobile
                     }
                 );
             }
@@ -8695,6 +8722,7 @@ module.exports.recordIssuedAccountNumber = recordIssuedAccountNumber;
 module.exports.generateTemporaryPortalPassword = generateTemporaryPortalPassword;
 module.exports.validateAdminCustomerCreatePayload = validateAdminCustomerCreatePayload;
 module.exports.findCustomerCreateDuplicate = findCustomerCreateDuplicate;
+module.exports.findCustomerCreateBlockingDuplicate = findCustomerCreateBlockingDuplicate;
 module.exports.findCustomerOnuSerialDuplicate = findCustomerOnuSerialDuplicate;
 module.exports.normalizeOnuSerialNumber = normalizeOnuSerialNumber;
 module.exports.isOnuSerialDuplicateError = isOnuSerialDuplicateError;

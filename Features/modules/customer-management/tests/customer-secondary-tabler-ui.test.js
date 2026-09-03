@@ -83,6 +83,22 @@ assert.match(draftPage, /id="draftQueueStatus"[\s\S]*value="pending"[\s\S]*value
 assert.match(draftPage, /class="table table-vcenter table-hover card-table mb-0 draft-table"/);
 assert.match(draftPage, /class="[^"]*\balert\b[^"]*\balert-warning\b[^"]*" id="draftQueueBulkToolbar"/);
 assert.match(draftPage, /id="draftReviewModal"[\s\S]*class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"/);
+assert.match(draftPage, /id="draftReviewSharedMobileWarning"[\s\S]*intentional shared household\/contact number[\s\S]*id="draftReviewSharedMobileReason"/);
+assert.match(draftPage, /id="draftReviewCompleteServiceAddress"[^>]*name="completeServiceAddress"/);
+assert.doesNotMatch(draftPage, />Street\/House No\.<|>Submitted Service Address</);
+assert.match(draftPage, /type="hidden" id="draftReviewStreet" name="street"/);
+assert.match(draftPage, /type="hidden" id="draftReviewServiceAddress" name="serviceAddress"/);
+assert.match(draftPage, /id="draftReviewLocationTechnicalDetails"[\s\S]*Android audit data/);
+for (const id of ['draftReviewProvinceCode', 'draftReviewMunicipalityCode', 'draftReviewBarangayCode', 'draftReviewGpsAccuracy', 'draftReviewGpsCapturedAt', 'draftReviewLocationSource']) {
+  const field = findElementById(draftDocument, id);
+  assert.ok(field, `Draft Queue must preserve Android field #${id}.`);
+  assert.equal(getAttribute(field, 'type'), 'hidden', `#${id} must be hidden from the normal review form.`);
+}
+assert.match(draftPage, /id="draftReviewReferrer"[^>]*list="draftReviewReferrerOptions"/);
+assert.equal((draftPage.match(/>Referred By Customer</g) || []).length, 1);
+for (const id of ['draftReviewReferralAccount', 'draftReviewReferralName', 'draftReviewReferralSource', 'draftReviewReferredBy']) {
+  assert.equal(getAttribute(findElementById(draftDocument, id), 'type'), 'hidden');
+}
 assertNativeModalHierarchy(draftDocument, 'draftReviewModal');
 assertStaticButtonsUseTabler(draftPage);
 for (const legacyClass of ['section-frame', 'ghost-btn', 'primary-btn', 'footer-btn', 'draft-search-field', 'select-wrapper', 'page-size-control', 'form-card', 'form-field', 'form-section', 'secure-input-row', 'map-pin-card', 'draft-modal__content', 'modal-subtitle']) {
@@ -94,6 +110,14 @@ assert.match(draftScript, /class="badge \$\{escapeHtml\(statusUi\.className\)\}"
 assert.match(draftScript, /status=\$\{encodeURIComponent\(status\)\}/);
 assert.match(draftScript, /getQueueStatus\(item\) === 'in-progress'/);
 assert.match(draftScript, /Incomplete intake\. The technician can retry the submission/);
+assert.match(draftScript, /CUSTOMER_DRAFT_SHARED_MOBILE_CONFIRMATION_REQUIRED/);
+assert.match(draftScript, /sharedMobileOverride/);
+assert.match(draftScript, /Used by \$\{owner\}/);
+assert.match(draftScript, /Reserved for \$\{owner\}/);
+assert.match(draftScript, /Technician requested — \$\{statusLabel\}/);
+assert.match(draftScript, /option\.disabled = !available/);
+assert.match(draftScript, /extractStreetFromCompleteAddress/);
+assert.match(draftScript, /syncReferrerLegacyFields/);
 assert.doesNotMatch(draftScript, /fa-(?:solid|regular|spinner|trash|eye)|ghost-icon|status-pill|plan-pill|class="account-tag"/);
 assert.match(draftCss, /^\/\* Customer Draft Queue: page-specific layout for native Tabler components\. \*\//);
 assert.match(draftCss, /\.modal\.draft-modal\.show\s*\{[^}]*display:\s*block;[^}]*z-index:\s*1055/s);

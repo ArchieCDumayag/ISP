@@ -47,6 +47,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const metricPaymentsEl = document.getElementById('historyMetricPayments');
     const metricReferencesEl = document.getElementById('historyMetricReferences');
     const metricAccountsEl = document.getElementById('historyMetricAccounts');
+    const historyTabButtons = Array.from(document.querySelectorAll('[data-payment-history-tab]'));
+    const activeHistoryTab = document.getElementById('paymentHistoryActiveTab');
+    const deletedHistoryTab = document.getElementById('paymentHistoryDeletedTab');
+    const activeHistoryPanel = document.getElementById('paymentHistoryActivePanel');
+    const deletedHistoryPanel = document.getElementById('paymentHistoryDeletedPanel');
+    const deletedCountBadge = document.getElementById('paymentHistoryDeletedCount');
+    const deletedSearchInput = document.getElementById('paymentHistoryDeletedSearch');
+    const deletedStartDateInput = document.getElementById('paymentHistoryDeletedStartDate');
+    const deletedEndDateInput = document.getElementById('paymentHistoryDeletedEndDate');
+    const deletedByFilter = document.getElementById('paymentHistoryDeletedBy');
+    const deletedSortSelect = document.getElementById('paymentHistoryDeletedSort');
+    const deletedPageSizeSelect = document.getElementById('paymentHistoryDeletedPageSize');
+    const deletedTableBody = document.getElementById('paymentHistoryDeletedTableBody');
+    const deletedSummaryEl = document.getElementById('paymentHistoryDeletedSummary');
+    const deletedPageInfoEl = document.getElementById('paymentHistoryDeletedPageInfo');
+    const deletedPrevBtn = document.getElementById('paymentHistoryDeletedPrev');
+    const deletedNextBtn = document.getElementById('paymentHistoryDeletedNext');
+    const deleteModalEl = document.getElementById('paymentHistoryDeleteModal');
+    const deleteModalTitle = document.getElementById('paymentHistoryDeleteModalTitle');
+    const deleteForm = document.getElementById('paymentHistoryDeleteForm');
+    const deleteSummaryEl = document.getElementById('paymentHistoryDeleteSummary');
+    const deleteReasonInput = document.getElementById('paymentHistoryDeleteReason');
+    const deleteSubmitBtn = document.getElementById('paymentHistoryDeleteSubmit');
+    const restoreModalEl = document.getElementById('paymentHistoryRestoreModal');
+    const restoreForm = document.getElementById('paymentHistoryRestoreForm');
+    const restoreRecordEl = document.getElementById('paymentHistoryRestoreRecord');
+    const restoreReasonInput = document.getElementById('paymentHistoryRestoreReason');
+    const restoreConfirmedInput = document.getElementById('paymentHistoryRestoreConfirmed');
+    const restoreSubmitBtn = document.getElementById('paymentHistoryRestoreSubmit');
+    const auditModalEl = document.getElementById('paymentHistoryAuditModal');
+    const auditBodyEl = document.getElementById('paymentHistoryAuditBody');
 
     const currencyFormatter = new Intl.NumberFormat(locale, {
         style: 'currency',
@@ -90,7 +121,21 @@ document.addEventListener('DOMContentLoaded', () => {
         gcashBindingsLoaded: false,
         boundGcashEntryIds: new Set(),
         page: 1,
-        pageSize: Number(pageSizeSelect?.value) || 25
+        pageSize: Number(pageSizeSelect?.value) || 25,
+        activeHistoryView: 'active',
+        deletedRows: [],
+        filteredDeletedRows: [],
+        deletedTotal: 0,
+        deletedPage: 1,
+        deletedPageSize: Number(deletedPageSizeSelect?.value) || 25,
+        deletedLoading: false,
+        deletedLoaded: false,
+        deletedError: '',
+        deleteTarget: null,
+        deleteMode: 'single',
+        deleting: false,
+        restoreTarget: null,
+        restoring: false
     };
 
     const formatCurrency = (value) => currencyFormatter.format(Number(value) || 0);
@@ -319,6 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (method) return method;
         return 'System';
     };
+
+    const formatActorLabel = (actor, fallback = 'System') => {
+        if (typeof actor === 'string') return String(actor || '').trim() || fallback;
+        const name = String(actor?.name || actor?.displayName || actor?.username || actor?.email || '').trim();
+        const role = String(actor?.role || '').trim();
+        if (name && role) return `${name} (${role.charAt(0).toUpperCase()}${role.slice(1)})`;
+        return name || role || fallback;
+    };
+
+    const readAuditReason = (input) => String(input?.value || '').trim();
+    const isValidAuditReason = (value) => String(value || '').trim().length >= 8;
 
     const resolvePaymentMethodLabel = (entry) => {
         const rawMethod = String(
@@ -699,9 +755,9 @@ document.addEventListener('DOMContentLoaded', () => {
         modalEl.setAttribute('aria-modal', 'true');
         modalEl.setAttribute('role', 'dialog');
         document.body.classList.add('modal-open');
-        if (!document.querySelector('.modal-backdrop.payment-history-unmatched-backdrop')) {
+        if (!document.querySelector('.modal-backdrop')) {
             const backdrop = document.createElement('div');
-            backdrop.className = 'modal-backdrop fade show payment-history-unmatched-backdrop';
+            backdrop.className = 'modal-backdrop fade show payment-history-modal-backdrop';
             document.body.appendChild(backdrop);
         }
     };
@@ -711,10 +767,110 @@ document.addEventListener('DOMContentLoaded', () => {
         modalEl.style.display = 'none';
         modalEl.setAttribute('aria-hidden', 'true');
         modalEl.removeAttribute('aria-modal');
-        document.querySelectorAll('.modal-backdrop.payment-history-unmatched-backdrop').forEach((backdrop) => backdrop.remove());
         if (!document.querySelector('.modal.show')) {
+            document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
             document.body.classList.remove('modal-open');
         }
+    };
+    const modalFocusContexts = new WeakMap();
+    const focusModalTarget = (target) => {
+        if (!target || typeof target.focus !== 'function' || !target.isConnected || target.disabled) return false;
+        try {
+            target.focus({ preventScroll: true });
+        } catch {
+            target.focus();
+        }
+        return true;
+    };
+    const rememberModalFocus = (modalEl, { initialFocus = null, returnFocus = null, fallbackFocus = null } = {}) => {
+        if (!modalEl) return;
+        const activeElement = document.activeElement && document.activeElement !== document.body
+            ? document.activeElement
+            : null;
+        modalFocusContexts.set(modalEl, {
+            initialFocus,
+            returnFocus: returnFocus || activeElement,
+            fallbackFocus
+        });
+    };
+    const focusModalInitialControl = (modalEl) => {
+        const context = modalFocusContexts.get(modalEl) || {};
+        if (focusModalTarget(context.initialFocus)) return;
+        focusModalTarget(modalEl?.querySelector(
+            'textarea:not([disabled]), input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ));
+    };
+    const restoreModalTriggerFocus = (modalEl) => {
+        const context = modalFocusContexts.get(modalEl);
+        modalFocusContexts.delete(modalEl);
+        if (!context) return;
+        const restoreFocus = () => {
+            if (focusModalTarget(context.returnFocus)) return;
+            focusModalTarget(context.fallbackFocus);
+        };
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(restoreFocus);
+        } else {
+            restoreFocus();
+        }
+    };
+    const showModal = (modalEl, focusOptions = {}) => {
+        if (!modalEl) return;
+        rememberModalFocus(modalEl, focusOptions);
+        const Modal = getTablerModalClass();
+        if (Modal?.getOrCreateInstance) {
+            Modal.getOrCreateInstance(modalEl).show();
+            return;
+        }
+        if (Modal) {
+            new Modal(modalEl).show();
+            return;
+        }
+        fallbackShowModal(modalEl);
+        modalEl.dispatchEvent(new Event('shown.bs.modal'));
+    };
+    const hideModal = (modalEl) => {
+        if (!modalEl) return;
+        const Modal = getTablerModalClass();
+        if (Modal?.getInstance) {
+            const instance = Modal.getInstance(modalEl);
+            if (instance) {
+                instance.hide();
+                return;
+            }
+        }
+        fallbackHideModal(modalEl);
+        modalEl.dispatchEvent(new Event('hidden.bs.modal'));
+    };
+    const isRecoveryModalBusy = (modalEl) => (
+        (modalEl === deleteModalEl && state.deleting)
+        || (modalEl === restoreModalEl && state.restoring)
+    );
+    const setRecoveryModalDismissBusy = (modalEl, busy) => {
+        modalEl?.querySelectorAll('[data-bs-dismiss="modal"]').forEach((control) => {
+            control.disabled = Boolean(busy);
+            if (busy) {
+                control.setAttribute('aria-disabled', 'true');
+            } else {
+                control.removeAttribute('aria-disabled');
+            }
+        });
+    };
+    const bindFallbackModalDismiss = (modalEl) => {
+        if (!modalEl) return;
+        modalEl.addEventListener('click', (event) => {
+            const dismissButton = event.target?.closest?.('[data-bs-dismiss="modal"]');
+            if (dismissButton && modalEl.contains(dismissButton) && isRecoveryModalBusy(modalEl)) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            const Modal = getTablerModalClass();
+            const runtimeInstance = Modal?.getInstance ? Modal.getInstance(modalEl) : null;
+            if (!dismissButton || !modalEl.contains(dismissButton) || runtimeInstance) return;
+            event.preventDefault();
+            hideModal(modalEl);
+        }, true);
     };
     const showUnmatchedModal = () => {
         if (!unmatchedModalEl) return;
@@ -1217,6 +1373,328 @@ document.addEventListener('DOMContentLoaded', () => {
         return rows;
     }
 
+    function buildDeletedRows(records = []) {
+        const rows = (Array.isArray(records) ? records : []).map((record, index) => {
+            const entry = record?.entry && typeof record.entry === 'object' ? record.entry : {};
+            const customer = record?.customer && typeof record.customer === 'object' ? record.customer : {};
+            const accountNumber = String(record?.accountNumber || '').trim();
+            const entryId = String(record?.entryId || entry?.id || '').trim();
+            const archiveId = String(record?.id || `${accountNumber}-${entryId || index}`).trim();
+            const subscriber = getCustomerName(customer, accountNumber || 'Unknown');
+            const area = getCustomerArea(customer) || 'Unassigned';
+            const paymentRawDate = getPaymentReceivedAt(entry) || entry?.recordedAt || entry?.date || '';
+            const paymentDate = safeDate(paymentRawDate);
+            const paymentDateKey = paymentDate ? toDateKey(paymentDate) : String(paymentRawDate || '').slice(0, 10);
+            const paymentMonth = String(
+                entry?.billingMonth
+                || entry?.billing_month
+                || entry?.month
+                || paymentDateKey.slice(0, 7)
+                || ''
+            ).trim();
+            const deletedAt = String(record?.deletedAt || '').trim();
+            const deletedDate = safeDate(deletedAt);
+            const deletedDateKey = deletedDate ? toDateKey(deletedDate) : deletedAt.slice(0, 10);
+            const amount = Math.abs(Number(entry?.amount) || 0);
+            const paymentMethodLabel = resolvePaymentMethodLabel(entry);
+            const reference = String(entry?.reference || entry?.ref || '').trim();
+            const orNumber = String(entry?.orNumber || entry?.or_number || '').trim();
+            const paymentNumber = String(
+                entry?.paymentNumber
+                || entry?.payment_number
+                || entry?.receiptNumber
+                || entry?.receipt_number
+                || entryId
+                || ''
+            ).trim();
+            const deletionReason = String(record?.deletionReason || '').trim() || 'No deletion reason recorded.';
+            const deletedByLabel = formatActorLabel(record?.deletedBy, 'System');
+            const source = String(record?.source || '').trim() || 'Payment History';
+            const restoreBlockedReason = String(record?.restoreBlockedReason || '').trim();
+            const recoveryPending = record?.recoveryPending === true;
+            const restorable = !restoreBlockedReason && (recoveryPending || record?.restorable !== false);
+            const relatedAmountCorrections = Array.isArray(record?.related?.amountCorrections)
+                ? record.related.amountCorrections
+                : [];
+            const amountCorrections = relatedAmountCorrections.length
+                ? relatedAmountCorrections
+                : (Array.isArray(entry?.amountCorrections) ? entry.amountCorrections : []);
+            const audit = Array.isArray(record?.audit) ? record.audit : [];
+
+            return {
+                id: archiveId,
+                archiveId,
+                accountNumber,
+                entryId,
+                subscriber,
+                area,
+                amount,
+                paymentMethodLabel,
+                paymentNumber,
+                reference,
+                orNumber,
+                description: hideAllocationMetadata(entry?.description || ''),
+                recordedByLabel: formatActorLabel(entry?.recordedBy, formatRecorderLabel(entry)),
+                paymentRawDate,
+                paymentDateKey,
+                paymentMonth,
+                displayPaymentDate: formatEntryDate(paymentRawDate, paymentDate),
+                deletedAt,
+                deletedDateKey,
+                displayDeletedAt: deletedDate ? dateTimeFormatter.format(deletedDate) : (deletedAt || 'Unknown time'),
+                deletionReason,
+                deletedByLabel,
+                deletedByKey: normalizeText(deletedByLabel),
+                source,
+                restoreBlockedReason,
+                recoveryPending,
+                restorable,
+                amountCorrections,
+                audit,
+                rawRecord: record,
+                timestamp: deletedDate ? deletedDate.getTime() : 0
+            };
+        });
+
+        rows.forEach((row) => {
+            row.searchBlob = normalizeText([
+                row.archiveId,
+                row.accountNumber,
+                row.entryId,
+                row.subscriber,
+                row.area,
+                row.amount,
+                row.paymentMethodLabel,
+                row.paymentNumber,
+                row.reference,
+                row.orNumber,
+                row.description,
+                row.recordedByLabel,
+                row.paymentDateKey,
+                row.paymentMonth,
+                row.deletedByLabel,
+                row.deletedAt,
+                row.deletionReason,
+                row.source,
+                row.restoreBlockedReason
+            ].join(' '));
+        });
+
+        return rows;
+    }
+
+    const resolveGcashDeleteLockReason = (row) => {
+        if (row?.isGcashBound) return 'this GCash transaction is already posted';
+        if (row?.paymentMethodKey === 'gcash' && !state.gcashBindingsLoaded) {
+            return 'GCash binding status is unavailable; refresh before deleting';
+        }
+        return '';
+    };
+
+    function updateDeletedCount(total = state.deletedTotal) {
+        const normalizedTotal = Math.max(0, Number(total) || 0);
+        state.deletedTotal = normalizedTotal;
+        if (!deletedCountBadge) return;
+        deletedCountBadge.textContent = formatCount(normalizedTotal);
+        deletedCountBadge.setAttribute(
+            'aria-label',
+            `${formatCount(normalizedTotal)} deleted ${normalizedTotal === 1 ? 'payment' : 'payments'}`
+        );
+        const deletedTabActive = state.activeHistoryView === 'deleted';
+        deletedCountBadge.classList.toggle('bg-primary-lt', deletedTabActive);
+        deletedCountBadge.classList.toggle('text-primary', deletedTabActive);
+        deletedCountBadge.classList.toggle('bg-secondary-lt', !deletedTabActive);
+        deletedCountBadge.classList.toggle('text-secondary', !deletedTabActive);
+    }
+
+    function populateDeletedByFilter(rows) {
+        if (!deletedByFilter) return;
+        const currentValue = normalizeText(deletedByFilter.value);
+        const recorders = Array.from(new Set(
+            (Array.isArray(rows) ? rows : [])
+                .map((row) => String(row.deletedByLabel || '').trim())
+                .filter(Boolean)
+        )).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true }));
+        deletedByFilter.innerHTML = '<option value="">All admins</option>';
+        recorders.forEach((recorder) => deletedByFilter.add(new Option(recorder, normalizeText(recorder))));
+        deletedByFilter.value = recorders.some((recorder) => normalizeText(recorder) === currentValue) ? currentValue : '';
+    }
+
+    function sortDeletedRows(rows) {
+        const sortedRows = Array.isArray(rows) ? rows.slice() : [];
+        const sortValue = String(deletedSortSelect?.value || 'newOld').trim();
+        sortedRows.sort((left, right) => {
+            if (sortValue === 'oldNew') {
+                if (left.timestamp !== right.timestamp) return left.timestamp - right.timestamp;
+            } else if (sortValue === 'amountHighLow') {
+                if (right.amount !== left.amount) return right.amount - left.amount;
+            } else if (sortValue === 'amountLowHigh') {
+                if (left.amount !== right.amount) return left.amount - right.amount;
+            } else if (right.timestamp !== left.timestamp) {
+                return right.timestamp - left.timestamp;
+            }
+            return String(left.archiveId).localeCompare(String(right.archiveId), undefined, { numeric: true });
+        });
+        return sortedRows;
+    }
+
+    function renderDeletedLoading() {
+        if (deletedTableBody) {
+            deletedTableBody.innerHTML = `
+                <tr class="payment-history-empty-row">
+                    <td colspan="7" class="payment-history-empty-cell">
+                        <div class="empty">
+                            <div class="empty-icon"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i></div>
+                            <p class="empty-title">Loading deleted payments...</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+        if (deletedSummaryEl) deletedSummaryEl.textContent = 'Loading deleted payments...';
+        if (deletedPageInfoEl) deletedPageInfoEl.textContent = 'Page 1 of 1';
+        if (deletedPrevBtn) deletedPrevBtn.disabled = true;
+        if (deletedNextBtn) deletedNextBtn.disabled = true;
+    }
+
+    function renderDeletedTable() {
+        if (!deletedTableBody) return;
+        if (state.deletedLoading) {
+            renderDeletedLoading();
+            return;
+        }
+        if (state.deletedError) {
+            deletedTableBody.innerHTML = `
+                <tr class="payment-history-empty-row">
+                    <td colspan="7" class="payment-history-empty-cell">
+                        <div class="empty">
+                            <div class="empty-icon text-danger"><i class="ti ti-alert-circle" aria-hidden="true"></i></div>
+                            <p class="empty-title">${escapeHtml(state.deletedError)}</p>
+                            <div class="empty-action"><button type="button" class="btn btn-outline-primary btn-sm payment-history-deleted-retry"><i class="ti ti-refresh" aria-hidden="true"></i> Retry</button></div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            if (deletedSummaryEl) deletedSummaryEl.textContent = 'Could not load deleted payments.';
+            if (deletedPageInfoEl) deletedPageInfoEl.textContent = 'Page 1 of 1';
+            if (deletedPrevBtn) deletedPrevBtn.disabled = true;
+            if (deletedNextBtn) deletedNextBtn.disabled = true;
+            return;
+        }
+
+        const total = state.filteredDeletedRows.length;
+        const totalPages = Math.max(1, Math.ceil(total / state.deletedPageSize));
+        state.deletedPage = Math.min(Math.max(1, state.deletedPage), totalPages);
+        const startIndex = total === 0 ? 0 : ((state.deletedPage - 1) * state.deletedPageSize);
+        const pageRows = state.filteredDeletedRows.slice(startIndex, startIndex + state.deletedPageSize);
+        const visibleStart = total === 0 ? 0 : startIndex + 1;
+        const visibleEnd = total === 0 ? 0 : startIndex + pageRows.length;
+
+        if (!pageRows.length) {
+            deletedTableBody.innerHTML = `
+                <tr class="payment-history-empty-row">
+                    <td colspan="7" class="payment-history-empty-cell">
+                        <div class="empty">
+                            <div class="empty-icon"><i class="ti ti-trash-off" aria-hidden="true"></i></div>
+                            <p class="empty-title">No deleted payments matched the current filters.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        } else {
+            deletedTableBody.innerHTML = pageRows.map((row) => {
+                const references = [
+                    row.reference ? `Reference: ${row.reference}` : '',
+                    row.orNumber ? `OR: ${row.orNumber}` : ''
+                ].filter(Boolean);
+                const restoreTitle = row.restoreBlockedReason || (row.recoveryPending ? 'Finish this pending payment recovery' : 'Restore this payment');
+                const restoreButton = row.restorable
+                    ? `<button type="button" class="btn btn-success btn-sm payment-history-deleted-restore" data-deleted-id="${escapeHtml(row.archiveId)}" title="${escapeHtml(restoreTitle)}"><i class="ti ti-restore" aria-hidden="true"></i> ${row.recoveryPending ? 'Finish Recovery' : 'Restore'}</button>`
+                    : `<button type="button" class="btn btn-outline-secondary btn-sm" title="${escapeHtml(restoreTitle || 'This payment cannot be restored.')}" disabled aria-disabled="true"><i class="ti ti-lock" aria-hidden="true"></i> Restore</button>`;
+                return `
+                    <tr>
+                        <td>
+                            <div class="payment-history-stack">
+                                <span class="fw-semibold">${escapeHtml(row.displayPaymentDate)}</span>
+                                <span class="text-secondary">${escapeHtml(row.paymentMonth || row.paymentDateKey || 'Month unavailable')}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="subscriber">
+                                <span class="avatar avatar-sm bg-secondary-lt text-secondary">${escapeHtml(getInitials(row.subscriber))}</span>
+                                <div class="subscriber-details">
+                                    <p class="subscriber-name mb-0 fw-semibold">${escapeHtml(row.subscriber)}</p>
+                                    <p class="subscriber-meta mb-0 text-secondary">Account # ${escapeHtml(row.accountNumber || 'N/A')} &middot; ${escapeHtml(row.area)}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="is-num">
+                            <div class="payment-history-stack">
+                                <span class="payment-history-amount text-secondary fw-semibold">${escapeHtml(formatCurrency(row.amount))}</span>
+                                <span class="badge bg-secondary-lt text-secondary">${escapeHtml(row.paymentMethodLabel)}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="payment-history-stack">
+                                <span class="fw-semibold">${escapeHtml(row.paymentNumber || row.entryId || 'No payment number')}</span>
+                                <span class="text-secondary">${escapeHtml(references.join(' · ') || 'No reference or OR')}</span>
+                                ${row.recoveryPending ? '<span class="badge bg-warning-lt text-warning">Recovery pending</span>' : ''}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="payment-history-stack">
+                                <span class="fw-semibold">${escapeHtml(row.deletedByLabel)}</span>
+                                <span class="text-secondary">${escapeHtml(row.source)}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="payment-history-stack">
+                                <span class="fw-semibold">${escapeHtml(row.displayDeletedAt)}</span>
+                                <span class="payment-history-deleted-reason text-secondary" title="${escapeHtml(row.deletionReason)}">${escapeHtml(row.deletionReason)}</span>
+                                ${row.restoreBlockedReason ? `<span class="text-danger">${escapeHtml(row.restoreBlockedReason)}</span>` : ''}
+                            </div>
+                        </td>
+                        <td class="payment-history-actions-cell">
+                            <div class="payment-history-action-row">
+                                <button type="button" class="btn btn-outline-secondary btn-sm payment-history-deleted-audit" data-deleted-id="${escapeHtml(row.archiveId)}"><i class="ti ti-history" aria-hidden="true"></i> View Audit</button>
+                                ${restoreButton}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        if (deletedSummaryEl) {
+            deletedSummaryEl.textContent = total === 0
+                ? 'No deleted payments found.'
+                : `Showing ${formatCount(visibleStart)}-${formatCount(visibleEnd)} of ${formatCount(total)} deleted payments`;
+        }
+        if (deletedPageInfoEl) {
+            deletedPageInfoEl.textContent = `Page ${formatCount(total === 0 ? 1 : state.deletedPage)} of ${formatCount(totalPages)}`;
+        }
+        if (deletedPrevBtn) deletedPrevBtn.disabled = state.deletedPage <= 1 || total === 0;
+        if (deletedNextBtn) deletedNextBtn.disabled = state.deletedPage >= totalPages || total === 0;
+    }
+
+    function applyDeletedFilters({ resetPage = true } = {}) {
+        const searchValue = normalizeText(deletedSearchInput?.value);
+        const deletedByValue = normalizeText(deletedByFilter?.value);
+        const startDateValue = String(deletedStartDateInput?.value || '').trim();
+        const endDateValue = String(deletedEndDateInput?.value || '').trim();
+        state.deletedPageSize = Math.max(1, Number(deletedPageSizeSelect?.value) || 25);
+        const rows = state.deletedRows.filter((row) => {
+            if (searchValue && !row.searchBlob.includes(searchValue)) return false;
+            if (deletedByValue && row.deletedByKey !== deletedByValue) return false;
+            if (startDateValue && (!row.deletedDateKey || row.deletedDateKey < startDateValue)) return false;
+            if (endDateValue && (!row.deletedDateKey || row.deletedDateKey > endDateValue)) return false;
+            return true;
+        });
+        state.filteredDeletedRows = sortDeletedRows(rows);
+        if (resetPage) state.deletedPage = 1;
+        renderDeletedTable();
+    }
+
     function updateMetrics(rows) {
         const entries = Array.isArray(rows) ? rows.length : 0;
         const paymentsCollected = (Array.isArray(rows) ? rows : []).reduce((sum, row) => (
@@ -1320,11 +1798,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             ? `<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-primary btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Edit client and bind official GCash transaction" title="Edit & Bind"><i class="ti ti-edit"></i></button>`
                             : '<button type="button" class="payment-history-edit-bind btn btn-icon btn-ghost-secondary btn-sm" aria-label="GCash binding status is unavailable" title="GCash binding status is unavailable. Refresh to try again." disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'))
                     : '';
+                const gcashDeleteLockReason = resolveGcashDeleteLockReason(row);
                 const deleteButton = row.isClosureAdjustment
                     ? '<button type="button" class="btn btn-icon btn-ghost-secondary btn-sm" aria-label="Permanent account-closure audit entry" title="Permanent account-closure audit entry" disabled aria-disabled="true"><i class="ti ti-lock"></i></button>'
-                    : (row.entryId
-                        ? `<button type="button" class="payment-history-delete btn btn-icon btn-ghost-danger btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="ti ti-trash"></i></button>`
-                        : '<span class="text-secondary">-</span>');
+                    : (gcashDeleteLockReason
+                        ? `<button type="button" class="btn btn-icon btn-ghost-secondary btn-sm" aria-label="Delete locked—${escapeHtml(gcashDeleteLockReason)}" title="Delete locked—${escapeHtml(gcashDeleteLockReason)}" disabled aria-disabled="true"><i class="ti ti-lock"></i></button>`
+                        : (row.entryId
+                            ? `<button type="button" class="payment-history-delete btn btn-icon btn-ghost-danger btn-sm" data-account-number="${escapeHtml(row.accountNumber)}" data-entry-id="${escapeHtml(row.entryId)}" aria-label="Delete payment" title="Delete payment"><i class="ti ti-trash"></i></button>`
+                            : '<span class="text-secondary">-</span>'));
 
                 return `
                     <tr>
@@ -1383,34 +1864,415 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nextBtn) nextBtn.disabled = state.page >= totalPages || total === 0;
     }
 
-    async function deletePayment(row) {
+    const buildRecoveryRecordSummary = (row, { includeDeletion = false } = {}) => {
+        if (!row) return '<span class="text-secondary">No payment selected.</span>';
+        const paymentNumber = row.paymentNumber || row.entryId || 'No payment number';
+        const deletionDetails = includeDeletion
+            ? `<div class="text-secondary mt-1">Deleted ${escapeHtml(row.displayDeletedAt || 'at an unknown time')} by ${escapeHtml(row.deletedByLabel || 'System')}</div>`
+            : '';
+        return `
+            <div class="d-flex align-items-start justify-content-between gap-3">
+                <div>
+                    <div class="fw-semibold">${escapeHtml(row.subscriber || 'Unknown customer')}</div>
+                    <div class="text-secondary">Account # ${escapeHtml(row.accountNumber || 'N/A')} &middot; ${escapeHtml(paymentNumber)}</div>
+                    ${deletionDetails}
+                </div>
+                <div class="fw-semibold text-nowrap">${escapeHtml(formatCurrency(row.amount))}</div>
+            </div>
+        `;
+    };
+
+    function updateDeleteSubmitState() {
+        if (!deleteSubmitBtn) return;
+        const hasTarget = state.deleteMode === 'clear' || Boolean(state.deleteTarget);
+        deleteSubmitBtn.disabled = state.deleting || !hasTarget || !isValidAuditReason(readAuditReason(deleteReasonInput));
+    }
+
+    function resetDeleteModal() {
+        state.deleteTarget = null;
+        state.deleteMode = 'single';
+        state.deleting = false;
+        deleteForm?.reset();
+        deleteReasonInput?.classList.remove('is-invalid');
+        setButtonBusy(deleteSubmitBtn, false);
+        setRecoveryModalDismissBusy(deleteModalEl, false);
+        if (deleteModalTitle) deleteModalTitle.textContent = 'Move Payment to Deleted Payments?';
+        if (deleteSummaryEl) deleteSummaryEl.textContent = 'Select a payment from Payment History.';
+        if (deleteSubmitBtn) {
+            deleteSubmitBtn.innerHTML = '<i class="ti ti-trash" aria-hidden="true"></i> Move to Deleted Payments';
+        }
+        updateDeleteSubmitState();
+    }
+
+    function openDeleteModal(row = null, { mode = 'single', trigger = null } = {}) {
+        const isClear = mode === 'clear';
+        const gcashDeleteLockReason = resolveGcashDeleteLockReason(row);
+        if (!isClear && gcashDeleteLockReason) {
+            showToast(`Delete locked—${gcashDeleteLockReason}.`, 'info');
+            return;
+        }
+        if (!isClear && !row) {
+            showToast('Payment entry was not found in the current list.', 'error');
+            return;
+        }
+        state.deleteTarget = isClear ? null : row;
+        state.deleteMode = isClear ? 'clear' : 'single';
+        state.deleting = false;
+        deleteForm?.reset();
+        deleteReasonInput?.classList.remove('is-invalid');
+        if (deleteModalTitle) {
+            deleteModalTitle.textContent = isClear
+                ? 'Archive All Payment Records?'
+                : 'Move Payment to Deleted Payments?';
+        }
+        if (deleteSummaryEl) {
+            deleteSummaryEl.innerHTML = isClear
+                ? '<div class="fw-semibold">Archive every branch ledger entry, including payments, charges, and adjustments.</div><div class="text-secondary mt-1">This includes entries outside the currently filtered table. The server creates a backup and retains recoverable deletion audit records.</div>'
+                : buildRecoveryRecordSummary(row);
+        }
+        if (deleteSubmitBtn) {
+            deleteSubmitBtn.innerHTML = isClear
+                ? '<i class="ti ti-archive" aria-hidden="true"></i> Archive All Payments'
+                : '<i class="ti ti-trash" aria-hidden="true"></i> Move to Deleted Payments';
+        }
+        updateDeleteSubmitState();
+        showModal(deleteModalEl, {
+            initialFocus: deleteReasonInput,
+            returnFocus: trigger,
+            fallbackFocus: isClear ? clearBtn : activeHistoryTab
+        });
+    }
+
+    async function deletePayment(row, reason) {
         const accountNumber = String(row?.accountNumber || '').trim();
         const entryId = String(row?.entryId || '').trim();
         if (!accountNumber || !entryId) {
-            showToast('Unable to delete: missing payment entry id.', 'error');
-            return false;
+            throw new Error('Unable to delete: missing payment entry id.');
         }
-
-        const confirmed = typeof window.appConfirm === 'function'
-            ? await window.appConfirm('Delete this payment history entry? This cannot be undone.', { title: 'Delete Payment' })
-            : window.confirm('Delete this payment history entry? This cannot be undone.');
-        if (!confirmed) return false;
-
-        const response = await fetch(`/api/payments/${encodeURIComponent(accountNumber)}/${encodeURIComponent(entryId)}`, {
+        return fetchJSON(`/api/payments/${encodeURIComponent(accountNumber)}/${encodeURIComponent(entryId)}`, {
             method: 'DELETE',
-            credentials: 'include'
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
         });
-        if (!response.ok) {
-            const payload = await response.json().catch(() => ({}));
-            throw new Error(payload?.error || payload?.message || 'Failed to delete payment entry.');
+    }
+
+    async function archiveAllPaymentRecords(reason) {
+        return fetchJSON('/api/payments/clear', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        });
+    }
+
+    async function submitDeleteRequest() {
+        const completedDeleteMode = state.deleteMode;
+        let didArchive = false;
+        const reason = readAuditReason(deleteReasonInput);
+        if (!isValidAuditReason(reason)) {
+            deleteReasonInput?.classList.add('is-invalid');
+            deleteReasonInput?.focus();
+            showToast('Enter a deletion reason with at least 8 characters.', 'error');
+            updateDeleteSubmitState();
+            return;
+        }
+        if (state.deleteMode !== 'clear' && !state.deleteTarget) {
+            showToast('Payment entry was not found in the current list.', 'error');
+            return;
         }
 
-        state.allRows = state.allRows.filter((item) => !(item.accountNumber === accountNumber && item.entryId === entryId));
-        populateAreaFilter(state.allRows);
-        populateRecordedByFilter(state.allRows);
-        applyFilters({ resetPage: false });
-        showToast('Payment history entry deleted.', 'success');
-        return true;
+        state.deleting = true;
+        deleteReasonInput?.classList.remove('is-invalid');
+        setButtonBusy(deleteSubmitBtn, true);
+        setButtonBusy(clearBtn, true);
+        setRecoveryModalDismissBusy(deleteModalEl, true);
+        try {
+            if (state.deleteMode === 'clear') {
+                const payload = await archiveAllPaymentRecords(reason);
+                const removedCount = Math.max(0, Number(payload?.archivedCount ?? payload?.removedCount) || 0);
+                const backupText = payload?.backup ? ` Backup saved: ${describeBackup(payload.backup)}` : '';
+                showToast(
+                    `Archived ${formatCount(removedCount)} payment ${removedCount === 1 ? 'entry' : 'entries'} to Deleted Payments.${backupText}`,
+                    'success'
+                );
+            } else {
+                const payload = await deletePayment(state.deleteTarget, reason);
+                showToast(payload?.message || 'Payment moved to Deleted Payments.', 'success');
+            }
+            didArchive = true;
+            hideModal(deleteModalEl);
+            await Promise.all([
+                loadHistory(),
+                loadDeletedPayments({ force: true })
+            ]);
+        } catch (error) {
+            showToast(
+                didArchive
+                    ? 'Payment records were archived, but the latest history could not be refreshed. Reload this page.'
+                    : (error.message || 'Failed to archive payment records.'),
+                didArchive ? 'warning' : 'error'
+            );
+            if (completedDeleteMode === 'clear') {
+                await Promise.allSettled([
+                    loadHistory(),
+                    loadDeletedPayments({ force: true })
+                ]);
+            }
+        } finally {
+            state.deleting = false;
+            setButtonBusy(deleteSubmitBtn, false);
+            setButtonBusy(clearBtn, false);
+            setRecoveryModalDismissBusy(deleteModalEl, false);
+            updateDeleteSubmitState();
+            if (didArchive) {
+                focusModalTarget(completedDeleteMode === 'clear' ? clearBtn : activeHistoryTab);
+            }
+        }
+    }
+
+    function updateRestoreSubmitState() {
+        if (!restoreSubmitBtn) return;
+        restoreSubmitBtn.disabled = state.restoring
+            || !state.restoreTarget
+            || !state.restoreTarget.restorable
+            || !restoreConfirmedInput?.checked
+            || !isValidAuditReason(readAuditReason(restoreReasonInput));
+    }
+
+    function resetRestoreModal() {
+        state.restoreTarget = null;
+        state.restoring = false;
+        restoreForm?.reset();
+        restoreReasonInput?.classList.remove('is-invalid');
+        setButtonBusy(restoreSubmitBtn, false);
+        setRecoveryModalDismissBusy(restoreModalEl, false);
+        if (restoreRecordEl) restoreRecordEl.textContent = 'Select a deleted payment to restore.';
+        if (restoreSubmitBtn) {
+            restoreSubmitBtn.innerHTML = '<i class="ti ti-restore" aria-hidden="true"></i> Restore Payment';
+        }
+        updateRestoreSubmitState();
+    }
+
+    function openRestoreModal(row, { trigger = null } = {}) {
+        if (!row?.restorable) {
+            showToast(row?.restoreBlockedReason || 'This deleted payment cannot be restored.', 'error');
+            return;
+        }
+        state.restoreTarget = row;
+        state.restoring = false;
+        restoreForm?.reset();
+        restoreReasonInput?.classList.remove('is-invalid');
+        if (restoreRecordEl) restoreRecordEl.innerHTML = buildRecoveryRecordSummary(row, { includeDeletion: true });
+        if (restoreSubmitBtn) {
+            restoreSubmitBtn.innerHTML = row.recoveryPending
+                ? '<i class="ti ti-restore" aria-hidden="true"></i> Finish Recovery'
+                : '<i class="ti ti-restore" aria-hidden="true"></i> Restore Payment';
+        }
+        updateRestoreSubmitState();
+        showModal(restoreModalEl, {
+            initialFocus: restoreReasonInput,
+            returnFocus: trigger,
+            fallbackFocus: deletedHistoryTab
+        });
+    }
+
+    async function restoreDeletedPayment() {
+        const row = state.restoreTarget;
+        let didRestore = false;
+        const reason = readAuditReason(restoreReasonInput);
+        if (!row?.restorable) {
+            showToast(row?.restoreBlockedReason || 'This deleted payment cannot be restored.', 'error');
+            return;
+        }
+        if (!isValidAuditReason(reason)) {
+            restoreReasonInput?.classList.add('is-invalid');
+            restoreReasonInput?.focus();
+            showToast('Enter a restore reason with at least 8 characters.', 'error');
+            updateRestoreSubmitState();
+            return;
+        }
+        if (!restoreConfirmedInput?.checked) {
+            restoreConfirmedInput?.focus();
+            showToast('Confirm that you verified the payment and customer.', 'error');
+            updateRestoreSubmitState();
+            return;
+        }
+
+        state.restoring = true;
+        restoreReasonInput?.classList.remove('is-invalid');
+        setButtonBusy(restoreSubmitBtn, true);
+        setRecoveryModalDismissBusy(restoreModalEl, true);
+        try {
+            const payload = await fetchJSON(`/api/payments/deleted/${encodeURIComponent(row.archiveId)}/restore`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason })
+            });
+            didRestore = true;
+            hideModal(restoreModalEl);
+            await Promise.all([
+                loadHistory(),
+                loadDeletedPayments({ force: true })
+            ]);
+            showToast(
+                payload?.message || (row.recoveryPending ? 'Payment recovery completed.' : 'Payment restored to Payment History.'),
+                payload?.recoveryPending ? 'warning' : 'success'
+            );
+        } catch (error) {
+            showToast(
+                didRestore
+                    ? 'The payment was restored, but the latest history could not be refreshed. Reload this page.'
+                    : (error.message || 'Failed to restore the deleted payment.'),
+                didRestore ? 'warning' : 'error'
+            );
+        } finally {
+            state.restoring = false;
+            setButtonBusy(restoreSubmitBtn, false);
+            setRecoveryModalDismissBusy(restoreModalEl, false);
+            updateRestoreSubmitState();
+            if (didRestore) focusModalTarget(deletedHistoryTab);
+        }
+    }
+
+    const formatAuditDetails = (value) => {
+        if (value === null || value === undefined || value === '') return '';
+        if (typeof value === 'string') return value;
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    };
+
+    const renderAuditEvents = (events, emptyMessage) => {
+        if (!Array.isArray(events) || events.length === 0) {
+            return `<div class="text-secondary">${escapeHtml(emptyMessage)}</div>`;
+        }
+        return `<div class="list-group list-group-flush">${events.map((event, index) => {
+            const eventObject = event && typeof event === 'object' ? event : { details: event };
+            const action = String(eventObject.action || eventObject.type || eventObject.event || `Audit event ${index + 1}`).trim();
+            const at = String(eventObject.at || eventObject.createdAt || eventObject.updatedAt || eventObject.timestamp || '').trim();
+            const actor = formatActorLabel(eventObject.by || eventObject.actor || eventObject.recordedBy, 'System');
+            const reason = String(eventObject.reason || eventObject.note || '').trim();
+            const details = formatAuditDetails(eventObject.details || eventObject.changes || eventObject.message || '');
+            return `
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between gap-3">
+                        <span class="fw-semibold">${escapeHtml(action)}</span>
+                        <span class="text-secondary text-nowrap">${escapeHtml(at ? formatEntryDate(at, safeDate(at)) : '')}</span>
+                    </div>
+                    <div class="text-secondary">${escapeHtml(actor)}</div>
+                    ${reason ? `<div>${escapeHtml(reason)}</div>` : ''}
+                    ${details ? `<div class="text-secondary small text-break">${escapeHtml(details)}</div>` : ''}
+                </div>
+            `;
+        }).join('')}</div>`;
+    };
+
+    function renderAmountCorrections(corrections) {
+        if (!Array.isArray(corrections) || corrections.length === 0) {
+            return '<div class="text-secondary">No amount corrections recorded.</div>';
+        }
+
+        const readAmount = (...values) => {
+            for (const value of values) {
+                if (value === null || value === undefined || String(value).trim() === '') continue;
+                const amount = Number(value);
+                if (Number.isFinite(amount)) return amount;
+            }
+            return null;
+        };
+
+        return `<div class="list-group list-group-flush">${corrections.map((correction) => {
+            const item = correction && typeof correction === 'object' ? correction : {};
+            const previousAmount = readAmount(item.previousAmount, item.previous_amount, item.fromAmount);
+            const correctedAmount = readAmount(item.correctedAmount, item.corrected_amount, item.toAmount);
+            const correctedAt = String(item.correctedAt || item.corrected_at || '').trim();
+            const nestedActor = item.correctedBy && typeof item.correctedBy === 'object'
+                ? item.correctedBy
+                : (item.corrected_by && typeof item.corrected_by === 'object' ? item.corrected_by : {});
+            const correctedBy = {
+                id: nestedActor.id || item.correctedByUserId || item.corrected_by_user_id || '',
+                username: nestedActor.username || item.correctedByUsername || item.corrected_by_username || '',
+                name: nestedActor.name || item.correctedByName || item.corrected_by_name || '',
+                role: nestedActor.role || item.correctedByRole || item.corrected_by_role || 'Admin'
+            };
+            const correctedByLabel = formatActorLabel(correctedBy, 'Admin');
+            const reason = String(item.reason || item.correctionReason || item.correction_reason || '').trim()
+                || 'No correction reason recorded.';
+            const previousAmountLabel = previousAmount === null ? 'Unavailable' : formatCurrency(previousAmount);
+            const correctedAmountLabel = correctedAmount === null ? 'Unavailable' : formatCurrency(correctedAmount);
+            const correctedAtLabel = correctedAt
+                ? formatEntryDate(correctedAt, safeDate(correctedAt))
+                : 'Unknown time';
+
+            return `
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between gap-3">
+                        <span class="fw-semibold">Amount correction</span>
+                        <span class="text-secondary text-nowrap">${escapeHtml(correctedAtLabel)}</span>
+                    </div>
+                    <dl class="row mb-0 mt-2">
+                        <dt class="col-sm-3">Previous amount</dt><dd class="col-sm-9">${escapeHtml(previousAmountLabel)}</dd>
+                        <dt class="col-sm-3">Corrected amount</dt><dd class="col-sm-9 fw-semibold">${escapeHtml(correctedAmountLabel)}</dd>
+                        <dt class="col-sm-3">Corrected by</dt><dd class="col-sm-9">${escapeHtml(correctedByLabel)}</dd>
+                        <dt class="col-sm-3">Reason</dt><dd class="col-sm-9 text-break">${escapeHtml(reason)}</dd>
+                    </dl>
+                </div>
+            `;
+        }).join('')}</div>`;
+    }
+
+    function openAuditModal(row, { trigger = null } = {}) {
+        if (!row || !auditBodyEl) return;
+        const record = row.rawRecord || {};
+        const entry = record.entry || {};
+        auditBodyEl.innerHTML = `
+            <div class="row g-3">
+                <div class="col-12">${buildRecoveryRecordSummary(row, { includeDeletion: true })}</div>
+                <div class="col-md-6">
+                    <div class="card card-sm h-100">
+                        <div class="card-header"><h3 class="card-title">Original Payment</h3></div>
+                        <div class="card-body">
+                            <dl class="row mb-0">
+                                <dt class="col-5">Payment date</dt><dd class="col-7">${escapeHtml(row.displayPaymentDate)}</dd>
+                                <dt class="col-5">Method</dt><dd class="col-7">${escapeHtml(row.paymentMethodLabel)}</dd>
+                                <dt class="col-5">Reference</dt><dd class="col-7 text-break">${escapeHtml(row.reference || 'None')}</dd>
+                                <dt class="col-5">OR number</dt><dd class="col-7 text-break">${escapeHtml(row.orNumber || 'None')}</dd>
+                                <dt class="col-5">Recorded by</dt><dd class="col-7">${escapeHtml(row.recordedByLabel)}</dd>
+                                <dt class="col-5">Status</dt><dd class="col-7">${escapeHtml(entry.status || 'Recorded')}</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card card-sm h-100">
+                        <div class="card-header"><h3 class="card-title">Deletion</h3></div>
+                        <div class="card-body">
+                            <dl class="row mb-0">
+                                <dt class="col-5">Deleted at</dt><dd class="col-7">${escapeHtml(row.displayDeletedAt)}</dd>
+                                <dt class="col-5">Deleted by</dt><dd class="col-7">${escapeHtml(row.deletedByLabel)}</dd>
+                                <dt class="col-5">Source</dt><dd class="col-7">${escapeHtml(row.source)}</dd>
+                                <dt class="col-5">Reason</dt><dd class="col-7 text-break">${escapeHtml(row.deletionReason)}</dd>
+                                <dt class="col-5">Recovery</dt><dd class="col-7">${escapeHtml(row.recoveryPending ? 'Pending finalization' : (row.restorable ? 'Available' : row.restoreBlockedReason || 'Blocked'))}</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <h3 class="mb-2">Amount Corrections</h3>
+                    ${renderAmountCorrections(row.amountCorrections)}
+                </div>
+                <div class="col-12">
+                    <h3 class="mb-2">Recovery Audit Trail</h3>
+                    ${renderAuditEvents(row.audit, 'No recovery events recorded yet.')}
+                </div>
+            </div>
+        `;
+        showModal(auditModalEl, {
+            initialFocus: auditModalEl?.querySelector('.btn-close'),
+            returnFocus: trigger,
+            fallbackFocus: deletedHistoryTab
+        });
     }
 
     async function backupPaymentRecords() {
@@ -1509,65 +2371,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function deleteEntriesFromPayments(payments = {}) {
-        const entries = [];
-        Object.entries(payments || {}).forEach(([accountNumber, record]) => {
-            (Array.isArray(record?.history) ? record.history : []).forEach((entry) => {
-                const entryId = String(entry?.id || '').trim();
-                if (!entryId) return;
-                entries.push({ accountNumber: String(accountNumber || '').trim(), entryId });
-            });
-        });
-
-        let deletedCount = 0;
-        for (const entry of entries) {
-            const response = await fetch(`/api/payments/${encodeURIComponent(entry.accountNumber)}/${encodeURIComponent(entry.entryId)}`, {
-                method: 'DELETE',
-                credentials: 'include'
-            });
-            if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                throw new Error(payload?.error || payload?.message || `Failed after deleting ${formatCount(deletedCount)} ${deletedCount === 1 ? 'entry' : 'entries'}.`);
-            }
-            deletedCount += 1;
-        }
-
-        return deletedCount;
-    }
-
-    async function clearPaymentRecords() {
-        const currentCount = state.allRows.length;
-        const confirmed = typeof window.appConfirm === 'function'
-            ? await window.appConfirm(
-                `Clear all payment records? A backup will be created first. This removes the stored payment records for this branch. Currently listed payment entries: ${formatCount(currentCount)}.`,
-                { title: 'Clear Payment Records' }
-            )
-            : window.confirm(`Clear all payment records? A backup will be created first. This removes the stored payment records for this branch. Currently listed payment entries: ${formatCount(currentCount)}.`);
-        if (!confirmed) return;
-
-        setButtonBusy(clearBtn, true);
-        setButtonBusy(backupBtn, true);
-        try {
-            const payments = await fetchJSON('/api/payments');
-            try {
-                const payload = await fetchJSON('/api/payments/clear', { method: 'DELETE' });
-                await loadHistory();
-                const removedCount = Number(payload?.removedCount) || countEntriesInPayments(payments);
-                showToast(`Cleared ${formatCount(removedCount)} payment ${removedCount === 1 ? 'entry' : 'entries'}. Backup saved: ${describeBackup(payload?.backup)}`, 'success');
-                return;
-            } catch (serverError) {
-                if (!canUseBrowserFallback(serverError)) throw serverError;
-                const backup = downloadJsonBackup(buildBrowserBackupPayload(payments, 'before-clear-browser-backup'));
-                const removedCount = await deleteEntriesFromPayments(payments);
-                await loadHistory();
-                showToast(`Cleared ${formatCount(removedCount)} payment ${removedCount === 1 ? 'entry' : 'entries'}. Backup downloaded: ${describeBackup(backup)}`, 'success');
-            }
-        } catch (error) {
-            showToast(error.message || 'Failed to clear payment records.', 'error');
-        } finally {
-            setButtonBusy(clearBtn, false);
-            setButtonBusy(backupBtn, false);
-        }
+    function clearPaymentRecords(event) {
+        openDeleteModal(null, { mode: 'clear', trigger: event?.currentTarget || clearBtn });
     }
 
     function applyFilters({ resetPage = true } = {}) {
@@ -1647,6 +2452,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function loadDeletedPayments({ force = false } = {}) {
+        if (state.deletedLoading) return false;
+        if (state.deletedLoaded && !force) {
+            applyDeletedFilters({ resetPage: false });
+            return true;
+        }
+        state.deletedLoading = true;
+        state.deletedError = '';
+        renderDeletedLoading();
+        try {
+            const payload = await fetchJSON('/api/payments/deleted');
+            const records = Array.isArray(payload?.records) ? payload.records : [];
+            state.deletedRows = buildDeletedRows(records);
+            state.deletedLoaded = true;
+            state.deletedError = '';
+            state.deletedLoading = false;
+            updateDeletedCount(Number.isFinite(Number(payload?.total)) ? Number(payload.total) : records.length);
+            populateDeletedByFilter(state.deletedRows);
+            applyDeletedFilters({ resetPage: force });
+            return true;
+        } catch (error) {
+            state.deletedLoading = false;
+            state.deletedLoaded = false;
+            state.deletedError = error.message || 'Failed to load deleted payments.';
+            renderDeletedTable();
+            return false;
+        }
+    }
+
+    function activateHistoryView(tabName, { updateHash = true } = {}) {
+        const nextView = tabName === 'deleted' ? 'deleted' : 'active';
+        state.activeHistoryView = nextView;
+        historyTabButtons.forEach((button) => {
+            const active = button.dataset.paymentHistoryTab === nextView;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+            button.tabIndex = active ? 0 : -1;
+        });
+        if (activeHistoryPanel) {
+            const active = nextView === 'active';
+            activeHistoryPanel.classList.toggle('active', active);
+            activeHistoryPanel.classList.toggle('show', active);
+        }
+        if (deletedHistoryPanel) {
+            const active = nextView === 'deleted';
+            deletedHistoryPanel.classList.toggle('active', active);
+            deletedHistoryPanel.classList.toggle('show', active);
+        }
+        updateDeletedCount();
+        if (updateHash && window.history?.replaceState) {
+            const hash = nextView === 'deleted' ? '#deleted-payments' : '#payment-history';
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`);
+        }
+        if (nextView === 'deleted') void loadDeletedPayments();
+    }
+
     searchInput?.addEventListener('input', () => applyFilters({ resetPage: true }));
     areaFilter?.addEventListener('change', () => applyFilters({ resetPage: true }));
     methodFilter?.addEventListener('change', () => applyFilters({ resetPage: true }));
@@ -1655,6 +2516,12 @@ document.addEventListener('DOMContentLoaded', () => {
     endDateInput?.addEventListener('change', () => applyFilters({ resetPage: true }));
     sortSelect?.addEventListener('change', () => applyFilters({ resetPage: true }));
     pageSizeSelect?.addEventListener('change', () => applyFilters({ resetPage: true }));
+    deletedSearchInput?.addEventListener('input', () => applyDeletedFilters({ resetPage: true }));
+    deletedStartDateInput?.addEventListener('change', () => applyDeletedFilters({ resetPage: true }));
+    deletedEndDateInput?.addEventListener('change', () => applyDeletedFilters({ resetPage: true }));
+    deletedByFilter?.addEventListener('change', () => applyDeletedFilters({ resetPage: true }));
+    deletedSortSelect?.addEventListener('change', () => applyDeletedFilters({ resetPage: true }));
+    deletedPageSizeSelect?.addEventListener('change', () => applyDeletedFilters({ resetPage: true }));
     importBtn?.addEventListener('click', () => importFileInput?.click());
     importFileInput?.addEventListener('change', () => {
         void importPaymentHistoryFromFile(importFileInput.files?.[0] || null);
@@ -1744,6 +2611,54 @@ document.addEventListener('DOMContentLoaded', () => {
     editBindModalEl?.addEventListener('click', dismissEditBindModal);
     backupBtn?.addEventListener('click', backupPaymentRecords);
     clearBtn?.addEventListener('click', clearPaymentRecords);
+    deleteReasonInput?.addEventListener('input', () => {
+        deleteReasonInput.classList.remove('is-invalid');
+        updateDeleteSubmitState();
+    });
+    deleteForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void submitDeleteRequest();
+    });
+    deleteModalEl?.addEventListener('shown.bs.modal', () => focusModalInitialControl(deleteModalEl));
+    deleteModalEl?.addEventListener('hidden.bs.modal', () => {
+        resetDeleteModal();
+        restoreModalTriggerFocus(deleteModalEl);
+    });
+    restoreReasonInput?.addEventListener('input', () => {
+        restoreReasonInput.classList.remove('is-invalid');
+        updateRestoreSubmitState();
+    });
+    restoreConfirmedInput?.addEventListener('change', updateRestoreSubmitState);
+    restoreForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        void restoreDeletedPayment();
+    });
+    restoreModalEl?.addEventListener('shown.bs.modal', () => focusModalInitialControl(restoreModalEl));
+    restoreModalEl?.addEventListener('hidden.bs.modal', () => {
+        resetRestoreModal();
+        restoreModalTriggerFocus(restoreModalEl);
+    });
+    auditModalEl?.addEventListener('shown.bs.modal', () => focusModalInitialControl(auditModalEl));
+    auditModalEl?.addEventListener('hidden.bs.modal', () => restoreModalTriggerFocus(auditModalEl));
+    const recoveryModalElements = [deleteModalEl, restoreModalEl, auditModalEl].filter(Boolean);
+    recoveryModalElements.forEach(bindFallbackModalDismiss);
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        const visibleModal = recoveryModalElements.find((modalEl) => modalEl.classList.contains('show'));
+        if (!visibleModal) return;
+        if (isRecoveryModalBusy(visibleModal)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        hideModal(visibleModal);
+    }, true);
+    historyTabButtons.forEach((button) => {
+        button.addEventListener('click', () => activateHistoryView(button.dataset.paymentHistoryTab));
+        button.addEventListener('shown.bs.tab', () => activateHistoryView(button.dataset.paymentHistoryTab));
+    });
     tableBody?.addEventListener('click', async (event) => {
         const editBindBtn = event.target.closest('.payment-history-edit-bind');
         if (editBindBtn) {
@@ -1786,18 +2701,28 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Payment entry was not found in the current list.', 'error');
             return;
         }
-        deleteBtn.disabled = true;
-        deleteBtn.setAttribute('aria-busy', 'true');
-        try {
-            const deleted = await deletePayment(row);
-            if (!deleted && deleteBtn.isConnected) {
-                deleteBtn.disabled = false;
-                deleteBtn.removeAttribute('aria-busy');
-            }
-        } catch (error) {
-            showToast(error.message || 'Failed to delete payment entry.', 'error');
-            deleteBtn.disabled = false;
-            deleteBtn.removeAttribute('aria-busy');
+        openDeleteModal(row, { trigger: deleteBtn });
+    });
+    deletedTableBody?.addEventListener('click', (event) => {
+        const retryBtn = event.target.closest('.payment-history-deleted-retry');
+        if (retryBtn) {
+            void loadDeletedPayments({ force: true });
+            return;
+        }
+        const actionBtn = event.target.closest('[data-deleted-id]');
+        if (!actionBtn) return;
+        const archiveId = String(actionBtn.dataset.deletedId || '').trim();
+        const row = state.deletedRows.find((item) => item.archiveId === archiveId);
+        if (!row) {
+            showToast('Deleted payment was not found. Refresh and try again.', 'error');
+            return;
+        }
+        if (actionBtn.classList.contains('payment-history-deleted-audit')) {
+            openAuditModal(row, { trigger: actionBtn });
+            return;
+        }
+        if (actionBtn.classList.contains('payment-history-deleted-restore')) {
+            openRestoreModal(row, { trigger: actionBtn });
         }
     });
     prevBtn?.addEventListener('click', () => {
@@ -1811,7 +2736,23 @@ document.addEventListener('DOMContentLoaded', () => {
         state.page += 1;
         renderTable();
     });
+    deletedPrevBtn?.addEventListener('click', () => {
+        if (state.deletedPage <= 1) return;
+        state.deletedPage -= 1;
+        renderDeletedTable();
+    });
+    deletedNextBtn?.addEventListener('click', () => {
+        const totalPages = Math.max(1, Math.ceil(state.filteredDeletedRows.length / state.deletedPageSize));
+        if (state.deletedPage >= totalPages) return;
+        state.deletedPage += 1;
+        renderDeletedTable();
+    });
 
+    const initialHistoryView = normalizeText(window.location.hash) === '#deleted-payments' ? 'deleted' : 'active';
+    activateHistoryView(initialHistoryView, { updateHash: false });
+    updateDeleteSubmitState();
+    updateRestoreSubmitState();
     loadHistory();
+    loadDeletedPayments();
     loadUnmatchedRecords();
 });
